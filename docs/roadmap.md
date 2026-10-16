@@ -27,8 +27,9 @@
 7. ブラウザは起動時に表示された `?token=` 付き URL で開くと cookie で認証され、以後 URL にトークンが残らない。
 
 **確認結果** (2026-10-16、Claude Code 2.1.301 / Haiku 5.5 / Windows 11)
-- 1, 2, 4, 5, 7: 実セッションとブラウザで確認。ブラウザから `mailbox:agent-hub` に送った request が届き、Claude が `post_message` (`to` 省略) で返した reply が `user:browser` 宛てとして UI に出た。
-- 3 (トピック購読経由の配信): 実セッションでは未実施。shim の結合テスト (`src/shim/shim.test.ts`) と、ビルド済み shim を MCP Client から動かした e2e で確認した。
+- 1〜5, 7: 実セッションとブラウザで確認。`mailbox:agent-hub` 宛て (直接) と、`subscribe("user.message")` 後の `topic:user.message` 宛て (購読) の両方が届き、
+  Claude が `post_message` (`to` 省略) で返した reply が `user:browser` 宛てとして UI に出た。
+  購読していない `topic:agent-hub` 宛てと `user:agent-hub` 宛ては届かなかった (仕様どおり)。
 - 6: 実起動した Hub に curl でトークンなしの 401 を確認。netstat で `127.0.0.1:<port>` のみで待ち受けていることを確認。
 
 ## P1: 区切り・質問の検知
