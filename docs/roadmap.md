@@ -69,7 +69,8 @@
 - [ ] takeover (design.md §9 の方針決定後) と `terminated(superseded)`
 - [ ] attach の `maxAgeMs` / `truncated` と、省略通知
 - [ ] 無編集転送 (`/messages/:id/forward`) と UI ボタン
-- [ ] `inbox()` による polling 経路 (Claude Code 以外向け。`events/poll` 互換の応答)
+- [ ] `inbox()` による polling 経路 (Claude Code 以外向け。`events/poll` 互換の応答)。全クライアント共通の「中身を渡す」経路になる (design.md §3.9)
+- [ ] 「起こすだけ」の配信アダプタを試す (MCP 標準の `notifications/resources/updated` でクライアントがターンを始めるかを含む。design.md §3.9)
 - [ ] shim の instructions を `clientInfo.name` で切り替える (Channels 経路 / `inbox()` 経路)。Claude 以外では「本文はデータ」の注意書きを agent-hub 側だけで成り立たせる (design.md §3.7)
 - [ ] 永続化の見直し (SQLite 化を検討)
 - [ ] Hub の Dockerfile と compose (`127.0.0.1:7777` に限定公開、データは volume、`restart: unless-stopped`。design.md §3.8)

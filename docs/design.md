@@ -171,7 +171,7 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 - **shim の instructions はクライアントで切り替える**: 今の文面は `<channel>` で届く前提。MCP の `initialize` の `clientInfo.name` で、Channels 経路か `inbox()` 経路かの説明を選ぶ。
 - **「本文はデータ」の守りは agent-hub 側だけで成り立たせる**: Claude Code は channel 由来の内容に注意書きを自動で付けるが (§6.1c)、他のクライアントは付けない。`<hub-message>` の包みと instructions の文面だけで足りるように書く。
 - **role の説明は MCP の instructions で渡す**: `roles.json` の `description` を shim が instructions に差し込む (§3.5、P2)。Claude の起動フラグ (`--append-system-prompt-file`。`tools/dev/` の試験用) には頼らない。ただし instructions をどう使うかはクライアント次第で、未確認。
-- **配送の手段を変えても正本は Hub に置く**: Claude 向けの配送を公式 cross-session messaging に移す場合も (§8.3)、それは Claude 用の配信手段の 1 つとして扱い、Mailbox・role・購読・未読は Hub が持ち続ける。
+- **配送の手段を変えても正本は Hub に置く**: Claude 向けの配送を公式 cross-session messaging に移す場合も (§8.3)、それは Claude 用の配信アダプタの 1 つとして扱い (§3.9)、Mailbox・role・購読・未読は Hub が持ち続ける。
 
 未検証の最大の点は、**Claude 以外のエージェントがアイドル中に自分から `inbox()` を呼べるか** (§6.2-2)。起こす手段がなければ、当面は人間が一声かけて取りに行かせる運用になる。
 
@@ -187,6 +187,24 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 - トークンは起動時の自動生成ではなく `HUB_TOKEN` (`.env`) で固定し、ホスト側の shim/hooks と共有する。
 - Hub はホストのファイル (hook ペイロードの `transcript_path` など) を読まない。`Stop` の入力には `last_assistant_message` が含まれるので、最終応答の表示には足りる。どちらの実行形態でも同じ挙動になる。
 - Hub のコードは bind 先・ポート・トークン・データの保存先を環境変数で受け取るだけにし、どちらの形態でも動くようにする。
+
+### 3.9 配信アダプタ (起こす / 中身を渡す)
+
+エージェントへの配信を 2 つの働きに分け、クライアントや配送手段の違いは shim の**配信アダプタ**に閉じ込める。
+
+| 働き | 内容 | 手段 |
+|---|---|---|
+| **起こす (ping)** | 「未読がある」とだけ伝え、エージェントのターンを始めさせる | Channels、公式 cross-session messaging (§8)、MCP Events の `events/stream` (§7)、MCP 標準の `notifications/resources/updated` など。アダプタごとに違う |
+| **中身を渡す** | 未読の本文を送り手の属性と一緒に渡す | `inbox()` ツール (`<hub-message>` で包む)。全クライアント共通 |
+
+- **最低限の約束は「中身は必ず `inbox()` で取れる」だけ**にする。起こし方はアダプタの付け足しで、配送手段が増えても変わっても Hub と `inbox()` は変えない。
+- アダプタは 3 段階:
+  1. **中身ごと届ける**: 起こすのと同時に本文も渡す。今の Channels (`meta` + 本文)。通知 1 回で済む。
+  2. **起こすだけ**: 本文を載せない通知で起こし、エージェントに `inbox()` を呼ばせる。
+  3. **起こせない**: エージェントが自分で `inbox()` を呼ぶか、人間が一声かける。
+- **起こすだけの方式は「本文はデータ」の守りにも効く**: 外部由来の文章が通知としてエージェントに直接入らず、必ず `inbox()` の `<hub-message>` を通る。守る経路が 1 本になる (§3.7)。代わりに通知のたびにツール呼び出しが 1 回増えるので、Claude Code では 1 (Channels) を残し、ほかは 2 か 3 を使う。
+- 今は Channels のコードを [src/shim/channel.ts](../src/shim/channel.ts) に閉じ込めてあり、これが最初のアダプタに当たる。差し替え口 (インターフェース) は **2 つ目の配信手段を足すときに作る**。1 つしかないうちに抽象化は作らない。
+- 未確認: MCP 標準の `resources/subscribe` + `notifications/resources/updated` で未読を知らせたとき、クライアントがモデルのターンを始めるか。始めないクライアントが多いと見込まれる。
 
 ## 4. セキュリティ
 
@@ -227,6 +245,7 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 | Docker に載せるのは Hub だけ、P0 はホストで直接起動 | shim/hooks は構造上ホストで動く。常駐 (Windows での daemon 化) を compose の restart で解決できるが、開発中は反復速度を優先する |
 | P0 はフレームワークなし UI | 検証を最短にするため。必要になってから導入 |
 | 永続化は JSONL から始める | 実装が最小で、人間が `tail` で追える |
+| 配信を「起こす」と「中身を渡す」に分け、中身は常に `inbox()` で取れるようにする | 起こす手段 (Channels、cross-session messaging、MCP Events、標準の通知) は増えたり変わったりするが、中身の受け渡しを 1 本にしておけば Hub は変えずに済む。外部由来の本文が通る経路も 1 本になる (§3.9) |
 | Hub の語彙はベンダー中立にし、クライアント固有の差は shim と `/events` の取り込みで吸収する | 当面は Claude Code だけを使うが、他社のエージェントが後から同じ Hub に入れるようにする。Claude 固有の形式が Hub の保存形式や API に染み出すと、後から外せない (§3.7) |
 
 ## 6. 未確認事項 (実装前に必ず検証すること)
@@ -333,7 +352,7 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 
 ### 方針
 
-- **当面は Channels で配信し、語彙とデータモデルを SEP に寄せる。** Claude Code が対応したら、shim に `io.modelcontextprotocol/events` の push (`events/stream`) を追加して両方式を提供する。
+- **当面は Channels で配信し、語彙とデータモデルを SEP に寄せる。** Claude Code が対応したら、shim に `io.modelcontextprotocol/events` の push (`events/stream`) を配信アダプタの 1 つとして追加し (§3.9)、両方式を提供する。
 - 採用するもの:
 
 | SEP の概念 | agent-hub での扱い |
@@ -397,7 +416,7 @@ P0 の後に、同じ領域の公式機能と OSS を調べた。**セッショ�
 3. **Mailbox の削除と放置**: 長期間 attach のない Mailbox を自動で掃除するか、UI からの明示削除のみか。
 4. **`maxAgeMs` の既定値**: 指定なしの attach で何時間分まで流すか。
 5. **配送を公式 cross-session messaging に移すか**: Channels のまま続けるか、shim から自セッションの受信口へ投函する形に移すか (§8.3)。P1 に入る前に決める。
-   どちらでも Mailbox・role・未読の正本は Hub に置く (§3.7)。
+   どちらでも Mailbox・role・未読の正本は Hub に置く (§3.7)。移す場合は、配信アダプタの差し替え口をここで作る (§3.9)。
 
 (決定済み: ブラウザへのトークンの渡し方は cookie。§4)
 
