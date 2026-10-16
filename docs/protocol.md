@@ -10,7 +10,9 @@
   - shim / hooks: `Authorization: Bearer <token>`。
   - ブラウザ: cookie。`GET /?token=<token>` でトークンを検証し、`HttpOnly; SameSite=Strict` の cookie を設定して `/` にリダイレクトする。
     cookie 認証の状態変更リクエストは `Origin` が Hub 自身のオリジンでなければ 403。
-  - 認証なし・不正は 401。
+  - 認証なし・不正は 401。`Authorization` ヘッダーがあれば cookie より優先し、それだけで判定する。
+  - cookie の値はトークンそのものではなく、トークンから導いた値にする。
+- エラー応答: `{ "error": "<code>", "message"?: "…", "issues"?: [{ "path", "message" }] }`。
 - 時刻: ISO 8601 UTC 文字列。
 - id: 文字列 (ULID を推奨。時系列ソート可能)。
 - `seq`: Hub 全体で単調増加する整数。メッセージの順序と cursor に使う。
@@ -99,7 +101,10 @@
 }
 ```
 - `kind`: 必須。列挙外は 400。`reply` で `replyTo` がなければ 400。意味は design.md §3.6。
-- `from`: **Hub が付与する**。shim は Attachment から、UI は `user:browser` として Hub が決める。リクエストに含まれていても無視する。
+- `from`: **Hub が付与する**。リクエストに含まれていても無視する。決め方は次のとおり。
+  - cookie 認証 (ブラウザ): `user:browser`
+  - Bearer + `X-Hub-Attachment: <attachmentId>` (shim): その Attachment の Mailbox と role。存在しない Attachment は 404
+  - Bearer のみ (curl など): `user:cli`
 - `to.type = role`: その role を持つ全 Mailbox に配信する。該当する Mailbox がなければ 400 ではなく受理し、後からその role で attach した Mailbox の未読になる。
 - 無編集転送では `kind` も元のメッセージのまま運ぶ。
 
@@ -109,8 +114,8 @@
 | メソッド | パス | 内容 |
 |---|---|---|
 | POST | `/events` | Event を登録。登録後 UI に SSE で配信。HTTP hook の入力 JSON をそのまま受け付ける (ヘッダー `X-Hub-Mailbox` 任意)。応答は `{}` (hook の判断には関与しない) |
-| POST | `/messages` | Message を作成して配信 (宛先は `to`) |
-| GET | `/messages?after=<seq>&limit=<n>` | 履歴取得 |
+| POST | `/messages` | Message を作成して配信 (宛先は `to`)。body は `kind` / `to` / `body` / `replyTo?`。応答は 201 で作成した Message。`replyTo` が存在しなければ 400 |
+| GET | `/messages?after=<seq>&limit=<n>` | 履歴取得 (`limit` 既定 100、最大 1000)。応答 `{ "messages": [...], "lastSeq": <seq> }` |
 | GET | `/mailboxes` | Mailbox 一覧 (role・実効購読・未読数・Attachment の状態) |
 | GET | `/roles` | role 定義の一覧 |
 | DELETE | `/mailboxes/:name` | Mailbox を削除。接続中の Attachment には `terminated(mailbox_deleted)` を送る |
