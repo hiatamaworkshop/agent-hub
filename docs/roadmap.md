@@ -100,7 +100,7 @@
 ## 将来の検討 (未確定)
 
 - 配信ルール (人間確認なしの自動転送) の opt-in 設計
-- メッセージの形の宣言と Hub での検査、依頼ごとの SCOPE と `git diff` の突き合わせ (design.md §3.11、§9-6)
+- 依頼の台帳と整合点: メッセージの形の宣言と Hub での検査、依頼ごとの SCOPE と `git diff` の突き合わせ、受け入れの指紋と要再確認 (design.md §3.11、§9-6)
 - Channels の permission relay を使い、UI から tool 実行許可を出す (design.md §6.1)
 - 配信経路として plugin の monitor を Channels と比較する (design.md §6.2-3)
 - Claude Code が MCP Events に対応したら、shim に `io.modelcontextprotocol/events` (`events/stream`) を追加する (design.md §7)
