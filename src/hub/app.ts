@@ -5,11 +5,13 @@ import { bodyLimit } from 'hono/body-limit'
 import { HTTPException } from 'hono/http-exception'
 import { streamSSE } from 'hono/streaming'
 import { z } from 'zod'
-import { isValidName, nameSchema, postMessageSchema, type Sender } from '../shared/types.js'
+import { isValidName, nameSchema, postMessageSchema, type PostMessageInput, type Sender } from '../shared/types.js'
 import { Auth, COOKIE_NAME, type AuthEnv } from './auth.js'
 import { Hub, HubError } from './hub.js'
 import { pump } from './sse.js'
 import { SettingsError, SettingsStore } from './settings.js'
+import { FileError, FileStore, MAX_UPLOAD_BYTES, resolveMeta } from './files.js'
+import { readFile } from 'node:fs/promises'
 
 export interface AppOptions {
   hub: Hub
@@ -19,6 +21,8 @@ export interface AppOptions {
   heartbeatMs?: number
   // カスタムコマンドの設定。省略時は /settings を公開しない
   settings?: SettingsStore
+  // 画像ファイル。省略時は /files を公開しない
+  files?: FileStore
 }
 
 const BROWSER: Sender = { type: 'user', id: 'browser', role: null }
@@ -57,6 +61,27 @@ async function readJson(c: Context): Promise<unknown> {
   }
 }
 
+// 本文の上限。bodyLimit の 413 は HTTPException で投げられるので、この経路だけ応答にする (既存の onError は変えない)
+function limited(maxSize: number): MiddlewareHandler {
+  const limit = bodyLimit({ maxSize })
+  return async (c, next) => {
+    try {
+      return await limit(c, next)
+    } catch (e) {
+      if (e instanceof HTTPException) return e.getResponse()
+      throw e
+    }
+  }
+}
+
+// meta.files を Hub の記録から書き直す。空になった meta は保存しない
+async function withMeta(input: PostMessageInput, files: FileStore | undefined): Promise<PostMessageInput> {
+  if (input.meta === undefined) return input
+  const meta = await resolveMeta(input.meta, files)
+  const { meta: _raw, ...rest } = input
+  return Object.keys(meta).length > 0 ? { ...rest, meta } : rest
+}
+
 export function createApp(opts: AppOptions) {
   const { hub } = opts
   const auth = new Auth(opts.token)
@@ -66,6 +91,7 @@ export function createApp(opts: AppOptions) {
   app.onError((err, c) => {
     if (err instanceof HubError) return c.json({ error: err.code, message: err.message }, err.status)
     if (err instanceof SettingsError) return c.json({ error: err.code, message: err.message }, err.status)
+    if (err instanceof FileError) return c.json({ error: err.code, message: err.message }, err.status)
     console.error('[hub]', err)
     return c.json({ error: 'internal' }, 500)
   })
@@ -83,7 +109,8 @@ export function createApp(opts: AppOptions) {
     const html = await opts.uiHtml()
     if (html === null) return c.text('UI (public/index.html) がまだない', 404)
     // 外部リソースを読まない 1 枚の HTML なので、同一オリジン以外を禁じる
-    c.header('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+    // img-src: 添付画像のサムネイル (同一オリジンの /files と、貼り付け直後の blob:)
+    c.header('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
     c.header('X-Content-Type-Options', 'nosniff')
     return c.html(html)
   })
@@ -100,7 +127,7 @@ export function createApp(opts: AppOptions) {
     let from: Sender
     if (c.get('auth') === 'cookie') from = BROWSER
     else from = attachmentId ? hub.senderOf(attachmentId) : CLI
-    const m = hub.postMessage(parsed.data, from)
+    const m = hub.postMessage(await withMeta(parsed.data, opts.files), from)
     // recipients は応答にだけ付ける (Message には含めない)。0 件なら誰にも届いていない
     return c.json({ ...m, recipients: hub.recipientsOf(m) }, 201)
   })
@@ -184,17 +211,47 @@ export function createApp(opts: AppOptions) {
   if (opts.settings) {
     const settings = opts.settings
     app.get('/settings', async (c) => c.json(await settings.read()))
-    // bodyLimit の 413 は HTTPException で投げられるので、この経路だけ応答にする (既存の onError は変えない)
-    const limit = bodyLimit({ maxSize: 64 * 1024 })
-    const guarded: MiddlewareHandler = async (c, next) => {
+    app.put('/settings', limited(64 * 1024), async (c) => c.json(await settings.write(await readJson(c))))
+  }
+
+  if (opts.files) {
+    const files = opts.files
+    app.post('/files', limited(MAX_UPLOAD_BYTES), async (c) => {
+      const bytes = Buffer.from(await c.req.arrayBuffer())
+      const { record, created } = await files.save(bytes, { persistent: c.req.query('persistent') === '1' })
+      return c.json(record, created ? 201 : 200)
+    })
+    app.get('/files/:id', async (c) => {
+      const record = await files.get(c.req.param('id'))
+      if (!record) return c.json({ error: 'not_found' }, 404)
+      let bytes: Buffer
       try {
-        return await limit(c, next)
+        bytes = await readFile(files.imagePath(record))
       } catch (e) {
-        if (e instanceof HTTPException) return e.getResponse()
+        if ((e as NodeJS.ErrnoException).code === 'ENOENT') return c.json({ error: 'not_found' }, 404)
         throw e
       }
-    }
-    app.put('/settings', guarded, async (c) => c.json(await settings.write(await readJson(c))))
+      return c.body(new Uint8Array(bytes), 200, {
+        'content-type': record.mime,
+        'x-content-type-options': 'nosniff',
+        'content-security-policy': "sandbox; default-src 'none'",
+        'cache-control': 'private, max-age=3600',
+      })
+    })
+    app.get('/files/:id/meta', async (c) => {
+      const record = await files.get(c.req.param('id'))
+      return record ? c.json(record) : c.json({ error: 'not_found' }, 404)
+    })
+    app.patch('/files/:id', async (c) => {
+      const body = await readJson(c)
+      const ok =
+        typeof body === 'object' && body !== null && !Array.isArray(body) &&
+        Object.keys(body).every((k) => k === 'persistent') &&
+        typeof (body as { persistent?: unknown }).persistent === 'boolean'
+      if (!ok) return invalid(c, 'the body must be {"persistent": true} or {"persistent": false}')
+      const record = await files.setPersistent(c.req.param('id'), (body as { persistent: boolean }).persistent)
+      return record ? c.json(record) : c.json({ error: 'not_found' }, 404)
+    })
   }
 
   return app

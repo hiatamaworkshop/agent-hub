@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { after, before, describe, it } from 'node:test'
 import { serve, type ServerType } from '@hono/node-server'
@@ -6,7 +9,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { z } from 'zod'
 import type { Message } from '../shared/types.js'
+import sharp from 'sharp'
 import { createApp } from '../hub/app.js'
+import { FileStore, resolveMeta } from '../hub/files.js'
 import { Hub } from '../hub/hub.js'
 import { Store } from '../hub/store.js'
 import { mailboxFromFolder } from './config.js'
@@ -49,11 +54,15 @@ describe('shim と Hub の結合', () => {
   let hubUrl = ''
   let hub: Hub
   let client: Client
+  let files: FileStore
+  let tmpDir: string
   const notifications: { content: string; meta: Record<string, string> }[] = []
 
   before(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'shim-int-'))
+    files = new FileStore({ dir: join(tmpDir, 'hub-files') })
     hub = new Hub(new Store(), { disconnectGraceMs: 300 })
-    const app = createApp({ hub, token: TOKEN, uiHtml: async () => null })
+    const app = createApp({ hub, token: TOKEN, uiHtml: async () => null, files })
     await new Promise<void>((resolve) => {
       server = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 }, (info) => {
         hubUrl = `http://127.0.0.1:${info.port}`
@@ -68,7 +77,7 @@ describe('shim と Hub の結合', () => {
       }),
       (n) => void notifications.push(n.params),
     )
-    const env = { ...(process.env as Record<string, string>), HUB_URL: hubUrl, HUB_TOKEN: TOKEN, HUB_MAILBOX: 'test-mb', CLAUDE_CODE_SESSION_ID: 'sess-1' }
+    const env = { ...(process.env as Record<string, string>), HUB_URL: hubUrl, HUB_TOKEN: TOKEN, HUB_MAILBOX: 'test-mb', CLAUDE_CODE_SESSION_ID: 'sess-1', HUB_FILES_DIR: join(tmpDir, 'shim-files') }
     delete env.HUB_ROLE
     await client.connect(new StdioClientTransport({ command: process.execPath, args: ['--import', 'tsx', 'src/shim/main.ts'], cwd: ROOT, env, stderr: 'pipe' }))
   })
@@ -76,6 +85,7 @@ describe('shim と Hub の結合', () => {
   after(async () => {
     await client?.close().catch(() => undefined)
     await new Promise((r) => server?.close(r))
+    await rm(tmpDir, { recursive: true, force: true })
   })
 
   async function until<T>(f: () => T | undefined | Promise<T | undefined>, ms = 5000): Promise<T> {
@@ -152,6 +162,31 @@ describe('shim と Hub の結合', () => {
     assert.equal((await call('post_message', { kind: 'reply', body: 'x' })).isError, true)
     assert.equal((await call('post_message', { kind: 'notice', body: 'x', to: 'nowhere' })).isError, true)
     assert.equal((await call('subscribe', { topic: 'Bad Topic' })).isError, true)
+  })
+
+  it('meta.files の画像は取得され、通知の meta に path が入る (中身は Hub と一致)', async () => {
+    const { record } = await files.save(await sharp({ create: { width: 900, height: 600, channels: 3, background: { r: 10, g: 90, b: 200 } } }).png().toBuffer())
+    const meta = await resolveMeta({ files: [{ id: record.id }] }, files)
+    const m = hub.postMessage({ kind: 'request', to: { type: 'topic', id: 'user.message' }, body: 'see the image', meta }, { type: 'user', id: 'browser', role: null })
+    const n = await until(() => notifications.find((x) => x.meta.id === m.id))
+    const got = JSON.parse(n.meta.meta!) as { files: { id: string; path?: string; error?: string; width: number }[] }
+    const f = got.files[0]!
+    assert.equal(f.id, record.id)
+    assert.equal(f.error, undefined)
+    // 区切りは / に統一し、ファイル名は id と ext だけ
+    assert.equal(f.path, `${join(tmpDir, 'shim-files').replace(/\\/g, '/')}/test-mb/${record.id}.png`)
+    assert.ok(!f.path!.includes('\\'), 'パスは / 区切り')
+    assert.deepEqual(await readFile(f.path!), await readFile(files.imagePath(record)))
+    assert.equal((await sharp(await readFile(f.path!)).metadata()).width, 900)
+    assert.equal(f.width, 900)
+  })
+
+  it('期限切れ (Hub に画像がない) は error: "expired" で届き、本文は届く', async () => {
+    const gone = `f_${'e'.repeat(32)}`
+    const m = hub.postMessage({ kind: 'request', to: { type: 'topic', id: 'user.message' }, body: 'old image', meta: { files: [{ id: gone }] } }, { type: 'user', id: 'browser', role: null })
+    const n = await until(() => notifications.find((x) => x.meta.id === m.id))
+    assert.equal(n.content, 'old image')
+    assert.deepEqual(JSON.parse(n.meta.meta!), { files: [{ id: gone, error: 'expired' }] })
   })
 
   it('shim が終了すると (kill でも) detach し、Mailbox は残る', async () => {

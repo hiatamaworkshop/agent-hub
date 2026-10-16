@@ -22,6 +22,12 @@ if ($Model) { $claudeArgs += @('--model', $Model) }
 # JSON 文字列ではなくファイルで渡す (claude.cmd へ渡す引数の " を PowerShell が落とすことがある)
 $settings = Join-Path $root "tools/dev/settings/$Role.json"
 if (Test-Path $settings) { $claudeArgs += @('--settings', $settings) }
+# 添付画像の保存先 (shim の既定は OS の一時フォルダの agent-hub。HUB_FILES_DIR で変えていればそれ) を読めるようにする。
+# agent は Read でその画像を開くため。--add-dir は可変長の引数なので、最後に置く
+$filesDir = if ($env:HUB_FILES_DIR) { $env:HUB_FILES_DIR } else { Join-Path $env:TEMP 'agent-hub' }
+# 存在しないディレクトリを渡したときの挙動は未確認なので、先に作っておく
+New-Item -ItemType Directory -Force -Path $filesDir | Out-Null
+$claudeArgs += @('--add-dir', $filesDir)
 
 # 起動したシェルに HUB_ROLE / HUB_MAILBOX を残さない
 $saved = @{ HUB_ROLE = $env:HUB_ROLE; HUB_MAILBOX = $env:HUB_MAILBOX }

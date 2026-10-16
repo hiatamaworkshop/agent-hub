@@ -51,9 +51,15 @@ export interface Message {
   body: string
   replyTo?: string
   forwardedFrom?: string
+  // 送り手が付ける任意の JSON。Hub が解釈するのは meta.files だけで、ほかのキーはそのまま通す (protocol.md §2)
+  meta?: Record<string, unknown>
 }
 
 // POST /messages と post_message の入力。from / id / seq などは含まれていても捨てる (z.object は未知キーを落とす)
+// meta のキーとサイズ (保存・配信の前に検証する)
+export const META_KEY_RE = /^[a-z][a-z0-9_]{0,31}$/
+export const META_MAX_BYTES = 8 * 1024
+
 export const postMessageSchema = z
   .object({
     kind: z.enum(MESSAGE_KINDS),
@@ -61,6 +67,15 @@ export const postMessageSchema = z
     to: addressSchema.optional(),
     body: z.string().min(1),
     replyTo: z.string().min(1).optional(),
+    meta: z.record(z.string(), z.unknown()).optional(),
+  })
+  .refine((m) => m.meta === undefined || Object.keys(m.meta).every((k) => META_KEY_RE.test(k)), {
+    message: `meta keys must match ${META_KEY_RE}`,
+    path: ['meta'],
+  })
+  .refine((m) => m.meta === undefined || new TextEncoder().encode(JSON.stringify(m.meta)).length <= META_MAX_BYTES, {
+    message: `meta must be ${META_MAX_BYTES / 1024} KB or smaller when serialized`,
+    path: ['meta'],
   })
   .refine((m) => m.kind !== 'reply' || m.replyTo !== undefined, {
     message: 'kind=reply では replyTo が必須',

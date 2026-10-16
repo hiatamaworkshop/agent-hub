@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { ADDRESS_TYPES, MESSAGE_KINDS, type Address, type Mailbox, type Message } from '../shared/types.js'
 import { ALWAYS_LOAD_META, CHANNEL_CAPABILITY, channelInstructions, pushToChannel } from './channel.js'
 import { loadConfig } from './config.js'
+import { resolveFiles, sweepFiles } from './files.js'
 import { HubClient } from './hub-client.js'
 
 const log = (msg: string) => process.stderr.write(`[agent-hub shim] ${msg}\n`)
@@ -19,7 +20,9 @@ const server = new Server(
   { capabilities: { experimental: CHANNEL_CAPABILITY, tools: {} }, instructions: channelInstructions(cfg.mailbox, cfg.role) },
 )
 
-const hub = new HubClient(cfg, (m) => pushToChannel(server, m, cfg.mailbox), log)
+// 添付画像は配信の直前に取得し、path / error を足す (元のメッセージは書き換えない)
+const fileCtx = { hubUrl: cfg.hubUrl, token: cfg.token, baseDir: cfg.filesDir, mailbox: cfg.mailbox, log }
+const hub = new HubClient(cfg, async (m) => pushToChannel(server, await resolveFiles(m, fileCtx), cfg.mailbox), log)
 
 // "mailbox:rev-a" のような表記 (channel の from / to と同じ) を Address にする
 function parseAddress(s: string): Address {
@@ -147,6 +150,9 @@ server.onclose = () => void shutdown()
 process.stdin.on('end', () => void shutdown())
 process.on('SIGINT', () => void shutdown())
 process.on('SIGTERM', () => void shutdown())
+
+// 古い添付画像の掃除は起動時だけ。失敗しても起動は妨げない
+void sweepFiles(cfg.filesDir).then((n) => { if (n > 0) log(`expired files removed: ${n}`) })
 
 await server.connect(new StdioServerTransport())
 log(`started mailbox=${cfg.mailbox}${cfg.role ? ` role=${cfg.role}` : ''} hub=${cfg.hubUrl}`)

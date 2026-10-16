@@ -62,9 +62,25 @@
   .compose { display: flex; gap: 8px; align-items: flex-end; }
   .compose textarea { flex: 1 1 auto; min-width: 0; }
   .compose button[type=submit] { flex: none; }
-  #err:empty, #warn:empty, #hint:empty { display: none; }
+  #err:empty, #warn:empty, #hint:empty, #status:empty { display: none; }
+  #status { color: var(--reply); font-size: 12px; }
   /* 1 段目の右端に Commands。ヒントは 1 行に収め、長いときは省略する */
-  #cmds { margin-left: auto; }
+  #attach { margin-left: auto; }
+  /* 添付画像のサムネイル (本文欄の上)。添付がなければ高さを取らない */
+  #tray { display: flex; flex-wrap: wrap; gap: 8px; }
+  #tray:empty { display: none; }
+  .thumb { position: relative; }
+  .thumb img { display: block; height: 40px; width: auto; max-width: 96px; object-fit: cover; border: 1px solid var(--line); border-radius: 4px; }
+  .thumb button { position: absolute; top: -6px; right: -6px; padding: 0 5px; line-height: 16px; font-size: 11px; border-radius: 999px; }
+  /* スレッド内の画像 (保存された正規化後の画像) */
+  .files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  /* 寸法は HTML の width / height 属性で入れ、CSS は比率を保って縮める */
+  .files img { display: block; width: auto; height: auto; max-height: 180px; max-width: 100%; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
+  .file-missing { font-size: 12px; color: var(--muted); font-style: italic; }
+  /* 自分が送ったメッセージを一瞬目立たせる (動きを減らす設定では動かず、枠だけ出す) */
+  @keyframes just-sent { from { box-shadow: 0 0 0 3px var(--accent); } to { box-shadow: 0 0 0 3px transparent; } }
+  .msg.flash { animation: just-sent 1.5s ease-out; }
+  @media (prefers-reduced-motion: reduce) { .msg.flash { animation: none; box-shadow: 0 0 0 2px var(--accent); } }
   button:disabled { opacity: .5; cursor: not-allowed; }
   #hint { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: min(460px, 100%); }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -128,12 +144,16 @@
         <input id="topic" placeholder="Topic name" autocomplete="off" hidden>
         <span id="replyInfo"></span>
         <span id="hint"></span>
+        <span id="status"></span>
         <span id="err"></span><span id="warn"></span>
+        <button type="button" id="attach" class="linkbtn" title="Attach images (PNG, JPEG, GIF, WebP)">Attach</button>
+        <input type="file" id="filePick" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
         <button type="button" id="cmds" class="linkbtn" title="Define custom commands for the message box">Commands</button>
       </div>
+      <div id="tray"></div>
       <div class="compose">
         <textarea id="body" placeholder="Message (Ctrl+Enter to send)"></textarea>
-        <button type="submit">Send</button>
+        <button type="submit" id="send">Send</button>
       </div>
     </form>
   </section>
@@ -187,6 +207,187 @@ function colorIndex(key) {
   return 3 + ((h >>> 0) % 5)
 }
 
+// 画像の添付。送るまでは本文欄の上のサムネイルに置き、送信時に POST /files で保存して id を meta.files に入れる
+const FILE_ID_RE = /^f_[0-9a-f]{32}$/
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024
+const MAX_IMAGES = 4
+let attachments = [] // { file, url } 送るまでブラウザに置く
+let sending = false
+
+function formatBytes(n) {
+  return n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// 送信済みの画像 (保存された正規化後の画像)。読めないとき (期限切れなど) は文字で示す
+// 末尾に追従しているか。ユーザーが上へスクロールすると外れ、末尾へ戻ると戻る (scroll 以外では変えない)
+let pinned = true
+$('list').addEventListener('scroll', () => {
+  const l = $('list')
+  pinned = l.scrollHeight - l.scrollTop - l.clientHeight < 40
+})
+
+// 画像の読み込みでメッセージが伸びたとき、末尾に追従中なら末尾へ戻す
+function keepBottom() {
+  if (pinned) $('list').scrollTop = $('list').scrollHeight
+}
+
+// 自分の送信: 位置にかかわらず末尾へ移し、カードを一瞬目立たせる
+function showOwn(m) {
+  const list = $('list')
+  pinned = true
+  const box = list.querySelector(`.msg[data-seq="${m.seq}"]`)
+  if (box) {
+    box.classList.remove('flash')
+    void box.offsetWidth
+    box.classList.add('flash')
+    setTimeout(() => box.classList.remove('flash'), 1600)
+  }
+  list.scrollTop = list.scrollHeight
+}
+
+let statusTimer = null
+// 送信できたことを 4 秒だけ表示する (次の操作やエラーで直ちに消す)
+function setStatus(text) {
+  clearTimeout(statusTimer)
+  $('status').textContent = text
+  if (text) statusTimer = setTimeout(() => { $('status').textContent = '' }, 4000)
+}
+
+// Send ボタンの表示。送信中は無効にして、今の段階をラベルで示す
+function setSendLabel(label) {
+  const b = $('send')
+  b.textContent = label
+  b.disabled = label !== 'Send'
+}
+
+function renderFiles(box, meta) {
+  const files = meta && Array.isArray(meta.files) ? meta.files : []
+  const row = el('div', 'files')
+  for (const f of files) {
+    if (!f || typeof f.id !== 'string' || !FILE_ID_RE.test(f.id)) continue
+    const link = document.createElement('a')
+    link.href = `/files/${f.id}`
+    link.target = '_blank'
+    link.rel = 'noopener'
+    const img = document.createElement('img')
+    img.loading = 'lazy'
+    img.alt = 'attached image'
+    const dims = Number.isFinite(f.width) && Number.isFinite(f.height) ? `${f.width}×${f.height}` : ''
+    const size = Number.isFinite(f.size) ? formatBytes(f.size) : ''
+    img.title = [dims, size].filter(Boolean).join(' · ')
+    // 寸法を先に入れて、読み込み前から領域を確保する (読み込みでメッセージが伸びて末尾がずれるのを防ぐ)
+    if (Number.isInteger(f.width) && Number.isInteger(f.height) && f.width > 0 && f.height > 0) {
+      img.width = f.width
+      img.height = f.height
+    }
+    img.addEventListener('load', keepBottom)
+    img.onerror = () => link.replaceWith(el('span', 'file-missing', 'Image expired or unavailable'))
+    img.src = `/files/${f.id}`
+    link.append(img)
+    row.append(link)
+  }
+  if (row.childElementCount) box.append(row)
+}
+
+function setErr(text) {
+  setStatus('')
+  $('err').textContent = text
+}
+
+function addFiles(list) {
+  for (const file of [...list]) {
+    if (!IMAGE_TYPES.includes(file.type)) {
+      setErr('Only PNG, JPEG, GIF and WebP images can be attached.')
+      continue
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setErr('Images must be 20 MB or smaller.')
+      continue
+    }
+    if (attachments.length >= MAX_IMAGES) {
+      setErr('At most 4 images per message.')
+      continue
+    }
+    attachments.push({ file, url: URL.createObjectURL(file) })
+  }
+  renderTray()
+}
+
+function renderTray() {
+  const tray = $('tray')
+  tray.textContent = ''
+  attachments.forEach((a, i) => {
+    const wrap = el('div', 'thumb')
+    const img = document.createElement('img')
+    img.src = a.url
+    img.alt = a.file.name || 'image'
+    const remove = el('button', '', '×')
+    remove.type = 'button'
+    remove.title = 'Remove'
+    remove.setAttribute('aria-label', 'Remove image')
+    remove.onclick = () => {
+      URL.revokeObjectURL(a.url)
+      attachments.splice(i, 1)
+      renderTray()
+    }
+    wrap.append(img, remove)
+    tray.append(wrap)
+  })
+}
+
+function clearAttachments() {
+  for (const a of attachments) URL.revokeObjectURL(a.url)
+  attachments = []
+  renderTray()
+}
+
+// 画像を 1 枚保存する。古い Hub (POST /files が 404) は、送らずに再起動を促す
+async function uploadImage(file) {
+  const res = await fetch('/files', { method: 'POST', headers: { 'content-type': file.type }, body: file })
+  if (res.status === 401) { document.body.classList.add('noauth'); throw new Error('unauthorized') }
+  if (res.status === 404) throw new Error('Restart the Hub to attach images.')
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.message || json.error || res.status)
+  return json
+}
+
+// 1 枚でも失敗したら例外を投げ、呼び出し側は本文と添付を残す
+async function uploadAll() {
+  const ids = []
+  for (const a of attachments) {
+    const rec = await uploadImage(a.file)
+    if (!ids.includes(rec.id)) ids.push(rec.id)
+  }
+  return ids.map((id) => ({ id }))
+}
+
+// 貼り付け (クリップボードの画像)
+$('body').addEventListener('paste', (e) => {
+  const files = [...((e.clipboardData && e.clipboardData.items) || [])]
+    .filter((i) => i.kind === 'file' && i.type.startsWith('image/'))
+    .map((i) => i.getAsFile())
+  if (files.length === 0) return
+  e.preventDefault()
+  addFiles(files)
+})
+
+// ドラッグ&ドロップ (コンポーザーの上へ)。画像以外のファイルは扱わない
+$('form').addEventListener('dragover', (e) => {
+  if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault()
+})
+$('form').addEventListener('drop', (e) => {
+  if (!e.dataTransfer || e.dataTransfer.files.length === 0) return
+  e.preventDefault()
+  addFiles(e.dataTransfer.files)
+})
+
+$('attach').onclick = () => $('filePick').click()
+$('filePick').onchange = () => {
+  addFiles($('filePick').files)
+  $('filePick').value = ''
+}
+
 function render(m) {
   if (seen.has(m.id)) return
   seen.set(m.id, m)
@@ -211,8 +412,10 @@ function render(m) {
   actions.append(btn)
   head.append(actions)
   box.append(head, el('div', 'body', m.body))
+  renderFiles(box, m.meta)
   list.append(box)
-  if (atBottom) list.scrollTop = list.scrollHeight
+  if (atBottom) { pinned = true; list.scrollTop = list.scrollHeight }
+  return box
 }
 
 // 畳み: 古い分は DOM から外して folded に退避する (seen からは消さない。重複除去と ↩ #seq の解決に使うため)。
@@ -358,28 +561,42 @@ $('kind').onchange = updateReplyInfo
 
 $('form').onsubmit = async (e) => {
   e.preventDefault()
+  setStatus('')
   $('err').textContent = ''
   $('warn').textContent = ''
   const kind = $('kind').value
   const body = $('body').value
-  if (!body.trim()) return
+  if (!body.trim() && attachments.length === 0) return
   if (kind === 'reply' && !replyTo) { $('err').textContent = 'For a reply, start with the "Reply" button on a message.'; return }
-  const msg = { kind, body: expandBody(body), to: selectedTo() }
-  if (kind === 'reply') msg.replyTo = replyTo.id
+  if (sending) return
+  sending = true
+  setSendLabel(attachments.length ? 'Uploading…' : 'Sending…')
   try {
+    // 添付は先に保存する。1 枚でも失敗したら送らず、本文と添付を残す
+    const meta = attachments.length ? { files: await uploadAll() } : undefined
+    setSendLabel('Sending…')
+    const msg = { kind, body: body.trim() ? expandBody(body) : '[image]', to: selectedTo() }
+    if (meta) msg.meta = meta
+    if (kind === 'reply') msg.replyTo = replyTo.id
     const { recipients, ...m } = await api('/messages', { method: 'POST', body: JSON.stringify(msg) })
     render(m)
+    showOwn(m)
+    setStatus(`Sent #${m.seq}`)
     // user 宛ては Mailbox を通らず UI に出るだけなので、0 件でよい。
     // UI は Hub を再起動しなくても差し替わるので、recipients を返さない古い Hub でも送信は成功扱いにする
     if (m.to.type !== 'user' && Array.isArray(recipients) && recipients.length === 0) {
       $('warn').textContent = `No Mailbox will receive ${addr(m.to)} (#${m.seq} was recorded)`
     }
     $('body').value = ''
+    clearAttachments()
     // プログラムからの値変更では input イベントが出ないので、ヒントを明示的に更新する
     updateHint()
     if (kind === 'reply') { replyTo = null; $('kind').value = 'request'; updateReplyInfo() }
   } catch (err) {
     $('err').textContent = String(err.message || err)
+  } finally {
+    sending = false
+    setSendLabel('Send')
   }
 }
 

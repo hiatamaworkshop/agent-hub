@@ -98,7 +98,8 @@
   "to": { "type": "mailbox | role | topic | user", "id": "…" },
   "body": "本文 (文字列)",
   "replyTo": "m_… (kind=reply では必須)",
-  "forwardedFrom": "m_… (無編集転送の場合)"
+  "forwardedFrom": "m_… (無編集転送の場合)",
+  "meta": { "files": [{ "id": "f_…", "mime": "image/png", "size": 27068, "width": 1568, "height": 784 }] }
 }
 ```
 - `kind`: 必須。列挙外は 400。`reply` で `replyTo` がなければ 400。意味は design.md §3.6。
@@ -111,6 +112,8 @@
   `id` は Hub が付与する送り手と同じ `browser` / `cli` に限り、それ以外は 400 (`mailbox` のつもりで種類を誤選択した送信を受理しないため)。
 - `to.type = role`: その role を持つ全 Mailbox に配信する。該当する Mailbox がなければ 400 ではなく受理し、後からその role で attach した Mailbox の未読になる。
 - 無編集転送では `kind` も元のメッセージのまま運ぶ。
+- `meta`: 任意。送り手が付ける JSON オブジェクト。直列化して 8KB まで。キーは `^[a-z][a-z0-9_]{0,31}$`。Hub が解釈するのは既知のキー `files` だけで、ほかのキーは触らずに通す。空の `{}` は保存しない。
+- `meta.files`: `[{ "id": "f_…" }]` で送る (4 件まで。重複は 1 つにまとめる)。Hub は各 id が存在するかを確かめ (なければ 400、message に id)、保存するときは記録から `{ id, mime, size, width, height }` に書き直す。送り手が付けた mime や size は捨てる。
 
 ## 3. Hub の HTTP API
 
@@ -132,6 +135,13 @@
 | POST | `/messages/:id/forward` | 無編集転送。body: `{ "to": {...} }` |
 | GET | `/settings` | カスタムコマンドの設定。`{ "version": 1, "commands": [{ "name", "text" }] }`。ファイルがなければ空。毎回ファイルから読む。壊れていれば 500 `settings_invalid` (中身は返さない) |
 | PUT | `/settings` | 設定を保存。body `{ "commands": [...] }` を検証し、保存後の設定を返す。違反は 400 (英語の `message`)。本文上限 64KB。ファイルの commands 以外のキーは保持する。壊れていたファイルは `settings.json.bak` に退避してから書く。保存先は `HUB_DATA_DIR/settings.json`。name は `^[a-z0-9][a-z0-9_-]{0,31}$`、重複不可、最大 100 個、text は 1〜8000 文字 |
+| POST | `/files` | 画像を 1 枚保存する。本文は生のバイト列で、`Content-Type` は使わずデコードして判定する。PNG / JPEG / GIF / WebP のみ (SVG やデコードできないものは 400)。長辺 `HUB_FILE_MAX_EDGE` (既定 1568) に収まるよう縮小し、EXIF を落として再エンコードする。20MB を超えると 413。`?persistent=1` で持続扱いにする。応答は記録 (新規は 201、同じ内容の再送は既存の記録を 200 で返す) |
+| GET | `/files/:id` | 保存した画像本体。`Content-Type` は記録の mime、`X-Content-Type-Options: nosniff`、`Content-Security-Policy: sandbox; default-src 'none'`、`Cache-Control: private, max-age=3600`。なければ 404 |
+| GET | `/files/:id/meta` | 記録。`{ id, mime, size, width, height, persistent, createdAt, resized, original: { mime, size, width, height } }`。なければ 404 |
+| PATCH | `/files/:id` | body `{ "persistent": true }` または `false` で持続扱いを切り替える。未知のキーや型違いは 400 |
+
+- `id` は元の入力バイト列の sha256 の先頭 32 桁 (`f_` + 32 桁の 16 進)。不正な形式は 404。
+- 持続でない画像は `HUB_FILE_TTL_DAYS` (既定 7 日。0 なら掃除しない) を過ぎると消す。起動時と 1 時間ごとに行い、消した件数をログに出す。消えた画像を参照するメッセージは履歴に残るので、表示側は 404 を「期限切れ」として扱う。
 
 ### shim 向け
 | メソッド | パス | 内容 |
@@ -243,6 +253,8 @@ P0 で実装するのは `post_message` / `subscribe` / `unsubscribe` / `whoami`
 |---|---|---|
 | Channels (Claude Code) | `meta` (外側の `<channel>` タグの属性になる) | 本文そのまま (`</channel>` だけエスケープ) |
 | `inbox()` (polling) | `<hub-message>` タグの属性 | `<hub-message>` の中 (`</hub-message>` をエスケープ) |
+
+`meta` を持つメッセージは、どちらの経路でも属性 `meta` (JSON 文字列) を 1 つ足す。Hub 付与の属性とは名前が重ならないので、送り手が偽れない。shim は配信の直前に `meta.files` の各画像を取得し、配信用のコピーに `path` (ローカルのパス。区切りは `/`) か `error` を足す。Hub の値は書き換えない。`error` は `expired` (Hub で期限切れ) か `fetch_failed` (取得できなかった) で、メッセージは落とさず届ける。想定外の形の `meta` は触らずに通す。取得と保存の詳細は design.md §3.10。
 
 ### 6.1 Channels
 

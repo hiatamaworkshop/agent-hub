@@ -1,5 +1,6 @@
 // shim の設定。shim は状態を持たないので、ここで決まるのは接続先と名乗る名前だけ
 import { existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isValidName } from '../shared/types.js'
@@ -13,6 +14,8 @@ export interface ShimConfig {
   role: string | null
   sessionId: string | undefined
   cwd: string
+  // 添付画像の保存先のルート (既定は OS の一時フォルダの agent-hub。その下に <mailbox>/ を作る)
+  filesDir: string
 }
 
 // フォルダ名を Mailbox 名の規則 (protocol.md §1) に寄せる。寄せられなければ main
@@ -45,5 +48,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ShimConfig {
     // 公式資料には記載がないが、stdio サーバーの環境に設定され hook の session_id と一致する (design.md §6.1c)
     sessionId: env.CLAUDE_CODE_SESSION_ID || undefined,
     cwd,
+    filesDir: env.HUB_FILES_DIR || join(tmpdir(), 'agent-hub'),
   }
 }

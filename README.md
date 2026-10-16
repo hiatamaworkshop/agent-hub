@@ -77,6 +77,23 @@ claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels s
 
 この機能は Hub 側の API を使うので、**既に起動している Hub は再起動しないと Commands が無効のまま** (古い Hub では Commands が灰色になる)。
 
+### 画像を貼る
+
+本文欄に画像を貼る (Ctrl+V)、画像をコンポーザーにドラッグする、または **Attach** で選ぶ。PNG・JPEG・GIF・WebP を 1 メッセージに 4 枚まで、1 枚 20MB まで。
+
+- 送ると、Hub が長辺 1568px に縮小して `HUB_DATA_DIR/files/` に保存し、スレッドに画像を出す。agent に届くのも同じ画像で、位置情報などの metadata は落ちる。GIF / WebP は 1 フレーム目だけ。本文が空なら `[image]` を送る。
+- 持続でない画像は `HUB_FILE_TTL_DAYS` (既定 7 日) で消える。消えた画像は「Image expired or unavailable」と表示される。
+- 環境変数は `HUB_FILE_MAX_EDGE` (既定 1568) と `HUB_FILE_TTL_DAYS` (既定 7、0 で掃除しない)。`.env.example` を参照。
+- この機能も Hub 側の API を使うので、**既に起動している Hub は再起動が必要** (古い Hub では Attach で送らずに再起動を促す)。
+
+#### agent が画像を見る
+
+shim は届いた画像を OS の一時フォルダの `agent-hub/<Mailbox 名>/` に保存し、通知の `meta` 属性の `files[].path` にパスを入れる。agent はそのパスを `Read` で開いて画像を見る。保存に失敗したものは `error` (`expired` は期限切れ、`fetch_failed` は取得失敗) が付く。
+
+- 保存先は `HUB_FILES_DIR` で変えられる (その下に Mailbox 名のフォルダを作る)。
+- 起動時に 24 時間より古い画像を消す。
+- 保存先は作業フォルダの外なので、`Read` が許可を求めることがある。`tools/dev/start-agent.ps1` は起動時に `--add-dir` で保存先を許可する (`HUB_FILES_DIR` を設定していればそのフォルダ)。手で `claude` を起動するなら、`claude --add-dir "<保存先>"` を付ける。
+
 ### 購読は Mailbox ごとに 1 回でよい
 
 - 購読はセッションではなく **Mailbox に保存される** (`data/hub.jsonl`)。Hub の再起動や、新しいセッションが同じ Mailbox に attach したときも残るので、起動のたびに頼み直さなくてよい。
