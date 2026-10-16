@@ -1,0 +1,24 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# 実トークン・環境設定
+.env
+.env.*
+!.env.example
+
+# ランタイムのログ・データ (イベントログ、未読キュー、SQLite など)
+logs/
+data/
+*.log
+*.sqlite
+*.sqlite-journal
+
+# エディタ・OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code のローカル設定
+.claude/settings.local.json
