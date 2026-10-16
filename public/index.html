@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,51 +7,68 @@
 <style>
   :root {
     --bg: #f7f7f5; --panel: #ffffff; --fg: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc;
-    --accent: #2f5fd0; --request: #2f5fd0; --reply: #1f8a4c; --notice: #8a6d1f; --warn: #b3261e;
+    --accent: #2f5fd0; --reply: #1f8a4c; --warn: #b3261e;
+    /* 送り手の色 (c0〜c7)。チップの文字色は --pfg (全色で 4.5:1 以上) */
+    --p0: #2f5fd0; --p1: #b45309; --p2: #15803d; --p3: #7e22ce; --p4: #0f766e; --p5: #be185d; --p6: #854d0e; --p7: #475569; --pfg: #ffffff;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #161615; --panel: #1f1f1d; --fg: #ecece8; --muted: #9a9a93; --line: #34342f;
-      --accent: #7aa2ff; --request: #7aa2ff; --reply: #5fcf8e; --notice: #e0c060; --warn: #ff8a80;
+      --accent: #7aa2ff; --reply: #5fcf8e; --warn: #ff8a80;
+      --p0: #7aa2ff; --p1: #f0a050; --p2: #5fcf8e; --p3: #c4a1ff; --p4: #5fd0c4; --p5: #f489b8; --p6: #e0c060; --p7: #aab4c4; --pfg: #161615;
     }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; }
-  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  /* 画面は固定し、スクロールはスレッド (#list) とサイドバー (aside) だけ */
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  header { flex: none; display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
   header h1 { font-size: 15px; margin: 0; }
   #conn { font-size: 12px; color: var(--muted); }
   #conn.ok::before { content: "● "; color: var(--reply); }
   #conn.ng::before { content: "● "; color: var(--warn); }
-  main { display: grid; grid-template-columns: 260px 1fr; height: calc(100vh - 45px); }
-  aside { border-right: 1px solid var(--line); overflow: auto; padding: 12px; background: var(--panel); }
+  /* grid の行は中身の高さに伸ばさず、残りの高さを行に割り当てる (min-height: 0 でスクロールさせる) */
+  main { flex: 1; min-height: 0; display: grid; grid-template-columns: 260px 1fr; grid-template-rows: minmax(0, 1fr); }
+  aside { min-height: 0; border-right: 1px solid var(--line); overflow: auto; padding: 12px; background: var(--panel); }
   aside h2 { font-size: 12px; color: var(--muted); margin: 0 0 8px; text-transform: uppercase; letter-spacing: .04em; }
-  .mb { padding: 8px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 8px; cursor: pointer; }
-  .mb:hover { border-color: var(--accent); }
+  .mb { padding: 8px; border: 1px solid var(--line); border-left: 4px solid var(--pc, var(--line)); border-radius: 6px; margin-bottom: 8px; cursor: pointer; }
+  .mb:hover { border-color: var(--accent); border-left-color: var(--pc, var(--accent)); }
   .mb .name { font-weight: 600; font-family: var(--mono); }
   .mb .meta { font-size: 12px; color: var(--muted); }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
   .dot.on { background: var(--reply); }
-  section { display: flex; flex-direction: column; min-width: 0; }
-  #list { flex: 1; overflow: auto; padding: 12px 16px; }
-  .msg { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; }
-  .msg.request { border-left-color: var(--request); }
-  .msg.reply { border-left-color: var(--reply); }
-  .msg.notice { border-left-color: var(--notice); }
+  section { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  /* スレッド操作バー (上)。今後の機能もここに足す。折り返して収まる */
+  .foldbar { flex: none; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 16px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: 12px; color: var(--muted); }
+  .foldbar label { display: flex; gap: 6px; align-items: center; }
+  input#keep { width: 72px; font-family: var(--mono); }
+  #list { flex: 1 1 0; min-height: 0; overflow: auto; padding: 12px 16px; }
+  .stub { font-size: 12px; color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; }
+  .msg { background: color-mix(in srgb, var(--pc, var(--line)) 6%, var(--panel)); border: 1px solid var(--line); border-left: 4px solid var(--pc, var(--line)); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; }
+  /* 送り手の色: 縁取りと、ごく薄い地色。送り手の名前はチップの文字で読める */
+  .c0 { --pc: var(--p0); } .c1 { --pc: var(--p1); } .c2 { --pc: var(--p2); } .c3 { --pc: var(--p3); }
+  .c4 { --pc: var(--p4); } .c5 { --pc: var(--p5); } .c6 { --pc: var(--p6); } .c7 { --pc: var(--p7); }
+  .chip { display: inline-block; max-width: 100%; padding: 0 8px; border-radius: 999px; background: var(--pc); color: var(--pfg); font-size: 12px; font-weight: 600; line-height: 20px; overflow-wrap: anywhere; }
   .msg .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 12px; color: var(--muted); }
   .msg .head .addr { font-family: var(--mono); color: var(--fg); }
-  .kind { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; border: 1px solid currentColor; }
-  .kind.request { color: var(--request); } .kind.reply { color: var(--reply); } .kind.notice { color: var(--notice); }
+  /* kind は枠線だけのバッジ。送り手の色とまぎれないよう色は付けず、文字で示す */
+  .kind { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; border: 1px solid var(--muted); color: var(--muted); }
   .msg .body { white-space: pre-wrap; word-break: break-word; margin-top: 4px; }
   .msg .actions { margin-left: auto; }
   .linkbtn { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font: inherit; }
-  form { border-top: 1px solid var(--line); background: var(--panel); padding: 10px 16px; display: grid; gap: 8px; }
+  /* コンポーザー (下)。送る操作だけを置く */
+  form { flex: none; border-top: 1px solid var(--line); background: var(--panel); padding: 8px 16px; display: grid; gap: 6px; }
+  /* 2 段目: 本文欄と Send を横並び。Send は本文欄の下端にそろえる */
+  .compose { display: flex; gap: 8px; align-items: flex-end; }
+  .compose textarea { flex: 1 1 auto; min-width: 0; }
+  .compose button[type=submit] { flex: none; }
+  #err:empty, #warn:empty { display: none; }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   select, input, textarea, button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
   select#to { max-width: 320px; font-family: var(--mono); }
   input#topic { width: 200px; font-family: var(--mono); }
   input#topic[hidden] { display: none; }
-  textarea { width: 100%; min-height: 64px; resize: vertical; }
+  textarea { width: 100%; min-height: 44px; max-height: 40vh; resize: vertical; }
   button[type=submit] { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; padding: 5px 16px; }
   #replyInfo { font-size: 12px; color: var(--muted); }
   #err, #warn { color: var(--warn); font-size: 12px; }
@@ -59,23 +76,28 @@
   body.noauth main { display: none; } body.noauth #auth { display: block; }
   code { font-family: var(--mono); }
   @media (max-width: 720px) {
-    main { grid-template-columns: 1fr; height: auto; }
-    aside { border-right: none; border-bottom: 1px solid var(--line); max-height: 30vh; }
-    #list { min-height: 50vh; }
+    /* 小さい画面: サイドバーは上に小さく置き、残りをスレッドに回す */
+    main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+    aside { border-right: none; border-bottom: 1px solid var(--line); max-height: 16vh; }
+    textarea { max-height: 24vh; }
   }
 </style>
 </head>
 <body>
-<header><h1>agent-hub</h1><span id="conn" class="ng">未接続</span></header>
+<header><h1>agent-hub</h1><span id="conn" class="ng">Disconnected</span></header>
 <div id="auth">
-  <p>認証されていません。Hub の起動時にコンソールへ表示された <code>http://127.0.0.1:&lt;port&gt;/?token=…</code> の URL で開いてください。</p>
+  <p>Not authenticated. Open the <code>http://127.0.0.1:&lt;port&gt;/?token=…</code> URL shown in the Hub's console when it started.</p>
 </div>
 <main>
   <aside>
     <h2>Mailboxes</h2>
-    <div id="mailboxes"><div class="meta">まだありません</div></div>
+    <div id="mailboxes"><div class="meta">None yet</div></div>
   </aside>
   <section>
+    <div class="foldbar">
+      <button type="button" id="fold" title="Hide messages older than the latest N and show them as one row. Display only: the Hub record and unread counts are unchanged.">Compact</button>
+      <label title="How many latest messages stay visible after Compact (default 10)">Keep latest <input id="keep" type="number" min="1" step="1"></label>
+    </div>
     <div id="list"></div>
     <form id="form">
       <div class="row">
@@ -84,12 +106,15 @@
           <option value="reply">reply</option>
           <option value="notice">notice</option>
         </select>
-        <select id="to" title="宛先"></select>
-        <input id="topic" placeholder="トピック名" autocomplete="off" hidden>
+        <select id="to" title="To"></select>
+        <input id="topic" placeholder="Topic name" autocomplete="off" hidden>
         <span id="replyInfo"></span>
+        <span id="err"></span><span id="warn"></span>
       </div>
-      <textarea id="body" placeholder="本文 (Ctrl+Enter で送信)"></textarea>
-      <div class="row"><button type="submit">Send</button><span id="err"></span><span id="warn"></span></div>
+      <div class="compose">
+        <textarea id="body" placeholder="Message (Ctrl+Enter to send)"></textarea>
+        <button type="submit">Send</button>
+      </div>
     </form>
   </section>
 </main>
@@ -118,14 +143,29 @@ async function api(path, init) {
   return json
 }
 
+// 送り手の色。キーは role (なければ type:id)。あなた・leader・deployer は固定色、ほかは名前のハッシュで決める
+// 色は c0〜c7 のクラス (CSS 側でパレットを引く) で渡し、外部由来の文字列は色の決定にだけ使う
+const FIXED_COLOR = new Map([['user:browser', 0], ['role:leader', 1], ['role:deployer', 2]])
+const senderKey = (a) => (a.type === 'user' && a.id === 'browser' ? 'user:browser' : a.role ? `role:${a.role}` : `${a.type}:${a.id}`)
+const senderLabel = (a) => (a.type === 'user' && a.id === 'browser' ? 'You' : a.role || a.id)
+
+function colorIndex(key) {
+  if (FIXED_COLOR.has(key)) return FIXED_COLOR.get(key)
+  let h = 0x811c9dc5 // FNV-1a (32 bit)
+  for (const ch of key) h = Math.imul(h ^ ch.codePointAt(0), 0x01000193)
+  return 3 + ((h >>> 0) % 5)
+}
+
 function render(m) {
   if (seen.has(m.id)) return
   seen.set(m.id, m)
   const list = $('list')
   const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40
-  const box = el('div', `msg ${m.kind}`)
+  const ci = colorIndex(senderKey(m.from))
+  const box = el('div', `msg c${ci}`)
+  box.dataset.seq = m.seq
   const head = el('div', 'head')
-  head.append(el('span', '', `#${m.seq}`), el('span', '', time(m.ts)), el('span', `kind ${m.kind}`, m.kind))
+  head.append(el('span', `chip c${ci}`, senderLabel(m.from)), el('span', '', `#${m.seq}`), el('span', '', time(m.ts)), el('span', `kind ${m.kind}`, m.kind))
   const route = el('span', 'addr', `${m.from.type}:${m.from.id}${m.from.role ? ` (${m.from.role})` : ''} → ${addr(m.to)}`)
   head.append(route)
   if (m.replyTo) {
@@ -134,7 +174,7 @@ function render(m) {
   }
   if (m.forwardedFrom) head.append(el('span', '', `forwarded ${m.forwardedFrom}`))
   const actions = el('span', 'actions')
-  const btn = el('button', 'linkbtn', '返信')
+  const btn = el('button', 'linkbtn', 'Reply')
   btn.type = 'button'
   btn.onclick = () => startReply(m)
   actions.append(btn)
@@ -142,6 +182,71 @@ function render(m) {
   box.append(head, el('div', 'body', m.body))
   list.append(box)
   if (atBottom) list.scrollTop = list.scrollHeight
+}
+
+// 畳み: 古い分は DOM から外して folded に退避する (seen からは消さない。重複除去と ↩ #seq の解決に使うため)。
+// 畳んだ状態は保存しない。件数 n だけ表示の設定として localStorage に覚える
+const KEEP_KEY = 'agent-hub.keep'
+const KEEP_DEFAULT = 10
+let folded = [] // { box, seq } 古い順
+let stub = null // 先頭に 1 本だけ置く「過去 n 件を畳みました」行
+
+// 未保存 (null) や空入力は既定値に戻す。Number(null) は 0 になるので先に弾く
+function parseKeep(raw) {
+  if (raw === null || String(raw).trim() === '') return KEEP_DEFAULT
+  const v = Math.floor(Number(raw))
+  return Number.isFinite(v) ? Math.max(1, v) : KEEP_DEFAULT
+}
+
+function loadKeep() {
+  try { return parseKeep(localStorage.getItem(KEEP_KEY)) } catch { return KEEP_DEFAULT }
+}
+
+function saveKeep(n) {
+  try { localStorage.setItem(KEEP_KEY, String(n)) } catch {}
+}
+
+function makeStub() {
+  const s = el('div', 'stub')
+  s.append(el('span', 'stub-text'), document.createTextNode('  '))
+  const btn = el('button', 'linkbtn', 'Expand')
+  btn.type = 'button'
+  btn.onclick = unfold
+  s.append(btn)
+  return s
+}
+
+function updateStub() {
+  const first = folded[0].seq, last = folded[folded.length - 1].seq
+  stub.querySelector('.stub-text').textContent = `${folded.length} older messages compacted (#${first}–#${last})`
+}
+
+function fold() {
+  const list = $('list')
+  const keep = parseKeep($('keep').value)
+  $('keep').value = keep
+  saveKeep(keep)
+  const visible = [...list.querySelectorAll('.msg')]
+  const n = visible.length - keep
+  if (n <= 0) return
+  // 今回の分は退避済みのものより新しいので、末尾に足すと古い順が保たれる
+  for (const box of visible.slice(0, n)) {
+    folded.push({ box, seq: Number(box.dataset.seq) })
+    box.remove()
+  }
+  if (!stub) { stub = makeStub(); list.prepend(stub) }
+  updateStub()
+  list.scrollTop = list.scrollHeight
+}
+
+function unfold() {
+  if (!stub) return
+  const frag = document.createDocumentFragment()
+  for (const f of folded) frag.append(f.box)
+  $('list').insertBefore(frag, stub.nextSibling)
+  stub.remove()
+  stub = null
+  folded = []
 }
 
 // 宛先は select 1 本で選ぶ (種類と名前を別々に選ばせると食い違う)。
@@ -172,9 +277,9 @@ function buildTo(mailboxes) {
   sel.textContent = ''
   if (mailboxes.length) sel.append(group('Mailbox', mailboxes.map((mb) => `mailbox:${mb.name}`)))
   if (roles.size) sel.append(group('role', [...roles].sort()))
-  if (topics.size) sel.append(group('購読中のトピック', [...topics].sort()))
-  sel.append(group('ユーザー', ['user:browser']))
-  sel.append(option(MANUAL_TOPIC, 'トピックを手入力…'))
+  if (topics.size) sel.append(group('Subscribed topics', [...topics].sort()))
+  sel.append(group('User', ['user:browser']))
+  sel.append(option(MANUAL_TOPIC, 'Enter a topic…'))
   // 最初は購読中の user.message、なければ先頭の Mailbox を選ぶ
   setTo(prev || (topics.has('topic:user.message') ? 'topic:user.message' : sel.options[0].value))
 }
@@ -211,8 +316,8 @@ function updateReplyInfo() {
   const info = $('replyInfo')
   info.textContent = ''
   if ($('kind').value !== 'reply' || !replyTo) return
-  info.append(`#${replyTo.seq} への返信 `)
-  const cancel = el('button', 'linkbtn', '取消')
+  info.append(`Replying to #${replyTo.seq} `)
+  const cancel = el('button', 'linkbtn', 'Cancel')
   cancel.type = 'button'
   cancel.onclick = () => { replyTo = null; $('kind').value = 'request'; updateReplyInfo() }
   info.append(cancel)
@@ -227,7 +332,7 @@ $('form').onsubmit = async (e) => {
   const kind = $('kind').value
   const body = $('body').value
   if (!body.trim()) return
-  if (kind === 'reply' && !replyTo) { $('err').textContent = 'reply はメッセージの「返信」から始めてください'; return }
+  if (kind === 'reply' && !replyTo) { $('err').textContent = 'For a reply, start with the "Reply" button on a message.'; return }
   const msg = { kind, body, to: selectedTo() }
   if (kind === 'reply') msg.replyTo = replyTo.id
   try {
@@ -236,7 +341,7 @@ $('form').onsubmit = async (e) => {
     // user 宛ては Mailbox を通らず UI に出るだけなので、0 件でよい。
     // UI は Hub を再起動しなくても差し替わるので、recipients を返さない古い Hub でも送信は成功扱いにする
     if (m.to.type !== 'user' && Array.isArray(recipients) && recipients.length === 0) {
-      $('warn').textContent = `${addr(m.to)} を受け取る Mailbox がありません (#${m.seq} は記録済み)`
+      $('warn').textContent = `No Mailbox will receive ${addr(m.to)} (#${m.seq} was recorded)`
     }
     $('body').value = ''
     if (kind === 'reply') { replyTo = null; $('kind').value = 'request'; updateReplyInfo() }
@@ -249,22 +354,27 @@ $('body').onkeydown = (e) => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('form').requestSubmit()
 }
 
+$('keep').value = loadKeep()
+$('fold').onclick = fold
+
 async function loadMailboxes() {
   const { mailboxes } = await api('/mailboxes')
   const root = $('mailboxes')
   root.textContent = ''
-  if (mailboxes.length === 0) root.append(el('div', 'meta', 'まだありません'))
+  if (mailboxes.length === 0) root.append(el('div', 'meta', 'None yet'))
   for (const mb of mailboxes) {
-    const box = el('div', 'mb')
+    // 送り手のキーと同じ規則 (role があれば role、なければ mailbox:名前) で色を決める
+    const ci = colorIndex(mb.role ? `role:${mb.role}` : `mailbox:${mb.name}`)
+    const box = el('div', `mb c${ci}`)
     const title = el('div')
-    title.append(el('span', `dot${mb.attachment ? ' on' : ''}`), el('span', 'name', mb.name))
+    title.append(el('span', `dot${mb.attachment ? ' on' : ''}`), el('span', 'name', mb.name), el('span', `chip c${ci}`, mb.role || mb.name))
     box.append(title)
-    const meta = [mb.attachment ? `接続中 (${mb.attachment.client})` : '未接続']
+    const meta = [mb.attachment ? `Connected (${mb.attachment.client})` : 'Disconnected']
     if (mb.role) meta.push(`role: ${mb.role}`)
-    meta.push(`未読 ${mb.unread}`)
+    meta.push(`${mb.unread} unread`)
     box.append(el('div', 'meta', meta.join(' · ')))
-    if (mb.effectiveSubscriptions.length) box.append(el('div', 'meta', `購読: ${mb.effectiveSubscriptions.join(', ')}`))
-    box.title = 'この Mailbox 宛てに書く'
+    if (mb.effectiveSubscriptions.length) box.append(el('div', 'meta', `Subscribed: ${mb.effectiveSubscriptions.join(', ')}`))
+    box.title = 'Write to this Mailbox'
     box.onclick = () => { setTo(`mailbox:${mb.name}`); $('body').focus() }
     root.append(box)
   }
@@ -285,8 +395,8 @@ async function loadHistory() {
 function connect() {
   // 履歴より先に購読を始め、取りこぼしを id の重複除去で吸収する
   const es = new EventSource('/stream')
-  es.onopen = () => { $('conn').className = 'ok'; $('conn').textContent = '接続中' }
-  es.onerror = () => { $('conn').className = 'ng'; $('conn').textContent = '再接続中…' }
+  es.onopen = () => { $('conn').className = 'ok'; $('conn').textContent = 'Connected' }
+  es.onerror = () => { $('conn').className = 'ng'; $('conn').textContent = 'Reconnecting…' }
   // 未読数は新着と ack で変わるので、まとめて取り直す
   let timer = null
   const refresh = () => { clearTimeout(timer); timer = setTimeout(() => loadMailboxes().catch(() => {}), 300) }
