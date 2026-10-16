@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agent-hub</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --fg: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc;
+    --accent: #2f5fd0; --request: #2f5fd0; --reply: #1f8a4c; --notice: #8a6d1f; --warn: #b3261e;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --panel: #1f1f1d; --fg: #ecece8; --muted: #9a9a93; --line: #34342f;
+      --accent: #7aa2ff; --request: #7aa2ff; --reply: #5fcf8e; --notice: #e0c060; --warn: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 15px; margin: 0; }
+  #conn { font-size: 12px; color: var(--muted); }
+  #conn.ok::before { content: "● "; color: var(--reply); }
+  #conn.ng::before { content: "● "; color: var(--warn); }
+  main { display: grid; grid-template-columns: 260px 1fr; height: calc(100vh - 45px); }
+  aside { border-right: 1px solid var(--line); overflow: auto; padding: 12px; background: var(--panel); }
+  aside h2 { font-size: 12px; color: var(--muted); margin: 0 0 8px; text-transform: uppercase; letter-spacing: .04em; }
+  .mb { padding: 8px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 8px; cursor: pointer; }
+  .mb:hover { border-color: var(--accent); }
+  .mb .name { font-weight: 600; font-family: var(--mono); }
+  .mb .meta { font-size: 12px; color: var(--muted); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+  .dot.on { background: var(--reply); }
+  section { display: flex; flex-direction: column; min-width: 0; }
+  #list { flex: 1; overflow: auto; padding: 12px 16px; }
+  .msg { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; }
+  .msg.request { border-left-color: var(--request); }
+  .msg.reply { border-left-color: var(--reply); }
+  .msg.notice { border-left-color: var(--notice); }
+  .msg .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 12px; color: var(--muted); }
+  .msg .head .addr { font-family: var(--mono); color: var(--fg); }
+  .kind { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; border: 1px solid currentColor; }
+  .kind.request { color: var(--request); } .kind.reply { color: var(--reply); } .kind.notice { color: var(--notice); }
+  .msg .body { white-space: pre-wrap; word-break: break-word; margin-top: 4px; }
+  .msg .actions { margin-left: auto; }
+  .linkbtn { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font: inherit; }
+  form { border-top: 1px solid var(--line); background: var(--panel); padding: 10px 16px; display: grid; gap: 8px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  select, input, textarea, button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+  input#toId { width: 200px; font-family: var(--mono); }
+  textarea { width: 100%; min-height: 64px; resize: vertical; }
+  button[type=submit] { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; padding: 5px 16px; }
+  #replyInfo { font-size: 12px; color: var(--muted); }
+  #err { color: var(--warn); font-size: 12px; }
+  #auth { display: none; margin: 40px auto; max-width: 520px; padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  body.noauth main { display: none; } body.noauth #auth { display: block; }
+  code { font-family: var(--mono); }
+  @media (max-width: 720px) {
+    main { grid-template-columns: 1fr; height: auto; }
+    aside { border-right: none; border-bottom: 1px solid var(--line); max-height: 30vh; }
+    #list { min-height: 50vh; }
+  }
+</style>
+</head>
+<body>
+<header><h1>agent-hub</h1><span id="conn" class="ng">未接続</span></header>
+<div id="auth">
+  <p>認証されていません。Hub の起動時にコンソールへ表示された <code>http://127.0.0.1:&lt;port&gt;/?token=…</code> の URL で開いてください。</p>
+</div>
+<main>
+  <aside>
+    <h2>Mailboxes</h2>
+    <div id="mailboxes"><div class="meta">まだありません</div></div>
+  </aside>
+  <section>
+    <div id="list"></div>
+    <form id="form">
+      <div class="row">
+        <select id="kind" title="kind">
+          <option value="request" selected>request</option>
+          <option value="reply">reply</option>
+          <option value="notice">notice</option>
+        </select>
+        <select id="toType" title="宛先の種類">
+          <option value="topic" selected>topic</option>
+          <option value="mailbox">mailbox</option>
+          <option value="role">role</option>
+          <option value="user">user</option>
+        </select>
+        <input id="toId" list="toIds" value="user.message" placeholder="宛先名" autocomplete="off">
+        <datalist id="toIds"></datalist>
+        <span id="replyInfo"></span>
+      </div>
+      <textarea id="body" placeholder="本文 (Ctrl+Enter で送信)"></textarea>
+      <div class="row"><button type="submit">Send</button><span id="err"></span></div>
+    </form>
+  </section>
+</main>
+<script>
+'use strict'
+const $ = (id) => document.getElementById(id)
+const seen = new Map() // id → Message
+let replyTo = null
+
+const addr = (a) => `${a.type}:${a.id}`
+const time = (ts) => new Date(ts).toLocaleTimeString()
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag)
+  if (cls) e.className = cls
+  // 本文は外部由来のデータなので textContent だけで入れる (HTML として解釈させない)
+  if (text !== undefined) e.textContent = text
+  return e
+}
+
+async function api(path, init) {
+  const res = await fetch(path, { ...init, headers: { 'content-type': 'application/json', ...(init && init.headers) } })
+  if (res.status === 401) { document.body.classList.add('noauth'); throw new Error('unauthorized') }
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.message || (json.issues && json.issues.map((i) => `${i.path}: ${i.message}`).join('; ')) || json.error || res.status)
+  return json
+}
+
+function render(m) {
+  if (seen.has(m.id)) return
+  seen.set(m.id, m)
+  const list = $('list')
+  const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40
+  const box = el('div', `msg ${m.kind}`)
+  const head = el('div', 'head')
+  head.append(el('span', '', `#${m.seq}`), el('span', '', time(m.ts)), el('span', `kind ${m.kind}`, m.kind))
+  const route = el('span', 'addr', `${m.from.type}:${m.from.id}${m.from.role ? ` (${m.from.role})` : ''} → ${addr(m.to)}`)
+  head.append(route)
+  if (m.replyTo) {
+    const orig = seen.get(m.replyTo)
+    head.append(el('span', '', `↩ ${orig ? '#' + orig.seq : m.replyTo}`))
+  }
+  if (m.forwardedFrom) head.append(el('span', '', `forwarded ${m.forwardedFrom}`))
+  const actions = el('span', 'actions')
+  const btn = el('button', 'linkbtn', '返信')
+  btn.type = 'button'
+  btn.onclick = () => startReply(m)
+  actions.append(btn)
+  head.append(actions)
+  box.append(head, el('div', 'body', m.body))
+  list.append(box)
+  if (atBottom) list.scrollTop = list.scrollHeight
+}
+
+function startReply(m) {
+  replyTo = m
+  $('kind').value = 'reply'
+  $('toType').value = m.from.type === 'mailbox' ? 'mailbox' : 'user'
+  $('toId').value = m.from.id
+  updateReplyInfo()
+  $('body').focus()
+}
+
+function updateReplyInfo() {
+  const info = $('replyInfo')
+  info.textContent = ''
+  if ($('kind').value !== 'reply' || !replyTo) return
+  info.append(`#${replyTo.seq} への返信 `)
+  const cancel = el('button', 'linkbtn', '取消')
+  cancel.type = 'button'
+  cancel.onclick = () => { replyTo = null; $('kind').value = 'request'; updateReplyInfo() }
+  info.append(cancel)
+}
+
+$('kind').onchange = updateReplyInfo
+
+$('form').onsubmit = async (e) => {
+  e.preventDefault()
+  $('err').textContent = ''
+  const kind = $('kind').value
+  const body = $('body').value
+  if (!body.trim()) return
+  if (kind === 'reply' && !replyTo) { $('err').textContent = 'reply はメッセージの「返信」から始めてください'; return }
+  const msg = { kind, body, to: { type: $('toType').value, id: $('toId').value.trim() } }
+  if (kind === 'reply') msg.replyTo = replyTo.id
+  try {
+    render(await api('/messages', { method: 'POST', body: JSON.stringify(msg) }))
+    $('body').value = ''
+    if (kind === 'reply') { replyTo = null; $('kind').value = 'request'; updateReplyInfo() }
+  } catch (err) {
+    $('err').textContent = String(err.message || err)
+  }
+}
+
+$('body').onkeydown = (e) => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('form').requestSubmit()
+}
+
+async function loadMailboxes() {
+  const { mailboxes } = await api('/mailboxes')
+  const root = $('mailboxes')
+  root.textContent = ''
+  if (mailboxes.length === 0) root.append(el('div', 'meta', 'まだありません'))
+  const names = new Set()
+  for (const mb of mailboxes) {
+    names.add(`mailbox:${mb.name}`)
+    if (mb.role) names.add(`role:${mb.role}`)
+    for (const t of mb.effectiveSubscriptions) names.add(`topic:${t}`)
+    const box = el('div', 'mb')
+    const title = el('div')
+    title.append(el('span', `dot${mb.attachment ? ' on' : ''}`), el('span', 'name', mb.name))
+    box.append(title)
+    const meta = [mb.attachment ? `接続中 (${mb.attachment.client})` : '未接続']
+    if (mb.role) meta.push(`role: ${mb.role}`)
+    meta.push(`未読 ${mb.unread}`)
+    box.append(el('div', 'meta', meta.join(' · ')))
+    if (mb.effectiveSubscriptions.length) box.append(el('div', 'meta', `購読: ${mb.effectiveSubscriptions.join(', ')}`))
+    box.title = 'この Mailbox 宛てに書く'
+    box.onclick = () => { $('toType').value = 'mailbox'; $('toId').value = mb.name; $('body').focus() }
+    root.append(box)
+  }
+  names.add('topic:user.message')
+  const dl = $('toIds')
+  dl.textContent = ''
+  for (const n of names) { const o = el('option'); o.value = n.slice(n.indexOf(':') + 1); o.label = n; dl.append(o) }
+}
+
+async function loadHistory() {
+  let after = 0
+  for (;;) {
+    const { messages } = await api(`/messages?after=${after}&limit=1000`)
+    for (const m of messages) render(m)
+    if (messages.length < 1000) break
+    after = messages[messages.length - 1].seq
+  }
+  $('list').scrollTop = $('list').scrollHeight
+}
+
+function connect() {
+  // 履歴より先に購読を始め、取りこぼしを id の重複除去で吸収する
+  const es = new EventSource('/stream')
+  es.onopen = () => { $('conn').className = 'ok'; $('conn').textContent = '接続中' }
+  es.onerror = () => { $('conn').className = 'ng'; $('conn').textContent = '再接続中…' }
+  // 未読数は新着と ack で変わるので、まとめて取り直す
+  let timer = null
+  const refresh = () => { clearTimeout(timer); timer = setTimeout(() => loadMailboxes().catch(() => {}), 300) }
+  es.addEventListener('message', (e) => { render(JSON.parse(e.data)); refresh() })
+  for (const ev of ['mailbox.created', 'mailbox.deleted', 'attachment.attached', 'attachment.detached', 'attachment.superseded', 'subscription.changed']) {
+    es.addEventListener(ev, refresh)
+  }
+  return es
+}
+
+;(async () => {
+  try {
+    await loadMailboxes()
+  } catch { return }
+  connect()
+  await loadHistory()
+})()
+</script>
+</body>
+</html>

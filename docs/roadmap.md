@@ -14,8 +14,8 @@
 - [x] Hub: Message の `kind` (`request` / `reply` / `notice`) の検証と、`from` の Hub 側付与
 - [x] Hub: Mailbox の最小実装 (attach で作成、購読、cursor)。リースと takeover は P2
 - [x] shim: channel MCP サーバー。`HUB_MAILBOX` で attach、Hub SSE 受信、`notifications/claude/channel` で push、`subscribe` / `post_message`
-- [ ] UI: 1 枚の HTML。メッセージ一覧 (ライブ、`kind` の表示)、送信フォーム (`kind` の選択、既定 `request`)
-- [ ] 起動手順を README に追記
+- [x] UI: 1 枚の HTML。メッセージ一覧 (ライブ、`kind` の表示)、送信フォーム (`kind` の選択、既定 `request`)
+- [x] 起動手順を README に追記 (受け入れ条件の通し確認は未)
 
 **受け入れ条件**
 1. Hub を起動し、Claude Code を channel 有効 (`--dangerously-load-development-channels`) で起動できる。

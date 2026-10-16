@@ -21,8 +21,72 @@
 
 ## ステータス
 
-設計段階。P0 の準備中 (雛形と実機検証プローブまで)。まず [docs/design.md](docs/design.md) を読むこと。
-Channels の仕様は公式資料で確認済み (design.md §6.1)。MCP Events (SEP-3415, Draft) との関係は design.md §7。
+P0 (1 セッションで往復する) を実装済み。Claude Code 上での受け入れ確認は手動で行う (下の手順)。設計は [docs/design.md](docs/design.md) から読む。
+Channels の仕様は公式資料と実機で確認済み (design.md §6.1〜6.1c)。MCP Events (SEP-3415, Draft) との関係は design.md §7。
+
+## 使い方 (P0)
+
+前提: Node.js 24 以上、ターミナルで `claude` CLI が動くこと (Channels は対話セッションの CLI でだけ有効)。
+
+### 1. 準備
+
+```powershell
+npm install
+Copy-Item .env.example .env   # HUB_TOKEN を 16 文字以上のランダム値にする (生成例は .env.example)
+npm run build                 # shim を dist/ に出力する
+```
+
+### 2. Hub を起動する (ターミナル A)
+
+```powershell
+npm run hub
+```
+
+`[hub] UI: http://127.0.0.1:7777/?token=…` が表示されるので、その URL をブラウザで開く。
+トークンは cookie に移され、URL からは消える。データは `data/hub.jsonl` に追記される。
+
+### 3. Claude Code を channel 有効で起動する (ターミナル B、リポジトリ直下)
+
+```powershell
+claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels server:agent-hub
+```
+
+- 警告ダイアログでは **I am using this for local development** を選ぶ。
+- `server:agent-hub · no MCP server configured with that name` という警告が出ても通知は届く (design.md §6.1c)。
+- Mailbox 名は `HUB_MAILBOX` → `HUB_ROLE` → フォルダ名 (ここでは `agent-hub`) の順に決まる。
+- shim はトークンを agent-hub の `.env` から読むので、MCP 設定にトークンを書かなくてよい。
+
+### 4. 往復を確かめる
+
+1. Claude に「agent-hub の `user.message` を購読して」と頼む (`subscribe` が呼ばれる)。
+2. ブラウザのフォームで `request` → `topic` `user.message` に本文を書いて Send。Claude の会話に `<channel source="agent-hub" …>` として届く。
+3. Claude に返信させる (`post_message`、`kind: reply`)。ブラウザの一覧に `reply` として出る。
+4. ブラウザの左側に Mailbox `agent-hub` が「接続中」と表示される。
+
+### 他のリポジトリで使う
+
+shim をユーザースコープに絶対パスで登録し、同じフラグで起動する。
+
+```powershell
+claude mcp add --scope user agent-hub -- node C:/Users/kazuh/Desktop/Various/programming/DockerFiles/agent-hub/dist/shim/main.js
+claude --dangerously-load-development-channels server:agent-hub
+```
+
+### curl で触る (Windows の注意)
+
+```powershell
+curl.exe -H "Authorization: Bearer <HUB_TOKEN>" http://127.0.0.1:7777/messages
+```
+
+Windows の curl はコマンドライン引数の日本語を UTF-8 で送らないので、本文はファイルから `--data-binary "@body.json"` で渡す。
+
+### 開発
+
+```powershell
+npm test          # 単体テストと、shim を実プロセスで起動する結合テスト
+npm run typecheck
+npm run hub:dev   # 変更を監視して Hub を再起動する
+```
 
 ## ドキュメント
 

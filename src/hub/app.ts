@@ -76,7 +76,11 @@ export function createApp(opts: AppOptions) {
       return c.redirect('/', 302)
     }
     const html = await opts.uiHtml()
-    return html === null ? c.text('UI (public/index.html) がまだない', 404) : c.html(html)
+    if (html === null) return c.text('UI (public/index.html) がまだない', 404)
+    // 外部リソースを読まない 1 枚の HTML なので、同一オリジン以外を禁じる
+    c.header('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+    c.header('X-Content-Type-Options', 'nosniff')
+    return c.html(html)
   })
 
   app.use('*', async (c, next) => {

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "agent-hub": {
+      "command": "node",
+      "args": ["${CLAUDE_PROJECT_DIR:-.}/dist/shim/main.js"]
+    }
+  }
+}
