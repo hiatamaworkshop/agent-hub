@@ -2,7 +2,6 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono'
 import { setCookie } from 'hono/cookie'
 import { bodyLimit } from 'hono/body-limit'
-import { HTTPException } from 'hono/http-exception'
 import { streamSSE } from 'hono/streaming'
 import { z } from 'zod'
 import { isValidName, nameSchema, postMessageSchema, type PostMessageInput, type Sender } from '../shared/types.js'
@@ -61,17 +60,9 @@ async function readJson(c: Context): Promise<unknown> {
   }
 }
 
-// 本文の上限。bodyLimit の 413 は HTTPException で投げられるので、この経路だけ応答にする (既存の onError は変えない)
-function limited(maxSize: number): MiddlewareHandler {
-  const limit = bodyLimit({ maxSize })
-  return async (c, next) => {
-    try {
-      return await limit(c, next)
-    } catch (e) {
-      if (e instanceof HTTPException) return e.getResponse()
-      throw e
-    }
-  }
+// 本文の上限。超えたら 413 を共通のエラー形式 (protocol.md §1) で返す。message は UI にそのまま出すので英語
+function limited(maxSize: number, error: string, message: string): MiddlewareHandler {
+  return bodyLimit({ maxSize, onError: (c) => c.json({ error, message }, 413) })
 }
 
 // meta.files を Hub の記録から書き直す。空になった meta は保存しない
@@ -120,7 +111,7 @@ export function createApp(opts: AppOptions) {
     return auth.middleware()(c, next)
   })
 
-  app.post('/messages', limited(1024 * 1024), async (c) => {
+  app.post('/messages', limited(1024 * 1024, 'payload_too_large', 'message must be 1 MB or smaller'), async (c) => {
     const parsed = postMessageSchema.safeParse(await readJson(c))
     if (!parsed.success) return invalid(c, parsed.error)
     const attachmentId = c.req.header('x-hub-attachment')
@@ -219,12 +210,12 @@ export function createApp(opts: AppOptions) {
   if (opts.settings) {
     const settings = opts.settings
     app.get('/settings', async (c) => c.json(await settings.read()))
-    app.put('/settings', limited(64 * 1024), async (c) => c.json(await settings.write(await readJson(c))))
+    app.put('/settings', limited(64 * 1024, 'payload_too_large', 'settings must be 64 KB or smaller'), async (c) => c.json(await settings.write(await readJson(c))))
   }
 
   if (opts.files) {
     const files = opts.files
-    app.post('/files', limited(MAX_UPLOAD_BYTES), async (c) => {
+    app.post('/files', limited(MAX_UPLOAD_BYTES, 'file_too_large', 'image must be 20 MB or smaller'), async (c) => {
       const bytes = Buffer.from(await c.req.arrayBuffer())
       const { record, created } = await files.save(bytes, { persistent: c.req.query('persistent') === '1' })
       return c.json(record, created ? 201 : 200)

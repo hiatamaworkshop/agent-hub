@@ -91,7 +91,9 @@ describe('/files: HTTP', () => {
 
   it('20MB を超える本文は 413', async () => {
     const { app } = await setup()
-    assert.equal((await upload(app, Buffer.alloc(MAX_UPLOAD_BYTES + 1), bearer)).status, 413)
+    const res = await upload(app, Buffer.alloc(MAX_UPLOAD_BYTES + 1), bearer)
+    assert.equal(res.status, 413)
+    assert.equal(((await res.json()) as { error: string }).error, 'file_too_large')
   })
 
   it('GET は画像本体を、安全なヘッダーつきで返す', async () => {

@@ -85,6 +85,8 @@ describe('POST /messages', () => {
     const { hub, app } = setup()
     const res = await post(app, { ...notice, body: 'x'.repeat(1024 * 1024) }, bearer)
     assert.equal(res.status, 413)
+    // エラーは共通の形 (protocol.md §1)。UI は message を出す
+    assert.deepEqual(await res.json(), { error: 'payload_too_large', message: 'message must be 1 MB or smaller' })
     assert.equal(hub.store.lastSeq, 0)
     // 上限内の本文は通る (上限の付け替えで普通の投稿が落ちないこと)
     assert.equal((await post(app, { ...notice, body: 'ok' }, bearer)).status, 201)

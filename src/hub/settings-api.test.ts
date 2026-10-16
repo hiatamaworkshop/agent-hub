@@ -114,7 +114,9 @@ describe('/settings: HTTP', () => {
   it('64KB を超える本文は 413', async () => {
     const { app } = await setup()
     const big = JSON.stringify({ commands: [{ name: 'cp', text: 'x'.repeat(70 * 1024) }] })
-    assert.equal((await put(app, big, bearer)).status, 413)
+    const res = await put(app, big, bearer)
+    assert.equal(res.status, 413)
+    assert.equal(((await res.json()) as { error: string }).error, 'payload_too_large')
   })
 
   it('壊れたファイルの GET は 500 settings_invalid。PUT は退避して 200', async () => {

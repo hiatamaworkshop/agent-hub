@@ -12,7 +12,7 @@
     cookie 認証の状態変更リクエストは `Origin` が Hub 自身のオリジンでなければ 403。
   - 認証なし・不正は 401。`Authorization` ヘッダーがあれば cookie より優先し、それだけで判定する。
   - cookie の値はトークンそのものではなく、トークンから導いた値にする。
-- エラー応答: `{ "error": "<code>", "message"?: "…", "issues"?: [{ "path", "message" }] }`。
+- エラー応答: `{ "error": "<code>", "message"?: "…", "issues"?: [{ "path", "message" }] }`。本文の上限超過 (413) も同じ形で返す。
 - 時刻: ISO 8601 UTC 文字列。
 - id: 文字列 (ULID を推奨。時系列ソート可能)。
 - `seq`: Hub 全体で単調増加する整数。メッセージの順序と cursor に使う。
@@ -121,7 +121,7 @@
 | メソッド | パス | 内容 |
 |---|---|---|
 | POST | `/events` | Event を登録。登録後 UI に SSE で配信。HTTP hook の入力 JSON をそのまま受け付ける (ヘッダー `X-Hub-Mailbox` 任意)。応答は `{}` (hook の判断には関与しない) |
-| POST | `/messages` | Message を作成して配信 (宛先は `to`)。body は `kind` / `to` / `body` / `replyTo?`。応答は 201 で、作成した Message に `recipients` (配信先 Mailbox 名の配列。未接続も含む) を足したもの。`recipients` は応答にだけ付き、Message には保存しない。`user` 宛て以外で空なら誰にも届いていない (受理はする)。`replyTo` が存在しなければ 400 |
+| POST | `/messages` | Message を作成して配信 (宛先は `to`)。body は `kind` / `to` / `body` / `replyTo?`。応答は 201 で、作成した Message に `recipients` (配信先 Mailbox 名の配列。未接続も含む) を足したもの。`recipients` は応答にだけ付き、Message には保存しない。`user` 宛て以外で空なら誰にも届いていない (受理はする)。`replyTo` が存在しなければ 400。本文上限 1MB (超えると 413 `payload_too_large`) |
 | GET | `/messages?after=<seq>&limit=<n>` | 履歴取得 (`limit` 既定 100、最大 1000)。応答 `{ "messages": [...], "lastSeq": <seq> }` |
 | GET | `/mailboxes` | Mailbox 一覧 (role・実効購読・未読数・Attachment の状態) |
 | GET | `/roles` | role 定義の一覧 |
@@ -134,8 +134,8 @@
 | GET | `/stream` | SSE。Event / Message / Mailbox・Attachment の状態変化を流す |
 | POST | `/messages/:id/forward` | 無編集転送。body: `{ "to": {...} }` |
 | GET | `/settings` | カスタムコマンドの設定。`{ "version": 1, "commands": [{ "name", "text" }] }`。ファイルがなければ空。手編集の `defaultTo` (文字列 `<type>:<id>`) があれば併せて返し、なければ省く (形式が合わない値は無視する)。毎回ファイルから読む。壊れていれば 500 `settings_invalid` (中身は返さない) |
-| PUT | `/settings` | 設定を保存。body `{ "commands": [...] }` を検証し、保存後の設定を返す。違反は 400 (英語の `message`)。本文上限 64KB。ファイルの commands 以外のキーは保持する (`defaultTo` を含む。PUT は `defaultTo` を受け付けず、変えない)。壊れていたファイルは `settings.json.bak` に退避してから書く。保存先は `HUB_DATA_DIR/settings.json`。name は `^[a-z0-9][a-z0-9_-]{0,31}$`、重複不可、最大 100 個、text は 1〜8000 文字 |
-| POST | `/files` | 画像を 1 枚保存する。本文は生のバイト列で、`Content-Type` は使わずデコードして判定する。PNG / JPEG / GIF / WebP のみ (SVG やデコードできないものは 400)。長辺 `HUB_FILE_MAX_EDGE` (既定 1568) に収まるよう縮小し、EXIF を落として再エンコードする。20MB を超えると 413。`?persistent=1` で持続扱いにする。応答は記録 (新規は 201、同じ内容の再送は既存の記録を 200 で返す) |
+| PUT | `/settings` | 設定を保存。body `{ "commands": [...] }` を検証し、保存後の設定を返す。違反は 400 (英語の `message`)。本文上限 64KB (超えると 413 `payload_too_large`)。ファイルの commands 以外のキーは保持する (`defaultTo` を含む。PUT は `defaultTo` を受け付けず、変えない)。壊れていたファイルは `settings.json.bak` に退避してから書く。保存先は `HUB_DATA_DIR/settings.json`。name は `^[a-z0-9][a-z0-9_-]{0,31}$`、重複不可、最大 100 個、text は 1〜8000 文字 |
+| POST | `/files` | 画像を 1 枚保存する。本文は生のバイト列で、`Content-Type` は使わずデコードして判定する。PNG / JPEG / GIF / WebP のみ (SVG やデコードできないものは 400)。長辺 `HUB_FILE_MAX_EDGE` (既定 1568) に収まるよう縮小し、EXIF を落として再エンコードする。20MB を超えると 413 `file_too_large`。`?persistent=1` で持続扱いにする。応答は記録 (新規は 201、同じ内容の再送は既存の記録を 200 で返す) |
 | GET | `/files/:id` | 保存した画像本体。`Content-Type` は記録の mime、`X-Content-Type-Options: nosniff`、`Content-Security-Policy: sandbox; default-src 'none'`、`Cache-Control: private, max-age=3600`。なければ 404 |
 | GET | `/files/:id/meta` | 記録。`{ id, mime, size, width, height, persistent, createdAt, resized, original: { mime, size, width, height } }`。なければ 404 |
 | PATCH | `/files/:id` | body `{ "persistent": true }` または `false` で持続扱いを切り替える。未知のキーや型違いは 400 |
