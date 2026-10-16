@@ -108,12 +108,13 @@ MCP Events (SEP-3415) が購読 ID をクライアント生成にせず、購読
 機械的な検知は hook、意味的な判断は skill、と役割を分ける。
 skill が「区切りに来た」と判断した場合は、エージェントが `report_event` で Hub に申告する。
 
-**hook イベントと Mailbox の対応付け**: MCP サーバーが自セッションの `session_id` を知る手段は公式資料に見当たらない (§6.1)。
-そこで **shim と hook が同じ起動環境を共有すること**を使う。
-- 第一手段: HTTP hook の `headers` で `X-Hub-Mailbox: $HUB_MAILBOX` を送る (`allowedEnvVars` に `HUB_MAILBOX`)。shim も同じ `HUB_MAILBOX` で attach するので、Hub は名前で直接結びつけられる。
-- 第二手段: ヘッダーが空なら、hook 入力の `cwd` から shim と同じ規則 (フォルダ名) で Mailbox 名を導く。
-- Hub は解決できたイベントの `session_id` を、その Mailbox の Attachment に記録する。shim は `session_id` を知らなくてよい。
-- 実行中に `attach` ツールで Mailbox を切り替えた場合は環境変数とずれる。Hub は記録済みの `session_id` → Attachment の対応を優先する。
+**hook イベントと Mailbox の対応付け**: 実機では stdio サーバーの環境に `CLAUDE_CODE_SESSION_ID` があり、hook の `session_id` と一致した (§6.1c)。
+ただし公式資料に記載のない挙動なので、なくなっても動くように、shim と hook が同じ起動環境を共有することを使った手段を重ねる。
+- 第一手段: shim が `CLAUDE_CODE_SESSION_ID` を attach の `sessionId` として申告する。Hub は hook 入力の `session_id` → Attachment → Mailbox で解決する。
+  実行中に `attach` ツールで Mailbox を切り替えても、この対応は正しく追従する。
+- 第二手段: HTTP hook の `headers` で `X-Hub-Mailbox: $HUB_MAILBOX` を送る (`allowedEnvVars` に `HUB_MAILBOX`)。shim も同じ `HUB_MAILBOX` で attach するので、名前で直接結びつけられる (実機で展開を確認済み)。
+- 第三手段: ヘッダーも空なら、hook 入力の `cwd` から shim と同じ規則 (フォルダ名) で Mailbox 名を導く。
+- 第二・第三手段で解決できたときは、そのイベントの `session_id` を Attachment に記録し、以後は第一手段と同じく扱う。
 親 PID 照合は Windows でシェル経由の親子関係が崩れうるため採らない。
 
 **イベント ID**: 同じ区切りが `Stop` hook と `report_event` の両方から届いても重複除去できるよう、イベント ID は可能なら上流の値 (`session_id` + hook 固有の値) から決定的に作る (SEP の `eventId` の考え方)。
@@ -258,21 +259,29 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 - **HTTP hook**: `type: "http"` で入力 JSON をそのまま POST する。`headers` の値は `allowedEnvVars` に列挙した環境変数だけ展開される (例 `"Authorization": "Bearer $HUB_TOKEN"`)。
   非 2xx や接続失敗は処理を止めないエラー扱い。既定タイムアウトは 600 秒。
 
+### 6.1c 実機で確認済み (2026-10-16、Claude Code 2.1.301 / Windows 11 / Pro、`tools/probe/`)
+
+- **バージョン**: 2.1.301 で自作 channel が動く。
+- **プロトコル**: Claude Code は最初に `server/discover` を送り (v2 ランタイムの打診)、SDK 1.32.1 のサーバーとは `initialize` で `2025-11-25` に落ちて接続した。channel として登録され、通知が届いた。
+- **`--mcp-config` との併用**: `--mcp-config tools/probe/mcp.json --dangerously-load-development-channels server:agent-hub-probe` で起動すると、
+  起動時に `server:agent-hub-probe · no MCP server configured with that name` と警告が出る。**それでも通知は届いた**ので、この警告は誤検知とみなしてよい。
+- **アイドル中の起床**: 何もしていないセッションに通知を送ると、Claude が自分からターンを始めて応答した。
+- **閉じタグのエスケープ**: 本文中の `</channel>` を Claude Code は `<\/channel>` に変換して渡す。外側の `<channel>` を本文から閉じることはできない。
+  本文中の `<channel source="evil" ...>` (開きタグ) はそのまま残るが、外側のタグの本文として見える。ただしこの挙動は公式資料には記載がない。
+- **環境変数の継承**: 起動シェルの `HUB_MAILBOX` は、`env` に書かなくても stdio サーバーに継承された。`${HUB_MAILBOX:-unset}` の展開も効いた。
+- **`CLAUDE_CODE_SESSION_ID` (公式資料に記載なし)**: stdio サーバーの環境に設定されており、値は hook 入力の `session_id` と一致した。
+  ほかに `CLAUDECODE=1`, `CLAUDE_CODE_ENTRYPOINT=cli`, `CLAUDE_PROJECT_DIR` などがあった。
+- **HTTP hook のヘッダー展開**: `X-Hub-Mailbox: $HUB_MAILBOX` は `probe-test` に展開されて届いた。
+- **hook の実ペイロード (`Stop`)**: キーは `session_id, transcript_path, cwd, scratchpad_dir, prompt_id, permission_mode, effort, hook_event_name, stop_hook_active, last_assistant_message, background_tasks, session_crons` で、資料どおりだった。
+  `SessionStart` はプローブの HTTP が listen する前に発火したため、記録されなかった (想定どおり)。
+
 ### 6.2 未検証
 
-検証用プローブ `tools/probe/` で実機確認する (手順は tools/probe/README.md)。
-
-1. **Channels の必要バージョン** (v2.1.80 以降と報告されている)。公式資料に記載なし。使う Claude Code で動くかをプローブで確かめる。
-2. **channel タグの閉じタグ偽装**: 本文に `</channel>` が含まれた場合に Claude Code がエスケープするか。結果次第で `<hub-message>` の二重包みをやめ、属性を `meta` に一本化する。
-3. **`session_id` を使わない対応付けの成立**: HTTP hook のヘッダー `X-Hub-Mailbox: $HUB_MAILBOX` が展開されて届くか (§3.4)。MCP の initialize に `session_id` 相当の情報が来ないことも念のため確認する。
-4. **stdio サーバーへの環境変数の継承**: 起動シェルの `HUB_MAILBOX` / `HUB_ROLE` が `env` 指定なしで shim に継承されるか (展開が効くことは確認済み)。
-5. (解決済み → §6.1b) hook の入力ペイロード
-6. (解決済み → §6.1b) hook の設定場所。HTTP hook を使うので Windows のコマンド記述は不要になった
-7. **`AskUserQuestion` 待機中に channel 通知が来たときの挙動**: 回答として扱われるのか、次のターンの入力になるのか。
-8. **Windows 固有**: パス表記、改行コード。daemon の常駐は Docker (§3.8) で解決する見込み。
+1. **`AskUserQuestion` 待機中に channel 通知が来たときの挙動**: 回答として扱われるのか、次のターンの入力になるのか。1 回目のプローブでは手順が成立しなかったので、やり直す。
+2. **Windows 固有**: パス表記、改行コード。daemon の常駐は Docker (§3.8) で解決する見込み。
    Docker Desktop (WSL2) で `ports: "127.0.0.1:7777:7777"` がホストのループバックだけに公開されることを確認する。
-9. **Codex 側の MCP 対応状況**: `inbox()` polling が使えるか。
-10. **代替の配信経路: plugin の monitor**。Hookdeck の mcp-events-bridge は Channels を使わず、plugin の monitor で poll クライアントを動かし、1 行出力を通知として Claude に届けている (Claude Code 2.1.275 以降)。開発用フラグと警告ダイアログが不要になる可能性がある。アイドル中のセッションを起こせるかを含めて比較する。
+3. **Codex 側の MCP 対応状況**: `inbox()` polling が使えるか。
+4. **代替の配信経路: plugin の monitor**。Hookdeck の mcp-events-bridge は Channels を使わず、plugin の monitor で poll クライアントを動かし、1 行出力を通知として Claude に届けている (Claude Code 2.1.275 以降)。開発用フラグと警告ダイアログが不要になる可能性がある。アイドル中のセッションを起こせるかを含めて比較する。
 
 ## 7. MCP Events (SEP-3415) との関係
 

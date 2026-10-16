@@ -57,7 +57,7 @@
   "attachmentId": "at_01H…",
   "mailbox": "rev-a",
   "client": "claude-code | codex | other",
-  "sessionId": "… (分かれば)",
+  "sessionId": "… (環境変数 CLAUDE_CODE_SESSION_ID。なければ省略)",
   "cwd": "…",
   "attachedAt": "…",
   "leaseUntil": "…"
@@ -77,7 +77,7 @@
 ```
 - hook からは HTTP hook が入力 JSON をそのまま `POST /events` に送ってくる (design.md §6.1b)。Hub はそれを `payload` に入れ、`hook_event_name` から `kind` を決める
   (`Stop` → `turn.end`、`Notification` → `notification`、`PreToolUse` + `AskUserQuestion` → `question`)。`report_event` からは `kind` を明示して送る。
-- `mailbox` は Hub が次の順で解決する: 記録済みの `sessionId` → Attachment → `X-Hub-Mailbox` ヘッダー → `payload.cwd` のフォルダ名。解決できなければ空のまま UI に出す (design.md §3.4)。
+- `mailbox` は Hub が次の順で解決する: `payload.session_id` に一致する Attachment (shim の申告または記録済み) → `X-Hub-Mailbox` ヘッダー → `payload.cwd` のフォルダ名。解決できなければ空のまま UI に出す (design.md §3.4)。
 - `id` は `session_id` と hook 固有の値 (`tool_use_id`、`prompt_id` など) から決定的に作る。
 
 ### Message
@@ -137,7 +137,7 @@
 {
   "client": "claude-code",
   "role": "reviewer",    // 任意。指定すると Mailbox の role を更新する。省略時は既存の role を保つ
-  "sessionId": "… (分かれば)",
+  "sessionId": "… (環境変数 CLAUDE_CODE_SESSION_ID。なければ省略)",
   "cwd": "…",
   "maxAgeMs": 86400000   // 任意。これより古い未読は渡さない
 }

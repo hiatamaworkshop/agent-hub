@@ -70,7 +70,7 @@
 
 - 配信ルール (人間確認なしの自動転送) の opt-in 設計
 - Channels の permission relay を使い、UI から tool 実行許可を出す (design.md §6.1)
-- 配信経路として plugin の monitor を Channels と比較する (design.md §6.2-10)
+- 配信経路として plugin の monitor を Channels と比較する (design.md §6.2-4)
 - Claude Code が MCP Events に対応したら、shim に `io.modelcontextprotocol/events` (`events/stream`) を追加する (design.md §7)
 - デスクトップアプリ向けの画面操作ベース連携 (本プロジェクトの範囲外の可能性が高い)
 - `kind` の追加 (交代時の引き継ぎ用 `handoff` など。design.md §3.6)
