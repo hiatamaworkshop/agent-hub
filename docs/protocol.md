@@ -129,6 +129,8 @@
 | GET | `/` | UI の HTML。`?token=` 付きなら cookie を設定してリダイレクト (§1) |
 | GET | `/stream` | SSE。Event / Message / Mailbox・Attachment の状態変化を流す |
 | POST | `/messages/:id/forward` | 無編集転送。body: `{ "to": {...} }` |
+| GET | `/settings` | カスタムコマンドの設定。`{ "version": 1, "commands": [{ "name", "text" }] }`。ファイルがなければ空。毎回ファイルから読む。壊れていれば 500 `settings_invalid` (中身は返さない) |
+| PUT | `/settings` | 設定を保存。body `{ "commands": [...] }` を検証し、保存後の設定を返す。違反は 400 (英語の `message`)。本文上限 64KB。ファイルの commands 以外のキーは保持する。壊れていたファイルは `settings.json.bak` に退避してから書く。保存先は `HUB_DATA_DIR/settings.json`。name は `^[a-z0-9][a-z0-9_-]{0,31}$`、重複不可、最大 100 個、text は 1〜8000 文字 |
 
 ### shim 向け
 | メソッド | パス | 内容 |

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
 import { createApp } from './app.js'
 import { Hub } from './hub.js'
+import { SettingsStore } from './settings.js'
 import { Store } from './store.js'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -24,9 +25,11 @@ if (!['127.0.0.1', '::1', 'localhost'].includes(host)) {
 }
 
 const store = new Store({ file: join(dataDir, 'hub.jsonl') })
+const settings = new SettingsStore(join(dataDir, 'settings.json'))
 const app = createApp({
   hub: new Hub(store),
   token,
+  settings,
   uiHtml: async () => {
     try {
       return await readFile(join(ROOT, 'public', 'index.html'), 'utf8')

@@ -63,6 +63,20 @@ claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels s
 3. Claude に返信させる (`post_message`、`kind: reply`)。ブラウザの一覧に `reply` として出る。
 4. ブラウザの左側に Mailbox `agent-hub` が「接続中」と表示される。
 
+### カスタムコマンド
+
+ブラウザの **Commands** で、よく使う文字列に名前を付けられる。例: 名前 `cp`、text `commit and push`。
+
+- 本文に `/cp` と書いて Send を押すと、`commit and push` に置き換えて送る。`/cp 今日の作業` のように書くと、`$ARGS` を含む text ではその位置に、含まなければ後ろに引数が入る。
+- `//cp` は置き換えずに `/cp` を送る (エスケープ)。定義されていない `/xyz` はそのまま送る。
+- 設定は `HUB_DATA_DIR` (既定は `data/`) の `settings.json` に保存される。手で編集してもよく、次の読み込みから反映される。
+
+```json
+{ "version": 1, "commands": [ { "name": "cp", "text": "commit and push" } ] }
+```
+
+この機能は Hub 側の API を使うので、**既に起動している Hub は再起動しないと Commands が無効のまま** (古い Hub では Commands が灰色になる)。
+
 ### 購読は Mailbox ごとに 1 回でよい
 
 - 購読はセッションではなく **Mailbox に保存される** (`data/hub.jsonl`)。Hub の再起動や、新しいセッションが同じ Mailbox に attach したときも残るので、起動のたびに頼み直さなくてよい。

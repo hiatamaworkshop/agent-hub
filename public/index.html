@@ -62,7 +62,11 @@
   .compose { display: flex; gap: 8px; align-items: flex-end; }
   .compose textarea { flex: 1 1 auto; min-width: 0; }
   .compose button[type=submit] { flex: none; }
-  #err:empty, #warn:empty { display: none; }
+  #err:empty, #warn:empty, #hint:empty { display: none; }
+  /* 1 段目の右端に Commands。ヒントは 1 行に収め、長いときは省略する */
+  #cmds { margin-left: auto; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  #hint { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: min(460px, 100%); }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   select, input, textarea, button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
   select#to { max-width: 320px; font-family: var(--mono); }
@@ -72,6 +76,20 @@
   button[type=submit] { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; padding: 5px 16px; }
   #replyInfo { font-size: 12px; color: var(--muted); }
   #err, #warn { color: var(--warn); font-size: 12px; }
+  /* カスタムコマンドの管理ダイアログ */
+  dialog#cmdDialog { width: min(640px, 92vw); max-height: 85vh; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg); }
+  dialog#cmdDialog::backdrop { background: rgba(0, 0, 0, .35); }
+  #cmdDialog h2 { font-size: 15px; margin: 0 0 6px; }
+  #cmdDialog .desc { margin: 0 0 12px; font-size: 12px; color: var(--muted); }
+  #cmdRows { max-height: 50vh; overflow: auto; }
+  .cmd-row { border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin-bottom: 8px; display: grid; gap: 6px; }
+  .cmd-top { display: flex; gap: 6px; align-items: center; }
+  .cmd-top .slash { font-family: var(--mono); color: var(--muted); }
+  .cmd-top input { flex: 1; min-width: 0; font-family: var(--mono); }
+  .cmd-row textarea { min-height: 44px; }
+  .cmd-foot { justify-content: space-between; align-items: center; }
+  #cmdErr { color: var(--warn); font-size: 12px; flex: 1; min-width: 0; }
+  #cmdSave { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; padding: 5px 16px; }
   #auth { display: none; margin: 40px auto; max-width: 520px; padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
   body.noauth main { display: none; } body.noauth #auth { display: block; }
   code { font-family: var(--mono); }
@@ -109,7 +127,9 @@
         <select id="to" title="To"></select>
         <input id="topic" placeholder="Topic name" autocomplete="off" hidden>
         <span id="replyInfo"></span>
+        <span id="hint"></span>
         <span id="err"></span><span id="warn"></span>
+        <button type="button" id="cmds" class="linkbtn" title="Define custom commands for the message box">Commands</button>
       </div>
       <div class="compose">
         <textarea id="body" placeholder="Message (Ctrl+Enter to send)"></textarea>
@@ -118,6 +138,13 @@
     </form>
   </section>
 </main>
+<dialog id="cmdDialog" aria-labelledby="cmdTitle">
+  <h2 id="cmdTitle">Custom commands</h2>
+  <p class="desc">Type /name in the message box and press Send to replace it with the text. $ARGS is replaced by whatever follows the name. Use //name to send /name literally.</p>
+  <div id="cmdRows"></div>
+  <div class="row"><button type="button" id="cmdAdd">Add command</button></div>
+  <div class="row cmd-foot"><span id="cmdErr"></span><span><button type="button" id="cmdCancel">Cancel</button> <button type="button" id="cmdSave">Save</button></span></div>
+</dialog>
 <script>
 'use strict'
 const $ = (id) => document.getElementById(id)
@@ -139,7 +166,11 @@ async function api(path, init) {
   const res = await fetch(path, { ...init, headers: { 'content-type': 'application/json', ...(init && init.headers) } })
   if (res.status === 401) { document.body.classList.add('noauth'); throw new Error('unauthorized') }
   const json = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(json.message || (json.issues && json.issues.map((i) => `${i.path}: ${i.message}`).join('; ')) || json.error || res.status)
+  if (!res.ok) {
+    const err = new Error(json.message || (json.issues && json.issues.map((i) => `${i.path}: ${i.message}`).join('; ')) || json.error || res.status)
+    err.status = res.status
+    throw err
+  }
   return json
 }
 
@@ -333,7 +364,7 @@ $('form').onsubmit = async (e) => {
   const body = $('body').value
   if (!body.trim()) return
   if (kind === 'reply' && !replyTo) { $('err').textContent = 'For a reply, start with the "Reply" button on a message.'; return }
-  const msg = { kind, body, to: selectedTo() }
+  const msg = { kind, body: expandBody(body), to: selectedTo() }
   if (kind === 'reply') msg.replyTo = replyTo.id
   try {
     const { recipients, ...m } = await api('/messages', { method: 'POST', body: JSON.stringify(msg) })
@@ -344,6 +375,8 @@ $('form').onsubmit = async (e) => {
       $('warn').textContent = `No Mailbox will receive ${addr(m.to)} (#${m.seq} was recorded)`
     }
     $('body').value = ''
+    // プログラムからの値変更では input イベントが出ないので、ヒントを明示的に更新する
+    updateHint()
     if (kind === 'reply') { replyTo = null; $('kind').value = 'request'; updateReplyInfo() }
   } catch (err) {
     $('err').textContent = String(err.message || err)
@@ -356,6 +389,152 @@ $('body').onkeydown = (e) => {
 
 $('keep').value = loadKeep()
 $('fold').onclick = fold
+
+// カスタムコマンド。設定は Hub の /settings にあり、ページを開いたとき・ダイアログを開いたときに読む
+// 古い Hub (/settings が 404) では使えず、送信はこれまでどおり
+let commands = [] // { name, text }
+let commandsState = 'loading' // 'loading' | 'ok' | 'unavailable' | 'invalid'
+let commandsError = ''
+const COMMAND_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/
+const COMMAND_CALL_RE = /^\/([A-Za-z0-9_-]+)(?:\s+([\s\S]*))?$/
+
+async function loadCommands() {
+  try {
+    const { commands: list } = await api('/settings')
+    commands = list
+    commandsState = 'ok'
+    commandsError = ''
+  } catch (err) {
+    commands = []
+    if (err.status === 404) commandsState = 'unavailable'
+    else { commandsState = 'invalid'; commandsError = String(err.message || err) }
+  }
+  updateCommandsButton()
+  updateHint()
+}
+
+function updateCommandsButton() {
+  const b = $('cmds')
+  b.disabled = commandsState === 'unavailable'
+  b.title = commandsState === 'unavailable' ? 'Restart the Hub to enable custom commands' : 'Define custom commands for the message box'
+}
+
+function findCommand(name) {
+  const n = name.toLowerCase()
+  return commands.find((c) => c.name === n)
+}
+
+// $ARGS があればそこへ入れ、なければ text の後ろに足す。args が空なら text のまま
+function fillCommand(text, args) {
+  if (text.includes('$ARGS')) return text.split('$ARGS').join(args).trim()
+  return args ? `${text} ${args}` : text
+}
+
+// Send の瞬間に行う置換。置換しないときは元の本文をそのまま返す
+function expandBody(raw) {
+  const t = raw.trim()
+  if (t.startsWith('//')) {
+    // //name は /name を送るエスケープ (name が定義済みのときだけ)
+    const m = COMMAND_CALL_RE.exec(t.slice(1))
+    return m && findCommand(m[1]) ? t.slice(1) : raw
+  }
+  const m = COMMAND_CALL_RE.exec(t)
+  const cmd = m && findCommand(m[1])
+  return cmd ? fillCommand(cmd.text, m[2] ?? '') : raw
+}
+
+// 本文が / で始まるときのヒント。一致すれば置換後の先頭、名前の途中なら前方一致の一覧
+function updateHint() {
+  const hint = $('hint')
+  hint.textContent = ''
+  if (commandsState === 'loading') return
+  const t = $('body').value.trimStart()
+  if (!t.startsWith('/') || t.startsWith('//')) return
+  // 使えない理由は、/ で始まる本文に対してだけ出す
+  if (commandsState === 'unavailable') { hint.textContent = 'Restart the Hub to enable custom commands.'; return }
+  if (commandsState === 'invalid') { hint.textContent = 'Commands unavailable: the settings file is invalid.'; return }
+  if (commands.length === 0) { hint.textContent = 'No commands yet. Click Commands to add one.'; return }
+  const rest = t.slice(1)
+  const token = rest.split(/\s/, 1)[0]
+  const hasArgs = rest.length > token.length
+  const cmd = token && findCommand(token)
+  if (cmd) {
+    const preview = fillCommand(cmd.text, hasArgs ? rest.slice(token.length).trim() : '').replace(/\s+/g, ' ')
+    hint.textContent = `/${cmd.name} → ${preview.length > 60 ? preview.slice(0, 60) + '…' : preview}`
+  } else {
+    const names = commands.filter((c) => c.name.startsWith(token.toLowerCase())).slice(0, 5)
+    if (names.length && !hasArgs) hint.textContent = names.map((c) => `/${c.name}`).join('  ')
+    else if (!names.length && token) hint.textContent = `No command named /${token}. It will be sent as typed.`
+  }
+}
+
+async function openCommands() {
+  await loadCommands()
+  $('cmdErr').textContent = commandsState === 'invalid' ? commandsError : ''
+  $('cmdRows').textContent = ''
+  for (const c of commands) addCommandRow(c.name, c.text)
+  $('cmdDialog').showModal()
+}
+
+function addCommandRow(name = '', text = '') {
+  const row = el('div', 'cmd-row')
+  const top = el('div', 'cmd-top')
+  const name_ = document.createElement('input')
+  name_.className = 'cname'
+  name_.placeholder = 'name'
+  name_.value = name
+  name_.autocomplete = 'off'
+  name_.spellcheck = false
+  name_.setAttribute('aria-label', 'Command name')
+  const remove = el('button', '', 'Remove')
+  remove.type = 'button'
+  remove.onclick = () => row.remove()
+  top.append(el('span', 'slash', '/'), name_, remove)
+  const body = document.createElement('textarea')
+  body.rows = 2
+  body.value = text
+  body.placeholder = 'Text sent in place of /name'
+  body.setAttribute('aria-label', 'Command text')
+  row.append(top, body)
+  $('cmdRows').append(row)
+}
+
+function checkCommands(list) {
+  const names = new Set()
+  for (const c of list) {
+    if (!COMMAND_NAME_RE.test(c.name)) return `Name "${c.name}": use 1–32 lowercase letters, digits, "_" or "-", starting with a letter or digit.`
+    if (names.has(c.name)) return `Duplicate name "${c.name}".`
+    names.add(c.name)
+    if (c.text.length < 1 || c.text.length > 8000) return `Text for "${c.name}" is required (up to 8000 characters).`
+  }
+  return ''
+}
+
+async function saveCommands() {
+  const list = [...$('cmdRows').querySelectorAll('.cmd-row')]
+    .map((r) => ({ name: r.querySelector('.cname').value.trim(), text: r.querySelector('textarea').value.trim() }))
+    .filter((c) => c.name || c.text)
+  if (list.some((c) => !c.name)) { $('cmdErr').textContent = 'Every command needs a name.'; return }
+  const problem = checkCommands(list)
+  if (problem) { $('cmdErr').textContent = problem; return }
+  try {
+    const saved = await api('/settings', { method: 'PUT', body: JSON.stringify({ commands: list }) })
+    commands = saved.commands
+    commandsState = 'ok'
+    commandsError = ''
+    updateCommandsButton()
+    updateHint()
+    $('cmdDialog').close()
+  } catch (err) {
+    $('cmdErr').textContent = String(err.message || err)
+  }
+}
+
+$('cmds').onclick = openCommands
+$('cmdAdd').onclick = () => { addCommandRow(); $('cmdRows').lastElementChild.querySelector('.cname').focus() }
+$('cmdSave').onclick = saveCommands
+$('cmdCancel').onclick = () => $('cmdDialog').close()
+$('body').addEventListener('input', updateHint)
 
 async function loadMailboxes() {
   const { mailboxes } = await api('/mailboxes')
@@ -411,6 +590,7 @@ function connect() {
   try {
     await loadMailboxes()
   } catch { return }
+  loadCommands()
   connect()
   await loadHistory()
 })()

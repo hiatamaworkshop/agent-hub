@@ -1,13 +1,15 @@
 // HTTP ルート (protocol.md §3)。入力の検証と応答への変換だけを行い、振る舞いは Hub に任せる
-import { Hono, type Context } from 'hono'
+import { Hono, type Context, type MiddlewareHandler } from 'hono'
 import { setCookie } from 'hono/cookie'
 import { bodyLimit } from 'hono/body-limit'
+import { HTTPException } from 'hono/http-exception'
 import { streamSSE } from 'hono/streaming'
 import { z } from 'zod'
 import { isValidName, nameSchema, postMessageSchema, type Sender } from '../shared/types.js'
 import { Auth, COOKIE_NAME, type AuthEnv } from './auth.js'
 import { Hub, HubError } from './hub.js'
 import { pump } from './sse.js'
+import { SettingsError, SettingsStore } from './settings.js'
 
 export interface AppOptions {
   hub: Hub
@@ -15,6 +17,8 @@ export interface AppOptions {
   // UI の HTML。null なら未配置
   uiHtml: () => Promise<string | null>
   heartbeatMs?: number
+  // カスタムコマンドの設定。省略時は /settings を公開しない
+  settings?: SettingsStore
 }
 
 const BROWSER: Sender = { type: 'user', id: 'browser', role: null }
@@ -61,6 +65,7 @@ export function createApp(opts: AppOptions) {
 
   app.onError((err, c) => {
     if (err instanceof HubError) return c.json({ error: err.code, message: err.message }, err.status)
+    if (err instanceof SettingsError) return c.json({ error: err.code, message: err.message }, err.status)
     console.error('[hub]', err)
     return c.json({ error: 'internal' }, 500)
   })
@@ -175,6 +180,22 @@ export function createApp(opts: AppOptions) {
       }),
     ),
   )
+
+  if (opts.settings) {
+    const settings = opts.settings
+    app.get('/settings', async (c) => c.json(await settings.read()))
+    // bodyLimit の 413 は HTTPException で投げられるので、この経路だけ応答にする (既存の onError は変えない)
+    const limit = bodyLimit({ maxSize: 64 * 1024 })
+    const guarded: MiddlewareHandler = async (c, next) => {
+      try {
+        return await limit(c, next)
+      } catch (e) {
+        if (e instanceof HTTPException) return e.getResponse()
+        throw e
+      }
+    }
+    app.put('/settings', guarded, async (c) => c.json(await settings.write(await readJson(c))))
+  }
 
   return app
 }

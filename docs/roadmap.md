@@ -38,6 +38,7 @@
   - [x] `POST /messages` の応答に配信先 Mailbox の一覧を含め、0 件なら UI に「届く Mailbox がない」と警告する (手入力のトピック向け)
   - [x] `user` 宛ての名前を `browser` / `cli` に限る (protocol.md も更新)
 - [x] 溜まった一覧を整理できない: UI に Compact (Keep latest n、既定 10) を追加。古い分は表示から外して 1 本のスタブにまとめ、Expand で戻す。表示だけで Hub・未読・配信には影響しない
+- [x] カスタムコマンド: 本文の `/name` を Send で定義済みの text に置換して送る。設定は `HUB_DATA_DIR/settings.json` に永続化し、UI の Commands から編集する (置換は UI、Hub は読み書きのみ)
 - [ ] `kind` の選択を色付きのトグルボタン (アイコン化) にし、一覧の色分けと揃える (見た目の改善。優先度は低い)
 
 ## P1: 区切り・質問の検知
