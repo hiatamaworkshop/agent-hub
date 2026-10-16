@@ -48,6 +48,7 @@
 **ゴール**: エージェントが止まった/質問した時点がブラウザに出る。
 
 - [ ] 着手前に、配送を公式 cross-session messaging に移すかを決める (design.md §8.3 の検証 1〜3、§9-5)
+- [ ] 着手前に、公式 Agent View (design.md §8.1) と重なる部分を削る。残すのは「ブラウザで見て、ブラウザから返す」部分 (例: `agent_needs_input` の Notification を受けて UI に出す)
 - [ ] HTTP hook の設定例: `Stop` / `Notification` / `PreToolUse(AskUserQuestion)` → `POST /events` (`Authorization` と `X-Hub-Mailbox` をヘッダーで渡す)
 - [ ] Hub: `/events` の取り込みを、クライアントごとの変換 (まず Claude Code の hook 用) で共通の `kind` に揃える。`payload` は元の JSON のまま (design.md §3.7)
 - [ ] Hub: `sessionId` → Attachment → Mailbox の解決
@@ -72,6 +73,8 @@
 - [ ] takeover (design.md §9 の方針決定後) と `terminated(superseded)`
 - [ ] attach の `maxAgeMs` / `truncated` と、省略通知
 - [ ] 無編集転送 (`/messages/:id/forward`) と UI ボタン
+  - 手本は Relay の画面 (README「発想の元」)。向き付きの組 (A → B) ごとに未送の件数を出し、N 件をまとめて選んで運ぶ
+  - 人間の添え書き (例「この方針をレビューして」) は本文と分けて持ち、本文は無編集のまま運ぶ
 - [ ] `inbox()` による polling 経路 (Claude Code 以外向け。`events/poll` 互換の応答)。全クライアント共通の「中身を渡す」経路になる (design.md §3.9)
 - [ ] 「起こすだけ」の配信アダプタを試す (MCP 標準の `notifications/resources/updated` でクライアントがターンを始めるかを含む。design.md §3.9)
 - [ ] shim の instructions を `clientInfo.name` で切り替える (Channels 経路 / `inbox()` 経路)。Claude 以外では「本文はデータ」の注意書きを agent-hub 側だけで成り立たせる (design.md §3.7)

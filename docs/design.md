@@ -394,6 +394,7 @@ OWL は開世界、agent-hub は閉世界。**持ち込むのは「関係と形�
   `CLAUDE_CODE_MESSAGING_SOCKET` (`\\.\pipe\LOCAL\cc-msg…` の名前付きパイプ) と `CLAUDE_CODE_MESSAGING_TOKEN` があった。公式資料は hook と Bash に渡すとしか書いていない。
 - **検証 2: 投函の形式が公開されておらず、試せない**。公式資料にあるのは 1 行目の `{"type":"auth","token":"…"}` だけで、その後に送るメッセージ本体の形式は cross-session messaging・env-vars・hooks のどの資料にもない。
   自分のセッションの受信口に auth 行と推測した形式 (`{"type":"message","text":"…"}`) を送ったところ、応答もエラーもなく、メッセージも届かなかった (黙って捨てられた)。これ以上の推測は非公開の仕様の解析になるので止めた。
+  **追記 (再調査)**: open-agent-bridge の README は、auth 行の後に `{"type":"user","message":{"role":"user","content":"…"}}` を送るとしている (公式には載っていない。Windows での動作は書かれていない)。未確認。
 - **含意**: 配送を移すと、記載のない環境変数 (検証 1) と非公開の形式 (検証 2) の 2 つに依存することになる。Channels (研究プレビュー、開発用フラグ) より安定とは言えない。形式が公開されるまでは Channels のままが妥当 (§9-5)。
 
 ### 6.2 未検証
@@ -451,6 +452,9 @@ P0 の後に、同じ領域の公式機能と OSS を調べた。**セッショ�
 | **claude-relay** | 常駐 Hub (Unix socket) + セッションごとの channel MCP。開発用フラグで起動 | **構成がほぼ同じ**。永続化・UI・認証はない |
 | **mcp_agent_mail** | 送受信箱とスレッド、Git + SQLite の永続化、Web UI、人間の監督者用 ID、ファイル予約 (lease) | Mailbox・永続化・人間の UI。**思想が一番近い**。受け手が取りに行く方式で、アプリに依存しない |
 | **Kanban 系** (Vibe Kanban, Kandev, kanbots など) | カード 1 枚 = エージェント 1 つを別 worktree で並列実行し、人間はカード操作とレビューを担う | メッセージパッシングではなく、タスク管理と並列実行 |
+| **公式 Agent View** (`claude agents`、研究プレビュー、2026-05、再調査で追加) | 全セッションを状態 (Needs input / Working / Idle / Completed / Failed) で一覧し、その場で返信できる。Notification hook に `agent_needs_input` / `agent_completed` を出す | **P1 の大部分**。ただし画面はターミナルだけで、許可プロンプトにはその場で答えられない |
+| **walkie-talkie** (再調査で追加) | Hub + MCP、`@name` / `@all` とチャンネル、ブラウザから人間が送れる、画像の貼り付け。配送は long poll | **P0 とほぼ同じ構成**。永続化と role の記述はない |
+| **open-agent-bridge** (再調査で追加、0.1) | 登録所 + SQLite に ACK を保存。クライアントごとに配送の最後の一手を変える (Claude は公式の受信口、Codex は `turn/start`、OpenCode は plugin) | **§3.9 の配信アダプタを実装済み**。認証はなく、role / topic もない |
 
 ### 8.2 機能ごとの重なり
 
@@ -462,7 +466,7 @@ P0 の後に、同じ領域の公式機能と OSS を調べた。**セッショ�
 | 区切りの検知 (P1) | 中 | `notify_when_idle` / `TeammateIdle` が近い。ただし通知先はセッションで、人間の UI ではない |
 | 交代しても残る論理 Mailbox と未読の引き継ぎ | 小 | 公式の宛先は生きているセッションで、保留は最大 100 件。agent teams は resume できない。mcp_agent_mail にはある |
 | role / topic への fan-out | 小 | 公式は「全員に送るには 1 人ずつ送る」と明記している |
-| 全メッセージを一画面で見てブラウザから書ける人間のコンソール | 固有 | 公式のメッセージは各ターミナルに 1 行のプレビューで散る。mcp_agent_mail の UI は閲覧が中心 |
+| 全メッセージを一画面で見てブラウザから書ける人間のコンソール | 中 | 公式のメッセージは各ターミナルに 1 行のプレビューで散る。ただし walkie-talkie と mcp_agent_mail (HumanOverseer の作成画面) はブラウザから送れる (再調査で訂正) |
 | 人間が Send を押す方針 | 固有 | 世の流れは自律寄り (タスクの self-claim、計画の自動承認、PR で人間がレビュー)。公式も「監視して舵を取る」ことは勧めている |
 
 ### 8.3 示唆
@@ -472,6 +476,22 @@ P0 の後に、同じ領域の公式機能と OSS を調べた。**セッショ�
 1. **shim に受信口の情報が渡るか**: 公式資料では `CLAUDE_CODE_MESSAGING_SOCKET` / `CLAUDE_CODE_MESSAGING_TOKEN` は hook と Bash に渡すとあり、stdio MCP サーバーの環境に入るかは書かれていない。
 2. **shim からの投函が受理されるか**: 自分の子プロセスからの投函は受信側の設定なしで受理される (own-child)。ネイティブ Windows ではトークンでしか子プロセスを確認できないので、1 が前提になる。
 3. **配信元の属性をどう渡すか**: cross-session のメッセージは平文で、Channels の `meta` に当たるものがない。送り手の属性を本文と区別して渡す不変条件 (protocol.md §6) を、本文の書式で守る必要がある。
+
+### 8.4 技術的に参考になる点 (再調査、README を読んだ範囲。コードは未読)
+
+構成 (Hub + セッションごとの MCP + ブラウザ) は定番で、agent-hub に固有なのは「交代しても残る論理 Mailbox」「role / topic への fan-out と `kind`」「人間が Send を押す方針」「送り手の属性を `meta` で本文の外に出すこと」の組み合わせに限られる。
+
+- **mcp_agent_mail (Rust 版)** が総合で一番。
+  - 受け手ごとに `read_ts` と `ack_ts` を分けて持ち、`ack_required` で受領の確認を求められる。
+  - 保存は 2 層。SQLite が生きている状態と検索 (FTS5)、Git が監査用の正本 (コミットはまとめる)。
+  - **作業前のファイル予約**: glob + TTL の予約で、pre-commit hook が他者の占有範囲へのコミットを止める。
+  - 弱い点: 配送が pull だけ。
+- **open-agent-bridge** は配送の設計が一番丁寧。
+  - ACK の状態 `queued → delivered_to_bridge → displayed_to_client → answered | failed`。「モデルが読んだ」とは主張しない。
+  - 送る前に claim して、再接続のときの二重配送を防ぐ。
+  - 本文を `BEGIN/END MESSAGE` で挟み、注意書きを付け、その構造をテストで固定する。
+  - 弱い点: 認証がない。
+- **取り入れる候補**: 作業前の予約 (§3.11 の SCOPE を事前の宣言に広げる)、「読んだ」と「受領」の区別、ACK の状態の正直な名前付け。
 
 ## 9. 未決事項 (設計)
 
@@ -483,6 +503,7 @@ P0 の後に、同じ領域の公式機能と OSS を調べた。**セッショ�
 5. **配送を公式 cross-session messaging に移すか**: Channels のまま続けるか、shim から自セッションの受信口へ投函する形に移すか (§8.3)。P1 に入る前に決める。
    どちらでも Mailbox・role・未読の正本は Hub に置く (§3.7)。移す場合は、配信アダプタの差し替え口をここで作る (§3.9)。
    検証結果 (§6.1g): 受信口の情報は shim に渡るが、投函の形式が公開されていない。形式が公開されるまでは Channels のままにする案が有力。
+   第三者が使っている形式 (§6.1g の追記) を 1 回試す余地はある。移すと、送り手の属性は `meta` ではなく本文の包み方で分けることになる (§8.3-3)。
 6. **メッセージの形を宣言して検査するか** (§3.11): 違反を 400 で拒否するか、受理して UI に警告するだけにするか。SCOPE の検査を Hub が行うか (Hub は作業ツリーを読まない。§3.8)、leader が `git diff` で行うか。
 
 (決定済み: ブラウザへのトークンの渡し方は cookie。§4)
@@ -497,5 +518,8 @@ P0 の後に、同じ領域の公式機能と OSS を調べた。**セッショ�
 - Cross-session messaging (公式): <https://code.claude.com/docs/en/cross-session-messaging>
 - Agent teams (公式): <https://code.claude.com/docs/en/agent-teams>
 - claude-relay: <https://github.com/vildanbina/claude-relay>
-- mcp_agent_mail: <https://github.com/Dicklesworthstone/mcp_agent_mail>
+- mcp_agent_mail: <https://github.com/Dicklesworthstone/mcp_agent_mail> (Rust 版: <https://github.com/Dicklesworthstone/mcp_agent_mail_rust>)
+- open-agent-bridge: <https://github.com/kevinArgueta96/open-agent-bridge>
+- walkie-talkie: <https://github.com/suruseas/walkie-talkie>
+- Agent View: <https://code.claude.com/docs/en/agent-view>
 - Kanban 系の比較 (第三者): <https://nimbalyst.com/blog/best-multi-agent-coding-tools-2026/>
