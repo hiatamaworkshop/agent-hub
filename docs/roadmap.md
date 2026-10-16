@@ -2,7 +2,7 @@
 
 各フェーズは「動く状態で終わる」ことを重視する。受け入れ条件を満たしてから次へ進む。
 
-## P0: 1 セッションで往復する
+## P0: 1 セッションで往復する (完了 2026-10-16)
 
 **ゴール**: ブラウザで書いたメッセージが Claude セッションに届き、Claude が `post_message` で返信し、ブラウザに表示される。
 
@@ -15,16 +15,21 @@
 - [x] Hub: Mailbox の最小実装 (attach で作成、購読、cursor)。リースと takeover は P2
 - [x] shim: channel MCP サーバー。`HUB_MAILBOX` で attach、Hub SSE 受信、`notifications/claude/channel` で push、`subscribe` / `post_message`
 - [x] UI: 1 枚の HTML。メッセージ一覧 (ライブ、`kind` の表示)、送信フォーム (`kind` の選択、既定 `request`)
-- [x] 起動手順を README に追記 (受け入れ条件の通し確認は未)
+- [x] 起動手順を README に追記
 
 **受け入れ条件**
 1. Hub を起動し、Claude Code を channel 有効 (`--dangerously-load-development-channels`) で起動できる。
 2. shim が `HUB_MAILBOX` (未指定ならフォルダ名) の Mailbox に attach する。
 3. エージェントが `subscribe("user.message")` を呼ぶ。
-4. ブラウザから `user.message` に送ると、Claude の会話に `<hub-message>` として入る。
+4. ブラウザから `user.message` に送ると、Claude の会話に `<channel source="agent-hub">` として入る。
 5. Claude が `post_message` (`kind: reply`) で返信すると、ブラウザに `kind` 付きで表示される。
 6. トークンなしの API 呼び出しは 401。127.0.0.1 以外からは到達しない。
 7. ブラウザは起動時に表示された `?token=` 付き URL で開くと cookie で認証され、以後 URL にトークンが残らない。
+
+**確認結果** (2026-10-16、Claude Code 2.1.301 / Haiku 5.5 / Windows 11)
+- 1, 2, 4, 5, 7: 実セッションとブラウザで確認。ブラウザから `mailbox:agent-hub` に送った request が届き、Claude が `post_message` (`to` 省略) で返した reply が `user:browser` 宛てとして UI に出た。
+- 3 (トピック購読経由の配信): 実セッションでは未実施。shim の結合テスト (`src/shim/shim.test.ts`) と、ビルド済み shim を MCP Client から動かした e2e で確認した。
+- 6: 実起動した Hub に curl でトークンなしの 401 を確認。netstat で `127.0.0.1:<port>` のみで待ち受けていることを確認。
 
 ## P1: 区切り・質問の検知
 

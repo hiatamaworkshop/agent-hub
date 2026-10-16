@@ -283,6 +283,13 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 - **ツールの遅延ロード**: プローブの `probe_note` ツールは、頼まれても Claude に使われなかった (「返信用のツールがない」と回答)。tool search で遅延ロードされ、見つけられなかったとみられる。
   shim の `post_message` などは `_meta["anthropic/alwaysLoad"]: true` で最初から読み込ませる。
 
+### 6.1d P0 の実セッションで確認済み (2026-10-16、Claude Code 2.1.301 / Haiku 5.5 / Windows 11)
+
+- **本実装の shim でも channel として登録された**。`--mcp-config tools/dev/mcp.json` + `server:agent-hub` で、§6.1c と同じ「no MCP server configured with that name」の警告が出たが、通知は届いた。
+- **表示**: 届いた通知は端末に `← agent-hub: <本文>` と出る。meta の属性は端末には出ない (Claude のコンテキストには入る)。
+- **`alwaysLoad` が効いた**: Haiku 5.5 でも、頼んでいないのに `post_message` で返信した (§6.1c のプローブでは遅延ロードで見つけられなかった)。
+- **reply の `to` 省略**: Claude は `to` を渡さずに返信し、Hub が `user:browser` に解決した。
+
 ### 6.2 未検証
 
 1. **Windows 固有**: パス表記、改行コード。daemon の常駐は Docker (§3.8) で解決する見込み。

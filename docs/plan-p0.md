@@ -53,7 +53,7 @@ tools/probe/   §6.2 の実機検証用プローブ (本実装ではない)
 | 5 | Mailbox: attach (作成と冪等性)、購読の PUT/DELETE、`/attachments/:id/stream` (未読の再送 + 新着)、ack で cursor 前進。リースと takeover は P2 (済。takeover は最小限のみ) | テスト (ack 前の再 attach で再送される) |
 | 6 | `shim/main.ts`: `HUB_MAILBOX` → フォルダ名で attach (`CLAUDE_CODE_SESSION_ID` を sessionId として申告)、SSE を受けて `notifications/claude/channel` で push、ack。ツール `subscribe` / `post_message` / `whoami` (`_meta["anthropic/alwaysLoad"]: true`、design.md §6.1c) (実装済み。MCP Client による結合テストあり。Claude Code 上の確認は未) | 手動 (Claude Code 上で受け入れ条件 2〜5) |
 | 7 | `public/index.html`: メッセージ一覧 (ライブ、`kind` 表示)、送信フォーム (`kind` 選択、既定 `request`) (済) | 手動 (ブラウザで往復) |
-| 8 | README に起動手順 (済)。受け入れ条件 1〜7 を通しで確認 | roadmap の P0 を完了にする |
+| 8 | README に起動手順 (済)。受け入れ条件 1〜7 を通しで確認 (済。結果は roadmap.md) | roadmap の P0 を完了にする |
 
 ## テスト方針
 
