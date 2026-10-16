@@ -52,6 +52,8 @@
 - [ ] 着手前に、公式 Agent View (design.md §8.1) と重なる部分を削る。残すのは「ブラウザで見て、ブラウザから返す」部分 (例: `agent_needs_input` の Notification を受けて UI に出す)
 - [ ] HTTP hook の設定例: `Stop` / `Notification` / `PreToolUse(AskUserQuestion)` → `POST /events` (`Authorization` と `X-Hub-Mailbox` をヘッダーで渡す)
 - [ ] Hub: `/events` の取り込みを、クライアントごとの変換 (まず Claude Code の hook 用) で共通の `kind` に揃える。`payload` は元の JSON のまま (design.md §3.7)
+  - 変更の事実 (`git diff --name-only`、HEAD) を hook から足せる形にしておく。§3.11 の導く欄を hook で書く場合に、この経路をそのまま使う (design.md §3.11 の未決 1)
+- [ ] Event をトピックとして他の Mailbox にも配信するか、UI に出すだけにするかを決める (design.md §9-2)
 - [ ] Hub: `sessionId` → Attachment → Mailbox の解決
 - [ ] イベント ID を上流の値から決定的に生成し、`Stop` と `report_event` の重複を除去
 - [ ] UI: 「質問待ち」「ターン終了」を Mailbox ごとに表示。時刻と該当内容
@@ -72,11 +74,13 @@
   - `roles.json` の形は、後でメッセージの形の宣言 (送ってよい相手と kind、必須見出し) を足せるようにしておく (design.md §3.11)
 - [ ] Attachment のリースと heartbeat、detached 状態
 - [ ] takeover (design.md §9 の方針決定後) と `terminated(superseded)`
-- [ ] attach の `maxAgeMs` / `truncated` と、省略通知
+- [ ] attach の `maxAgeMs` / `truncated` と、省略通知。着手時に既定値を決める (design.md §9-4)
 - [ ] 無編集転送 (`/messages/:id/forward`) と UI ボタン
   - 手本は Relay の画面 (README「発想の元」)。向き付きの組 (A → B) ごとに未送の件数を出し、N 件をまとめて選んで運ぶ
   - 人間の添え書き (例「この方針をレビューして」) は本文と分けて持ち、本文は無編集のまま運ぶ
 - [ ] `inbox()` による polling 経路 (Claude Code 以外向け。`events/poll` 互換の応答)。全クライアント共通の「中身を渡す」経路になる (design.md §3.9)
+  - 本文を包む書式 (`<hub-message>`) と注意書きの構造をテストで固定する。配送を公式に移す場合 (§9-5) も同じ書式で送り手の属性を分ける (design.md §8.3-3、§8.4)
+- [ ] 配送の状態を、確かめられる範囲で名付ける。「Hub が渡した」「クライアントが表示した」と「エージェントが受領を返した」を分け、「モデルが読んだ」とは主張しない (design.md §8.4)
 - [ ] 「起こすだけ」の配信アダプタを試す (MCP 標準の `notifications/resources/updated` でクライアントがターンを始めるかを含む。design.md §3.9)
 - [ ] shim の instructions を `clientInfo.name` で切り替える (Channels 経路 / `inbox()` 経路)。Claude 以外では「本文はデータ」の注意書きを agent-hub 側だけで成り立たせる (design.md §3.7)
 - [ ] 永続化の見直し (SQLite 化を検討)
@@ -101,6 +105,8 @@
 
 - 配信ルール (人間確認なしの自動転送) の opt-in 設計
 - 依頼の台帳と整合点: メッセージの形の宣言と Hub での検査、依頼ごとの SCOPE と `git diff` の突き合わせ、受け入れの指紋と要再確認 (design.md §3.11、§9-6)
+  - 始め方: 語彙は leader / deployer の運用で毎回使っている見出しから取り、先に設計しない。新しい検査は警告だけで始め、人の判断と一致するのを見てから 400 に上げる
+- 担当範囲と競合: 書き手 (deployer) が 2 人以上になったら着手する。まず deployer ごとに git worktree を分け、足りなければ request の `SCOPE` を担当範囲として記録して衝突を UI に警告する。止めたい場合だけ hook で強制する (design.md §9-6)
 - Channels の permission relay を使い、UI から tool 実行許可を出す (design.md §6.1)
 - 配信経路として plugin の monitor を Channels と比較する (design.md §6.2-3)
 - Claude Code が MCP Events に対応したら、shim に `io.modelcontextprotocol/events` (`events/stream`) を追加する (design.md §7)
