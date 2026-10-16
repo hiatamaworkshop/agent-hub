@@ -20,10 +20,18 @@ export type EventKind = (typeof EVENT_KINDS)[number]
 
 export const nameSchema = z.string().regex(NAME_RE)
 
-export const addressSchema = z.object({
-  type: z.enum(ADDRESS_TYPES),
-  id: nameSchema,
-})
+// user 宛ての名前。Hub が付与する送り手 (user:browser / user:cli) に限る。誤選択した宛先を受理しないため
+export const USER_IDS = ['browser', 'cli'] as const
+
+export const addressSchema = z
+  .object({
+    type: z.enum(ADDRESS_TYPES),
+    id: nameSchema,
+  })
+  .refine((a) => a.type !== 'user' || (USER_IDS as readonly string[]).includes(a.id), {
+    message: `user 宛ては ${USER_IDS.map((u) => `user:${u}`).join(' / ')} のみ`,
+    path: ['id'],
+  })
 export type Address = z.infer<typeof addressSchema>
 
 // 送り手。リクエストからは受け取らず、Hub が付与する

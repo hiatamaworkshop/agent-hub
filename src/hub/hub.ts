@@ -114,6 +114,14 @@ export class Hub {
     return m
   }
 
+  // 配信先の Mailbox 名 (未接続も含む。次の attach で未読として届く)。user 宛ては常に空
+  recipientsOf(m: Message): string[] {
+    return this.store
+      .listMailboxes()
+      .filter((mb) => this.store.isRecipient(mb.name, m))
+      .map((mb) => mb.name)
+  }
+
   // --- Mailbox / Attachment ---
 
   // 冪等。未読は Mailbox の cursor から再送されるので、attach し直しても失われない

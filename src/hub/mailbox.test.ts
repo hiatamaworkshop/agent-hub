@@ -105,6 +105,35 @@ describe('購読', () => {
   })
 })
 
+describe('配信先 (recipients)', () => {
+  it('POST /messages の応答に配信先 Mailbox を含め、誰にも届かなければ空にする', async () => {
+    const { call, attach } = setup()
+    await attach('a', { client: 'claude-code', role: 'reviewer' })
+    await attach('b')
+    await call('PUT', '/mailboxes/b/subscriptions/user.message')
+    const post = async (to: unknown) =>
+      (await (await call('POST', '/messages', { kind: 'request', to, body: 'x' })).json()) as Message & { recipients: string[] }
+
+    assert.deepEqual((await post({ type: 'mailbox', id: 'a' })).recipients, ['a'])
+    assert.deepEqual((await post({ type: 'role', id: 'reviewer' })).recipients, ['a'])
+    assert.deepEqual((await post({ type: 'topic', id: 'user.message' })).recipients, ['b'])
+    assert.deepEqual((await post({ type: 'topic', id: 'nobody' })).recipients, [])
+    assert.deepEqual((await post({ type: 'mailbox', id: 'none' })).recipients, [])
+    assert.deepEqual((await post({ type: 'user', id: 'browser' })).recipients, [])
+
+    const listed = (await (await call('GET', '/messages')).json()) as { messages: Record<string, unknown>[] }
+    assert.ok(listed.messages.every((m) => !('recipients' in m)), 'Message 自体には含めない')
+  })
+
+  it('user 宛ては browser / cli だけを受理する', async () => {
+    const { call } = setup()
+    const post = (id: string) => call('POST', '/messages', { kind: 'request', to: { type: 'user', id }, body: 'x' })
+    assert.equal((await post('browser')).status, 201)
+    assert.equal((await post('cli')).status, 201)
+    assert.equal((await post('agent-hub')).status, 400)
+  })
+})
+
 describe('再送と ack', () => {
   it('ack 前に attach し直すと未読が再送され、ack 後は再送されない', async () => {
     const { app, call, attach, send } = setup()

@@ -95,7 +95,9 @@ export function createApp(opts: AppOptions) {
     let from: Sender
     if (c.get('auth') === 'cookie') from = BROWSER
     else from = attachmentId ? hub.senderOf(attachmentId) : CLI
-    return c.json(hub.postMessage(parsed.data, from), 201)
+    const m = hub.postMessage(parsed.data, from)
+    // recipients は応答にだけ付ける (Message には含めない)。0 件なら誰にも届いていない
+    return c.json({ ...m, recipients: hub.recipientsOf(m) }, 201)
   })
 
   app.get('/messages', (c) => {

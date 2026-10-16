@@ -83,13 +83,17 @@ server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolRes
       case 'post_message': {
         if (!hub.attachment) throw new Error(`Hub に接続していない (${hub.state}${hub.lastError ? `: ${hub.lastError}` : ''})`)
         const a = postArgs.parse(args)
-        const m = await hub.request<Message>('POST', '/messages', {
+        const m = await hub.request<Message & { recipients: string[] }>('POST', '/messages', {
           kind: a.kind,
           body: a.body,
           ...(a.to ? { to: parseAddress(a.to) } : {}),
           ...(a.reply_to ? { replyTo: a.reply_to } : {}),
         })
-        return text({ id: m.id, seq: m.seq, to: `${m.to.type}:${m.to.id}` })
+        const to = `${m.to.type}:${m.to.id}`
+        const out: Record<string, unknown> = { id: m.id, seq: m.seq, to, recipients: m.recipients }
+        // user 宛ては Mailbox を経由せず UI に出るので、0 件でも届いている
+        if (m.to.type !== 'user' && m.recipients.length === 0) out.warning = `${to} を受け取る Mailbox がない (受理はされた)`
+        return text(out)
       }
       case 'subscribe':
       case 'unsubscribe': {

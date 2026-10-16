@@ -48,11 +48,13 @@
   form { border-top: 1px solid var(--line); background: var(--panel); padding: 10px 16px; display: grid; gap: 8px; }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   select, input, textarea, button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
-  input#toId { width: 200px; font-family: var(--mono); }
+  select#to { max-width: 320px; font-family: var(--mono); }
+  input#topic { width: 200px; font-family: var(--mono); }
+  input#topic[hidden] { display: none; }
   textarea { width: 100%; min-height: 64px; resize: vertical; }
   button[type=submit] { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; padding: 5px 16px; }
   #replyInfo { font-size: 12px; color: var(--muted); }
-  #err { color: var(--warn); font-size: 12px; }
+  #err, #warn { color: var(--warn); font-size: 12px; }
   #auth { display: none; margin: 40px auto; max-width: 520px; padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
   body.noauth main { display: none; } body.noauth #auth { display: block; }
   code { font-family: var(--mono); }
@@ -82,18 +84,12 @@
           <option value="reply">reply</option>
           <option value="notice">notice</option>
         </select>
-        <select id="toType" title="宛先の種類">
-          <option value="topic" selected>topic</option>
-          <option value="mailbox">mailbox</option>
-          <option value="role">role</option>
-          <option value="user">user</option>
-        </select>
-        <input id="toId" list="toIds" value="user.message" placeholder="宛先名" autocomplete="off">
-        <datalist id="toIds"></datalist>
+        <select id="to" title="宛先"></select>
+        <input id="topic" placeholder="トピック名" autocomplete="off" hidden>
         <span id="replyInfo"></span>
       </div>
       <textarea id="body" placeholder="本文 (Ctrl+Enter で送信)"></textarea>
-      <div class="row"><button type="submit">Send</button><span id="err"></span></div>
+      <div class="row"><button type="submit">Send</button><span id="err"></span><span id="warn"></span></div>
     </form>
   </section>
 </main>
@@ -148,11 +144,65 @@ function render(m) {
   if (atBottom) list.scrollTop = list.scrollHeight
 }
 
+// 宛先は select 1 本で選ぶ (種類と名前を別々に選ばせると食い違う)。
+// 選択肢は /mailboxes から作り、購読者のいないトピックだけ手入力にする
+const MANUAL_TOPIC = '__topic'
+
+function option(value, label) {
+  const o = el('option', '', label ?? value)
+  o.value = value
+  return o
+}
+
+function group(label, values) {
+  const g = el('optgroup')
+  g.label = label
+  for (const v of values) g.append(option(v))
+  return g
+}
+
+function buildTo(mailboxes) {
+  const sel = $('to')
+  const prev = sel.value
+  const roles = new Set(), topics = new Set()
+  for (const mb of mailboxes) {
+    if (mb.role) roles.add(`role:${mb.role}`)
+    for (const t of mb.effectiveSubscriptions) topics.add(`topic:${t}`)
+  }
+  sel.textContent = ''
+  if (mailboxes.length) sel.append(group('Mailbox', mailboxes.map((mb) => `mailbox:${mb.name}`)))
+  if (roles.size) sel.append(group('role', [...roles].sort()))
+  if (topics.size) sel.append(group('購読中のトピック', [...topics].sort()))
+  sel.append(group('ユーザー', ['user:browser']))
+  sel.append(option(MANUAL_TOPIC, 'トピックを手入力…'))
+  // 最初は購読中の user.message、なければ先頭の Mailbox を選ぶ
+  setTo(prev || (topics.has('topic:user.message') ? 'topic:user.message' : sel.options[0].value))
+}
+
+// 一覧にない宛先 (返信先の Mailbox が消えた後など) も選べるよう、その場で足す
+function setTo(value) {
+  const sel = $('to')
+  if (![...sel.options].some((o) => o.value === value)) sel.insertBefore(option(value), sel.firstChild)
+  sel.value = value
+  $('topic').hidden = value !== MANUAL_TOPIC
+}
+
+function selectedTo() {
+  const v = $('to').value
+  if (v === MANUAL_TOPIC) return { type: 'topic', id: $('topic').value.trim() }
+  const i = v.indexOf(':')
+  return { type: v.slice(0, i), id: v.slice(i + 1) }
+}
+
+$('to').onchange = () => {
+  setTo($('to').value)
+  if (!$('topic').hidden) $('topic').focus()
+}
+
 function startReply(m) {
   replyTo = m
   $('kind').value = 'reply'
-  $('toType').value = m.from.type === 'mailbox' ? 'mailbox' : 'user'
-  $('toId').value = m.from.id
+  setTo(addr(m.from))
   updateReplyInfo()
   $('body').focus()
 }
@@ -173,14 +223,20 @@ $('kind').onchange = updateReplyInfo
 $('form').onsubmit = async (e) => {
   e.preventDefault()
   $('err').textContent = ''
+  $('warn').textContent = ''
   const kind = $('kind').value
   const body = $('body').value
   if (!body.trim()) return
   if (kind === 'reply' && !replyTo) { $('err').textContent = 'reply はメッセージの「返信」から始めてください'; return }
-  const msg = { kind, body, to: { type: $('toType').value, id: $('toId').value.trim() } }
+  const msg = { kind, body, to: selectedTo() }
   if (kind === 'reply') msg.replyTo = replyTo.id
   try {
-    render(await api('/messages', { method: 'POST', body: JSON.stringify(msg) }))
+    const { recipients, ...m } = await api('/messages', { method: 'POST', body: JSON.stringify(msg) })
+    render(m)
+    // user 宛ては Mailbox を通らず UI に出るだけなので、0 件でよい
+    if (m.to.type !== 'user' && recipients.length === 0) {
+      $('warn').textContent = `${addr(m.to)} を受け取る Mailbox がありません (#${m.seq} は記録済み)`
+    }
     $('body').value = ''
     if (kind === 'reply') { replyTo = null; $('kind').value = 'request'; updateReplyInfo() }
   } catch (err) {
@@ -197,11 +253,7 @@ async function loadMailboxes() {
   const root = $('mailboxes')
   root.textContent = ''
   if (mailboxes.length === 0) root.append(el('div', 'meta', 'まだありません'))
-  const names = new Set()
   for (const mb of mailboxes) {
-    names.add(`mailbox:${mb.name}`)
-    if (mb.role) names.add(`role:${mb.role}`)
-    for (const t of mb.effectiveSubscriptions) names.add(`topic:${t}`)
     const box = el('div', 'mb')
     const title = el('div')
     title.append(el('span', `dot${mb.attachment ? ' on' : ''}`), el('span', 'name', mb.name))
@@ -212,13 +264,10 @@ async function loadMailboxes() {
     box.append(el('div', 'meta', meta.join(' · ')))
     if (mb.effectiveSubscriptions.length) box.append(el('div', 'meta', `購読: ${mb.effectiveSubscriptions.join(', ')}`))
     box.title = 'この Mailbox 宛てに書く'
-    box.onclick = () => { $('toType').value = 'mailbox'; $('toId').value = mb.name; $('body').focus() }
+    box.onclick = () => { setTo(`mailbox:${mb.name}`); $('body').focus() }
     root.append(box)
   }
-  names.add('topic:user.message')
-  const dl = $('toIds')
-  dl.textContent = ''
-  for (const n of names) { const o = el('option'); o.value = n.slice(n.indexOf(':') + 1); o.label = n; dl.append(o) }
+  buildTo(mailboxes)
 }
 
 async function loadHistory() {

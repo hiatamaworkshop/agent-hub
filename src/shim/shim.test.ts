@@ -133,6 +133,19 @@ describe('shim と Hub の結合', () => {
     assert.equal(sent.replyTo, q.id)
     assert.deepEqual(sent.to, { type: 'user', id: 'browser' })
     assert.deepEqual(sent.from, { type: 'mailbox', id: 'test-mb', role: null })
+    const out = JSON.parse(r.text) as Record<string, unknown>
+    assert.deepEqual(out.recipients, [])
+    assert.equal(out.warning, undefined, 'user 宛ては 0 件でも警告しない')
+  })
+
+  it('post_message は受け取る Mailbox がない宛先に警告を添える', async () => {
+    const r = await call('post_message', { kind: 'notice', body: 'x', to: 'topic:nobody' })
+    assert.equal(r.isError, false, r.text)
+    const out = JSON.parse(r.text) as Record<string, unknown>
+    assert.deepEqual(out.recipients, [])
+    assert.match(String(out.warning), /topic:nobody/)
+    const self = JSON.parse((await call('post_message', { kind: 'notice', body: 'x', to: 'mailbox:test-mb' })).text) as Record<string, unknown>
+    assert.deepEqual(self.recipients, ['test-mb'])
   })
 
   it('不正な入力はツールのエラーとして返す', async () => {

@@ -107,6 +107,7 @@
   - Bearer のみ (curl など): `user:cli`
 - `to`: `replyTo` があれば省略でき、元メッセージの `from` (`user:browser` や `mailbox:rev-a`) が宛先になる。
 - `to.type = user`: どの Mailbox にも配信せず、UI にだけ出る (ブラウザへの返信先。`from` と対称にするため)。
+  `id` は Hub が付与する送り手と同じ `browser` / `cli` に限り、それ以外は 400 (`mailbox` のつもりで種類を誤選択した送信を受理しないため)。
 - `to.type = role`: その role を持つ全 Mailbox に配信する。該当する Mailbox がなければ 400 ではなく受理し、後からその role で attach した Mailbox の未読になる。
 - 無編集転送では `kind` も元のメッセージのまま運ぶ。
 
@@ -116,7 +117,7 @@
 | メソッド | パス | 内容 |
 |---|---|---|
 | POST | `/events` | Event を登録。登録後 UI に SSE で配信。HTTP hook の入力 JSON をそのまま受け付ける (ヘッダー `X-Hub-Mailbox` 任意)。応答は `{}` (hook の判断には関与しない) |
-| POST | `/messages` | Message を作成して配信 (宛先は `to`)。body は `kind` / `to` / `body` / `replyTo?`。応答は 201 で作成した Message。`replyTo` が存在しなければ 400 |
+| POST | `/messages` | Message を作成して配信 (宛先は `to`)。body は `kind` / `to` / `body` / `replyTo?`。応答は 201 で、作成した Message に `recipients` (配信先 Mailbox 名の配列。未接続も含む) を足したもの。`recipients` は応答にだけ付き、Message には保存しない。`user` 宛て以外で空なら誰にも届いていない (受理はする)。`replyTo` が存在しなければ 400 |
 | GET | `/messages?after=<seq>&limit=<n>` | 履歴取得 (`limit` 既定 100、最大 1000)。応答 `{ "messages": [...], "lastSeq": <seq> }` |
 | GET | `/mailboxes` | Mailbox 一覧 (role・実効購読・未読数・Attachment の状態) |
 | GET | `/roles` | role 定義の一覧 |
@@ -213,7 +214,7 @@
 | `subscribe` | `topic` | 個別購読を追加 |
 | `unsubscribe` | `topic` | 個別購読を解除 |
 | `list_topics` | なし | 既知トピックと自分の購読状況 (role 由来か個別かを区別) |
-| `post_message` | `kind`, `body`, `to?`, `reply_to?` | Message を送る。`kind` は必須。`to` は channel の属性と同じ `type:id` 表記 (`mailbox:rev-a`、`user:browser` など)。`reply_to` があれば `to` は省略でき、送り手に返る |
+| `post_message` | `kind`, `body`, `to?`, `reply_to?` | Message を送る。`kind` は必須。`to` は channel の属性と同じ `type:id` 表記 (`mailbox:rev-a`、`user:browser` など)。`reply_to` があれば `to` は省略でき、送り手に返る。結果は `id` / `seq` / `to` / `recipients`。`user` 宛て以外で `recipients` が空なら `warning` を添える |
 | `inbox` | `after?`, `limit?` | 未読を取得 (polling 用。Claude Code 以外の縮退経路) |
 | `report_event` | `kind`, `payload` | skill が意味判断した結果 (区切り申告など) を Hub に出す |
 
