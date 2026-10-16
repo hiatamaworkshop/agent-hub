@@ -85,7 +85,7 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
   - 自動で選んだ値 (autoTo) は Mailbox 一覧の更新 (buildTo) のたびに決め直す。だから attach されると、既定が正しい候補へ自動で移る。
   - 人が選んだら止まる: ドロップダウンを開く・キーを押す・値を変える・サイドバーの Mailbox を押す・Reply・Send のいずれかで自動フラグを外し、以後の一覧更新では動かさない。同じ値を選び直しても止まる (開いた時点で外す。開いてやめた場合も外れる)。
   - 未選択のまま Send は拒否し、`Choose a destination first.` を出す (何も投稿しない)。
-  - 未接続の `mailbox:<name>` に手で送ると、記録はされるが警告を出す (`Accepted, but nobody is reading … now; it will stay unread until it attaches`)。0 件の警告 (`No Mailbox will receive`) が出るときはそちらを優先する。
+  - 届く先の Mailbox が全部未接続の宛先 (`mailbox:` / `role:` / `topic:` のどれでも) に手で送ると、記録はされるが警告を出す (`Accepted, but nobody is reading … now; it will stay unread until it attaches`)。判定は `POST /messages` の `recipients` と Mailbox 一覧の接続状態で行い、一覧にない名前は未接続とみなさない。0 件の警告 (`No Mailbox will receive`) が出るときはそちらを優先する。
   - Reply は元の送り手を選ぶ (手動の選択として扱う)。
 
 ### 3.3 Mailbox と Attachment (R5, R6)

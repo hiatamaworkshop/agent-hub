@@ -630,11 +630,13 @@ $('form').onsubmit = async (e) => {
     if ([...$('to').options].some((o) => o.value === sentTo)) saveLastTo(sentTo)
     // user 宛ては Mailbox を通らず UI に出るだけなので、0 件でよい。
     // UI は Hub を再起動しなくても差し替わるので、recipients を返さない古い Hub でも送信は成功扱いにする
-    // 未接続の Mailbox 宛ては記録されるが、読む人がいない。0 件の警告が出るときはそちらを優先する
-    const target = m.to.type === 'mailbox' ? mailboxList.find((mb) => mb.name === m.to.id) : undefined
+    // 届く先が全部未接続なら記録されるが、読む人がいない (mailbox / role / topic のどれでも)。0 件の警告が出るときはそちらを優先する。
+    // 一覧にない名前は接続状態が分からないので、未接続とみなさない (警告しない側に倒す)
+    const nobodyReading = Array.isArray(recipients) && recipients.length > 0 &&
+      recipients.every((name) => { const mb = mailboxList.find((x) => x.name === name); return mb !== undefined && !mb.attachment })
     if (m.to.type !== 'user' && Array.isArray(recipients) && recipients.length === 0) {
       $('warn').textContent = `No Mailbox will receive ${addr(m.to)} (#${m.seq} was recorded)`
-    } else if (target && !target.attachment) {
+    } else if (m.to.type !== 'user' && nobodyReading) {
       $('warn').textContent = `Accepted, but nobody is reading ${addr(m.to)} now; it will stay unread until it attaches (#${m.seq} was recorded).`
     }
     $('body').value = ''
