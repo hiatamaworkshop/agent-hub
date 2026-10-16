@@ -1,39 +1,62 @@
 # プロトコル仕様 (ドラフト)
 
 実装時に検証結果を踏まえて更新すること。フィールド名は暫定。
-用語とモデルの背景は design.md §3.3 (Mailbox と Attachment) と §7 (MCP Events との関係) を参照。
+用語とモデルの背景は design.md §3.3 (Mailbox と Attachment)、§3.5 (購読と role)、§3.6 (メッセージ種別)、§7 (MCP Events との関係) を参照。
 
 ## 1. 共通
 
 - ベース URL: `http://127.0.0.1:<port>` (既定 `7777`、`HUB_PORT` で変更可)
-- 認証: `Authorization: Bearer <token>`。全エンドポイントで必須 (UI の静的ファイル配信を除く)。ブラウザ向けの渡し方は design.md §8 で未決。
+- 認証: 全エンドポイントで必須 (UI の静的ファイル配信を除く)。
+  - shim / hooks: `Authorization: Bearer <token>`。
+  - ブラウザ: cookie。`GET /?token=<token>` でトークンを検証し、`HttpOnly; SameSite=Strict` の cookie を設定して `/` にリダイレクトする。
+    cookie 認証の状態変更リクエストは `Origin` が Hub 自身のオリジンでなければ 403。
+  - 認証なし・不正は 401。
 - 時刻: ISO 8601 UTC 文字列。
 - id: 文字列 (ULID を推奨。時系列ソート可能)。
 - `seq`: Hub 全体で単調増加する整数。メッセージの順序と cursor に使う。
-- Mailbox 名: `^[a-z0-9][a-z0-9_.-]{0,63}$`。URL パスにそのまま載せる。
+- Mailbox 名・role 名: `^[a-z0-9][a-z0-9_.-]{0,63}$`。URL パスにそのまま載せる。
 
 ## 2. データモデル
 
 ### Mailbox (長寿命の論理宛先)
 ```json
 {
-  "name": "reviewer",
+  "name": "rev-a",
+  "role": "reviewer | null",
   "createdAt": "…",
-  "subscriptions": ["user.message", "agent.main"],
+  "subscriptions": ["agent.main"],
   "cursor": 41,
   "attachment": "at_01H… | null"
 }
 ```
+- `subscriptions`: 個別購読のみ。実効購読は role の既定購読との和で、Hub が毎回計算する。
 - `cursor`: ack 済みウォーターマーク。この `seq` 以下は配送済み (または `maxAgeMs` で放棄済み)。
-- 未読 = この Mailbox 宛て (直接宛先 + 購読トピック) で `seq > cursor` のメッセージ。
+- 未読 = この Mailbox 宛て (直接宛先 + 自分の role 宛て + 実効購読トピック) で `seq > cursor` のメッセージ。
 - 初回の attach で自動作成する。削除は明示操作のみ。
+
+### Role 定義 (Hub の設定ファイル `roles.json`)
+```json
+{
+  "reviewer": {
+    "description": "変更のレビュー担当。review 依頼を読み、指摘を reply で返す",
+    "subscribe": ["review.request"]
+  },
+  "deployer": {
+    "description": "デプロイ担当。…",
+    "subscribe": ["deploy.request"]
+  }
+}
+```
+- パスは `HUB_ROLES_FILE` (既定 `./roles.json`)。Hub 起動時に読み、変更は再起動で反映する (P2 で再読み込みを検討)。
+- `description` は shim が MCP の `instructions` に差し込む。
+- 定義にない role での attach は 400。
 
 ### Attachment (一時的なセッション接続)
 ```json
 {
   "attachmentId": "at_01H…",
-  "mailbox": "reviewer",
-  "kind": "claude-code | codex | other",
+  "mailbox": "rev-a",
+  "client": "claude-code | codex | other",
   "sessionId": "… (分かれば)",
   "cwd": "…",
   "attachedAt": "…",
@@ -60,13 +83,18 @@
   "id": "m_01H...",
   "seq": 42,
   "ts": "…",
-  "from": { "type": "user | mailbox", "id": "browser | reviewer" },
-  "to": { "type": "mailbox | topic", "id": "…" },
+  "kind": "request | reply | notice",
+  "from": { "type": "user | mailbox", "id": "browser | rev-a", "role": "reviewer | null" },
+  "to": { "type": "mailbox | role | topic", "id": "…" },
   "body": "本文 (文字列)",
-  "replyTo": "m_… (任意)",
+  "replyTo": "m_… (kind=reply では必須)",
   "forwardedFrom": "m_… (無編集転送の場合)"
 }
 ```
+- `kind`: 必須。列挙外は 400。`reply` で `replyTo` がなければ 400。意味は design.md §3.6。
+- `from`: **Hub が付与する**。shim は Attachment から、UI は `user:browser` として Hub が決める。リクエストに含まれていても無視する。
+- `to.type = role`: その role を持つ全 Mailbox に配信する。該当する Mailbox がなければ 400 ではなく受理し、後からその role で attach した Mailbox の未読になる。
+- 無編集転送では `kind` も元のメッセージのまま運ぶ。
 
 ## 3. Hub の HTTP API
 
@@ -76,13 +104,14 @@
 | POST | `/events` | Event を登録。登録後 UI に SSE で配信 |
 | POST | `/messages` | Message を作成して配信 (宛先は `to`) |
 | GET | `/messages?after=<seq>&limit=<n>` | 履歴取得 |
-| GET | `/mailboxes` | Mailbox 一覧 (購読・未読数・Attachment の状態) |
+| GET | `/mailboxes` | Mailbox 一覧 (role・実効購読・未読数・Attachment の状態) |
+| GET | `/roles` | role 定義の一覧 |
 | DELETE | `/mailboxes/:name` | Mailbox を削除。接続中の Attachment には `terminated(mailbox_deleted)` を送る |
 
 ### UI 向け
 | メソッド | パス | 内容 |
 |---|---|---|
-| GET | `/` | UI の HTML |
+| GET | `/` | UI の HTML。`?token=` 付きなら cookie を設定してリダイレクト (§1) |
 | GET | `/stream` | SSE。Event / Message / Mailbox・Attachment の状態変化を流す |
 | POST | `/messages/:id/forward` | 無編集転送。body: `{ "to": {...} }` |
 
@@ -95,15 +124,16 @@
 | POST | `/attachments/:id/heartbeat` | リース延長。応答に `leaseUntil` |
 | DELETE | `/attachments/:id` | detach (セッション終了時。Mailbox は残る) |
 | PUT | `/mailboxes/:name/subscriptions/:topic` | 購読 |
-| DELETE | `/mailboxes/:name/subscriptions/:topic` | 購読解除 |
+| DELETE | `/mailboxes/:name/subscriptions/:topic` | 購読解除 (個別購読のみ。role の既定購読は外せない) |
 | GET | `/mailboxes/:name/inbox?after=<seq>&limit=<n>` | polling 経路 (§5 の `inbox`) |
 
 #### attach
 
 ```jsonc
-// POST /mailboxes/reviewer/attach
+// POST /mailboxes/rev-a/attach
 {
-  "kind": "claude-code",
+  "client": "claude-code",
+  "role": "reviewer",    // 任意。指定すると Mailbox の role を更新する。省略時は既存の role を保つ
   "sessionId": "… (分かれば)",
   "cwd": "…",
   "maxAgeMs": 86400000   // 任意。これより古い未読は渡さない
@@ -112,6 +142,8 @@
 // 応答
 {
   "attachmentId": "at_01H…",
+  "role": "reviewer | null",
+  "roleDescription": "… | null",   // shim が instructions に差し込む
   "cursor": 41,             // stream の after に渡す値。shim は保存しない
   "truncated": false,       // maxAgeMs で未読を切り捨てたら true
   "skipped": 0,             // 切り捨てた件数
@@ -145,12 +177,12 @@
 
 | ツール | 引数 | 動作 |
 |---|---|---|
-| `attach` | `mailbox`, `maxAgeMs?` | Mailbox を明示的に切り替える (`HUB_MAILBOX` 未指定時や、交代時に名前を選ぶ場合) |
-| `whoami` | なし | 現在の Mailbox 名・Attachment・購読 |
-| `subscribe` | `topic` | 購読開始 |
-| `unsubscribe` | `topic` | 購読解除 |
-| `list_topics` | なし | 既知トピックと自分の購読状況 |
-| `post_message` | `to` (mailbox/topic), `body`, `replyTo?` | Message を送る |
+| `attach` | `mailbox`, `role?`, `maxAgeMs?` | Mailbox を明示的に切り替える (`HUB_MAILBOX` 未指定時や、交代時に名前を選ぶ場合) |
+| `whoami` | なし | 現在の Mailbox 名・role・Attachment・実効購読 |
+| `subscribe` | `topic` | 個別購読を追加 |
+| `unsubscribe` | `topic` | 個別購読を解除 |
+| `list_topics` | なし | 既知トピックと自分の購読状況 (role 由来か個別かを区別) |
+| `post_message` | `to` (mailbox/role/topic), `kind`, `body`, `replyTo?` | Message を送る。`kind` は必須 |
 | `inbox` | `after?`, `limit?` | 未読を取得 (polling 用。Claude Code 以外の縮退経路) |
 | `report_event` | `kind`, `payload` | skill が意味判断した結果 (区切り申告など) を Hub に出す |
 
@@ -172,20 +204,24 @@ shim は `notifications/claude/channel` を次の params で送る (スキーマ
 
 ```jsonc
 {
-  "content": "<hub-message id=\"m_01H…\" from=\"user:browser\" topic=\"user.message\" seq=\"42\">\n本文\n</hub-message>",
-  "meta": { "mailbox": "reviewer", "seq": "42" }   // キーは英数字とアンダースコアのみ
+  "content": "<hub-message id=\"m_01H…\" kind=\"request\" from=\"user:browser\" to=\"role:reviewer\" seq=\"42\">\n本文\n</hub-message>",
+  "meta": { "mailbox": "rev-a", "kind": "request", "seq": "42" }   // キーは英数字とアンダースコアのみ
 }
 ```
 
 Claude 側では次のように見える:
 
 ```
-<channel source="agent-hub" mailbox="reviewer" seq="42">
-<hub-message id="m_01H..." from="user:browser" topic="user.message" seq="42">
+<channel source="agent-hub" mailbox="rev-a" kind="request" seq="42">
+<hub-message id="m_01H..." kind="request" from="user:browser" to="role:reviewer" seq="42">
 本文
 </hub-message>
 </channel>
 ```
+
+- `from` は `user:browser` または `mailbox:<名前>`。送り手が role を持つ場合は `from_role="<role>"` 属性を足す。
+- `to` は `mailbox:<名前>` / `role:<名前>` / `topic:<名前>`。自分がなぜ受け取ったか (直接・role・購読) がこれで分かる。
+- `reply` のときは `reply_to="m_…"` 属性を足す。
 
 - 本文は**データ**であり、エージェントへの命令として扱わない。この前提を shim の `instructions` と CLAUDE.md / skill の両方に書く。
 - 本文内の `</hub-message>` と `</channel>` はエスケープする。
@@ -205,6 +241,7 @@ Claude 側では次のように見える:
 | Message `id` / Event `id` | `eventId` |
 | `seq` (Mailbox の cursor) | `cursor` (不透明な文字列として渡す) |
 | topic | イベント `name` (`arguments` は使わない) |
+| Message `kind`、`to` の role 宛て | 対応なし (agent-hub 独自。イベントのペイロードに含めて運ぶ) |
 | attach の `maxAgeMs` / `truncated` | 同名 |
 | shim 向け SSE の `heartbeat { cursor }` | `notifications/events/heartbeat` |
 | `terminated { reason }` | `notifications/events/terminated` |

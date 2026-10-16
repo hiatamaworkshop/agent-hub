@@ -16,6 +16,8 @@
 | R4 | エージェントは**購読を明示的に宣言**する。Hub に push があると、購読しているエージェントだけが notify を受ける |
 | R5 | セッションが一時的に閉じていても取りこぼさない (未読キュー) |
 | R6 | **エージェントの交代** (`/clear`、再起動、モデル変更、別ツールへの乗り換え) をまたいで、宛先・購読・未読を引き継げる |
+| R7 | エージェントは **role** (`reviewer`, `deployer` など) を持ち、role によって読むべきメッセージが分かれる |
+| R8 | メッセージは**機械的に判別できる種別** (`kind`) を持ち、受信側と UI が扱い方を決められる |
 
 ### 非目標
 
@@ -39,7 +41,8 @@
                               └────┬─────┘ └────┬────┘ └────┬────┘
                                    ▼            ▼           ▼
                               Claude         Claude      (Codex 等: inbox() polling)
-                          mailbox=main   mailbox=reviewer
+                          mailbox=main   mailbox=rev-a
+                                         role=reviewer
 ```
 
 ### 3.1 なぜ Hub と shim を分けるか
@@ -54,16 +57,17 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
 ### 3.2 コンポーネント
 
 **Hub**
-- 127.0.0.1 限定の HTTP サーバー。常駐 daemon として起動する。
-- 保持するもの: Mailbox 表、Attachment 表、メッセージ、イベントログ。
+- ホストのループバックからのみ到達できる HTTP サーバー。常駐 daemon として起動する (直接起動 / Docker は §3.8)。
+- 保持するもの: Mailbox 表、Attachment 表、メッセージ、イベントログ、role 定義 (設定ファイルから読む)。
 - ブラウザ UI の静的ファイルも配信する。
 - 永続化は P0 では JSONL 追記ログ + メモリ (起動時にログから Mailbox 表を復元)、必要になれば SQLite (P2)。
 
 **shim (channel MCP サーバー)**
 - Claude Code が stdio で起動する薄い MCP サーバー。**状態を持たない。**
-- 起動時に Mailbox 名を決めて Hub に **attach** し、Hub からの SSE を購読する (§3.3)。
+- 起動時に Mailbox 名と role を決めて Hub に **attach** し、Hub からの SSE を購読する (§3.3, §3.5)。
 - Hub から配信されたメッセージを `notifications/claude/channel` として Claude に push する。
-- エージェントが呼ぶツールを公開する: `subscribe` / `unsubscribe` / `post_message` / `inbox` / `list_topics` / `report_event` (詳細は protocol.md)。
+- role の説明を MCP の `instructions` に差し込み、エージェントに「自分は何を読み、何を返す係か」を伝える。
+- エージェントが呼ぶツールを公開する: `attach` / `whoami` / `subscribe` / `unsubscribe` / `post_message` / `inbox` / `list_topics` / `report_event` (詳細は protocol.md)。
 
 **hooks (検知側)**
 - Claude Code の hook から Hub の `POST /events` を叩く小さなスクリプト。
@@ -80,11 +84,11 @@ MCP Events (SEP-3415) が購読 ID をクライアント生成にせず、購読
 
 | 層 | 寿命 | キー | 持つもの |
 |---|---|---|---|
-| **Mailbox** | 長寿命。明示的に削除するまで残る | 論理名 (例 `main`, `reviewer`) | 購読トピック、cursor (ack 済みウォーターマーク)、未読キュー |
-| **Attachment** | 一時的。セッションの生存期間 | Hub が払い出す `attachmentId` | `sessionId`、`kind`、`cwd`、リース期限 |
+| **Mailbox** | 長寿命。明示的に削除するまで残る | 論理名 (例 `main`, `rev-a`) | role、購読トピック、cursor (ack 済みウォーターマーク)、未読キュー |
+| **Attachment** | 一時的。セッションの生存期間 | Hub が払い出す `attachmentId` | `sessionId`、`client` (claude-code / codex など)、`cwd`、リース期限 |
 
-- **Mailbox 名の決め方** (優先順): 環境変数 `HUB_MAILBOX` → MCP ツール `attach(mailbox)` の明示呼び出し → 未指定ならカレントフォルダ名。
-  `HUB_MAILBOX` が shim に渡るかは §6 で検証する。
+- **Mailbox 名の決め方** (優先順): 環境変数 `HUB_MAILBOX` → MCP ツール `attach(mailbox)` の明示呼び出し → `HUB_ROLE` があれば role 名 → 未指定ならカレントフォルダ名。
+  `HUB_MAILBOX` / `HUB_ROLE` が shim に渡るかは §6 で検証する。
 - **attach は冪等**。同じ Mailbox に attach し直すと、Hub はその Mailbox の cursor 以降を再送する。shim は覚えなくてよい。
 - **交代 (R6)** は「新しいセッションが同じ Mailbox に attach する」だけで成立する。購読・未読・cursor は Mailbox に残っている。
 - **takeover (暫定: 排他・新しい方が勝つ)**: 既に Attachment がある Mailbox に別セッションが attach すると、旧 Attachment に `terminated(reason: superseded)` を送って切り離す。複数同時 attach を許すかは §8 で未決。
@@ -112,15 +116,37 @@ skill が「区切りに来た」と判断した場合は、エージェント�
 
 engram (ユーザーの記憶 MCP) は**区切りで得た知見の永続化先**として使う。ライブのキューや購読表は engram に載せず Hub 内に持つ (応答性のため)。
 
-### 3.5 購読 (R4)
+### 3.5 購読と role (R4, R7)
 
-- 購読は **Mailbox に紐づく**。エージェントが `subscribe(topic)` を**自分で呼んだ時だけ**そのトピックの配信を受ける。
-- 宛先指定メッセージ (`to: mailbox`) は購読なしでも受け取る。
+**Mailbox と role は別の軸**として扱う。Mailbox は「誰か」(継続性・未読の持ち主)、role は「何をする係か」(読むべきもの) を表す。
+
+- 購読は **Mailbox に紐づく**。エージェントは次のどちらかで**明示的に**購読を宣言したときだけ配信を受ける。
+  - **role の宣言**: attach 時に role を指定すると、role 定義の既定購読が付く。role は Mailbox の属性として残り、交代後も引き継がれる。
+  - **`subscribe(topic)`**: role の既定に加えて個別に購読する。
+- 実効購読 = role の既定購読 ∪ 個別購読。Hub は role 定義から毎回計算し、Mailbox には個別購読だけを保存する (role 定義を変えると即座に反映される)。
+  `unsubscribe` で外せるのは個別購読だけ。role の既定を外したい場合は role 定義を変える。
+- **role 定義**は Hub の設定ファイル (`roles.json`) に置く。各 role は既定購読と説明 (`description`) を持ち、説明は shim の `instructions` に差し込む。
+  定義にない role の attach は拒否する (typo で黙って何も届かない事故を防ぐため)。
+- **宛先の種類**: `to` は `mailbox` (その Mailbox だけ) / `role` (その role を持つ全 Mailbox) / `topic` (購読者全員)。
+  `mailbox` と `role` 宛ては購読なしでも受け取る。
+- reviewer が 1 人のうちは `HUB_ROLE=reviewer` だけ指定すれば Mailbox 名も `reviewer` になる。2 人目が要るときは `HUB_MAILBOX=rev-b` を足すだけでよい。
+- role は「何を読むか」の分離にとどめ、**「受け取ったら自動で動く」意味は持たせない** (非目標の自律オーケストレーションに入るため)。
 - トピック例: `session.boundary`, `agent.question`, `user.message`, `agent.<mailbox>`
 - SEP の `arguments` (購読時のフィルタ引数) は導入しない。トピック名の一致のみ。必要になったら追加する。
 
-### 3.6 配信
+### 3.6 配信とメッセージ種別 (R8)
 
+- **ルーティング (`to` / topic) と種別 (`kind`) を分ける**。topic は「誰に届くか」、`kind` は「受け取った側がどう扱うか」を表す。
+  topic に種別を混ぜる (`review.request` / `review.result` …) と組み合わせの数だけトピックが増えるため。
+- `kind` は Hub が検証する**閉じた列挙**。当面は次の 3 つ。列挙外は 400 で拒否する。必要になったら追加する (候補: 交代時の `handoff`)。
+
+| kind | 意味 |
+|---|---|
+| `request` | 作業または応答を期待する |
+| `reply` | ある Message への返答。`replyTo` 必須 |
+| `notice` | 情報のみ。応答不要 |
+
+- hook 由来の Event も `kind` (`turn.end` など) を持つが、Event は Message とは別の型であり、名前空間は混ぜない。
 - Claude Code へは Channels の `notifications/claude/channel` で push する。**Claude Code は通知を ack しない**ため、shim の ack が意味するのは「トランスポートに書けた」まで (§6 の検証結果)。
 - 本文は `<hub-message>` で包んでから `content` に入れる (protocol.md §6)。Claude 側では Channels がさらに `<channel source="...">` で包む。
 - 配信保証は Mailbox 単位の at-least-once + `seq` 順。重複除去はメッセージ `id` で行う (protocol.md §4)。
@@ -131,13 +157,30 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 同じ shim の MCP ツール `inbox()` を polling する**縮退経路**を用意する。Mailbox・購読・未読キューは共通。
 `inbox()` の入出力は MCP Events の `events/poll` (`cursor`, `truncated`, `hasMore`, `nextPollMs`) に揃える。
 
+### 3.8 実行形態 (ホスト直接 / Docker)
+
+| | 用途 | 到達範囲の担保 |
+|---|---|---|
+| ホストで直接起動 | 開発 (P0〜)。`tsx watch` などで反復を速くする | `HUB_HOST=127.0.0.1` で bind |
+| Docker (compose) | 常駐運用 (P2)。`restart: unless-stopped` で自動起動し、データは volume に置く | コンテナ内は `0.0.0.0` で listen し、公開を `ports: "127.0.0.1:7777:7777"` に限定する |
+
+- Docker に載せるのは **Hub だけ**。shim は Claude Code が stdio で起動する子プロセス、hooks はホスト上のコマンドなので、どちらもホストで動く。
+- Docker の `ports` を `7777:7777` と書くと全インターフェースに公開されるため、`127.0.0.1:` の前置は必須。
+- トークンは起動時の自動生成ではなく `HUB_TOKEN` (`.env`) で固定し、ホスト側の shim/hooks と共有する。
+- Hub はホストのファイル (hook ペイロードの `transcript_path` など) を読まない。中身が必要なら hook スクリプト側で読んでから POST する。どちらの実行形態でも同じ挙動になる。
+- Hub のコードは bind 先・ポート・トークン・データの保存先を環境変数で受け取るだけにし、どちらの形態でも動くようにする。
+
 ## 4. セキュリティ
 
 メッセージは**他エージェント/ブラウザ由来の文字列がエージェントの入力になる**ため、プロンプトインジェクション経路になりうる。
 
-- Hub は `127.0.0.1` のみ bind。外部公開しない。
-- 全 API に共有トークン (起動時に生成、環境変数または設定ファイルで shim/hook/UI に渡す)。ブラウザへの渡し方は §8 で未決。
-- 配信時に `from` / `topic` / `id` を必ず付与し、本文は区切って包む (protocol.md の配信フォーマット参照)。
+- Hub は**ホストのループバックからのみ到達可能**にする。直接起動なら `127.0.0.1` に bind、Docker なら公開を `127.0.0.1:<port>` に限定する (§3.8)。外部公開しない。
+- 全 API に共有トークン (`HUB_TOKEN`)。shim と hooks は `Authorization: Bearer` で送る。
+- **ブラウザは cookie で認証する** (`EventSource` が `Authorization` ヘッダーを付けられないため)。Hub は起動時に `http://127.0.0.1:<port>/?token=…` を表示し、
+  このアクセスでトークンを検証したら `HttpOnly; SameSite=Strict` の cookie を設定し、トークンを URL から消してリダイレクトする (Jupyter と同じ方式)。
+  状態を変える API は cookie 認証のとき `Origin` も検証し、CSRF を防ぐ。
+- 配信時に `from` / `kind` / `topic` / `id` を必ず付与し、本文は区切って包む (protocol.md の配信フォーマット参照)。
+- **`from` (Mailbox と role) は Hub が Attachment から付与する**ので送り手は偽れない。`kind` は送り手の自己申告であり、受信側はそれを信頼の根拠にしない。
 - 受信側の運用ルール: 他エージェント由来テキストは**指示ではなくデータ**として扱う、と CLAUDE.md や skill に明記する。
   SEP-3415 も「イベントのペイロードは tool result と同じく信頼できないデータ」「受信は行動の権限を与えない」と定めている。
 - 人間の Send 操作を既定とする。自動転送ルールを作る場合は明示的な opt-in にする。
@@ -155,6 +198,11 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 | 購読状態の正本は Hub が持つ | SEP はクライアントに持たせるが、shim を無状態に保つ不変条件を優先。Hub を Forward Proxy と位置づける |
 | attach に `maxAgeMs` と `truncated` | 長期不在後の後継セッションに古い未読を一度に流し込まないため。SEP の再開制御をそのまま借りる |
 | 語彙を MCP Events に寄せる | Claude Code が MCP Events に対応した時に、shim に `io.modelcontextprotocol/events` を足すだけで移行できるようにする (§7) |
+| role を Mailbox とは別の属性にする | 「誰か (継続性)」と「何をする係か」は独立に変わる。同じ role を複数の Mailbox が持てるし、Mailbox の role を変えることもある。1 人のうちは Mailbox 名の既定を role 名にして手間を増やさない |
+| role の宣言を明示的な購読とみなす | R4 (購読は明示的に) を保ったまま、role ごとの購読を毎回 `subscribe` しなくて済むようにする |
+| `kind` を topic と別のフィールドにし、閉じた列挙にする | ルーティングと扱い方を独立させ、トピックの組み合わせ爆発を避ける。列挙を閉じるのは、受信側と UI が機械的に分岐できるようにするため |
+| ブラウザ認証は cookie | ローカル開発だけが対象なので大きな差はないが、トークンが URL・履歴・ログに残り続けない方を選んだ |
+| Docker に載せるのは Hub だけ、P0 はホストで直接起動 | shim/hooks は構造上ホストで動く。常駐 (Windows での daemon 化) を compose の restart で解決できるが、開発中は反復速度を優先する |
 | P0 はフレームワークなし UI | 検証を最短にするため。必要になってから導入 |
 | 永続化は JSONL から始める | 実装が最小で、人間が `tail` で追える |
 
@@ -187,11 +235,12 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 1. **Channels の必要バージョン** (v2.1.80 以降と報告されている) と、claude.ai 認証 / Console API キーの要件。
 2. **channel タグの閉じタグ偽装**: 本文に `</channel>` が含まれた場合に Claude Code がエスケープするか。結果次第で `<hub-message>` の二重包みをやめ、属性を `meta` に一本化する。
 3. **shim が自セッションの `session_id` を知る手段** (環境変数・MCP の初期化情報など)。hook イベントと Mailbox の対応付け (§3.4) の前提。
-4. **`.mcp.json` の環境変数**: 起動時の `HUB_MAILBOX` が shim に継承されるか、`${VAR}` 展開が効くか。
+4. **`.mcp.json` の環境変数**: 起動時の `HUB_MAILBOX` / `HUB_ROLE` が shim に継承されるか、`${VAR}` 展開が効くか。
 5. **hook の入力ペイロード**: `Stop` / `Notification` / `PreToolUse` が stdin で受け取る JSON のフィールド (session_id、transcript_path など)。
 6. **hook の設定場所**: `~/.claude/settings.json` か、プロジェクトの `.claude/settings.json` か。Windows でのコマンド記述。
 7. **`AskUserQuestion` 待機中に channel 通知が来たときの挙動**: 回答として扱われるのか、次のターンの入力になるのか。
-8. **Windows 固有**: PowerShell 環境での daemon 常駐方法、パス表記、改行コード。
+8. **Windows 固有**: パス表記、改行コード。daemon の常駐は Docker (§3.8) で解決する見込み。
+   Docker Desktop (WSL2) で `ports: "127.0.0.1:7777:7777"` がホストのループバックだけに公開されることを確認する。
 9. **Codex 側の MCP 対応状況**: `inbox()` polling が使えるか。
 10. **代替の配信経路: plugin の monitor**。Hookdeck の mcp-events-bridge は Channels を使わず、plugin の monitor で poll クライアントを動かし、1 行出力を通知として Claude に届けている (Claude Code 2.1.275 以降)。開発用フラグと警告ダイアログが不要になる可能性がある。アイドル中のセッションを起こせるかを含めて比較する。
 
@@ -231,9 +280,10 @@ WG の field report (experimental-ext-triggers-events #6) は、クライアン�
 
 1. **takeover の方針**: 排他 (新しい方が勝つ、暫定) か、複数同時 attach (全員に配信 / どれか 1 つに配信) を許すか。
 2. **Event を購読で配信するか**: hook 由来の Event は UI に出すだけか、`session.boundary` などのトピックとして他の Mailbox にも配信するか。
-3. **ブラウザへのトークンの渡し方**: `EventSource` は `Authorization` ヘッダーを付けられない。cookie (HttpOnly, SameSite=Strict) かクエリパラメータか。
-4. **Mailbox の削除と放置**: 長期間 attach のない Mailbox を自動で掃除するか、UI からの明示削除のみか。
-5. **`maxAgeMs` の既定値**: 指定なしの attach で何時間分まで流すか。
+3. **Mailbox の削除と放置**: 長期間 attach のない Mailbox を自動で掃除するか、UI からの明示削除のみか。
+4. **`maxAgeMs` の既定値**: 指定なしの attach で何時間分まで流すか。
+
+(決定済み: ブラウザへのトークンの渡し方は cookie。§4)
 
 ## 9. 参考
 
