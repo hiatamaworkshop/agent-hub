@@ -8,7 +8,7 @@
 
 - [x] Channels の仕様を公式資料で確認し、結果を design.md §6.1 に追記
 - [x] hook・MCP の仕様を公式資料で確認し、design.md §6.1b に追記
-- [ ] design.md §6.2 の 1〜4, 7 をプローブ (`tools/probe/`) で実機確認し、結果を §6 に記録
+- [x] design.md §6.2 の Channels・hook 関連をプローブ (`tools/probe/`) で実機確認し、結果を §6.1c に記録
 - [x] プロジェクト雛形 (package.json, tsconfig。作業順は [plan-p0.md](plan-p0.md))
 - [ ] Hub: 認証付き HTTP (Bearer + ブラウザ向け cookie)、`/messages`、`/stream` (SSE)、JSONL 追記ログ
 - [ ] Hub: Message の `kind` (`request` / `reply` / `notice`) の検証と、`from` の Hub 側付与
@@ -70,7 +70,7 @@
 
 - 配信ルール (人間確認なしの自動転送) の opt-in 設計
 - Channels の permission relay を使い、UI から tool 実行許可を出す (design.md §6.1)
-- 配信経路として plugin の monitor を Channels と比較する (design.md §6.2-4)
+- 配信経路として plugin の monitor を Channels と比較する (design.md §6.2-3)
 - Claude Code が MCP Events に対応したら、shim に `io.modelcontextprotocol/events` (`events/stream`) を追加する (design.md §7)
 - デスクトップアプリ向けの画面操作ベース連携 (本プロジェクトの範囲外の可能性が高い)
 - `kind` の追加 (交代時の引き継ぎ用 `handoff` など。design.md §3.6)

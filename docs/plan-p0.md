@@ -19,7 +19,7 @@
 
 ```
 src/
-  shared/      型 (Message, Mailbox, Event)、kind の列挙、名前の検証、<hub-message> の組み立てとエスケープ
+  shared/      型 (Message, Mailbox, Event)、kind の列挙、名前の検証、channel の meta 組み立てと本文エスケープ
   hub/         main.ts (起動), app.ts (Hono ルート), store.ts (JSONL 追記と復元), sse.ts, auth.ts
   shim/        main.ts (channel MCP サーバー)
 public/        index.html (UI。Hub が配信する)
@@ -45,13 +45,13 @@ tools/probe/   §6.2 の実機検証用プローブ (本実装ではない)
 
 | # | 内容 | 終了条件 |
 |---|---|---|
-| 0 | **実機検証**: プローブで design.md §6.2 の 1〜4, 7 を確認し、結果を §6 に記録。仕様に影響があれば design/protocol を直す | §6.2 が埋まる |
+| 0 | **実機検証** (済): プローブで Channels・hook の挙動を確認し、design.md §6.1c に記録。meta 一本化と session_id 対応付けを反映 | 済 |
 | 1 | 雛形: package.json, tsconfig, 依存 (済) | `npm install` が通り、tsx が動く (src がまだないので typecheck はステップ 2 から) |
-| 2 | `shared/`: 型、`kind` 検証、名前の正規表現、`<hub-message>` の組み立てと本文エスケープ | 単体テスト |
+| 2 | `shared/`: 型、`kind` 検証、名前の正規表現、channel の `meta` 組み立てと `</channel>` エスケープ | 単体テスト |
 | 3 | `hub/store.ts`: JSONL 追記、起動時の復元、`seq` 採番 | 単体テスト (再起動後に Mailbox と cursor が戻る) |
 | 4 | `hub/auth.ts` + `app.ts`: Bearer / cookie (`?token=` → Set-Cookie → リダイレクト) / `Origin` 検証。`POST /messages`、`GET /messages`、`GET /stream` (UI 向け SSE) | `app.request()` のテスト (401・403・cookie 発行・SSE 受信) |
 | 5 | Mailbox: attach (作成と冪等性)、購読の PUT/DELETE、`/attachments/:id/stream` (未読の再送 + 新着)、ack で cursor 前進。リースと takeover は P2 | テスト (ack 前の再 attach で再送される) |
-| 6 | `shim/main.ts`: `HUB_MAILBOX` → フォルダ名で attach、SSE を受けて `notifications/claude/channel` で push、ack。ツール `subscribe` / `post_message` / `whoami` | 手動 (Claude Code 上で受け入れ条件 2〜5) |
+| 6 | `shim/main.ts`: `HUB_MAILBOX` → フォルダ名で attach (`CLAUDE_CODE_SESSION_ID` を sessionId として申告)、SSE を受けて `notifications/claude/channel` で push、ack。ツール `subscribe` / `post_message` / `whoami` (`_meta["anthropic/alwaysLoad"]: true`、design.md §6.1c) | 手動 (Claude Code 上で受け入れ条件 2〜5) |
 | 7 | `public/index.html`: メッセージ一覧 (ライブ、`kind` 表示)、送信フォーム (`kind` 選択、既定 `request`) | 手動 (ブラウザで往復) |
 | 8 | README に起動手順。受け入れ条件 1〜7 を通しで確認 | roadmap の P0 を完了にする |
 

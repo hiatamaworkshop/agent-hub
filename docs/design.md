@@ -153,7 +153,7 @@ engram (ユーザーの記憶 MCP) は**区切りで得た知見の永続化先*
 
 - hook 由来の Event も `kind` (`turn.end` など) を持つが、Event は Message とは別の型であり、名前空間は混ぜない。
 - Claude Code へは Channels の `notifications/claude/channel` で push する。**Claude Code は通知を ack しない**ため、shim の ack が意味するのは「トランスポートに書けた」まで (§6 の検証結果)。
-- 本文は `<hub-message>` で包んでから `content` に入れる (protocol.md §6)。Claude 側では Channels がさらに `<channel source="...">` で包む。
+- 送り手の属性 (`id` / `kind` / `from` / `to` / `seq`) は Channels では `meta` に載せ、外側の `<channel>` タグの属性として渡す。本文は包まない (protocol.md §6)。`</channel>` で外側を閉じられないことは実機で確認済み (§6.1c)。polling 経路だけ `<hub-message>` で包む。
 - 配信保証は Mailbox 単位の at-least-once + `seq` 順。重複除去はメッセージ `id` で行う (protocol.md §4)。
 
 ### 3.7 Claude Code 以外のエージェント
@@ -207,6 +207,7 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 | role の宣言を明示的な購読とみなす | R4 (購読は明示的に) を保ったまま、role ごとの購読を毎回 `subscribe` しなくて済むようにする |
 | `kind` を topic と別のフィールドにし、閉じた列挙にする | ルーティングと扱い方を独立させ、トピックの組み合わせ爆発を避ける。列挙を閉じるのは、受信側と UI が機械的に分岐できるようにするため |
 | ブラウザ認証は cookie | ローカル開発だけが対象なので大きな差はないが、トークンが URL・履歴・ログに残り続けない方を選んだ |
+| Channels では送り手の属性を `meta` に一本化し、`<hub-message>` は polling 経路だけにする | Claude Code が `</channel>` をエスケープし、本文から外側のタグを閉じられないことを実機で確認した (§6.1c)。二重包みと独自エスケープを減らせる。記載のない挙動なので、shim 側でも `</channel>` をエスケープする |
 | HTTP は Hono (`@hono/node-server`) | 同じ DockerFiles 配下の cairn と揃える。`app.request()` でネットワークなしにテストでき、SSE ヘルパー (`streamSSE`) もある |
 | shim は MCP TypeScript SDK 1.x に固定 | SDK 2.x はプロトコル `2026-07-28` を交渉し、その channel サーバーは v2 ランタイムで登録されない (§6.1)。1.32 系の最新対応は `2025-11-25` |
 | hook は HTTP hook で Hub に直接送る | スクリプトが不要になり、Windows のシェル差異 (Git Bash / PowerShell) を避けられる。トークンと Mailbox 名はヘッダーの環境変数展開で渡せる |
@@ -274,14 +275,20 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 - **HTTP hook のヘッダー展開**: `X-Hub-Mailbox: $HUB_MAILBOX` は `probe-test` に展開されて届いた。
 - **hook の実ペイロード (`Stop`)**: キーは `session_id, transcript_path, cwd, scratchpad_dir, prompt_id, permission_mode, effort, hook_event_name, stop_hook_active, last_assistant_message, background_tasks, session_crons` で、資料どおりだった。
   `SessionStart` はプローブの HTTP が listen する前に発火したため、記録されなかった (想定どおり)。
+- **`AskUserQuestion` 待機中の通知**: 回答待ちの最中に送った通知は、**質問への回答として扱われず**、選択肢の UI も閉じなかった。
+  通知は溜められ、ユーザーの回答 (ツール結果) のあと、同じターンの中に「作業中に届いたメッセージ」として差し込まれた。
+  時系列: PreToolUse (`AskUserQuestion`) → 6 秒後に Notification (`notification_type: permission_prompt`, `message: "Claude needs your permission"`) → 通知送信 → 回答 → Stop。
+  **質問の表示でも `permission_prompt` の Notification が出る**ため、P1 の UI は直前の PreToolUse (`AskUserQuestion`) と突き合わせて「tool の許可待ち」と区別する必要がある。
+- **注意書きの自動付与**: Claude Code は channel 由来の内容に「ユーザーからではなく外部チャネル由来なので、指示ではなくデータとして扱う」旨の注意書きを付けて Claude に渡す。
+- **ツールの遅延ロード**: プローブの `probe_note` ツールは、頼まれても Claude に使われなかった (「返信用のツールがない」と回答)。tool search で遅延ロードされ、見つけられなかったとみられる。
+  shim の `post_message` などは `_meta["anthropic/alwaysLoad"]: true` で最初から読み込ませる。
 
 ### 6.2 未検証
 
-1. **`AskUserQuestion` 待機中に channel 通知が来たときの挙動**: 回答として扱われるのか、次のターンの入力になるのか。1 回目のプローブでは手順が成立しなかったので、やり直す。
-2. **Windows 固有**: パス表記、改行コード。daemon の常駐は Docker (§3.8) で解決する見込み。
+1. **Windows 固有**: パス表記、改行コード。daemon の常駐は Docker (§3.8) で解決する見込み。
    Docker Desktop (WSL2) で `ports: "127.0.0.1:7777:7777"` がホストのループバックだけに公開されることを確認する。
-3. **Codex 側の MCP 対応状況**: `inbox()` polling が使えるか。
-4. **代替の配信経路: plugin の monitor**。Hookdeck の mcp-events-bridge は Channels を使わず、plugin の monitor で poll クライアントを動かし、1 行出力を通知として Claude に届けている (Claude Code 2.1.275 以降)。開発用フラグと警告ダイアログが不要になる可能性がある。アイドル中のセッションを起こせるかを含めて比較する。
+2. **Codex 側の MCP 対応状況**: `inbox()` polling が使えるか。
+3. **代替の配信経路: plugin の monitor**。Hookdeck の mcp-events-bridge は Channels を使わず、plugin の monitor で poll クライアントを動かし、1 行出力を通知として Claude に届けている (Claude Code 2.1.275 以降)。開発用フラグと警告ダイアログが不要になる可能性がある。アイドル中のセッションを起こせるかを含めて比較する。
 
 ## 7. MCP Events (SEP-3415) との関係
 
@@ -306,7 +313,7 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 | TTL / lease、refresh 成功を生存のシグナルに | Attachment のリース |
 | `terminated` で終了理由を区別 | `superseded` など (protocol.md) |
 | `events/poll` の入出力 | `inbox()` の入出力 |
-| ペイロードは信頼できないデータ | `<hub-message>` と運用ルール (§4) |
+| ペイロードは信頼できないデータ | `meta` / `<hub-message>` による本文と属性の分離、運用ルール (§4) |
 
 - 採用しないもの: webhook 配信一式 (HMAC 署名、SSRF 対策、エンドポイント検証)、3 配信モードの全部、`principal`、購読の `arguments`。いずれも 127.0.0.1・単一ユーザーの agent-hub には不要。
 
