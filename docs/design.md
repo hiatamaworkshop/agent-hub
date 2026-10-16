@@ -290,6 +290,18 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 - **`alwaysLoad` が効いた**: Haiku 5.5 でも、頼んでいないのに `post_message` で返信した (§6.1c のプローブでは遅延ロードで見つけられなかった)。
 - **reply の `to` 省略**: Claude は `to` を渡さずに返信し、Hub が `user:browser` に解決した。
 
+### 6.1e 2 エージェントの role 間の往復 (2026-10-16、Claude Code 2.1.301 / leader: Sonnet 5.5 / deployer: Haiku 5.5)
+
+`tools/dev/start-agent.ps1` で leader と deployer を同じフォルダから起動し、ブラウザの依頼を起点に 1 往復させた (README の手順)。
+- **経路**: `user:browser → mailbox:leader` (request) → `mailbox:leader → role:deployer` (request) → `mailbox:deployer → mailbox:leader` (reply、`to` 省略) → `mailbox:leader → user:browser` (reply、`to` 省略)。
+  4 通で 3 分半。role の配信と `from_role` は P0 の実装のままで足りた。
+- **role の振る舞いは `--append-system-prompt-file` で伝わった**。対話セッションでもこのフラグは受け付けられた。leader は自分で実装せず、目的・対象・完了条件・報告形式を書いた依頼を deployer に送った。
+- **Haiku の deployer は leader の依頼を作業として受けた**。shim の instructions と Claude Code の注意書きは channel の本文をデータとして扱うよう求めるが、ユーザーが system prompt で与えた role の説明 (「from_role=leader の request は承認済みの作業依頼」) が優先された。
+- **受領確認の往復は起きなかった**。role の説明に「reply と notice には返信しない」と書いたため。
+- **leader は依頼を送った後でターンを終え、deployer の reply で起床した** (§6.1c のアイドル中の起床と同じ)。
+- **注意**: leader の依頼には「実際に Hub を起動してメッセージを流して確認」という例があった。deployer はこれをせず、fetch / EventSource を差し替えて確認したが、
+  稼働中の Hub に試験メッセージを流すと自分たちを起こしうる。試験用 Hub は別の `HUB_PORT` / `HUB_DATA_DIR` で立てるよう deployer の role の説明に追記した。
+
 ### 6.2 未検証
 
 1. **Windows 固有**: パス表記、改行コード。daemon の常駐は Docker (§3.8) で解決する見込み。

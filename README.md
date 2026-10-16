@@ -71,6 +71,25 @@ claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels s
 - 購読が消えるのは `data/` を消したとき (Docker では volume を作り直したとき)。設定として宣言しておく方法は role の既定購読 (P2、`roles.json` + `HUB_ROLE`)。
 - 宛先のドロップダウンには購読中のトピックだけが出る。購読者のいないトピックは「トピックを手入力…」で送れるが、誰にも届かなければ Send の横に警告が出る。
 
+### 2 エージェントで role 間の往復を試す (leader / deployer)
+
+ユーザー → leader → deployer → leader → ユーザーの順に、role 宛てで依頼と報告を回す試験。
+role の振る舞いは [tools/dev/roles/](tools/dev/roles/) の説明を system prompt に足して伝える (`roles.json` による差し込みは P2)。
+
+```powershell
+npm run hub                                   # ターミナル A
+./tools/dev/start-agent.ps1 -Role leader      # ターミナル B (Mailbox = leader、既定のモデル)
+./tools/dev/start-agent.ps1 -Role deployer    # ターミナル C (Mailbox = deployer、haiku)
+```
+
+1. ブラウザの左側に `leader` と `deployer` が role 付きで「接続中」と出ることを確かめる。
+2. ブラウザから `request` を `role:leader` 宛てに送る。本文は作業の依頼 (例: 「`tmp/hello.txt` を作って」)。
+3. leader が `role:deployer` 宛てに実装指示を `request` で送り、deployer が作業して `reply` を返す。
+4. leader が変更を確かめ、2 の依頼への `reply` を送る。ブラウザに 4 通が `request` → `request` → `reply` → `reply` の順に並ぶ。
+
+- 2 つのセッションは同じフォルダで動くので、deployer の変更は leader から `git diff` で見える。
+- deployer のファイル編集の許可は、ターミナル C で承認する。
+
 ### 他のリポジトリで使う
 
 shim をユーザースコープに絶対パスで登録し、同じフラグで起動する。
