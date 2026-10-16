@@ -48,16 +48,17 @@
 
 **ゴール**: エージェントが止まった/質問した時点がブラウザに出る。
 
-- [ ] 着手前に、配送を公式 cross-session messaging に移すかを決める (design.md §8.3 の検証 1〜3、§9-5)
-- [ ] 着手前に、公式 Agent View (design.md §8.1) と重なる部分を削る。残すのは「ブラウザで見て、ブラウザから返す」部分 (例: `agent_needs_input` の Notification を受けて UI に出す)
+- [x] 着手前に、配送を公式 cross-session messaging に移すかを決める → **Channels のまま**。投函の形式が公開されたら見直す (design.md §9-5)
+- [x] 着手前に、公式 Agent View (design.md §8.1) と重なる部分を削る → 状態一覧・ターミナルからの返信・エージェント間のアイドル通知は借りる。
+  作るのは「ブラウザで見て、ブラウザから返す」部分だけ。`report_event` と重複除去は後回し (design.md §3.4 の「P1 で作る範囲」)
+- [x] Event をトピックとして他の Mailbox にも配信するか → **UI に出すだけ** (design.md §9-2)
 - [ ] HTTP hook の設定例: `Stop` / `Notification` / `PreToolUse(AskUserQuestion)` → `POST /events` (`Authorization` と `X-Hub-Mailbox` をヘッダーで渡す)
 - [ ] Hub: `/events` の取り込みを、クライアントごとの変換 (まず Claude Code の hook 用) で共通の `kind` に揃える。`payload` は元の JSON のまま (design.md §3.7)
+  - Notification は `notification_type` (許可待ち・`agent_needs_input` など) を変換で区別し、UI が「質問待ち」「許可待ち」を分けられるようにする
   - 変更の事実 (`git diff --name-only`、HEAD) を hook から足せる形にしておく。§3.11 の導く欄を hook で書く場合に、この経路をそのまま使う (design.md §3.11 の未決 1)
-- [ ] Event をトピックとして他の Mailbox にも配信するか、UI に出すだけにするかを決める (design.md §9-2)
 - [ ] Hub: `sessionId` → Attachment → Mailbox の解決
-- [ ] イベント ID を上流の値から決定的に生成し、`Stop` と `report_event` の重複を除去
-- [ ] UI: 「質問待ち」「ターン終了」を Mailbox ごとに表示。時刻と該当内容
-- [ ] `report_event` ツール (skill からの区切り申告)
+- [ ] イベント ID を上流の値 (`session_id` + hook 固有の値) から決定的に生成する (hook の再送の重複除去)
+- [ ] UI: 「質問待ち」「許可待ち」「ターン終了」を Mailbox ごとに区別して表示。時刻と該当内容。状態の推定はしない
 - [ ] 検知イベントから、ブラウザ上で返信メッセージを作る導線
 
 **受け入れ条件**
@@ -104,6 +105,8 @@
 ## 将来の検討 (未確定)
 
 - 配信ルール (人間確認なしの自動転送) の opt-in 設計
+- `report_event` ツール (skill からの区切り申告) と、`Stop` との重複除去。P1 の `Stop` の表示で足りないと分かってから (design.md §3.4)
+- 配送を公式 cross-session messaging に移す。投函の形式が公式資料に載ってから (design.md §9-5)
 - 依頼の台帳と整合点: メッセージの形の宣言と Hub での検査、依頼ごとの SCOPE と `git diff` の突き合わせ、受け入れの指紋と要再確認 (design.md §3.11、§9-6)
   - 始め方: 語彙は leader / deployer の運用で毎回使っている見出しから取り、先に設計しない。新しい検査は警告だけで始め、人の判断と一致するのを見てから 400 に上げる
 - 担当範囲と競合: 書き手 (deployer) が 2 人以上になったら着手する。まず deployer ごとに git worktree を分け、足りなければ request の `SCOPE` を担当範囲として記録して衝突を UI に警告する。止めたい場合だけ hook で強制する (design.md §9-6)

@@ -82,7 +82,8 @@
 }
 ```
 - hook からは HTTP hook が入力 JSON をそのまま `POST /events` に送ってくる (design.md §6.1b)。Hub はそれを `payload` に入れ、`hook_event_name` から `kind` を決める
-  (`Stop` → `turn.end`、`Notification` → `notification`、`PreToolUse` + `AskUserQuestion` → `question`)。`report_event` からは `kind` を明示して送る。
+  (`Stop` → `turn.end`、`Notification` → `notification`、`PreToolUse` + `AskUserQuestion` → `question`)。`report_event` からは `kind` を明示して送る (`session.boundary` はこの経路用。`report_event` は後回し。design.md §3.4)。
+- Event は UI に出すだけで、トピックとして Mailbox には配信しない (design.md §9-2)。
 - この対応付けは Claude Code の hook 用の変換で、クライアントごとに分けて持つ。他のクライアントの hook は、別の変換で同じ `kind` に揃える。`payload` は元の JSON のまま残し、Hub の保存形式と UI は `kind` だけに依存する (design.md §3.7)。
 - `mailbox` は Hub が次の順で解決する: `payload.session_id` に一致する Attachment (shim の申告または記録済み) → `X-Hub-Mailbox` ヘッダー → `payload.cwd` のフォルダ名。解決できなければ空のまま UI に出す (design.md §3.4)。
 - `id` は `session_id` と hook 固有の値 (`tool_use_id`、`prompt_id` など) から決定的に作る。
@@ -230,7 +231,7 @@
 | `list_topics` | なし | 既知トピックと自分の購読状況 (role 由来か個別かを区別) |
 | `post_message` | `kind`, `body`, `to?`, `reply_to?` | Message を送る。`kind` は必須。`to` は channel の属性と同じ `type:id` 表記 (`mailbox:rev-a`、`user:browser` など)。`reply_to` があれば `to` は省略でき、送り手に返る。結果は `id` / `seq` / `to` / `recipients`。`user` 宛て以外で `recipients` が空なら `warning` を添える |
 | `inbox` | `after?`, `limit?` | 未読を取得 (polling 用。Claude Code 以外の縮退経路) |
-| `report_event` | `kind`, `payload` | skill が意味判断した結果 (区切り申告など) を Hub に出す |
+| `report_event` | `kind`, `payload` | skill が意味判断した結果 (区切り申告など) を Hub に出す。後回し (design.md §3.4) |
 
 P0 で実装するのは `post_message` / `subscribe` / `unsubscribe` / `whoami`。いずれも `_meta["anthropic/alwaysLoad"]: true` を付ける (design.md §6.1c)。
 

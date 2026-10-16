@@ -96,7 +96,7 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
 - 起動時に Mailbox 名と role を決めて Hub に **attach** し、Hub からの SSE を購読する (§3.3, §3.5)。
 - Hub から配信されたメッセージを `notifications/claude/channel` として Claude に push する。
 - role の説明を MCP の `instructions` に差し込み、エージェントに「自分は何を読み、何を返す係か」を伝える。
-- エージェントが呼ぶツールを公開する: `attach` / `whoami` / `subscribe` / `unsubscribe` / `post_message` / `inbox` / `list_topics` / `report_event` (詳細は protocol.md)。
+- エージェントが呼ぶツールを公開する: `attach` / `whoami` / `subscribe` / `unsubscribe` / `post_message` / `inbox` / `list_topics` / `report_event` (後回し。§3.4) (詳細は protocol.md)。
 
 **hooks (検知側)**
 - Claude Code の **HTTP hook** (`type: "http"`) で、hook の入力 JSON を Hub の `POST /events` に直接送る。スクリプトは書かない (§6.1)。
@@ -149,7 +149,16 @@ MCP Events (SEP-3415) が購読 ID をクライアント生成にせず、購読
 | 「ここでセッションを区切るべきか」の意味判断 | clear-timing skill のような skill | 意味的 (エージェント側の判断) |
 
 機械的な検知は hook、意味的な判断は skill、と役割を分ける。
-skill が「区切りに来た」と判断した場合は、エージェントが `report_event` で Hub に申告する。
+skill が「区切りに来た」と判断した場合は、エージェントが `report_event` で Hub に申告する (後回し。下記)。
+
+**P1 で作る範囲 (公式 Agent View との分担、2026-10-16)**: 状態の検知は大手から借りる (§1.1)。agent-hub が作るのは「ブラウザで見て、ブラウザから返す」部分だけにする。
+- 借りる (作らない): 全セッションの状態一覧 (Working / Idle / Completed / Failed の推定)、ターミナルからの返信、エージェント同士のアイドル通知 (`notify_when_idle` / `TeammateIdle`)。
+  UI は Event から状態を推定しない。届いた Event をそのまま出す。
+- 作る: hook → `POST /events` → Mailbox の解決 → UI で「質問待ち」「許可待ち」「ターン終了」を区別して出す。中身 (質問文、`last_assistant_message`、通知の文言) も出す。
+  そこから返信を作り、今の送信 (Channels) でそのセッションに届ける。
+- Agent View が使う Notification (`agent_needs_input` / `agent_completed`) も、ほかの Notification と同じ経路で取り込む。区別は Claude Code 用の変換で行う。
+- 許可プロンプトは P1 では表示だけにする。UI から許可を出す (Channels の permission relay) のは将来の検討 (§6.1)。Agent View もその場では答えられないので、ここは借りられない部分にあたる。
+- 後回し: `report_event` と、`Stop` との重複除去。区切りの意味判断は、今はエージェントが人間への返事で言えば足りる。`Stop` の表示だけでは足りないと分かってから足す (§1.1 の基準 2)。
 
 **hook イベントと Mailbox の対応付け**: 実機では stdio サーバーの環境に `CLAUDE_CODE_SESSION_ID` があり、hook の `session_id` と一致した (§6.1c)。
 ただし公式資料に記載のない挙動なので、なくなっても動くように、shim と hook が同じ起動環境を共有することを使った手段を重ねる。
@@ -179,7 +188,7 @@ engram (ユーザーの記憶 MCP) は**区切りで得た知見の永続化先*
   `mailbox` と `role` 宛ては購読なしでも受け取る。
 - reviewer が 1 人のうちは `HUB_ROLE=reviewer` だけ指定すれば Mailbox 名も `reviewer` になる。2 人目が要るときは `HUB_MAILBOX=rev-b` を足すだけでよい。
 - role は「何を読むか」の分離にとどめ、**「受け取ったら自動で動く」意味は持たせない** (非目標の自律オーケストレーションに入るため)。
-- トピック例: `session.boundary`, `agent.question`, `user.message`, `agent.<mailbox>`
+- トピック例: `user.message`, `agent.<mailbox>`。Event はトピックに流さない (§9-2)
 - SEP の `arguments` (購読時のフィルタ引数) は導入しない。トピック名の一致のみ。必要になったら追加する。
 
 ### 3.6 配信とメッセージ種別 (R8)
@@ -527,7 +536,8 @@ P0 の後に、同じ領域の公式機能と OSS を調べた。**セッショ�
 
 ### 8.3 示唆
 
-配送を公式の受信口に任せ、Hub はログ・UI・論理 Mailbox・fan-out に専念する構成が考えられる。Channels と開発用フラグへの依存がなくなる。採否は §9-5 で決める。検証すること:
+配送を公式の受信口に任せ、Hub はログ・UI・論理 Mailbox・fan-out に専念する構成が考えられる。Channels と開発用フラグへの依存がなくなる。
+採否は §9-5 で決めた (投函の形式が公開されるまで Channels のまま)。検証したこと:
 
 1. **shim に受信口の情報が渡るか**: 公式資料では `CLAUDE_CODE_MESSAGING_SOCKET` / `CLAUDE_CODE_MESSAGING_TOKEN` は hook と Bash に渡すとあり、stdio MCP サーバーの環境に入るかは書かれていない。
 2. **shim からの投函が受理されるか**: 自分の子プロセスからの投函は受信側の設定なしで受理される (own-child)。ネイティブ Windows ではトークンでしか子プロセスを確認できないので、1 が前提になる。
@@ -553,13 +563,17 @@ P0 の後に、同じ領域の公式機能と OSS を調べた。**セッショ�
 
 1. **takeover の方針**: 排他 (新しい方が勝つ、暫定) か、複数同時 attach (全員に配信 / どれか 1 つに配信) を許すか。
 2. **Event を購読で配信するか**: hook 由来の Event は UI に出すだけか、`session.boundary` などのトピックとして他の Mailbox にも配信するか。
+   **決定 (2026-10-16)**: **UI に出すだけにする**。エージェントが相手のアイドル復帰を知る手段は公式にある (`notify_when_idle`、`TeammateIdle`。§8.1)。
+   また、Event を他のエージェントに流すと、「受け取ったら自動で動く」形に近づく (§3.5)。エージェントに伝えたいときは、人間が UI から Send で送る。
 3. **Mailbox の削除と放置**: 長期間 attach のない Mailbox を自動で掃除するか、UI からの明示削除のみか。
    **明示削除は実装済み**: `DELETE /mailboxes/:name` と UI の Delete (接続していないカードだけ)。接続中は 409 で拒む。**自動の掃除をするかは未決** (未読の放棄は maxAgeMs の方針と合わせて決める)。削除しても Message のログは残し、同名で作り直すと削除時点の seq から始まる (protocol.md §2)。
 4. **`maxAgeMs` の既定値**: 指定なしの attach で何時間分まで流すか。
-5. **配送を公式 cross-session messaging に移すか**: Channels のまま続けるか、shim から自セッションの受信口へ投函する形に移すか (§8.3)。P1 に入る前に決める。
+5. **配送を公式 cross-session messaging に移すか**: Channels のまま続けるか、shim から自セッションの受信口へ投函する形に移すか (§8.3)。
    どちらでも Mailbox・role・未読の正本は Hub に置く (§3.7)。移す場合は、配信アダプタの差し替え口をここで作る (§3.9)。
-   検証結果 (§6.1g): 受信口の情報は shim に渡るが、投函の形式が公開されていない。形式が公開されるまでは Channels のままにする案が有力。
-   第三者が使っている形式 (§6.1g の追記) を 1 回試す余地はある。移すと、送り手の属性は `meta` ではなく本文の包み方で分けることになる (§8.3-3)。
+   検証結果 (§6.1g): 受信口の情報は shim に渡るが、投函の形式が公開されていない。
+   **決定 (2026-10-16)**: **Channels のまま続ける**。移すと、記載のない環境変数と非公開の形式の 2 つに依存し、Channels より安定とは言えない。
+   第三者の形式 (§6.1g の追記) は試していない (自セッションへの投函を、Claude Code の auto mode が権限の迂回として拒んだ)。
+   投函の形式が公式資料に載ったら見直す。そのときは送り手の属性を `meta` ではなく本文の包み方で分ける (§8.3-3)。
 6. **メッセージの形を宣言して検査するか** (§3.11): 違反を 400 で拒否するか、受理して UI に警告するだけにするか。SCOPE の検査を Hub が行うか (Hub は作業ツリーを読まない。§3.8)、leader が `git diff` で行うか。
    **方針 (2026-10-16)**: 引用ブリッジの ERROR / NOTE に倣い、機械で決まる構造の崩れは 400、範囲外の変更などの確認待ちは受理して警告する。変更の事実はホスト側の決定的な処理が導き、Hub はそれを照らすだけにする (§3.11 の未決 1)。
    **担当範囲と競合の方針 (2026-10-16)**: 3 つに分ける。
