@@ -1,10 +1,33 @@
 # agent-hub: 実装エージェント向けルール
 
-## 最初にやること
+## 文書の地図 (起動時に全部は読まない)
 
-1. [README.md](README.md) → [docs/design.md](docs/design.md) → [docs/protocol.md](docs/protocol.md) → [docs/roadmap.md](docs/roadmap.md) の順に読む。
-2. **design.md §6 の未確認事項を、実装前に公式資料で確認する。** 特に Channels の仕様 (通知スキーマ・起動フラグ・必要条件)。構想は伝聞を含むので、食い違えば公式を優先し、design.md / protocol.md を更新する。
-3. roadmap.md の **P0 から**着手する。受け入れ条件を満たしてから次のフェーズへ進む。
+下の 1 行ずつの索引で、問いに関係する節を選び、`Grep` で見出しを探して `Read` の offset / limit でその節だけ読む。
+節を足したり番号を変えたりしたら、同じコミットでこの地図も直す。
+
+- [README.md](README.md) — 起動・使い方の手順、curl の注意
+- [docs/roadmap.md](docs/roadmap.md) — フェーズごとの項目と受け入れ条件、既知の問題、将来の検討。**今どこまで進んだか**はここ
+- [docs/design.md](docs/design.md) (約 600 行)
+  - §1.1 位置付け — 何を自前で持ち何を借りるか、続けるかの基準
+  - §2 要件 / 非目標 — 自動転送・自律オーケストレーションをしない
+  - §3.2 コンポーネント — Hub / shim / hooks / UI の役割、UI の振る舞いの細部
+  - §3.3 Mailbox と Attachment — 交代・takeover・リース
+  - §3.4 検知 — hook と skill の分担、Mailbox の解決、P1 で作る範囲 (Agent View との分担)
+  - §3.5 購読と role / §3.6 配信と `kind`
+  - §3.7 Claude Code 以外 / §3.9 配信アダプタ — ベンダー中立に保つ約束
+  - §3.8 実行形態 — 127.0.0.1 限定、Docker
+  - §3.10 画像 / §3.11 依頼の台帳と整合点 (構想)
+  - §4 セキュリティ / §5 設計判断のメモ (技術選定の理由)
+  - §6 検証の記録 — Channels・hook の実挙動 (6.1〜6.1g)、未検証 (6.2)。**仕様の事実はまずここ**
+  - §8 既存の仕組みとの関係 / §9 未決事項 (決定済みのものは決定と日付つき)
+- [docs/protocol.md](docs/protocol.md) (約 340 行)
+  - §1 共通 (認証・名前・エラー形式) / §2 データモデル (Mailbox・Role・Attachment・Event・Message)
+  - §3 HTTP API / §4 配信保証 / §5 MCP ツール / §6 channel 通知の書式 / §7 UI の SSE 名 / §8 MCP Events との語彙対応
+
+## 実装する前に
+
+1. **仕様の事実 (Channels・hook・MCP) は design.md §6 で確かめる。** 載っていない・未検証なら公式資料で確認し、結果を §6 に足す。食い違えば公式を優先し、design.md / protocol.md を更新する。
+2. roadmap.md の**未完了のフェーズの最初から**着手する。受け入れ条件を満たしてから次のフェーズへ進む。
 
 ## 技術スタック (既定)
 
