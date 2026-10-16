@@ -21,7 +21,7 @@
 
 ## ステータス
 
-設計段階。実装は未着手。まず [docs/design.md](docs/design.md) を読むこと。
+設計段階。P0 の準備中 (雛形と実機検証プローブまで)。まず [docs/design.md](docs/design.md) を読むこと。
 Channels の仕様は公式資料で確認済み (design.md §6.1)。MCP Events (SEP-3415, Draft) との関係は design.md §7。
 
 ## ドキュメント
@@ -31,6 +31,8 @@ Channels の仕様は公式資料で確認済み (design.md §6.1)。MCP Events 
 | [docs/design.md](docs/design.md) | 背景・要件・アーキテクチャ・設計判断・未確認事項 |
 | [docs/protocol.md](docs/protocol.md) | HTTP API・メッセージスキーマ・MCP ツール・配信保証 |
 | [docs/roadmap.md](docs/roadmap.md) | フェーズ分割と受け入れ条件 (P0 → P2) |
+| [docs/plan-p0.md](docs/plan-p0.md) | P0 の技術選定・構成・コミット単位のステップ |
+| [tools/probe/README.md](tools/probe/README.md) | 未検証事項 (design.md §6.2) を実機で確かめる手順 |
 | [CLAUDE.md](CLAUDE.md) | 実装エージェント向けの作業ルール |
 
 ## 発想の元

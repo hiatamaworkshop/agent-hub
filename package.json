@@ -1,0 +1,32 @@
+{
+  "name": "agent-hub",
+  "version": "0.0.1",
+  "private": true,
+  "description": "複数の AI エージェントセッションと人間をローカルの Hub 経由でつなぐメッセージ基盤",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "hub": "node --env-file-if-exists=.env --import tsx src/hub/main.ts",
+    "hub:dev": "node --env-file-if-exists=.env --watch --import tsx src/hub/main.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "probe": "node tools/probe/probe.mjs"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "@modelcontextprotocol/sdk": "~1.32.1",
+    "hono": "^4.13.13",
+    "ulid": "^3.0.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  },
+  "author": "Hiatama Workshop",
+  "license": "UNLICENSED"
+}

@@ -70,7 +70,7 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
 - エージェントが呼ぶツールを公開する: `attach` / `whoami` / `subscribe` / `unsubscribe` / `post_message` / `inbox` / `list_topics` / `report_event` (詳細は protocol.md)。
 
 **hooks (検知側)**
-- Claude Code の hook から Hub の `POST /events` を叩く小さなスクリプト。
+- Claude Code の **HTTP hook** (`type: "http"`) で、hook の入力 JSON を Hub の `POST /events` に直接送る。スクリプトは書かない (§6.1)。
 - 機械的な検知を担う (下記 3.4)。
 
 **ブラウザ UI**
@@ -108,9 +108,13 @@ MCP Events (SEP-3415) が購読 ID をクライアント生成にせず、購読
 機械的な検知は hook、意味的な判断は skill、と役割を分ける。
 skill が「区切りに来た」と判断した場合は、エージェントが `report_event` で Hub に申告する。
 
-**hook イベントと Mailbox の対応付け**: hook の入力には `session_id` が来る想定。Hub は Attachment の `sessionId` を引いてイベントを Mailbox に結びつける。
-そのため shim は attach 時に自セッションの `sessionId` を申告する必要がある。shim がそれを知る手段は未確認 (§6)。
-代替案として、shim と hook がどちらも同じ Claude Code プロセスの子孫であることを使う (親 PID 照合) 方法があるが、Windows ではシェル経由で親子関係が崩れうるため最後の手段とする。
+**hook イベントと Mailbox の対応付け**: MCP サーバーが自セッションの `session_id` を知る手段は公式資料に見当たらない (§6.1)。
+そこで **shim と hook が同じ起動環境を共有すること**を使う。
+- 第一手段: HTTP hook の `headers` で `X-Hub-Mailbox: $HUB_MAILBOX` を送る (`allowedEnvVars` に `HUB_MAILBOX`)。shim も同じ `HUB_MAILBOX` で attach するので、Hub は名前で直接結びつけられる。
+- 第二手段: ヘッダーが空なら、hook 入力の `cwd` から shim と同じ規則 (フォルダ名) で Mailbox 名を導く。
+- Hub は解決できたイベントの `session_id` を、その Mailbox の Attachment に記録する。shim は `session_id` を知らなくてよい。
+- 実行中に `attach` ツールで Mailbox を切り替えた場合は環境変数とずれる。Hub は記録済みの `session_id` → Attachment の対応を優先する。
+親 PID 照合は Windows でシェル経由の親子関係が崩れうるため採らない。
 
 **イベント ID**: 同じ区切りが `Stop` hook と `report_event` の両方から届いても重複除去できるよう、イベント ID は可能なら上流の値 (`session_id` + hook 固有の値) から決定的に作る (SEP の `eventId` の考え方)。
 
@@ -167,7 +171,7 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 - Docker に載せるのは **Hub だけ**。shim は Claude Code が stdio で起動する子プロセス、hooks はホスト上のコマンドなので、どちらもホストで動く。
 - Docker の `ports` を `7777:7777` と書くと全インターフェースに公開されるため、`127.0.0.1:` の前置は必須。
 - トークンは起動時の自動生成ではなく `HUB_TOKEN` (`.env`) で固定し、ホスト側の shim/hooks と共有する。
-- Hub はホストのファイル (hook ペイロードの `transcript_path` など) を読まない。中身が必要なら hook スクリプト側で読んでから POST する。どちらの実行形態でも同じ挙動になる。
+- Hub はホストのファイル (hook ペイロードの `transcript_path` など) を読まない。`Stop` の入力には `last_assistant_message` が含まれるので、最終応答の表示には足りる。どちらの実行形態でも同じ挙動になる。
 - Hub のコードは bind 先・ポート・トークン・データの保存先を環境変数で受け取るだけにし、どちらの形態でも動くようにする。
 
 ## 4. セキュリティ
@@ -202,6 +206,9 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 | role の宣言を明示的な購読とみなす | R4 (購読は明示的に) を保ったまま、role ごとの購読を毎回 `subscribe` しなくて済むようにする |
 | `kind` を topic と別のフィールドにし、閉じた列挙にする | ルーティングと扱い方を独立させ、トピックの組み合わせ爆発を避ける。列挙を閉じるのは、受信側と UI が機械的に分岐できるようにするため |
 | ブラウザ認証は cookie | ローカル開発だけが対象なので大きな差はないが、トークンが URL・履歴・ログに残り続けない方を選んだ |
+| HTTP は Hono (`@hono/node-server`) | 同じ DockerFiles 配下の cairn と揃える。`app.request()` でネットワークなしにテストでき、SSE ヘルパー (`streamSSE`) もある |
+| shim は MCP TypeScript SDK 1.x に固定 | SDK 2.x はプロトコル `2026-07-28` を交渉し、その channel サーバーは v2 ランタイムで登録されない (§6.1)。1.32 系の最新対応は `2025-11-25` |
+| hook は HTTP hook で Hub に直接送る | スクリプトが不要になり、Windows のシェル差異 (Git Bash / PowerShell) を避けられる。トークンと Mailbox 名はヘッダーの環境変数展開で渡せる |
 | Docker に載せるのは Hub だけ、P0 はホストで直接起動 | shim/hooks は構造上ホストで動く。常駐 (Windows での daemon 化) を compose の restart で解決できるが、開発中は反復速度を優先する |
 | P0 はフレームワークなし UI | 検証を最短にするため。必要になってから導入 |
 | 永続化は JSONL から始める | 実装が最小で、人間が `tail` で追える |
@@ -230,14 +237,37 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
   `notifications/claude/channel/permission` (`request_id`, `behavior: allow|deny`) で応答できる。端末側のダイアログと並行で、先に来た方が採用される。
   対象は Bash/Write/Edit などの tool 承認のみ。v2.1.234 以降は channel として登録したサーバーにだけ送られる。
 
+### 6.1b 検証済み (2026-10-16、公式 channels / mcp / hooks のドキュメントで確認)
+
+出典: <https://code.claude.com/docs/en/channels.md>、<https://code.claude.com/docs/en/mcp.md>、<https://code.claude.com/docs/en/hooks.md>
+
+- **認証**: claude.ai または Console API キーが必要。Bedrock / Agent Platform / Foundry では使えない。Pro/Max の個人利用は組織の制御を受けない。
+- **`.mcp.json` に書くだけでは通知は届かない**。`--channels` か開発用フラグでサーバー名を指定する必要がある。
+- **v2 ランタイムの落とし穴**: Claude Code の v2 MCP クライアントランタイム (SDK 2.0 ベース) は stdio サーバーにプロトコル `2026-07-28` を打診する。
+  **それで交渉した channel サーバーは channel として登録されない**。channel サーバーは `2026-07-28` 非対応の SDK 1.x を使う (1.32.1 の最新は `2025-11-25`) か、
+  利用者側で `MCP_PROTOCOL_NEGOTIATION=legacy` を設定する。
+- **`.mcp.json` の環境変数展開**: `${VAR}` と `${VAR:-default}` が `command` / `args` / `env` / `url` / `headers` で効く。未定義で既定なしは文字列のまま残り、警告が出る。
+  `CLAUDE_PROJECT_DIR` は stdio サーバーの環境には設定されるが、Claude Code 自身の環境にはないため、`args` では `${CLAUDE_PROJECT_DIR:-.}` と書く。
+- **`session_id` の受け渡し**: hook には JSON 入力の `session_id` として届く。`CLAUDE_SESSION_ID` のような環境変数はなく、MCP サーバーへ渡す仕組みも記載がない (§3.4 の対応付け方針はこれを前提にする)。
+- **hook の共通入力**: `session_id`, `prompt_id`, `transcript_path`, `cwd`, `scratchpad_dir`, `permission_mode`, `effort`, `hook_event_name`。サブエージェント内では `agent_id` / `agent_type` が付く。
+  - `Stop`: `stop_hook_active`, `last_assistant_message`, `background_tasks`, `session_crons`
+  - `Notification`: `message`, `title` (任意), `notification_type` (`permission_prompt`, `idle_prompt`, `agent_needs_input`, `elicitation_dialog` など)
+  - `PreToolUse`: `tool_name`, `tool_input`, `tool_use_id`。`AskUserQuestion` の `tool_input.questions[]` は `question` / `header` / `options` / `multiSelect`
+- **hook の設定場所**: `~/.claude/settings.json`、`.claude/settings.json`、`.claude/settings.local.json`、managed、plugin、skill/subagent の frontmatter。各レベルはマージされる。
+  command hook のシェルは既定 `bash` (Git Bash がなければ Windows では `powershell`)。
+- **HTTP hook**: `type: "http"` で入力 JSON をそのまま POST する。`headers` の値は `allowedEnvVars` に列挙した環境変数だけ展開される (例 `"Authorization": "Bearer $HUB_TOKEN"`)。
+  非 2xx や接続失敗は処理を止めないエラー扱い。既定タイムアウトは 600 秒。
+
 ### 6.2 未検証
 
-1. **Channels の必要バージョン** (v2.1.80 以降と報告されている) と、claude.ai 認証 / Console API キーの要件。
+検証用プローブ `tools/probe/` で実機確認する (手順は tools/probe/README.md)。
+
+1. **Channels の必要バージョン** (v2.1.80 以降と報告されている)。公式資料に記載なし。使う Claude Code で動くかをプローブで確かめる。
 2. **channel タグの閉じタグ偽装**: 本文に `</channel>` が含まれた場合に Claude Code がエスケープするか。結果次第で `<hub-message>` の二重包みをやめ、属性を `meta` に一本化する。
-3. **shim が自セッションの `session_id` を知る手段** (環境変数・MCP の初期化情報など)。hook イベントと Mailbox の対応付け (§3.4) の前提。
-4. **`.mcp.json` の環境変数**: 起動時の `HUB_MAILBOX` / `HUB_ROLE` が shim に継承されるか、`${VAR}` 展開が効くか。
-5. **hook の入力ペイロード**: `Stop` / `Notification` / `PreToolUse` が stdin で受け取る JSON のフィールド (session_id、transcript_path など)。
-6. **hook の設定場所**: `~/.claude/settings.json` か、プロジェクトの `.claude/settings.json` か。Windows でのコマンド記述。
+3. **`session_id` を使わない対応付けの成立**: HTTP hook のヘッダー `X-Hub-Mailbox: $HUB_MAILBOX` が展開されて届くか (§3.4)。MCP の initialize に `session_id` 相当の情報が来ないことも念のため確認する。
+4. **stdio サーバーへの環境変数の継承**: 起動シェルの `HUB_MAILBOX` / `HUB_ROLE` が `env` 指定なしで shim に継承されるか (展開が効くことは確認済み)。
+5. (解決済み → §6.1b) hook の入力ペイロード
+6. (解決済み → §6.1b) hook の設定場所。HTTP hook を使うので Windows のコマンド記述は不要になった
 7. **`AskUserQuestion` 待機中に channel 通知が来たときの挙動**: 回答として扱われるのか、次のターンの入力になるのか。
 8. **Windows 固有**: パス表記、改行コード。daemon の常駐は Docker (§3.8) で解決する見込み。
    Docker Desktop (WSL2) で `ports: "127.0.0.1:7777:7777"` がホストのループバックだけに公開されることを確認する。

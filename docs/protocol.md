@@ -75,7 +75,10 @@
   "payload": { "...": "hook の入力をそのまま、または必要部分" }
 }
 ```
-`mailbox` は Hub が `sessionId` → Attachment → Mailbox の順で解決して付与する。解決できなければ空のまま UI に出す。
+- hook からは HTTP hook が入力 JSON をそのまま `POST /events` に送ってくる (design.md §6.1b)。Hub はそれを `payload` に入れ、`hook_event_name` から `kind` を決める
+  (`Stop` → `turn.end`、`Notification` → `notification`、`PreToolUse` + `AskUserQuestion` → `question`)。`report_event` からは `kind` を明示して送る。
+- `mailbox` は Hub が次の順で解決する: 記録済みの `sessionId` → Attachment → `X-Hub-Mailbox` ヘッダー → `payload.cwd` のフォルダ名。解決できなければ空のまま UI に出す (design.md §3.4)。
+- `id` は `session_id` と hook 固有の値 (`tool_use_id`、`prompt_id` など) から決定的に作る。
 
 ### Message
 ```json
@@ -101,7 +104,7 @@
 ### 検知側 / 共通
 | メソッド | パス | 内容 |
 |---|---|---|
-| POST | `/events` | Event を登録。登録後 UI に SSE で配信 |
+| POST | `/events` | Event を登録。登録後 UI に SSE で配信。HTTP hook の入力 JSON をそのまま受け付ける (ヘッダー `X-Hub-Mailbox` 任意)。応答は `{}` (hook の判断には関与しない) |
 | POST | `/messages` | Message を作成して配信 (宛先は `to`) |
 | GET | `/messages?after=<seq>&limit=<n>` | 履歴取得 |
 | GET | `/mailboxes` | Mailbox 一覧 (role・実効購読・未読数・Attachment の状態) |

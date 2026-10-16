@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "http", "url": "http://127.0.0.1:7788/hook", "headers": { "X-Hub-Mailbox": "$HUB_MAILBOX" }, "allowedEnvVars": ["HUB_MAILBOX"] }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "http", "url": "http://127.0.0.1:7788/hook", "headers": { "X-Hub-Mailbox": "$HUB_MAILBOX" }, "allowedEnvVars": ["HUB_MAILBOX"] }] }
+    ],
+    "Notification": [
+      { "hooks": [{ "type": "http", "url": "http://127.0.0.1:7788/hook", "headers": { "X-Hub-Mailbox": "$HUB_MAILBOX" }, "allowedEnvVars": ["HUB_MAILBOX"] }] }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [{ "type": "http", "url": "http://127.0.0.1:7788/hook", "headers": { "X-Hub-Mailbox": "$HUB_MAILBOX" }, "allowedEnvVars": ["HUB_MAILBOX"] }]
+      }
+    ]
+  }
+}

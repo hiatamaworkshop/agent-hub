@@ -7,8 +7,9 @@
 **ゴール**: ブラウザで書いたメッセージが Claude セッションに届き、Claude が `post_message` で返信し、ブラウザに表示される。
 
 - [x] Channels の仕様を公式資料で確認し、結果を design.md §6.1 に追記
-- [ ] design.md §6.2 の 2〜4 (閉じタグのエスケープ、`session_id` の取得手段、`HUB_MAILBOX` の継承) を実機で確認
-- [ ] プロジェクト雛形 (TypeScript, ビルド/起動スクリプト)
+- [x] hook・MCP の仕様を公式資料で確認し、design.md §6.1b に追記
+- [ ] design.md §6.2 の 1〜4, 7 をプローブ (`tools/probe/`) で実機確認し、結果を §6 に記録
+- [x] プロジェクト雛形 (package.json, tsconfig。作業順は [plan-p0.md](plan-p0.md))
 - [ ] Hub: 認証付き HTTP (Bearer + ブラウザ向け cookie)、`/messages`、`/stream` (SSE)、JSONL 追記ログ
 - [ ] Hub: Message の `kind` (`request` / `reply` / `notice`) の検証と、`from` の Hub 側付与
 - [ ] Hub: Mailbox の最小実装 (attach で作成、購読、cursor)。リースと takeover は P2
@@ -29,8 +30,7 @@
 
 **ゴール**: エージェントが止まった/質問した時点がブラウザに出る。
 
-- [ ] hook スクリプト: `Stop` / `Notification` / `PreToolUse(AskUserQuestion)` → `POST /events`
-- [ ] hook 設定例を docs に追加 (Windows のコマンド記述を含む)
+- [ ] HTTP hook の設定例: `Stop` / `Notification` / `PreToolUse(AskUserQuestion)` → `POST /events` (`Authorization` と `X-Hub-Mailbox` をヘッダーで渡す)
 - [ ] Hub: `sessionId` → Attachment → Mailbox の解決
 - [ ] イベント ID を上流の値から決定的に生成し、`Stop` と `report_event` の重複を除去
 - [ ] UI: 「質問待ち」「ターン終了」を Mailbox ごとに表示。時刻と該当内容
