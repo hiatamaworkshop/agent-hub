@@ -49,15 +49,27 @@ export interface AttachResult {
 // P0 ではリースを強制しない (heartbeat と期限切れは P2)。値だけ返す
 const LEASE_MS = 2 * 60_000
 
+export interface HubOptions {
+  now?: () => Date
+  // stream が開かれていない Attachment をこの時間で detach する。shim の kill (Windows では終了処理が走らない) に備える
+  disconnectGraceMs?: number
+}
+
 export class Hub {
   private readonly uiListeners = new Set<(e: UiEvent) => void>()
   private readonly sinks = new Map<string, AttachmentSink>()
+  private readonly graceTimers = new Map<string, NodeJS.Timeout>()
   readonly attachments = new Map<string, Attachment>()
+  private readonly now: () => Date
+  private readonly disconnectGraceMs: number
 
   constructor(
     readonly store: Store,
-    private readonly now: () => Date = () => new Date(),
-  ) {}
+    opts: HubOptions = {},
+  ) {
+    this.now = opts.now ?? (() => new Date())
+    this.disconnectGraceMs = opts.disconnectGraceMs ?? 15_000
+  }
 
   onUi(fn: (e: UiEvent) => void): () => void {
     this.uiListeners.add(fn)
@@ -87,10 +99,13 @@ export class Hub {
   }
 
   postMessage(input: PostMessageInput, from: Sender): Message {
-    if (input.replyTo !== undefined && !this.store.getMessage(input.replyTo)) {
+    const original = input.replyTo === undefined ? undefined : this.store.getMessage(input.replyTo)
+    if (input.replyTo !== undefined && !original) {
       throw new HubError(400, 'reply_to_not_found', `replyTo ${input.replyTo} がない`)
     }
-    const m = this.store.appendMessage({ ...input, from })
+    // to の省略は replyTo があるときだけ許す (schema で検証済み)。元の送り手に返す
+    const to = input.to ?? { type: original!.from.type, id: original!.from.id }
+    const m = this.store.appendMessage({ ...input, to, from })
     this.emitUi('message', m)
     for (const [id, sink] of this.sinks) {
       const at = this.attachments.get(id)
@@ -121,6 +136,7 @@ export class Hub {
     }
     this.attachments.set(at.attachmentId, at)
     this.store.setAttachment(name, at.attachmentId)
+    this.armGrace(at.attachmentId)
     this.emitUi('attachment.attached', at)
 
     return {
@@ -140,17 +156,34 @@ export class Hub {
     this.endAttachment(attachmentId, null)
   }
 
+  // stream のない状態が disconnectGraceMs 続いたら detach する
+  private armGrace(attachmentId: string): void {
+    this.clearGrace(attachmentId)
+    const t = setTimeout(() => {
+      this.graceTimers.delete(attachmentId)
+      if (!this.sinks.has(attachmentId)) this.endAttachment(attachmentId, null, 'disconnected')
+    }, this.disconnectGraceMs)
+    t.unref()
+    this.graceTimers.set(attachmentId, t)
+  }
+
+  private clearGrace(attachmentId: string): void {
+    clearTimeout(this.graceTimers.get(attachmentId))
+    this.graceTimers.delete(attachmentId)
+  }
+
   // reason があれば stream に terminated を送ってから閉じる
-  private endAttachment(attachmentId: string, reason: TerminateReason | null): void {
+  private endAttachment(attachmentId: string, reason: TerminateReason | null, uiReason?: string): void {
     const at = this.attachments.get(attachmentId)
     if (!at) return
+    this.clearGrace(attachmentId)
     this.attachments.delete(attachmentId)
     const mb = this.store.getMailbox(at.mailbox)
     if (mb?.attachment === attachmentId) this.store.setAttachment(at.mailbox, null)
     const sink = this.sinks.get(attachmentId)
     this.sinks.delete(attachmentId)
     sink?.close(reason ?? undefined)
-    this.emitUi(reason === 'superseded' ? 'attachment.superseded' : 'attachment.detached', { ...at, reason })
+    this.emitUi(reason === 'superseded' ? 'attachment.superseded' : 'attachment.detached', { ...at, reason: uiReason ?? reason })
   }
 
   // stream を開く。after より後の未読を seq 順に送ってから新着を流す。
@@ -159,11 +192,15 @@ export class Hub {
     const at = this.mustAttachment(attachmentId)
     const old = this.sinks.get(attachmentId)
     this.sinks.set(attachmentId, sink)
+    this.clearGrace(attachmentId)
     old?.close()
     // store の追記と配信は同期的に進むので、未読の送信と登録の間に新着が割り込むことはない
     for (const m of this.store.unread(at.mailbox, after)) sink.message(m)
+    // 相手から切られたときだけここに来る (開き直し・終了では先に sinks から外れている)
     return () => {
-      if (this.sinks.get(attachmentId) === sink) this.sinks.delete(attachmentId)
+      if (this.sinks.get(attachmentId) !== sink) return
+      this.sinks.delete(attachmentId)
+      this.armGrace(attachmentId)
     }
   }
 

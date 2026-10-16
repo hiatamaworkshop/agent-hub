@@ -43,7 +43,8 @@ describe('postMessageSchema', () => {
   })
 
   it('宛先の名前と type を検証する', () => {
-    assert.ok(!postMessageSchema.safeParse({ kind: 'notice', to: { type: 'user', id: 'x' }, body: 'b' }).success)
+    assert.ok(!postMessageSchema.safeParse({ kind: 'notice', to: { type: 'nobody', id: 'x' }, body: 'b' }).success)
+    assert.ok(!postMessageSchema.safeParse({ kind: 'notice', body: 'b' }).success, 'to も replyTo もない')
     assert.ok(!postMessageSchema.safeParse({ kind: 'notice', to: { type: 'topic', id: 'A' }, body: 'b' }).success)
   })
 })

@@ -1,0 +1,49 @@
+// shim の設定。shim は状態を持たないので、ここで決まるのは接続先と名乗る名前だけ
+import { existsSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { isValidName } from '../shared/types.js'
+
+const ROOT = fileURLToPath(new URL('../..', import.meta.url))
+
+export interface ShimConfig {
+  hubUrl: string
+  token: string
+  mailbox: string
+  role: string | null
+  sessionId: string | undefined
+  cwd: string
+}
+
+// フォルダ名を Mailbox 名の規則 (protocol.md §1) に寄せる。寄せられなければ main
+export function mailboxFromFolder(dir: string): string {
+  const s = basename(dir)
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, '-')
+    .replace(/^[^a-z0-9]+/, '')
+    .slice(0, 64)
+  return isValidName(s) ? s : 'main'
+}
+
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): ShimConfig {
+  // ユーザースコープで登録したとき ~/.claude.json にトークンを書かずに済むよう、agent-hub の .env を読む
+  // (既に設定されている環境変数は上書きされない)
+  const envFile = join(ROOT, '.env')
+  if (env === process.env && !env.HUB_TOKEN && existsSync(envFile)) process.loadEnvFile(envFile)
+
+  const cwd = env.CLAUDE_PROJECT_DIR ?? process.cwd()
+  const role = env.HUB_ROLE || null
+  // 優先順: HUB_MAILBOX → HUB_ROLE → フォルダ名 (design.md §3.3)
+  const mailbox = env.HUB_MAILBOX || role || mailboxFromFolder(cwd)
+  if (!isValidName(mailbox)) throw new Error(`Mailbox 名 "${mailbox}" は ^[a-z0-9][a-z0-9_.-]{0,63}$ に合わない`)
+  if (role !== null && !isValidName(role)) throw new Error(`role 名 "${role}" は ^[a-z0-9][a-z0-9_.-]{0,63}$ に合わない`)
+  return {
+    hubUrl: (env.HUB_URL ?? `http://127.0.0.1:${env.HUB_PORT ?? 7777}`).replace(/\/+$/, ''),
+    token: env.HUB_TOKEN ?? '',
+    mailbox,
+    role,
+    // 公式資料には記載がないが、stdio サーバーの環境に設定され hook の session_id と一致する (design.md §6.1c)
+    sessionId: env.CLAUDE_CODE_SESSION_ID || undefined,
+    cwd,
+  }
+}

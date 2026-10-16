@@ -11,7 +11,8 @@ export function isValidName(s: string): boolean {
 export const MESSAGE_KINDS = ['request', 'reply', 'notice'] as const
 export type MessageKind = (typeof MESSAGE_KINDS)[number]
 
-export const ADDRESS_TYPES = ['mailbox', 'role', 'topic'] as const
+// user はどの Mailbox にも配信されず、UI にだけ出る (ブラウザへの返信先)
+export const ADDRESS_TYPES = ['mailbox', 'role', 'topic', 'user'] as const
 export type AddressType = (typeof ADDRESS_TYPES)[number]
 
 export const EVENT_KINDS = ['turn.end', 'notification', 'question', 'session.boundary'] as const
@@ -48,13 +49,18 @@ export interface Message {
 export const postMessageSchema = z
   .object({
     kind: z.enum(MESSAGE_KINDS),
-    to: addressSchema,
+    // replyTo があれば省略でき、元メッセージの from が宛先になる
+    to: addressSchema.optional(),
     body: z.string().min(1),
     replyTo: z.string().min(1).optional(),
   })
   .refine((m) => m.kind !== 'reply' || m.replyTo !== undefined, {
     message: 'kind=reply では replyTo が必須',
     path: ['replyTo'],
+  })
+  .refine((m) => m.to !== undefined || m.replyTo !== undefined, {
+    message: 'to か replyTo のどちらかが必須',
+    path: ['to'],
   })
 export type PostMessageInput = z.infer<typeof postMessageSchema>
 

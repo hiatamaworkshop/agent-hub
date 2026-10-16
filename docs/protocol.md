@@ -94,7 +94,7 @@
   "ts": "…",
   "kind": "request | reply | notice",
   "from": { "type": "user | mailbox", "id": "browser | rev-a", "role": "reviewer | null" },
-  "to": { "type": "mailbox | role | topic", "id": "…" },
+  "to": { "type": "mailbox | role | topic | user", "id": "…" },
   "body": "本文 (文字列)",
   "replyTo": "m_… (kind=reply では必須)",
   "forwardedFrom": "m_… (無編集転送の場合)"
@@ -105,6 +105,8 @@
   - cookie 認証 (ブラウザ): `user:browser`
   - Bearer + `X-Hub-Attachment: <attachmentId>` (shim): その Attachment の Mailbox と role。存在しない Attachment は 404
   - Bearer のみ (curl など): `user:cli`
+- `to`: `replyTo` があれば省略でき、元メッセージの `from` (`user:browser` や `mailbox:rev-a`) が宛先になる。
+- `to.type = user`: どの Mailbox にも配信せず、UI にだけ出る (ブラウザへの返信先。`from` と対称にするため)。
 - `to.type = role`: その role を持つ全 Mailbox に配信する。該当する Mailbox がなければ 400 ではなく受理し、後からその role で attach した Mailbox の未読になる。
 - 無編集転送では `kind` も元のメッセージのまま運ぶ。
 
@@ -175,6 +177,8 @@
 
 - 開くと `after` (省略時 0) と Mailbox の `cursor` の大きい方より後の未読を `seq` 順に送り、続けて新着を送る。SSE の `id:` には `seq` を入れる。
 - 同じ Attachment で stream を開き直すと、古い stream は `terminated` なしで閉じる。
+- stream が開かれていない状態 (attach 直後、または相手から切られた後) が 15 秒続いた Attachment は Hub が detach する (UI には `attachment.detached` と `reason: "disconnected"`)。
+  Windows では shim が kill されると終了処理 (`DELETE /attachments/:id`) が走らないため。shim の再接続はこの猶予内に収まる前提。P2 のリースで置き換える。
 - `DELETE /attachments/:id` (detach) でも stream は `terminated` なしで閉じる (shim 自身が切ったため)。
 
 #### 応答の形
@@ -209,9 +213,11 @@
 | `subscribe` | `topic` | 個別購読を追加 |
 | `unsubscribe` | `topic` | 個別購読を解除 |
 | `list_topics` | なし | 既知トピックと自分の購読状況 (role 由来か個別かを区別) |
-| `post_message` | `to` (mailbox/role/topic), `kind`, `body`, `replyTo?` | Message を送る。`kind` は必須 |
+| `post_message` | `kind`, `body`, `to?`, `reply_to?` | Message を送る。`kind` は必須。`to` は channel の属性と同じ `type:id` 表記 (`mailbox:rev-a`、`user:browser` など)。`reply_to` があれば `to` は省略でき、送り手に返る |
 | `inbox` | `after?`, `limit?` | 未読を取得 (polling 用。Claude Code 以外の縮退経路) |
 | `report_event` | `kind`, `payload` | skill が意味判断した結果 (区切り申告など) を Hub に出す |
+
+P0 で実装するのは `post_message` / `subscribe` / `unsubscribe` / `whoami`。いずれも `_meta["anthropic/alwaysLoad"]: true` を付ける (design.md §6.1c)。
 
 `inbox` の応答は MCP Events の `events/poll` に揃える:
 
@@ -261,7 +267,7 @@ Claude 側では次のように見える:
 ```
 
 - `from` は `user:browser` または `mailbox:<名前>`。送り手が role を持つ場合は `from_role` を足す。
-- `to` は `mailbox:<名前>` / `role:<名前>` / `topic:<名前>`。自分がなぜ受け取ったか (直接・role・購読) がこれで分かる。
+- `to` は `mailbox:<名前>` / `role:<名前>` / `topic:<名前>` (`user:` 宛ては Mailbox に届かない)。自分がなぜ受け取ったか (直接・role・購読) がこれで分かる。
 - `reply` のときは `reply_to` を、無編集転送のときは `forwarded_from` を足す。
 - 本文中の `</channel>` は shim が `<\/channel>` に置き換える。Claude Code も同じ変換をする (design.md §6.1c) が、記載のない挙動なので頼り切らない。
   `</channel >` や `</CHANNEL>` も閉じタグとして解釈されうるため、大小を問わず `</channel` の並びをすべて置き換える (§6.2 の `</hub-message` も同じ)。

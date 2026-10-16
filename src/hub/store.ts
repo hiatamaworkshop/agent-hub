@@ -251,6 +251,8 @@ export class Store {
         if (since !== undefined && m.seq > since) return true
         return mb.role !== null && m.seq > mb.roleSince && this.roleSubscriptions(mb.role).includes(m.to.id)
       }
+      case 'user':
+        return false
     }
   }
 

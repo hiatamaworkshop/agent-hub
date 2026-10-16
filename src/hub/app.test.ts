@@ -106,6 +106,26 @@ describe('POST /messages', () => {
   })
 })
 
+describe('返信', () => {
+  it('to を省略した reply は元の送り手に返し、user 宛てはどの Mailbox にも配信しない', async () => {
+    const { app, hub } = setup()
+    const cookie = await browserCookie(app)
+    const q = (await (await post(app, { kind: 'request', to: { type: 'mailbox', id: 'rev-a' }, body: 'q' }, { cookie, origin: ORIGIN })).json()) as Message
+    hub.store.ensureMailbox('rev-a')
+    hub.attachments.set('at_1', { attachmentId: 'at_1', mailbox: 'rev-a', client: 'claude-code', attachedAt: '', leaseUntil: '' })
+    const res = await post(app, { kind: 'reply', replyTo: q.id, body: 'a' }, { ...bearer, 'x-hub-attachment': 'at_1' })
+    assert.equal(res.status, 201)
+    const r = (await res.json()) as Message
+    assert.deepEqual(r.to, { type: 'user', id: 'browser' })
+    assert.deepEqual(r.from, { type: 'mailbox', id: 'rev-a', role: null })
+    assert.equal(hub.store.isRecipient('rev-a', r), false)
+
+    // Mailbox からの依頼に返すと、その Mailbox 宛てになる
+    const back = (await (await post(app, { kind: 'reply', replyTo: r.id, body: 'ok' }, { cookie, origin: ORIGIN })).json()) as Message
+    assert.deepEqual(back.to, { type: 'mailbox', id: 'rev-a' })
+  })
+})
+
 describe('GET /messages', () => {
   it('after と limit で履歴を返す', async () => {
     const { app } = setup()
