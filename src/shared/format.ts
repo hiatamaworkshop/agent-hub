@@ -16,7 +16,8 @@ export function escapeClosingTag(body: string, tag: string): string {
 }
 
 // meta のキーは英数字とアンダースコアのみ (それ以外は Claude Code が黙って捨てる。design.md §6.1)
-function attributes(m: Message): Record<string, string> {
+// meta は 1 属性に JSON 文字列で入れる。送り手が書けない Hub 付与の属性とは別の名前になる (protocol.md §6)
+function attributes(m: Message, meta: Record<string, unknown> | undefined): Record<string, string> {
   const a: Record<string, string> = {
     id: m.id,
     seq: String(m.seq),
@@ -27,10 +28,29 @@ function attributes(m: Message): Record<string, string> {
   a.to = formatAddress(m.to)
   if (m.replyTo) a.reply_to = m.replyTo
   if (m.forwardedFrom) a.forwarded_from = m.forwardedFrom
-  // meta は 1 属性に JSON 文字列で入れる。送り手が書けない Hub 付与の属性とは別の名前になる (protocol.md §6)
-  // Channels 経路では属性値の " < > & を Claude Code がエスケープするか未確認 (design.md §6.2-4)。確認するまで変換しない
-  if (m.meta && Object.keys(m.meta).length > 0) a.meta = JSON.stringify(m.meta)
+  if (meta && Object.keys(meta).length > 0) a.meta = JSON.stringify(meta)
   return a
+}
+
+// Channels の meta 属性に載せる files の既知のキー。Hub は id/mime/size/width/height を書き、shim は path か error を足す
+const CHANNEL_FILE_KEYS = ['id', 'mime', 'size', 'width', 'height', 'path', 'error'] as const
+
+// Channels に渡す meta。属性値の " < > & を Claude Code がどう扱うか未確認 (design.md §6.2-4) のため、
+// 確認するまで files の既知のキーだけを載せる。値は変換しない (キーで選ぶだけ)。残るものがなければ undefined。
+// ほかの送り手の meta は inbox (<hub-message>) からだけ読める
+export function channelMeta(meta: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!meta || !Array.isArray(meta.files)) return undefined
+  const files: Record<string, unknown>[] = []
+  for (const f of meta.files as unknown[]) {
+    if (typeof f !== 'object' || f === null || Array.isArray(f)) continue
+    const kept: Record<string, unknown> = {}
+    for (const k of CHANNEL_FILE_KEYS) {
+      const v = (f as Record<string, unknown>)[k]
+      if (v !== undefined) kept[k] = v
+    }
+    files.push(kept)
+  }
+  return files.length > 0 ? { files } : undefined
 }
 
 export interface ChannelParams {
@@ -42,7 +62,7 @@ export interface ChannelParams {
 export function toChannelParams(m: Message, mailbox: string): ChannelParams {
   return {
     content: escapeClosingTag(m.body, 'channel'),
-    meta: { ...attributes(m), mailbox },
+    meta: { ...attributes(m, channelMeta(m.meta)), mailbox },
   }
 }
 
@@ -52,7 +72,7 @@ function escapeAttr(v: string): string {
 
 // inbox() (polling) 向け。外側のタグがないので 1 件ずつ <hub-message> で包む
 export function toHubMessageText(m: Message): string {
-  const attrs = Object.entries(attributes(m))
+  const attrs = Object.entries(attributes(m, m.meta))
     .map(([k, v]) => `${k}="${escapeAttr(v)}"`)
     .join(' ')
   return `<hub-message ${attrs}>\n${escapeClosingTag(m.body, 'hub-message')}\n</hub-message>`

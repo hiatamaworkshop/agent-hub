@@ -81,6 +81,7 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
 - タブの未読: 非表示中に SSE で届いた、人間宛て (`to.type === 'user'`) の他者のメッセージ数をタイトル `(n) agent-hub` と favicon のバッジで示す。agent 同士のメッセージ (`mailbox:*` / `role:*` / `topic:*` 宛て) は数えない。前面に戻るかフォーカスで消す。自分の送信と履歴読み込みは数えない。再接続後に取り直した分も同じ規則で数える。
 - 接続の回復: SSE が開き直すたびに `GET /messages?after=<開いた時点の描画済みの最大 seq>` で取り直し、描画する (最初の接続は履歴の読み込みが受け持つ)。取り直しに失敗しても表示は止めず、次に開いたとき取り直す。Mailbox 一覧が失敗したら #err に出し、少し待って数回まで試す (SSE が開き直したときも試す)。履歴と新着は一覧の成否と独立に動く。
 - 送信: 送信中に打ち足した本文と、送信後に足した画像は残す。送ったもの (送信時点の本文と画像) だけを消す。失敗したときは何も消さない。起動時の `/settings` は 1 回だけ読み、初期の宛先と Commands に使う (Commands のダイアログは開くたびに読み直す)。
+- Mailbox の削除: 接続していない Mailbox のカードにだけ Delete を出す (確認のあと `DELETE /mailboxes/:name`)。カードの選択は起こさない。409 (その間に attach された) と、削除に対応しない古い Hub の 404 は #err に出し、カードは外さずに一覧を取り直す。`mailbox.deleted` を受けた他のタブも一覧を取り直す。
 - UI の表示文言は英語にする (メッセージ本文は対象外で、そのまま表示する)。このドキュメント自体は日本語のまま。
 - カスタムコマンド: 本文の `/name` (または `/name 引数`) を Send の瞬間に定義済みの text へ置換して送る。置換は UI が行い、Hub はコマンドを知らない (置換後の本文を普通のメッセージとして受ける)。スレッドに残るのも置換後の本文なので、何を送ったかがそのまま見える。人間が Send を押したときだけ動き、自動送信はしない。設定は Hub 側の `HUB_DATA_DIR/settings.json` にあり、手で編集できる (読みは毎回ファイルから行う)。Hub が `/settings` を持たない古い版のときは Commands を無効にし、送信はこれまでどおり。
 - 初期の宛先 (To): 自動で選ぶのは (1) 前回送った宛先 (localStorage `agent-hub.lastTo`) → (2) settings.json の `defaultTo` (例 `mailbox:leader`) の順で、どちらも**接続中 (attach 中) の先だけ**を候補にする。mailbox は attach 中のもの、role と topic は attach 中の Mailbox が持つものに限る。user:browser は常に候補。どちらも候補になければ**未選択** (先頭表示は "Select a destination…")。先頭の Mailbox や topic:user.message への後退はしない。`defaultTo` は初回の判定より前に読む。
@@ -402,6 +403,7 @@ OWL は開世界、agent-hub は閉世界。**持ち込むのは「関係と形�
 2. **Codex 側の MCP 対応状況**: `inbox()` polling が使えるか。
 3. **代替の配信経路: plugin の monitor**。Hookdeck の mcp-events-bridge は Channels を使わず、plugin の monitor で poll クライアントを動かし、1 行出力を通知として Claude に届けている (Claude Code 2.1.275 以降)。開発用フラグと警告ダイアログが不要になる可能性がある。アイドル中のセッションを起こせるかを含めて比較する。
 4. **Channels の `meta` 属性値のエスケープ (未検証)**: `toChannelParams` は `meta` の JSON 文字列を `"` `<` `>` `&` を変換せずに渡す (`escapeAttr` は polling 経路だけ)。公式資料 (§6.1) にも §6.1c の実機確認にも、属性値のエスケープの記載はない。確認済みなのは本文の `</channel>` だけ (§6.1c)。
+   **暫定の制限**: 確認するまで、Channels に載せる `meta` は `files` の既知のキー (`id` `mime` `size` `width` `height` `path` `error`) だけにする (`channelMeta` in `src/shared/format.ts`)。ほかのキーと送り手の `meta` は `inbox()` (`<hub-message>`) からだけ読める。値は変換しない。確認できたら制限を外す。
    Claude Code が属性値を自分でエスケープするなら、こちらでも変換すると二重になる。そのため変換は保留している。確認方法: プローブを起動し、`GET /case/attr` で `probe_quote: 'a"b<c>&d'` を付けた通知を送る。セッションで「直前の channel 通知のタグを一字一句 probe_note に書き写して」と頼み、`note` の `probe_quote` が `a"b<c>&d` のまま見えるか、`&quot;` などに変換されたか、属性が途中で切れていないかを記録する。結果に応じて `escapeAttr` を meta にも使うか、そのままにするかを決め、ここに結果を書く。
 
 ## 7. MCP Events (SEP-3415) との関係
@@ -476,6 +478,7 @@ P0 の後に、同じ領域の公式機能と OSS を調べた。**セッショ�
 1. **takeover の方針**: 排他 (新しい方が勝つ、暫定) か、複数同時 attach (全員に配信 / どれか 1 つに配信) を許すか。
 2. **Event を購読で配信するか**: hook 由来の Event は UI に出すだけか、`session.boundary` などのトピックとして他の Mailbox にも配信するか。
 3. **Mailbox の削除と放置**: 長期間 attach のない Mailbox を自動で掃除するか、UI からの明示削除のみか。
+   **明示削除は実装済み**: `DELETE /mailboxes/:name` と UI の Delete (接続していないカードだけ)。接続中は 409 で拒む。**自動の掃除をするかは未決** (未読の放棄は maxAgeMs の方針と合わせて決める)。削除しても Message のログは残し、同名で作り直すと削除時点の seq から始まる (protocol.md §2)。
 4. **`maxAgeMs` の既定値**: 指定なしの attach で何時間分まで流すか。
 5. **配送を公式 cross-session messaging に移すか**: Channels のまま続けるか、shim から自セッションの受信口へ投函する形に移すか (§8.3)。P1 に入る前に決める。
    どちらでも Mailbox・role・未読の正本は Hub に置く (§3.7)。移す場合は、配信アダプタの差し替え口をここで作る (§3.9)。

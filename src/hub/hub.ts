@@ -19,7 +19,8 @@ export interface UiEvent {
   data: unknown
 }
 
-export type TerminateReason = 'superseded' | 'mailbox_deleted' | 'lease_expired'
+// 接続中の Mailbox は削除できない (409) ので、mailbox_deleted で終わる stream はない
+export type TerminateReason = 'superseded' | 'lease_expired'
 
 // Attachment の stream 1 本ぶん (protocol.md §3 shim 向け SSE)
 export interface AttachmentSink {
@@ -123,6 +124,15 @@ export class Hub {
   }
 
   // --- Mailbox / Attachment ---
+
+  // 接続中 (attach 中) の Mailbox は消さない。消すのは購読・role・cursor・未読の状態で、ログの Message は残す。
+  // 同名で作り直したときの cursor は削除時点の seq から始まる (store.ts deletedAt)
+  deleteMailbox(name: string): void {
+    const mb = this.mustMailbox(name)
+    if (mb.attachment) throw new HubError(409, 'mailbox_attached', `mailbox ${name} は attach 中のため削除できない。先に detach する`)
+    this.store.deleteMailbox(name)
+    this.emitUi('mailbox.deleted', { name })
+  }
 
   // 冪等。未読は Mailbox の cursor から再送されるので、attach し直しても失われない
   attach(name: string, input: AttachInput): AttachResult {

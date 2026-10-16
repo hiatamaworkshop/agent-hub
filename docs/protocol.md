@@ -34,7 +34,7 @@
 - `subscriptions`: 個別購読のみ。実効購読は role の既定購読との和で、Hub が毎回計算する。
 - `cursor`: ack 済みウォーターマーク。この `seq` 以下は配送済み (または `maxAgeMs` で放棄済み)。
 - 未読 = この Mailbox 宛て (直接宛先 + 自分の role 宛て + 実効購読トピック) で `seq > cursor` のメッセージ。
-- 初回の attach で自動作成する。削除は明示操作のみ。
+- 初回の attach で自動作成する。削除は `DELETE /mailboxes/:name` の明示操作のみ。接続中 (attach 中) の Mailbox は削除できない (409)。
 - 作成時の `cursor` は 0。作成前に届いた直接宛て・role 宛ても未読になる (Mailbox は論理宛先なので、受け手がまだいなくても届く)。
   同名を削除して作り直した場合は、削除時点の `seq` から始める (削除前の直接宛ては再送しない)。
 - トピック宛ては、**購読した時点の `seq` より後**のものだけが未読になる。role の既定購読は、その role を持った時点から数える。
@@ -125,7 +125,7 @@
 | GET | `/messages?after=<seq>&limit=<n>` | 履歴取得 (`limit` 既定 100、最大 1000)。応答 `{ "messages": [...], "lastSeq": <seq> }` |
 | GET | `/mailboxes` | Mailbox 一覧 (role・実効購読・未読数・Attachment の状態) |
 | GET | `/roles` | role 定義の一覧 |
-| DELETE | `/mailboxes/:name` | Mailbox を削除。接続中の Attachment には `terminated(mailbox_deleted)` を送る |
+| DELETE | `/mailboxes/:name` | Mailbox を削除し、応答は 200 `{}`。購読・role・cursor・未読の状態を消す。Message のログは消さない。接続中 (attach 中) の Mailbox は削除せず 409 `mailbox_attached` (先に detach する)。未知の名前は 404 `mailbox_not_found`。SSE `mailbox.deleted` (`{ name }`) を流す。同名で作り直すと cursor は削除時点の `seq` から始まる (§2) |
 
 ### UI 向け
 | メソッド | パス | 内容 |
@@ -207,7 +207,7 @@
 |---|---|---|
 | `message` | Message | 配信本体 |
 | `heartbeat` | `{ "cursor": <seq> }` | 30 秒ごと。60 秒途絶えたら shim は切断とみなして再接続する |
-| `terminated` | `{ "reason": "superseded \| mailbox_deleted \| lease_expired" }` | この Attachment は終了。shim は再 attach しない (`lease_expired` のみ再 attach してよい) |
+| `terminated` | `{ "reason": "superseded \| lease_expired" }` | この Attachment は終了。shim は再 attach しない (`lease_expired` のみ再 attach してよい) |
 
 ## 4. 配信保証
 
@@ -251,10 +251,11 @@ P0 で実装するのは `post_message` / `subscribe` / `unsubscribe` / `whoami`
 
 | 経路 | 属性の置き場所 | 本文 |
 |---|---|---|
-| Channels (Claude Code) | `meta` (外側の `<channel>` タグの属性になる) | 本文そのまま (`</channel>` だけエスケープ) |
+| Channels (Claude Code) | `meta` (外側の `<channel>` タグの属性になる)。**`files` の既知のキーだけ**を載せる (下記) | 本文そのまま (`</channel>` だけエスケープ) |
 | `inbox()` (polling) | `<hub-message>` タグの属性 | `<hub-message>` の中 (`</hub-message>` をエスケープ) |
 
-`meta` を持つメッセージは、どちらの経路でも属性 `meta` (JSON 文字列) を 1 つ足す。Hub 付与の属性とは名前が重ならないので、送り手が偽れない。shim は配信の直前に `meta.files` の各画像を取得し、配信用のコピーに `path` (ローカルのパス。区切りは `/`) か `error` を足す。Hub の値は書き換えない。`error` は `expired` (Hub で期限切れ) か `fetch_failed` (取得できなかった) で、メッセージは落とさず届ける。想定外の形の `meta` は触らずに通す。取得と保存の詳細は design.md §3.10。
+`meta` を持つメッセージは、`inbox()` では全部の `meta` を、Channels では次の制限を付けて、属性 `meta` (JSON 文字列) を 1 つ足す。Hub 付与の属性とは名前が重ならないので、送り手が偽れない。
+**Channels に載せるのは `files` の要素のうち既知のキー `id` `mime` `size` `width` `height` `path` `error` だけ**で、ほかのキーと送り手の `meta` は載せない (属性値の `"` `<` `>` `&` の扱いが未確認のため。design.md §6.2-4)。値は変換しない。残るものがなければ `meta` 属性を足さない。ほかの送り手の `meta` は `inbox()` からだけ読める。確認できたら制限を外す。shim は配信の直前に `meta.files` の各画像を取得し、配信用のコピーに `path` (ローカルのパス。区切りは `/`) か `error` を足す。Hub の値は書き換えない。`error` は `expired` (Hub で期限切れ) か `fetch_failed` (取得できなかった) で、メッセージは落とさず届ける。想定外の形の `meta` は触らずに通す。取得と保存の詳細は design.md §3.10。
 
 ### 6.1 Channels
 
@@ -310,6 +311,8 @@ Claude 側では次のように見える:
 ## 7. UI ↔ Hub のイベント種別 (SSE `event:` 名)
 
 `event` (検知イベント), `message`, `mailbox.created`, `mailbox.deleted`, `attachment.attached`, `attachment.detached`, `attachment.superseded`, `subscription.changed`
+
+- `mailbox.created` は作成された Mailbox (`name` `role` `createdAt` `subscriptions` `cursor` `attachment`。作成直後なので `attachment` は null)。`mailbox.deleted` は `{ "name": "<名前>" }`。UI は両方で一覧を取り直す。
 
 ## 8. MCP Events (SEP-3415) との語彙対応
 

@@ -850,12 +850,32 @@ async function loadMailboxes() {
     meta.push(`${mb.unread} unread`)
     box.append(el('div', 'meta', meta.join(' · ')))
     if (mb.effectiveSubscriptions.length) box.append(el('div', 'meta', `Subscribed: ${mb.effectiveSubscriptions.join(', ')}`))
+    // 接続していない Mailbox だけ削除できる。ボタンの click がカードの選択 (宛先にする) まで届かないようにする
+    if (!mb.attachment) {
+      const del = el('button', 'linkbtn', 'Delete')
+      del.type = 'button'
+      del.onclick = (e) => { e.stopPropagation(); deleteMailbox(mb.name) }
+      box.append(del)
+    }
     box.title = 'Write to this Mailbox'
     box.onclick = () => { chooseTo(`mailbox:${mb.name}`); $('body').focus() }
     root.append(box)
   }
   mailboxList = mailboxes
   buildTo(mailboxes)
+}
+
+// 接続していない Mailbox を削除する。確認してから DELETE し、結果にかかわらず一覧を取り直す (消えたカードは取り直しで外れる)。
+// 失敗 (409: その間に attach された / 404: 削除に対応しない古い Hub) は #err に出し、カードは外さない
+async function deleteMailbox(name) {
+  if (!window.confirm(`Delete Mailbox ${name}? Its unread messages will be discarded.`)) return
+  try {
+    await api(`/mailboxes/${encodeURIComponent(name)}`, { method: 'DELETE' })
+  } catch (err) {
+    if (err.message === 'unauthorized') return
+    $('err').textContent = `Could not delete ${name}: ${err.message || err}`
+  }
+  refreshMailboxes(0)
 }
 
 // 1 件を描画し、タブ未読を数える。数えるのは counts が true で、非表示・人間宛て・自分の送信でなく、今まで無かったもの (render が足したもの) だけ

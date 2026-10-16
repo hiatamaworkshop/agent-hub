@@ -141,6 +141,14 @@ export function createApp(opts: AppOptions) {
 
   app.get('/mailboxes', (c) => c.json({ mailboxes: hub.describeMailboxes() }))
 
+  // 接続中の Mailbox は 409 (mailbox_attached) で残す。未知の名前は 404
+  app.delete('/mailboxes/:name', (c) => {
+    const name = c.req.param('name')
+    if (!isValidName(name)) return invalid(c, 'Mailbox 名が不正')
+    hub.deleteMailbox(name)
+    return c.json({})
+  })
+
   app.post('/mailboxes/:name/attach', async (c) => {
     const name = c.req.param('name')
     if (!isValidName(name)) return invalid(c, 'Mailbox 名が不正')

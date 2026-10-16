@@ -209,3 +209,79 @@ describe('takeover と detach', () => {
     assert.deepEqual(m.from, { type: 'mailbox', id: 'rev-a', role: 'reviewer' })
   })
 })
+
+describe('Mailbox の削除', () => {
+  it('トークンがなければ 401', async () => {
+    const { app } = setup()
+    assert.equal((await app.request('/mailboxes/x', { method: 'DELETE' })).status, 401)
+  })
+
+  it('接続していない Mailbox は消え、GET /mailboxes から外れる', async () => {
+    const { call, attach } = setup()
+    const at = await attach('x')
+    assert.equal((await call('DELETE', `/attachments/${at.attachmentId}`)).status, 200)
+    const res = await call('DELETE', '/mailboxes/x')
+    assert.equal(res.status, 200)
+    assert.deepEqual(await res.json(), {})
+    const list = (await (await call('GET', '/mailboxes')).json()) as { mailboxes: { name: string }[] }
+    assert.equal(list.mailboxes.some((mb) => mb.name === 'x'), false)
+  })
+
+  it('接続中の Mailbox は 409 (mailbox_attached) で、削除されず残る', async () => {
+    const { call, attach } = setup()
+    await attach('x')
+    const res = await call('DELETE', '/mailboxes/x')
+    assert.equal(res.status, 409)
+    const body = (await res.json()) as { error: string; message: string }
+    assert.equal(body.error, 'mailbox_attached')
+    assert.match(body.message, /detach/)
+    const list = (await (await call('GET', '/mailboxes')).json()) as { mailboxes: { name: string; attachment: unknown }[] }
+    const mb = list.mailboxes.find((x) => x.name === 'x')
+    assert.ok(mb && mb.attachment !== null, 'still attached and present')
+  })
+
+  it('未知の名前は 404 で、エラーの形は他の route と同じ。不正な名前は 400', async () => {
+    const { call } = setup()
+    const res = await call('DELETE', '/mailboxes/nope')
+    assert.equal(res.status, 404)
+    const body = (await res.json()) as { error: string; message: string }
+    assert.equal(body.error, 'mailbox_not_found')
+    assert.equal(typeof body.message, 'string')
+    assert.equal((await call('DELETE', '/mailboxes/Bad%20Name')).status, 400)
+  })
+
+  it('削除すると mailbox.deleted を UI に流す (payload は { name })', async () => {
+    const hub = new Hub(new Store())
+    const app = createApp({ hub, token: TOKEN, uiHtml: async () => null, heartbeatMs: 50 })
+    const events: { event: string; data: unknown }[] = []
+    hub.onUi((e) => events.push(e))
+    const call = (method: string, path: string) => app.request(path, { method, headers: auth })
+    const at = (await (await app.request('/mailboxes/x/attach', { method: 'POST', headers: auth, body: '{}' })).json()) as AttachResult
+    await call('DELETE', `/attachments/${at.attachmentId}`)
+    assert.equal((await call('DELETE', '/mailboxes/x')).status, 200)
+    assert.deepEqual(events.filter((e) => e.event === 'mailbox.deleted'), [{ event: 'mailbox.deleted', data: { name: 'x' } }])
+  })
+
+  it('同名で作り直すと、削除前に届いていた直接宛ては再送されず、削除後の宛ては届く (topic 宛ても再送されない)', async () => {
+    const { app, call, attach, send } = setup()
+    const a1 = await attach('x')
+    await call('PUT', '/mailboxes/x/subscriptions/news')
+    await call('DELETE', `/attachments/${a1.attachmentId}`)
+    const before = await send({ type: 'mailbox', id: 'x' }, 'before deletion')
+    const topicBefore = await send({ type: 'topic', id: 'news' }, 'topic before deletion')
+    assert.equal((await call('DELETE', '/mailboxes/x')).status, 200)
+    const after = await send({ type: 'mailbox', id: 'x' }, 'after deletion')
+
+    const a2 = await attach('x') // 作り直し (同名の自動作成)
+    const res = await call('GET', `/attachments/${a2.attachmentId}/stream?after=0`)
+    const first = await collect(res, (evs) => messages(evs).length >= 1, 300)
+    assert.deepEqual(messages(first.events).map((m) => m.seq), [after.seq], 'only the post-deletion message is delivered')
+    assert.ok(before.seq < after.seq && topicBefore.seq < after.seq)
+
+    // 作り直したあとの宛ては届く (stream が開いたまま)
+    const res2 = await call('GET', `/attachments/${a2.attachmentId}/stream?after=${after.seq}`)
+    const live = collect(res2, (evs) => messages(evs).length >= 1, 800)
+    const later = await send({ type: 'mailbox', id: 'x' }, 'after re-creation')
+    assert.deepEqual(messages((await live).events).map((m) => m.seq), [later.seq])
+  })
+})
