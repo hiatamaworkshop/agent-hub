@@ -28,26 +28,33 @@ export function mailboxFromFolder(dir: string): string {
   return isValidName(s) ? s : 'main'
 }
 
+// 環境変数の値。空や空白だけは未設定として扱う (HUB_URL= のように空で渡されたら既定値を使う)
+export function envValue(env: NodeJS.ProcessEnv, key: string): string | undefined {
+  const v = env[key]
+  return v === undefined || v.trim() === '' ? undefined : v
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ShimConfig {
   // ユーザースコープで登録したとき ~/.claude.json にトークンを書かずに済むよう、agent-hub の .env を読む
   // (既に設定されている環境変数は上書きされない)
   const envFile = join(ROOT, '.env')
-  if (env === process.env && !env.HUB_TOKEN && existsSync(envFile)) process.loadEnvFile(envFile)
+  if (env === process.env && !envValue(env, 'HUB_TOKEN') && existsSync(envFile)) process.loadEnvFile(envFile)
 
-  const cwd = env.CLAUDE_PROJECT_DIR ?? process.cwd()
-  const role = env.HUB_ROLE || null
+  const cwd = envValue(env, 'CLAUDE_PROJECT_DIR') ?? process.cwd()
+  const role = envValue(env, 'HUB_ROLE') ?? null
   // 優先順: HUB_MAILBOX → HUB_ROLE → フォルダ名 (design.md §3.3)
-  const mailbox = env.HUB_MAILBOX || role || mailboxFromFolder(cwd)
+  const mailbox = envValue(env, 'HUB_MAILBOX') ?? role ?? mailboxFromFolder(cwd)
   if (!isValidName(mailbox)) throw new Error(`Mailbox 名 "${mailbox}" は ^[a-z0-9][a-z0-9_.-]{0,63}$ に合わない`)
   if (role !== null && !isValidName(role)) throw new Error(`role 名 "${role}" は ^[a-z0-9][a-z0-9_.-]{0,63}$ に合わない`)
+  const port = envValue(env, 'HUB_PORT') ?? '7777'
   return {
-    hubUrl: (env.HUB_URL ?? `http://127.0.0.1:${env.HUB_PORT ?? 7777}`).replace(/\/+$/, ''),
-    token: env.HUB_TOKEN ?? '',
+    hubUrl: (envValue(env, 'HUB_URL') ?? `http://127.0.0.1:${port}`).replace(/\/+$/, ''),
+    token: envValue(env, 'HUB_TOKEN') ?? '',
     mailbox,
     role,
     // 公式資料には記載がないが、stdio サーバーの環境に設定され hook の session_id と一致する (design.md §6.1c)
-    sessionId: env.CLAUDE_CODE_SESSION_ID || undefined,
+    sessionId: envValue(env, 'CLAUDE_CODE_SESSION_ID'),
     cwd,
-    filesDir: env.HUB_FILES_DIR || join(tmpdir(), 'agent-hub'),
+    filesDir: envValue(env, 'HUB_FILES_DIR') ?? join(tmpdir(), 'agent-hub'),
   }
 }

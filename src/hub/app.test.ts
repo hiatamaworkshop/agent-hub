@@ -81,6 +81,15 @@ describe('認証', () => {
 })
 
 describe('POST /messages', () => {
+  it('1MB を超える本文は 500 ではなく 413 で、記録しない', async () => {
+    const { hub, app } = setup()
+    const res = await post(app, { ...notice, body: 'x'.repeat(1024 * 1024) }, bearer)
+    assert.equal(res.status, 413)
+    assert.equal(hub.store.lastSeq, 0)
+    // 上限内の本文は通る (上限の付け替えで普通の投稿が落ちないこと)
+    assert.equal((await post(app, { ...notice, body: 'ok' }, bearer)).status, 201)
+  })
+
   it('from はリクエストから受け取らず Hub が付与する', async () => {
     const { app, hub } = setup()
     const forged = { ...notice, from: { type: 'mailbox', id: 'admin', role: 'root' } }

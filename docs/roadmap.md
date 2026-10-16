@@ -88,6 +88,11 @@
 6. **role**: `HUB_ROLE=reviewer` で起動したセッションは、`subscribe` を呼ばなくても role の既定購読分と `to: role:reviewer` 宛てを受け取る。`deployer` の Mailbox はそれを受け取らない。
 7. Hub を compose で起動しても 1〜6 が成り立ち、ホスト以外から 7777 番に到達できない。
 
+## 既知の問題・後回し
+
+- **shim の seq 巻き戻し** (`src/shim/hub-client.ts` 付近): Hub の `data/` を消して再起動すると seq が採番し直される。shim は覚えた seq より大きいものしか受けないため、新しいメッセージを黙って捨てる。案: Hub の起動ごとの ID (epoch) を返し、変わったら cursor を捨てる。または seq が戻ったら reset する。
+- **未読の算出が全件走査** (`src/hub/store.ts` の `unread()` 付近): 呼ぶたびにログ全体を見る。今の件数では問題ないが、ログが増えたら Mailbox ごとの cursor の索引を持つ。
+
 ## 将来の検討 (未確定)
 
 - 配信ルール (人間確認なしの自動転送) の opt-in 設計

@@ -6,6 +6,7 @@
 // すべて logs/probe.jsonl に追記する。stdout は MCP が使うので書かない。
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:http'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
@@ -16,6 +17,11 @@ const PORT = Number(process.env.PROBE_PORT ?? 7788)
 const LOG_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'logs')
 const LOG_FILE = join(LOG_DIR, 'probe.jsonl')
 mkdirSync(LOG_DIR, { recursive: true })
+
+// HTTP の合言葉。通常は起動ごとにランダムに作り、log の token 行に出す。
+// hook (tools/probe/settings.json) からも送るため、PROBE_TOKEN を設定して起動すればその値を使う
+const TOKEN = process.env.PROBE_TOKEN || randomBytes(16).toString('hex')
+const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`])
 
 function log(kind, data) {
   appendFileSync(LOG_FILE, JSON.stringify({ ts: new Date().toISOString(), kind, data }) + '\n')
@@ -33,6 +39,7 @@ function envSnapshot() {
 }
 
 log('startup', { pid: process.pid, ppid: process.ppid, cwd: process.cwd(), argv: process.argv, env: envSnapshot() })
+log('token', { token: TOKEN, source: process.env.PROBE_TOKEN ? 'PROBE_TOKEN' : 'random', use: 'x-probe-token header or ?token=' })
 
 const mcp = new Server(
   { name: 'agent-hub-probe', version: '0.0.1' },
@@ -96,6 +103,15 @@ const CASES = {
   hello: () => push('hello from agent-hub-probe。受け取ったら一言だけ返事をして。', { case: 'hello' }),
   // §6.2-7: AskUserQuestion の回答待ち中に送る
   during_question: () => push('PROBE: これは AskUserQuestion 待機中に送った通知です。', { case: 'during_question' }),
+  // §6.2-4: meta の属性値に入る " < > & がどう見えるか (エスケープするかは未確認)
+  attr: () => push('PROBE: meta の属性値 (probe_quote) の見え方を確かめる。', { case: 'attr', probe_quote: 'a"b<c>&d' }),
+}
+
+// 合言葉の照合。長さを揃えてから定数時間で比べる
+function tokenOk(req, url) {
+  const given = Buffer.from(String(req.headers['x-probe-token'] ?? url.searchParams.get('token') ?? ''))
+  const want = Buffer.from(TOKEN)
+  return given.length === want.length && timingSafeEqual(given, want)
 }
 
 function readBody(req) {
@@ -109,6 +125,14 @@ function readBody(req) {
 
 createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`)
+  // ブラウザのページからの要求 (Origin 付き) と、別名で開かれた要求 (DNS rebinding) を拒み、合言葉のない要求も拒む
+  const deny = (status, reason) => {
+    log('rejected', { method: req.method, path: url.pathname, status, reason })
+    res.writeHead(status).end(reason + '\n')
+  }
+  if (req.headers.origin !== undefined) return deny(403, 'Origin is not allowed')
+  if (!ALLOWED_HOSTS.has(String(req.headers.host ?? '').toLowerCase())) return deny(403, `Host must be 127.0.0.1:${PORT} or localhost:${PORT}`)
+  if (!tokenOk(req, url)) return deny(401, 'token required: x-probe-token header or ?token=')
   try {
     if (req.method === 'POST' && url.pathname === '/hook') {
       const body = await readBody(req)
@@ -120,6 +144,7 @@ createServer(async (req, res) => {
       }
       const headers = { ...req.headers }
       if (headers.authorization) headers.authorization = `<present len=${headers.authorization.length}>`
+      if (headers['x-probe-token']) headers['x-probe-token'] = '<present>'
       log('hook', { headers, payload })
       res.writeHead(200, { 'content-type': 'application/json' }).end('{}')
       return

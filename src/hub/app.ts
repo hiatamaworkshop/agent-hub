@@ -120,7 +120,7 @@ export function createApp(opts: AppOptions) {
     return auth.middleware()(c, next)
   })
 
-  app.post('/messages', bodyLimit({ maxSize: 1024 * 1024 }), async (c) => {
+  app.post('/messages', limited(1024 * 1024), async (c) => {
     const parsed = postMessageSchema.safeParse(await readJson(c))
     if (!parsed.success) return invalid(c, parsed.error)
     const attachmentId = c.req.header('x-hub-attachment')

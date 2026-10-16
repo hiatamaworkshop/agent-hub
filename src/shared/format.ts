@@ -28,6 +28,7 @@ function attributes(m: Message): Record<string, string> {
   if (m.replyTo) a.reply_to = m.replyTo
   if (m.forwardedFrom) a.forwarded_from = m.forwardedFrom
   // meta は 1 属性に JSON 文字列で入れる。送り手が書けない Hub 付与の属性とは別の名前になる (protocol.md §6)
+  // Channels 経路では属性値の " < > & を Claude Code がエスケープするか未確認 (design.md §6.2-4)。確認するまで変換しない
   if (m.meta && Object.keys(m.meta).length > 0) a.meta = JSON.stringify(m.meta)
   return a
 }

@@ -169,6 +169,7 @@
 'use strict'
 const $ = (id) => document.getElementById(id)
 const seen = new Map() // id → Message
+let lastSeq = 0 // 描画済みの最大 seq。再接続後に取り直す起点 (render() だけが更新する)
 let replyTo = null
 
 const addr = (a) => `${a.type}:${a.id}`
@@ -336,9 +337,10 @@ function renderTray() {
   })
 }
 
-function clearAttachments() {
-  for (const a of attachments) URL.revokeObjectURL(a.url)
-  attachments = []
+// 送った画像だけを外す。送信中に追加された画像はそのまま残す
+function dropAttachments(sent) {
+  for (const a of sent) URL.revokeObjectURL(a.url)
+  attachments = attachments.filter((a) => !sent.includes(a))
   renderTray()
 }
 
@@ -353,9 +355,9 @@ async function uploadImage(file) {
 }
 
 // 1 枚でも失敗したら例外を投げ、呼び出し側は本文と添付を残す
-async function uploadAll() {
+async function uploadAll(list) {
   const ids = []
-  for (const a of attachments) {
+  for (const a of list) {
     const rec = await uploadImage(a.file)
     if (!ids.includes(rec.id)) ids.push(rec.id)
   }
@@ -391,6 +393,7 @@ $('filePick').onchange = () => {
 function render(m) {
   if (seen.has(m.id)) return
   seen.set(m.id, m)
+  if (m.seq > lastSeq) lastSeq = m.seq
   const list = $('list')
   const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40
   const ci = colorIndex(senderKey(m.from))
@@ -612,10 +615,12 @@ $('form').onsubmit = async (e) => {
   if (sending) return
   autoTo = false // 送った時点で、自動で選んだ宛先は人が確定したものとして扱う
   sending = true
-  setSendLabel(attachments.length ? 'Uploading…' : 'Sending…')
+  // 送るものを先に固定する。送信中に打ち足した本文や追加した画像は、成功後も残す (body は上で取った送信時点の値)
+  const sentFiles = attachments.slice()
+  setSendLabel(sentFiles.length ? 'Uploading…' : 'Sending…')
   try {
     // 添付は先に保存する。1 枚でも失敗したら送らず、本文と添付を残す
-    const meta = attachments.length ? { files: await uploadAll() } : undefined
+    const meta = sentFiles.length ? { files: await uploadAll(sentFiles) } : undefined
     setSendLabel('Sending…')
     const to = selectedTo()
     const msg = { kind, body: body.trim() ? expandBody(body) : '[image]', to }
@@ -639,8 +644,8 @@ $('form').onsubmit = async (e) => {
     } else if (m.to.type !== 'user' && nobodyReading) {
       $('warn').textContent = `Accepted, but nobody is reading ${addr(m.to)} now; it will stay unread until it attaches (#${m.seq} was recorded).`
     }
-    $('body').value = ''
-    clearAttachments()
+    if ($('body').value === body) $('body').value = '' // 送信中に書き足されていれば残す
+    dropAttachments(sentFiles)
     // プログラムからの値変更では input イベントが出ないので、ヒントを明示的に更新する
     updateHint()
     if (kind === 'reply') { replyTo = null; $('kind').value = 'request'; updateReplyInfo() }
@@ -667,26 +672,39 @@ let commandsError = ''
 const COMMAND_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/
 const COMMAND_CALL_RE = /^\/([A-Za-z0-9_-]+)(?:\s+([\s\S]*))?$/
 
-// 初期の宛先の判定より前に読む (1 回の GET)。/settings がない古い Hub や 404 では defaultTo なしのまま
-async function loadDefaultTo() {
+function applyCommands(s) {
+  commands = s.commands
+  commandsState = 'ok'
+  commandsError = ''
+}
+
+function failCommands(err) {
+  commands = []
+  if (err.status === 404) commandsState = 'unavailable'
+  else { commandsState = 'invalid'; commandsError = String(err.message || err) }
+}
+
+// 起動時に 1 回だけ /settings を読み、defaultTo (初期の宛先の判定より前) と Commands を埋める。
+// /settings がない古い Hub (404) や失敗時は defaultTo なし・Commands は無効 (送信はこれまでどおり)
+async function loadSettings() {
   try {
     const s = await api('/settings')
     defaultTo = typeof s.defaultTo === 'string' ? s.defaultTo : null
-  } catch {
+    applyCommands(s)
+  } catch (err) {
     defaultTo = null
+    failCommands(err)
   }
+  updateCommandsButton()
+  updateHint()
 }
 
+// Commands ダイアログを開くたびに読み直す (defaultTo には触れない)
 async function loadCommands() {
   try {
-    const { commands: list } = await api('/settings')
-    commands = list
-    commandsState = 'ok'
-    commandsError = ''
+    applyCommands(await api('/settings'))
   } catch (err) {
-    commands = []
-    if (err.status === 404) commandsState = 'unavailable'
-    else { commandsState = 'invalid'; commandsError = String(err.message || err) }
+    failCommands(err)
   }
   updateCommandsButton()
   updateHint()
@@ -840,14 +858,29 @@ async function loadMailboxes() {
   buildTo(mailboxes)
 }
 
-async function loadHistory() {
-  let after = 0
+// 1 件を描画し、タブ未読を数える。数えるのは counts が true で、非表示・人間宛て・自分の送信でなく、今まで無かったもの (render が足したもの) だけ
+function receive(m, counts) {
+  const box = render(m)
+  const self = m.from.type === 'user' && m.from.id === 'browser'
+  if (counts && box && document.hidden && m.to.type === 'user' && !self) countTabUnread()
+  return box
+}
+
+// after より後の全件を 1000 件ずつ取って描画する。履歴の読み込みと、再接続後の取り直しで共用する
+async function catchUp(after, counts) {
   for (;;) {
     const { messages } = await api(`/messages?after=${after}&limit=1000`)
-    for (const m of messages) render(m)
-    if (messages.length < 1000) break
+    for (const m of messages) receive(m, counts)
+    if (messages.length < 1000) return
     after = messages[messages.length - 1].seq
   }
+}
+
+// 最初の接続のときの全履歴。数えない。失敗したら historyReady が false のままなので、次に開いたとき取り直す
+let historyReady = false
+async function loadHistory() {
+  await catchUp(0, false)
+  historyReady = true
   $('list').scrollTop = $('list').scrollHeight
 }
 
@@ -892,36 +925,56 @@ function clearTabUnread() { if (tabUnread === 0) return; tabUnread = 0; showTabU
 document.addEventListener('visibilitychange', () => { if (!document.hidden) clearTabUnread() })
 window.addEventListener('focus', clearTabUnread)
 
+// Mailbox 一覧の取り直し。失敗しても止めず、少し待って数回まで試す (SSE が開き直したときは試し直す)。
+// 表示は #err に出し、成功したら消す (送信のエラーは消さない)
+let mailboxTries = 0
+let mailboxError = false
+let mailboxTimer = null
+function refreshMailboxes(delay = 300) {
+  clearTimeout(mailboxTimer)
+  mailboxTimer = setTimeout(async () => {
+    try {
+      await loadMailboxes()
+      mailboxTries = 0
+      if (mailboxError) { mailboxError = false; $('err').textContent = '' }
+    } catch (err) {
+      if (err.message === 'unauthorized') return
+      mailboxError = true
+      $('err').textContent = `Could not load Mailboxes: ${err.message || err}`
+      if (mailboxTries++ < 3) mailboxTimer = setTimeout(() => refreshMailboxes(0), 1000 * 2 ** mailboxTries)
+    }
+  }, delay)
+}
+
 function connect() {
   // 履歴より先に購読を始め、取りこぼしを id の重複除去で吸収する
   const es = new EventSource('/stream')
-  es.onopen = () => { $('conn').className = 'ok'; $('conn').textContent = 'Connected' }
+  es.onopen = () => {
+    $('conn').className = 'ok'; $('conn').textContent = 'Connected'
+    // 切れていた間の分を取り直す。開いた時点の lastSeq を起点にする (この接続の新着より前の値)。
+    // 最初の接続は loadHistory が受け持つ。取り直しに失敗しても止めず、次に開いたとき取り直す
+    if (!historyReady) loadHistory().catch(() => {})
+    else catchUp(lastSeq, true).then(() => refreshMailboxes(0), () => {})
+    mailboxTries = 0
+    refreshMailboxes(0)
+  }
   es.onerror = () => { $('conn').className = 'ng'; $('conn').textContent = 'Reconnecting…' }
-  // 未読数は新着と ack で変わるので、まとめて取り直す
-  let timer = null
-  const refresh = () => { clearTimeout(timer); timer = setTimeout(() => loadMailboxes().catch(() => {}), 300) }
   es.addEventListener('message', (e) => {
-    const m = JSON.parse(e.data)
-    const box = render(m) // 重複なら undefined
-    // 人間宛て (to.type === 'user') だけ数える。自分の送信は user 宛てでも数えない
-    const self = m.from.type === 'user' && m.from.id === 'browser'
-    if (box && document.hidden && m.to.type === 'user' && !self) countTabUnread()
-    refresh()
+    receive(JSON.parse(e.data), true) // 重複なら描画も数えもしない
+    // 未読数は新着と ack で変わるので、まとめて取り直す
+    refreshMailboxes()
   })
   for (const ev of ['mailbox.created', 'mailbox.deleted', 'attachment.attached', 'attachment.detached', 'attachment.superseded', 'subscription.changed']) {
-    es.addEventListener(ev, refresh)
+    es.addEventListener(ev, () => refreshMailboxes())
   }
   return es
 }
 
 ;(async () => {
-  await loadDefaultTo()
-  try {
-    await loadMailboxes()
-  } catch { return }
-  loadCommands()
+  // 初期の宛先の判定 (buildTo) より前に設定を読む。Mailbox 一覧が失敗しても、履歴と新着は接続で動かす
+  await loadSettings()
   connect()
-  await loadHistory()
+  refreshMailboxes(0)
 })()
 </script>
 </body>
