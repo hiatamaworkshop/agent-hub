@@ -101,6 +101,9 @@ npm run hub                                   # ターミナル A
 3. leader が `role:deployer` 宛てに実装指示を `request` で送り、deployer が作業して `reply` を返す。
 4. leader が変更を確かめ、2 の依頼への `reply` を送る。ブラウザに 4 通が `request` → `request` → `reply` → `reply` の順に並ぶ。
 
+- メッセージの形式は role の説明で決めている。leader → deployer は英語の固定見出し (`GOAL` / `SCOPE` / `SPEC` / `DONE WHEN`)、
+  deployer → leader は英語で、変更ファイルの一覧 (`CHANGED`) だけ DCP 形式。leader → user は日本語で `結果` / `確認` / `要対応` の 3 項目。
+- leader は output style を Concise で起動する ([tools/dev/settings/leader.json](tools/dev/settings/leader.json))。`/output-style` で切り替えると同じフォルダの全セッションに効くので、role ごとの設定は起動時に渡す。
 - 2 つのセッションは同じフォルダで動くので、deployer の変更は leader から `git diff` で見える。
 - deployer のファイル編集の許可は、ターミナル C で承認する。
 

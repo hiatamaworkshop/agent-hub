@@ -17,6 +17,11 @@ $claudeArgs = @(
   '--append-system-prompt-file', (Join-Path $root "tools/dev/roles/$Role.md")
 )
 if ($Model) { $claudeArgs += @('--model', $Model) }
+# role ごとの Claude Code 設定 (leader は output style を Concise にする)。
+# /output-style は .claude/settings.local.json に書き、同じフォルダの全セッションに効くので、起動時に role ごとに渡す。
+# JSON 文字列ではなくファイルで渡す (claude.cmd へ渡す引数の " を PowerShell が落とすことがある)
+$settings = Join-Path $root "tools/dev/settings/$Role.json"
+if (Test-Path $settings) { $claudeArgs += @('--settings', $settings) }
 
 # 起動したシェルに HUB_ROLE / HUB_MAILBOX を残さない
 $saved = @{ HUB_ROLE = $env:HUB_ROLE; HUB_MAILBOX = $env:HUB_MAILBOX }
