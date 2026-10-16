@@ -238,8 +238,9 @@ Claude 側では次のように見える:
 
 - `from` は `user:browser` または `mailbox:<名前>`。送り手が role を持つ場合は `from_role` を足す。
 - `to` は `mailbox:<名前>` / `role:<名前>` / `topic:<名前>`。自分がなぜ受け取ったか (直接・role・購読) がこれで分かる。
-- `reply` のときは `reply_to` を足す。
+- `reply` のときは `reply_to` を、無編集転送のときは `forwarded_from` を足す。
 - 本文中の `</channel>` は shim が `<\/channel>` に置き換える。Claude Code も同じ変換をする (design.md §6.1c) が、記載のない挙動なので頼り切らない。
+  `</channel >` や `</CHANNEL>` も閉じタグとして解釈されうるため、大小を問わず `</channel` の並びをすべて置き換える (§6.2 の `</hub-message` も同じ)。
   本文は外側のタグを閉じられないので、本文に偽の属性や偽の開きタグを書かれても、外側のタグの中の文字列として見える。
 
 ### 6.2 `inbox()` (polling)
