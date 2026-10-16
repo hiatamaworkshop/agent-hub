@@ -53,6 +53,10 @@
   .msg .head .addr { font-family: var(--mono); color: var(--fg); }
   /* kind は枠線だけのバッジ。送り手の色とまぎれないよう色は付けず、文字で示す */
   .kind { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; border: 1px solid var(--muted); color: var(--muted); }
+  /* 送信フォームの kind は一覧と同じバッジを並べたトグル。選んだものだけ塗る (色は付けない) */
+  .kinds { display: inline-flex; gap: 4px; }
+  .kinds button.kind { background: none; font-size: 12px; padding: 2px 8px; cursor: pointer; }
+  .kinds button.kind[aria-checked=true] { background: var(--muted); border-color: var(--muted); color: var(--panel); }
   .msg .body { white-space: pre-wrap; word-break: break-word; margin-top: 4px; }
   .msg .actions { margin-left: auto; }
   .linkbtn { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font: inherit; }
@@ -135,11 +139,11 @@
     <div id="list"></div>
     <form id="form">
       <div class="row">
-        <select id="kind" title="kind">
-          <option value="request" selected>request</option>
-          <option value="reply">reply</option>
-          <option value="notice">notice</option>
-        </select>
+        <div id="kind" class="kinds" role="radiogroup" aria-label="kind" title="kind">
+          <button type="button" class="kind" role="radio" data-kind="request" aria-checked="true">request</button>
+          <button type="button" class="kind" role="radio" data-kind="reply" aria-checked="false" tabindex="-1">reply</button>
+          <button type="button" class="kind" role="radio" data-kind="notice" aria-checked="false" tabindex="-1">notice</button>
+        </div>
         <select id="to" title="To"></select>
         <input id="topic" placeholder="Topic name" autocomplete="off" hidden>
         <span id="replyInfo"></span>
@@ -583,7 +587,7 @@ for (const ev of ['pointerdown', 'keydown']) $('to').addEventListener(ev, () => 
 
 function startReply(m) {
   replyTo = m
-  $('kind').value = 'reply'
+  setKind('reply')
   chooseTo(addr(m.from))
   updateReplyInfo()
   $('body').focus()
@@ -592,22 +596,44 @@ function startReply(m) {
 function updateReplyInfo() {
   const info = $('replyInfo')
   info.textContent = ''
-  if ($('kind').value !== 'reply' || !replyTo) return
+  if (getKind() !== 'reply' || !replyTo) return
   info.append(`Replying to #${replyTo.seq} `)
   const cancel = el('button', 'linkbtn', 'Cancel')
   cancel.type = 'button'
-  cancel.onclick = () => { replyTo = null; $('kind').value = 'request'; updateReplyInfo() }
+  cancel.onclick = () => { replyTo = null; setKind('request'); updateReplyInfo() }
   info.append(cancel)
 }
 
-$('kind').onchange = updateReplyInfo
+// kind のトグル。radio と同じく、選択中だけを Tab で止め、矢印キーで隣へ移る
+const kindButtons = [...$('kind').querySelectorAll('button')]
+function getKind() {
+  return kindButtons.find((b) => b.getAttribute('aria-checked') === 'true').dataset.kind
+}
+function setKind(kind) {
+  for (const b of kindButtons) {
+    const on = b.dataset.kind === kind
+    b.setAttribute('aria-checked', String(on))
+    b.tabIndex = on ? 0 : -1
+  }
+}
+for (const [i, b] of kindButtons.entries()) {
+  b.onclick = () => { setKind(b.dataset.kind); updateReplyInfo() }
+  b.onkeydown = (e) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key]
+    if (!step) return
+    e.preventDefault()
+    const next = kindButtons[(i + step + kindButtons.length) % kindButtons.length]
+    next.focus()
+    next.click()
+  }
+}
 
 $('form').onsubmit = async (e) => {
   e.preventDefault()
   setStatus('')
   $('err').textContent = ''
   $('warn').textContent = ''
-  const kind = $('kind').value
+  const kind = getKind()
   const body = $('body').value
   if (!body.trim() && attachments.length === 0) return
   if (kind === 'reply' && !replyTo) { $('err').textContent = 'For a reply, start with the "Reply" button on a message.'; return }
@@ -648,7 +674,7 @@ $('form').onsubmit = async (e) => {
     dropAttachments(sentFiles)
     // プログラムからの値変更では input イベントが出ないので、ヒントを明示的に更新する
     updateHint()
-    if (kind === 'reply') { replyTo = null; $('kind').value = 'request'; updateReplyInfo() }
+    if (kind === 'reply') { replyTo = null; setKind('request'); updateReplyInfo() }
   } catch (err) {
     $('err').textContent = String(err.message || err)
   } finally {
