@@ -509,34 +509,45 @@ function buildTo(mailboxes) {
     for (const t of mb.effectiveSubscriptions) topics.add(`topic:${t}`)
   }
   sel.textContent = ''
+  // 何も選ばれていない状態 (自動で決まる候補がない) を示す。値は空で、Send では拒否する
+  sel.append(option('', 'Select a destination…'))
   if (mailboxes.length) sel.append(group('Mailbox', mailboxes.map((mb) => `mailbox:${mb.name}`)))
   if (roles.size) sel.append(group('role', [...roles].sort()))
   if (topics.size) sel.append(group('Subscribed topics', [...topics].sort()))
   sel.append(group('User', ['user:browser']))
   sel.append(option(MANUAL_TOPIC, 'Enter a topic…'))
-  // 初回だけ初期の宛先を決める。以後の再構築 (Mailbox 一覧の更新) は今の選択を保つ
-  setTo(prev || initialTo(mailboxes))
+  // 自動で選んだ値 (autoTo) と初回は、Mailbox 一覧の更新のたびに決め直す。手で選んだ後は今の選択を保つ
+  if (!toBuilt || autoTo) {
+    autoTo = true
+    setTo(initialTo(mailboxes))
+  } else {
+    setTo(prev)
+  }
+  toBuilt = true
 }
 
-// 初期の宛先: (1) 前回送った宛先 → (2) settings.json の defaultTo → (3) 接続中の先頭 Mailbox。
-// 候補は「今つながっている先」だけ。topic と role は接続中の Mailbox が持つものに限る (届け先がない宛先は選ばない)
+// 初期の宛先: (1) 前回送った宛先 → (2) settings.json の defaultTo → なし (未選択)。
+// 候補は「今つながっている先」だけ。mailbox は attach 中のもの、role と topic は attach 中の Mailbox が持つものに限る。
+// user:browser は常に候補になる。未接続の Mailbox は自動では選ばない (届いても読む人がいない)
 const LAST_TO_KEY = 'agent-hub.lastTo'
 let defaultTo = null // GET /settings の defaultTo。読めなければ null (古い Hub や 404 でも null)
+let toBuilt = false // buildTo が一度走ったか (初回判定用)
+let autoTo = false // 今の宛先が自動で選ばれたもので、まだ人が選んでいないか
+let mailboxList = [] // 最後に取得した Mailbox 一覧 (送信後の警告に使う)
 function readLastTo() { try { return localStorage.getItem(LAST_TO_KEY) } catch { return null } }
 function saveLastTo(v) { try { localStorage.setItem(LAST_TO_KEY, v) } catch {} }
 function initialTo(mailboxes) {
   const live = new Set(['user:browser'])
   for (const mb of mailboxes) {
-    live.add(`mailbox:${mb.name}`)
     if (!mb.attachment) continue
+    live.add(`mailbox:${mb.name}`)
     if (mb.role) live.add(`role:${mb.role}`)
     for (const t of mb.effectiveSubscriptions) live.add(`topic:${t}`)
   }
   const last = readLastTo()
   if (last && live.has(last)) return last
   if (defaultTo && live.has(defaultTo)) return defaultTo
-  const first = mailboxes.find((mb) => mb.attachment) || mailboxes[0]
-  return first ? `mailbox:${first.name}` : 'user:browser'
+  return ''
 }
 
 // 一覧にない宛先 (返信先の Mailbox が消えた後など) も選べるよう、その場で足す
@@ -554,15 +565,23 @@ function selectedTo() {
   return { type: v.slice(0, i), id: v.slice(i + 1) }
 }
 
+// 人が選んだ宛先。自動で選んだ値ではなくなるので、以後の Mailbox 一覧の更新では動かさない (同じ値を選んでも同じ)
+function chooseTo(value) {
+  autoTo = false
+  setTo(value)
+}
+
 $('to').onchange = () => {
-  setTo($('to').value)
+  chooseTo($('to').value)
   if (!$('topic').hidden) $('topic').focus()
 }
+// 同じ値をもう一度選んでも change は出ないので、開く・キーを押した時点で人の操作として扱う (自動の値を確定させる)
+for (const ev of ['pointerdown', 'keydown']) $('to').addEventListener(ev, () => { autoTo = false })
 
 function startReply(m) {
   replyTo = m
   $('kind').value = 'reply'
-  setTo(addr(m.from))
+  chooseTo(addr(m.from))
   updateReplyInfo()
   $('body').focus()
 }
@@ -589,7 +608,9 @@ $('form').onsubmit = async (e) => {
   const body = $('body').value
   if (!body.trim() && attachments.length === 0) return
   if (kind === 'reply' && !replyTo) { $('err').textContent = 'For a reply, start with the "Reply" button on a message.'; return }
+  if (!$('to').value) { $('err').textContent = 'Choose a destination first.'; return }
   if (sending) return
+  autoTo = false // 送った時点で、自動で選んだ宛先は人が確定したものとして扱う
   sending = true
   setSendLabel(attachments.length ? 'Uploading…' : 'Sending…')
   try {
@@ -609,8 +630,12 @@ $('form').onsubmit = async (e) => {
     if ([...$('to').options].some((o) => o.value === sentTo)) saveLastTo(sentTo)
     // user 宛ては Mailbox を通らず UI に出るだけなので、0 件でよい。
     // UI は Hub を再起動しなくても差し替わるので、recipients を返さない古い Hub でも送信は成功扱いにする
+    // 未接続の Mailbox 宛ては記録されるが、読む人がいない。0 件の警告が出るときはそちらを優先する
+    const target = m.to.type === 'mailbox' ? mailboxList.find((mb) => mb.name === m.to.id) : undefined
     if (m.to.type !== 'user' && Array.isArray(recipients) && recipients.length === 0) {
       $('warn').textContent = `No Mailbox will receive ${addr(m.to)} (#${m.seq} was recorded)`
+    } else if (target && !target.attachment) {
+      $('warn').textContent = `Accepted, but nobody is reading ${addr(m.to)} now; it will stay unread until it attaches (#${m.seq} was recorded).`
     }
     $('body').value = ''
     clearAttachments()
@@ -806,9 +831,10 @@ async function loadMailboxes() {
     box.append(el('div', 'meta', meta.join(' · ')))
     if (mb.effectiveSubscriptions.length) box.append(el('div', 'meta', `Subscribed: ${mb.effectiveSubscriptions.join(', ')}`))
     box.title = 'Write to this Mailbox'
-    box.onclick = () => { setTo(`mailbox:${mb.name}`); $('body').focus() }
+    box.onclick = () => { chooseTo(`mailbox:${mb.name}`); $('body').focus() }
     root.append(box)
   }
+  mailboxList = mailboxes
   buildTo(mailboxes)
 }
 

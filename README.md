@@ -69,7 +69,7 @@ claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels s
 
 - 本文に `/cp` と書いて Send を押すと、`commit and push` に置き換えて送る。`/cp 今日の作業` のように書くと、`$ARGS` を含む text ではその位置に、含まなければ後ろに引数が入る。
 - `//cp` は置き換えずに `/cp` を送る (エスケープ)。定義されていない `/xyz` はそのまま送る。
-- 設定は `HUB_DATA_DIR` (既定は `data/`) の `settings.json` に保存される。手で編集してもよく、次の読み込みから反映される。手編集の `defaultTo` (例 `"mailbox:leader"`) を置くと、UI の初期の宛先になる (前回送った宛先があればそちらが優先)。
+- 設定は `HUB_DATA_DIR` (既定は `data/`) の `settings.json` に保存される。手で編集してもよく、次の読み込みから反映される。手編集の `defaultTo` (例 `"mailbox:leader"`) を置くと、その Mailbox が attach 中のときに UI の初期の宛先になる (前回送った宛先があればそちらが優先。どちらも attach 中でなければ宛先は未選択)。
 
 ```json
 { "version": 1, "commands": [ { "name": "cp", "text": "commit and push" } ] }

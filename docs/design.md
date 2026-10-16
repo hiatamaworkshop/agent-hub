@@ -81,7 +81,12 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
 - タブの未読: 非表示中に SSE で届いた、人間宛て (`to.type === 'user'`) の他者のメッセージ数をタイトル `(n) agent-hub` と favicon のバッジで示す。agent 同士のメッセージ (`mailbox:*` / `role:*` / `topic:*` 宛て) は数えない。前面に戻るかフォーカスで消す。自分の送信と履歴読み込みは数えない。
 - UI の表示文言は英語にする (メッセージ本文は対象外で、そのまま表示する)。このドキュメント自体は日本語のまま。
 - カスタムコマンド: 本文の `/name` (または `/name 引数`) を Send の瞬間に定義済みの text へ置換して送る。置換は UI が行い、Hub はコマンドを知らない (置換後の本文を普通のメッセージとして受ける)。スレッドに残るのも置換後の本文なので、何を送ったかがそのまま見える。人間が Send を押したときだけ動き、自動送信はしない。設定は Hub 側の `HUB_DATA_DIR/settings.json` にあり、手で編集できる (読みは毎回ファイルから行う)。Hub が `/settings` を持たない古い版のときは Commands を無効にし、送信はこれまでどおり。
-- 初期の宛先 (To): 起動時は (1) 前回送った宛先 (localStorage `agent-hub.lastTo`、今も候補にあるものだけ) → (2) settings.json の `defaultTo` (例 `mailbox:leader`。候補にあるときだけ) → (3) 接続中の先頭 Mailbox の順に選ぶ。候補は接続中の先に限る (topic と role は接続中の Mailbox が持つものだけ)。topic:user.message を既定にはしない。`defaultTo` は初回の判定より前に読む。以後の Mailbox 一覧の更新では今の選択を保つ。Reply は元の送り手を選ぶ。
+- 初期の宛先 (To): 自動で選ぶのは (1) 前回送った宛先 (localStorage `agent-hub.lastTo`) → (2) settings.json の `defaultTo` (例 `mailbox:leader`) の順で、どちらも**接続中 (attach 中) の先だけ**を候補にする。mailbox は attach 中のもの、role と topic は attach 中の Mailbox が持つものに限る。user:browser は常に候補。どちらも候補になければ**未選択** (先頭表示は "Select a destination…")。先頭の Mailbox や topic:user.message への後退はしない。`defaultTo` は初回の判定より前に読む。
+  - 自動で選んだ値 (autoTo) は Mailbox 一覧の更新 (buildTo) のたびに決め直す。だから attach されると、既定が正しい候補へ自動で移る。
+  - 人が選んだら止まる: ドロップダウンを開く・キーを押す・値を変える・サイドバーの Mailbox を押す・Reply・Send のいずれかで自動フラグを外し、以後の一覧更新では動かさない。同じ値を選び直しても止まる (開いた時点で外す。開いてやめた場合も外れる)。
+  - 未選択のまま Send は拒否し、`Choose a destination first.` を出す (何も投稿しない)。
+  - 未接続の `mailbox:<name>` に手で送ると、記録はされるが警告を出す (`Accepted, but nobody is reading … now; it will stay unread until it attaches`)。0 件の警告 (`No Mailbox will receive`) が出るときはそちらを優先する。
+  - Reply は元の送り手を選ぶ (手動の選択として扱う)。
 
 ### 3.3 Mailbox と Attachment (R5, R6)
 
