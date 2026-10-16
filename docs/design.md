@@ -94,7 +94,7 @@ MCP Events (SEP-3415) が購読 ID をクライアント生成にせず、購読
   `HUB_MAILBOX` / `HUB_ROLE` が shim に渡るかは §6 で検証する。
 - **attach は冪等**。同じ Mailbox に attach し直すと、Hub はその Mailbox の cursor 以降を再送する。shim は覚えなくてよい。
 - **交代 (R6)** は「新しいセッションが同じ Mailbox に attach する」だけで成立する。購読・未読・cursor は Mailbox に残っている。
-- **takeover (暫定: 排他・新しい方が勝つ)**: 既に Attachment がある Mailbox に別セッションが attach すると、旧 Attachment に `terminated(reason: superseded)` を送って切り離す。複数同時 attach を許すかは §8 で未決。
+- **takeover (暫定: 排他・新しい方が勝つ)**: 既に Attachment がある Mailbox に別セッションが attach すると、旧 Attachment に `terminated(reason: superseded)` を送って切り離す。複数同時 attach を許すかは §9 で未決。
 - **リース**: shim は heartbeat でリースを延長する。リースが切れた Attachment は detached になり、その間のメッセージは Mailbox の未読キューに溜まる。Mailbox 自体はリース切れでは消えない。
 - **後継への流し込み量の制御**: attach 時に `maxAgeMs` を指定でき、それより古い未読は渡さない。切り捨てがあれば `truncated: true` を返し、shim はその旨をエージェントに 1 件の通知で伝える。
   Channels は作業中に届いた通知を次のターンにまとめて渡すため、長期不在後の大量流し込みを防ぐ目的がある。
@@ -344,19 +344,60 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 WG の field report (experimental-ext-triggers-events #6) は、クライアント側に「眠っている goal・購読設定・処理済み eventId」を永続化すれば、ランタイム再起動後も同じ論理 goal が再開し、再配送も重複除去できたと報告している。
 また「イベントをどのセッション/goal に結びつけるか、続行・新規起動・まとめのどれにするか」はプロトコルではなくランタイム側の責務と結論づけている。agent-hub の Hub はこのランタイム側の役割を担う。
 
-## 8. 未決事項 (設計)
+## 8. 既存の仕組みとの関係 (2026-10-16 調査)
+
+P0 の後に、同じ領域の公式機能と OSS を調べた。**セッション間の配送は Claude Code 本体が公式に持っている**ため、agent-hub 固有の価値は「人間のコンソール」「論理 Mailbox」「role/topic の fan-out」に絞られる。
+
+### 8.1 対応表
+
+| 仕組み | 概要 | agent-hub との重なり |
+|---|---|---|
+| **公式 cross-session messaging** | 同じマシンのセッション同士が `ListAgents` / `SendMessage` で、セッション名 (`--name` / `/rename`) 宛てに平文を送る。ネイティブ Windows は v2.1.234 以降で、設定もフラグも不要。ターン中はツール呼び出しの合間に読まれ、アイドルなら新しいターンが始まる。`notify_when_idle` で相手のアイドル復帰を 1 回通知させられる | **配送の大部分**。同意を伝播させない扱い・ループ抑制・バースト制限・受信側の `crossSessionInbound` (accept / hold / refuse) まで公式にある |
+| **公式 agent teams** (試験機能) | lead と teammate、teammate ごとの受信箱 (`~/.claude/teams/<team>/inboxes/<name>.json`)、共有タスクリスト。role はサブエージェント定義で再利用し、teammate ごとにモデルを選べる。`TeammateIdle` / `TaskCompleted` hook | leader / worker の構成と、区切りの検知 (P1) の一部 |
+| **claude-relay** | 常駐 Hub (Unix socket) + セッションごとの channel MCP。開発用フラグで起動 | **構成がほぼ同じ**。永続化・UI・認証はない |
+| **mcp_agent_mail** | 送受信箱とスレッド、Git + SQLite の永続化、Web UI、人間の監督者用 ID、ファイル予約 (lease) | Mailbox・永続化・人間の UI。**思想が一番近い**。受け手が取りに行く方式で、アプリに依存しない |
+| **Kanban 系** (Vibe Kanban, Kandev, kanbots など) | カード 1 枚 = エージェント 1 つを別 worktree で並列実行し、人間はカード操作とレビューを担う | メッセージパッシングではなく、タスク管理と並列実行 |
+
+### 8.2 機能ごとの重なり
+
+| agent-hub の機能 | 重なり | 根拠 |
+|---|---|---|
+| セッションへの即時配信 (Channels + shim) | 大 | 公式 cross-session messaging が同じことを、研究プレビューと開発用フラグなしで行う |
+| 名前による宛先 | 大 | 公式はセッション名を宛先にできる |
+| leader / worker と role | 中 | agent teams とサブエージェント定義がある。ただし公式の role は起動の仕方で、宛先にはならない |
+| 区切りの検知 (P1) | 中 | `notify_when_idle` / `TeammateIdle` が近い。ただし通知先はセッションで、人間の UI ではない |
+| 交代しても残る論理 Mailbox と未読の引き継ぎ | 小 | 公式の宛先は生きているセッションで、保留は最大 100 件。agent teams は resume できない。mcp_agent_mail にはある |
+| role / topic への fan-out | 小 | 公式は「全員に送るには 1 人ずつ送る」と明記している |
+| 全メッセージを一画面で見てブラウザから書ける人間のコンソール | 固有 | 公式のメッセージは各ターミナルに 1 行のプレビューで散る。mcp_agent_mail の UI は閲覧が中心 |
+| 人間が Send を押す方針 | 固有 | 世の流れは自律寄り (タスクの self-claim、計画の自動承認、PR で人間がレビュー)。公式も「監視して舵を取る」ことは勧めている |
+
+### 8.3 示唆
+
+配送を公式の受信口に任せ、Hub はログ・UI・論理 Mailbox・fan-out に専念する構成が考えられる。Channels と開発用フラグへの依存がなくなる。採否は §9-5 で決める。検証すること:
+
+1. **shim に受信口の情報が渡るか**: 公式資料では `CLAUDE_CODE_MESSAGING_SOCKET` / `CLAUDE_CODE_MESSAGING_TOKEN` は hook と Bash に渡すとあり、stdio MCP サーバーの環境に入るかは書かれていない。
+2. **shim からの投函が受理されるか**: 自分の子プロセスからの投函は受信側の設定なしで受理される (own-child)。ネイティブ Windows ではトークンでしか子プロセスを確認できないので、1 が前提になる。
+3. **配信元の属性をどう渡すか**: cross-session のメッセージは平文で、Channels の `meta` に当たるものがない。送り手の属性を本文と区別して渡す不変条件 (protocol.md §6) を、本文の書式で守る必要がある。
+
+## 9. 未決事項 (設計)
 
 1. **takeover の方針**: 排他 (新しい方が勝つ、暫定) か、複数同時 attach (全員に配信 / どれか 1 つに配信) を許すか。
 2. **Event を購読で配信するか**: hook 由来の Event は UI に出すだけか、`session.boundary` などのトピックとして他の Mailbox にも配信するか。
 3. **Mailbox の削除と放置**: 長期間 attach のない Mailbox を自動で掃除するか、UI からの明示削除のみか。
 4. **`maxAgeMs` の既定値**: 指定なしの attach で何時間分まで流すか。
+5. **配送を公式 cross-session messaging に移すか**: Channels のまま続けるか、shim から自セッションの受信口へ投函する形に移すか (§8.3)。P1 に入る前に決める。
 
 (決定済み: ブラウザへのトークンの渡し方は cookie。§4)
 
-## 9. 参考
+## 10. 参考
 
 - Channels reference: <https://code.claude.com/docs/en/channels-reference.md>
 - SEP-3415 Events Extension: <https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415>
 - Triggers & Events WG charter: <https://modelcontextprotocol.io/community/working-groups/triggers-events>
 - WG field report (stdio restart recovery): <https://github.com/modelcontextprotocol/experimental-ext-triggers-events/issues/6>
 - Hookdeck mcp-events-bridge (monitor 経由の Claude Code 連携): <https://github.com/hookdeck/mcp-events-bridge/issues/26>
+- Cross-session messaging (公式): <https://code.claude.com/docs/en/cross-session-messaging>
+- Agent teams (公式): <https://code.claude.com/docs/en/agent-teams>
+- claude-relay: <https://github.com/vildanbina/claude-relay>
+- mcp_agent_mail: <https://github.com/Dicklesworthstone/mcp_agent_mail>
+- Kanban 系の比較 (第三者): <https://nimbalyst.com/blog/best-multi-agent-coding-tools-2026/>

@@ -168,7 +168,7 @@
 ```
 
 - 冪等。同じセッションが attach し直しても未読は失われない (cursor は Mailbox 側にある)。
-- 既に別の Attachment がある場合は takeover する (暫定: 排他・新しい方が勝つ。design.md §8)。旧 Attachment の stream に `terminated` を送って閉じる。
+- 既に別の Attachment がある場合は takeover する (暫定: 排他・新しい方が勝つ。design.md §9)。旧 Attachment の stream に `terminated` を送って閉じる。
 - `truncated: true` のとき、切り捨てた範囲は放棄済みとして `cursor` を進める。
 - Attachment は Hub のメモリにだけあり、永続化しない。Hub の再起動後は stream / ack が 404 (`attachment_not_found`) になるので、shim は attach し直す。
   `terminated` を受け取った後は attach し直さない (取り返しの応酬を避ける)。

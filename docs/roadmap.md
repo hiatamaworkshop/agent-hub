@@ -44,6 +44,7 @@
 
 **ゴール**: エージェントが止まった/質問した時点がブラウザに出る。
 
+- [ ] 着手前に、配送を公式 cross-session messaging に移すかを決める (design.md §8.3 の検証 1〜3、§9-5)
 - [ ] HTTP hook の設定例: `Stop` / `Notification` / `PreToolUse(AskUserQuestion)` → `POST /events` (`Authorization` と `X-Hub-Mailbox` をヘッダーで渡す)
 - [ ] Hub: `sessionId` → Attachment → Mailbox の解決
 - [ ] イベント ID を上流の値から決定的に生成し、`Stop` と `report_event` の重複を除去
@@ -63,7 +64,7 @@
 - [ ] 複数 Mailbox の同時接続、Mailbox 一覧と接続状態・role・購読・未読数の UI 表示
 - [ ] role: `roles.json` の読み込み、attach 時の role 指定 (`HUB_ROLE`)、既定購読との和で実効購読を計算、`to: role` 宛ての配信、`description` の `instructions` への差し込み
 - [ ] Attachment のリースと heartbeat、detached 状態
-- [ ] takeover (design.md §8 の方針決定後) と `terminated(superseded)`
+- [ ] takeover (design.md §9 の方針決定後) と `terminated(superseded)`
 - [ ] attach の `maxAgeMs` / `truncated` と、省略通知
 - [ ] 無編集転送 (`/messages/:id/forward`) と UI ボタン
 - [ ] `inbox()` による polling 経路 (Claude Code 以外向け。`events/poll` 互換の応答)
