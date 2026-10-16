@@ -166,6 +166,15 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 同じ shim の MCP ツール `inbox()` を polling する**縮退経路**を用意する。Mailbox・購読・未読キューは共通。
 `inbox()` の入出力は MCP Events の `events/poll` (`cursor`, `truncated`, `hasMore`, `nextPollMs`) に揃える。
 
+当面使うのは Claude Code だけだが、他社のエージェントが後から同じ Hub に入れるよう、**Hub の語彙はベンダー中立に保ち、クライアント固有の差は shim と `/events` の取り込みで吸収する** (§5)。そのために次を守る。
+- **Event の取り込みはクライアントごとの変換を通す**: hook の入力 JSON は `payload` にそのまま残し、`kind` (`turn.end` / `notification` / `question` …) への対応付けはクライアントごとの変換に閉じ込める (protocol.md §2 Event)。Hub の保存形式と UI は `kind` だけを見る。
+- **shim の instructions はクライアントで切り替える**: 今の文面は `<channel>` で届く前提。MCP の `initialize` の `clientInfo.name` で、Channels 経路か `inbox()` 経路かの説明を選ぶ。
+- **「本文はデータ」の守りは agent-hub 側だけで成り立たせる**: Claude Code は channel 由来の内容に注意書きを自動で付けるが (§6.1c)、他のクライアントは付けない。`<hub-message>` の包みと instructions の文面だけで足りるように書く。
+- **role の説明は MCP の instructions で渡す**: `roles.json` の `description` を shim が instructions に差し込む (§3.5、P2)。Claude の起動フラグ (`--append-system-prompt-file`。`tools/dev/` の試験用) には頼らない。ただし instructions をどう使うかはクライアント次第で、未確認。
+- **配送の手段を変えても正本は Hub に置く**: Claude 向けの配送を公式 cross-session messaging に移す場合も (§8.3)、それは Claude 用の配信手段の 1 つとして扱い、Mailbox・role・購読・未読は Hub が持ち続ける。
+
+未検証の最大の点は、**Claude 以外のエージェントがアイドル中に自分から `inbox()` を呼べるか** (§6.2-2)。起こす手段がなければ、当面は人間が一声かけて取りに行かせる運用になる。
+
 ### 3.8 実行形態 (ホスト直接 / Docker)
 
 | | 用途 | 到達範囲の担保 |
@@ -218,6 +227,7 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 | Docker に載せるのは Hub だけ、P0 はホストで直接起動 | shim/hooks は構造上ホストで動く。常駐 (Windows での daemon 化) を compose の restart で解決できるが、開発中は反復速度を優先する |
 | P0 はフレームワークなし UI | 検証を最短にするため。必要になってから導入 |
 | 永続化は JSONL から始める | 実装が最小で、人間が `tail` で追える |
+| Hub の語彙はベンダー中立にし、クライアント固有の差は shim と `/events` の取り込みで吸収する | 当面は Claude Code だけを使うが、他社のエージェントが後から同じ Hub に入れるようにする。Claude 固有の形式が Hub の保存形式や API に染み出すと、後から外せない (§3.7) |
 
 ## 6. 未確認事項 (実装前に必ず検証すること)
 
@@ -387,6 +397,7 @@ P0 の後に、同じ領域の公式機能と OSS を調べた。**セッショ�
 3. **Mailbox の削除と放置**: 長期間 attach のない Mailbox を自動で掃除するか、UI からの明示削除のみか。
 4. **`maxAgeMs` の既定値**: 指定なしの attach で何時間分まで流すか。
 5. **配送を公式 cross-session messaging に移すか**: Channels のまま続けるか、shim から自セッションの受信口へ投函する形に移すか (§8.3)。P1 に入る前に決める。
+   どちらでも Mailbox・role・未読の正本は Hub に置く (§3.7)。
 
 (決定済み: ブラウザへのトークンの渡し方は cookie。§4)
 

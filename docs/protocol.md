@@ -83,6 +83,7 @@
 ```
 - hook からは HTTP hook が入力 JSON をそのまま `POST /events` に送ってくる (design.md §6.1b)。Hub はそれを `payload` に入れ、`hook_event_name` から `kind` を決める
   (`Stop` → `turn.end`、`Notification` → `notification`、`PreToolUse` + `AskUserQuestion` → `question`)。`report_event` からは `kind` を明示して送る。
+- この対応付けは Claude Code の hook 用の変換で、クライアントごとに分けて持つ。他のクライアントの hook は、別の変換で同じ `kind` に揃える。`payload` は元の JSON のまま残し、Hub の保存形式と UI は `kind` だけに依存する (design.md §3.7)。
 - `mailbox` は Hub が次の順で解決する: `payload.session_id` に一致する Attachment (shim の申告または記録済み) → `X-Hub-Mailbox` ヘッダー → `payload.cwd` のフォルダ名。解決できなければ空のまま UI に出す (design.md §3.4)。
 - `id` は `session_id` と hook 固有の値 (`tool_use_id`、`prompt_id` など) から決定的に作る。
 

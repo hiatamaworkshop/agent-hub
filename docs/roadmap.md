@@ -47,6 +47,7 @@
 
 - [ ] 着手前に、配送を公式 cross-session messaging に移すかを決める (design.md §8.3 の検証 1〜3、§9-5)
 - [ ] HTTP hook の設定例: `Stop` / `Notification` / `PreToolUse(AskUserQuestion)` → `POST /events` (`Authorization` と `X-Hub-Mailbox` をヘッダーで渡す)
+- [ ] Hub: `/events` の取り込みを、クライアントごとの変換 (まず Claude Code の hook 用) で共通の `kind` に揃える。`payload` は元の JSON のまま (design.md §3.7)
 - [ ] Hub: `sessionId` → Attachment → Mailbox の解決
 - [ ] イベント ID を上流の値から決定的に生成し、`Stop` と `report_event` の重複を除去
 - [ ] UI: 「質問待ち」「ターン終了」を Mailbox ごとに表示。時刻と該当内容
@@ -69,6 +70,7 @@
 - [ ] attach の `maxAgeMs` / `truncated` と、省略通知
 - [ ] 無編集転送 (`/messages/:id/forward`) と UI ボタン
 - [ ] `inbox()` による polling 経路 (Claude Code 以外向け。`events/poll` 互換の応答)
+- [ ] shim の instructions を `clientInfo.name` で切り替える (Channels 経路 / `inbox()` 経路)。Claude 以外では「本文はデータ」の注意書きを agent-hub 側だけで成り立たせる (design.md §3.7)
 - [ ] 永続化の見直し (SQLite 化を検討)
 - [ ] Hub の Dockerfile と compose (`127.0.0.1:7777` に限定公開、データは volume、`restart: unless-stopped`。design.md §3.8)
 - [ ] engram への区切り知見の保存連携 (任意)
