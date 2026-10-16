@@ -8,6 +8,17 @@ export function isValidName(s: string): boolean {
   return NAME_RE.test(s)
 }
 
+// フォルダ名を Mailbox 名の規則に寄せる。寄せられなければ main。
+// shim と Hub (hook の cwd からの解決) で同じ規則を使う。Hub は Linux (Docker) でも動くので、\ と / の両方で区切る
+export function mailboxFromFolder(dir: string): string {
+  const s = (dir.split(/[\\/]+/).filter(Boolean).pop() ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, '-')
+    .replace(/^[^a-z0-9]+/, '')
+    .slice(0, 64)
+  return isValidName(s) ? s : 'main'
+}
+
 export const MESSAGE_KINDS = ['request', 'reply', 'notice'] as const
 export type MessageKind = (typeof MESSAGE_KINDS)[number]
 
@@ -15,7 +26,8 @@ export type MessageKind = (typeof MESSAGE_KINDS)[number]
 export const ADDRESS_TYPES = ['mailbox', 'role', 'topic', 'user'] as const
 export type AddressType = (typeof ADDRESS_TYPES)[number]
 
-export const EVENT_KINDS = ['turn.end', 'notification', 'question', 'session.boundary'] as const
+// question.answered は回答の記録 (UI で質問待ちを解く)。session.boundary は report_event 用 (後回し。design.md §3.4)
+export const EVENT_KINDS = ['turn.end', 'question', 'question.answered', 'permission', 'notification', 'session.boundary'] as const
 export type EventKind = (typeof EVENT_KINDS)[number]
 
 export const nameSchema = z.string().regex(NAME_RE)
@@ -110,6 +122,8 @@ export interface HubEvent {
   id: string
   ts: string
   kind: EventKind
+  // 変換したクライアント (例 claude-code)。payload の形はこれで決まる
+  source: string
   sessionId?: string
   mailbox?: string
   payload: unknown

@@ -73,20 +73,34 @@
 ### Event (hook など検知側から Hub へ)
 ```json
 {
-  "id": "e_… (上流の値から決定的に生成できる場合はそうする)",
+  "id": "e_…",
   "ts": "2026-10-16T12:00:00Z",
-  "kind": "turn.end | notification | question | session.boundary",
+  "kind": "turn.end | question | question.answered | permission | notification | session.boundary",
+  "source": "claude-code",
   "sessionId": "…",
-  "mailbox": "reviewer (sessionId から解決できた場合)",
-  "payload": { "...": "hook の入力をそのまま、または必要部分" }
+  "mailbox": "reviewer (解決できた場合だけ)",
+  "payload": { "...": "hook の入力をそのまま" }
 }
 ```
-- hook からは HTTP hook が入力 JSON をそのまま `POST /events` に送ってくる (design.md §6.1b)。Hub はそれを `payload` に入れ、`hook_event_name` から `kind` を決める
-  (`Stop` → `turn.end`、`Notification` → `notification`、`PreToolUse` + `AskUserQuestion` → `question`)。`report_event` からは `kind` を明示して送る (`session.boundary` はこの経路用。`report_event` は後回し。design.md §3.4)。
+- hook からは HTTP hook が入力 JSON をそのまま `POST /events` に送ってくる (design.md §6.1b)。Hub はそれを `payload` にそのまま入れ、変換で `kind` を決める。`source` は変換したクライアント (今は `claude-code` だけ) で、`payload` の形はこれで決まる。
+- Claude Code の hook 用の変換 (`src/hub/events.ts`):
+
+| hook 入力 | `kind` |
+|---|---|
+| `Stop` | `turn.end` |
+| `PreToolUse` + `tool_name: AskUserQuestion` | `question` |
+| `PostToolUse` + `tool_name: AskUserQuestion` | `question.answered` |
+| `Notification` + `notification_type: permission_prompt` | `permission`。ただし、同じ session の直前の Event が 60 秒以内の `question` なら取り込まない (質問の表示でも出るため。design.md §6.1c) |
+| ほかの `Notification` (`idle_prompt`、`agent_needs_input`、`elicitation_dialog` など) | `notification`。種類は `payload.notification_type` で見る |
+| それ以外の hook、`AskUserQuestion` 以外のツール | 取り込まない |
+
+- `report_event` からは `kind` を明示して送る (`session.boundary` はこの経路用。`report_event` は後回し。design.md §3.4)。
 - Event は UI に出すだけで、トピックとして Mailbox には配信しない (design.md §9-2)。
-- この対応付けは Claude Code の hook 用の変換で、クライアントごとに分けて持つ。他のクライアントの hook は、別の変換で同じ `kind` に揃える。`payload` は元の JSON のまま残し、Hub の保存形式と UI は `kind` だけに依存する (design.md §3.7)。
-- `mailbox` は Hub が次の順で解決する: `payload.session_id` に一致する Attachment (shim の申告または記録済み) → `X-Hub-Mailbox` ヘッダー → `payload.cwd` のフォルダ名。解決できなければ空のまま UI に出す (design.md §3.4)。
-- `id` は `session_id` と hook 固有の値 (`tool_use_id`、`prompt_id` など) から決定的に作る。
+- 変換はクライアントごとに分けて持つ。他のクライアントの hook は、別の変換で同じ `kind` に揃える。Hub の保存形式は `kind` だけに依存する (design.md §3.7)。UI は表示の中身 (質問文など) を読むために `source` ごとに `payload` のキーを知る。
+- `mailbox` は Hub が次の順で解決する: `payload.session_id` に対応する Mailbox (shim の attach の申告か、下の記録) → `X-Hub-Mailbox` ヘッダー (Mailbox 名の規則に合うときだけ) → `payload.cwd` のフォルダ名 (その名前の Mailbox があるときだけ)。解決できなければ空のまま UI に出す (design.md §3.4)。
+  ヘッダーか cwd で解決できたら、その `session_id` を覚えて以後は第一手段で引く (Hub のメモリだけ。再起動したら shim の attach で戻る)。
+- `id` は上流に一意の値があるときだけ決定的に作る。今は `question` / `question.answered` だけで、`session_id` と `tool_use_id` から作る。同じ `id` が再び届いたら記録せず、`duplicate: true` を返す。
+  `Stop` と `Notification` には一意の値がない (同じ prompt の中で何度も出うる) ので Hub が採番する。違う待ちを 1 つにまとめて隠すより、重複を見せる方を選んでいる。
 
 ### Message
 ```json
@@ -121,7 +135,8 @@
 ### 検知側 / 共通
 | メソッド | パス | 内容 |
 |---|---|---|
-| POST | `/events` | Event を登録。登録後 UI に SSE で配信。HTTP hook の入力 JSON をそのまま受け付ける (ヘッダー `X-Hub-Mailbox` 任意)。応答は `{}` (hook の判断には関与しない) |
+| POST | `/events` | Event を登録。登録後 UI に SSE (`event`) で配信。HTTP hook の入力 JSON をそのまま受け付ける (ヘッダー `X-Hub-Mailbox` 任意)。応答は 200 で、取り込んだら `{ id, kind, mailbox, duplicate }`、取り込まなかったら `{ ignored: "<理由>" }` (`unsupported_hook` / `unsupported_tool` / `question_prompt` / `no_hook_event_name`)。hook の判断には関与しない。本文が JSON オブジェクトでなければ 400、1MB を超えると 413 `payload_too_large` |
+| GET | `/events?limit=<n>` | 新しい方から `limit` 件 (既定 100、最大 1000) を古い順に返す。応答 `{ "events": [...] }` |
 | POST | `/messages` | Message を作成して配信 (宛先は `to`)。body は `kind` / `to` / `body` / `replyTo?`。応答は 201 で、作成した Message に `recipients` (配信先 Mailbox 名の配列。未接続も含む) を足したもの。`recipients` は応答にだけ付き、Message には保存しない。`user` 宛て以外で空なら誰にも届いていない (受理はする)。`replyTo` が存在しなければ 400。本文上限 1MB (超えると 413 `payload_too_large`) |
 | GET | `/messages?after=<seq>&limit=<n>` | 履歴取得 (`limit` 既定 100、最大 1000)。応答 `{ "messages": [...], "lastSeq": <seq> }` |
 | GET | `/mailboxes` | Mailbox 一覧 (role・実効購読・未読数・Attachment の状態) |
@@ -314,6 +329,7 @@ Claude 側では次のように見える:
 
 `event` (検知イベント), `message`, `mailbox.created`, `mailbox.deleted`, `attachment.attached`, `attachment.detached`, `attachment.superseded`, `subscription.changed`
 
+- `event` は記録した Event (§2)。重複 (`duplicate: true`) と取り込まなかったものは流さない。
 - `mailbox.created` は作成された Mailbox (`name` `role` `createdAt` `subscriptions` `cursor` `attachment`。作成直後なので `attachment` は null)。`mailbox.deleted` は `{ "name": "<名前>" }`。UI は両方で一覧を取り直す。
 
 ## 8. MCP Events (SEP-3415) との語彙対応

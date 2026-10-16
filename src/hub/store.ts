@@ -46,6 +46,9 @@ export class Store {
   // 削除した Mailbox 名 → 削除時点の seq。作り直したときに古い直接宛てを再送しないため
   private readonly deletedAt = new Map<string, number>()
   private readonly events: HubEvent[] = []
+  private readonly eventById = new Map<string, HubEvent>()
+  // sessionId → その session の最新の Event (変換が直前の Event を見るため)
+  private readonly lastEventBySession = new Map<string, HubEvent>()
   private seq = 0
 
   constructor(opts: StoreOptions = {}) {
@@ -131,6 +134,8 @@ export class Store {
       }
       case 'event':
         this.events.push(rec.event)
+        this.eventById.set(rec.event.id, rec.event)
+        if (rec.event.sessionId) this.lastEventBySession.set(rec.event.sessionId, rec.event)
         break
     }
   }
@@ -285,6 +290,15 @@ export class Store {
     this.write({ op: 'event', event: e })
   }
 
+  getEvent(id: string): HubEvent | undefined {
+    return this.eventById.get(id)
+  }
+
+  lastEventOf(sessionId: string): HubEvent | undefined {
+    return this.lastEventBySession.get(sessionId)
+  }
+
+  // 新しい方から limit 件を、古い順に返す
   listEvents(limit = 100): HubEvent[] {
     return this.events.slice(-limit)
   }

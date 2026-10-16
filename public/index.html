@@ -58,6 +58,17 @@
   .kinds button.kind { background: none; font-size: 12px; padding: 2px 8px; cursor: pointer; }
   .kinds button.kind[aria-checked=true] { background: var(--muted); border-color: var(--muted); color: var(--panel); }
   .msg .body { white-space: pre-wrap; word-break: break-word; margin-top: 4px; }
+  /* 検知イベント (hook 由来)。Message と区別するため地色は付けず、破線で囲む。縁取りの色は Mailbox の色 */
+  .evt { border: 1px dashed var(--line); border-left: 4px solid var(--pc, var(--line)); border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; font-size: 13px; }
+  .evt .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 12px; color: var(--muted); }
+  .evt .head .actions { margin-left: auto; }
+  .evt .body { white-space: pre-wrap; word-break: break-word; margin-top: 4px; }
+  .evt .note { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .evt .opts { margin: 2px 0 0; padding-left: 18px; }
+  .evt details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+  .evt.waiting .kind, .mb .status.waiting { color: var(--warn); border-color: var(--warn); }
+  .mb .status { font-size: 12px; color: var(--muted); }
+  .mb .status.waiting { font-weight: 600; }
   .msg .actions { margin-left: auto; }
   .linkbtn { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font: inherit; }
   /* コンポーザー (下)。送る操作だけを置く */
@@ -403,6 +414,7 @@ function render(m) {
   const ci = colorIndex(senderKey(m.from))
   const box = el('div', `msg c${ci}`)
   box.dataset.seq = m.seq
+  box.dataset.ts = m.ts
   const head = el('div', 'head')
   head.append(el('span', `chip c${ci}`, senderLabel(m.from)), el('span', '', `#${m.seq}`), el('span', '', time(m.ts)), el('span', `kind ${m.kind}`, m.kind))
   const route = el('span', 'addr', `${m.from.type}:${m.from.id}${m.from.role ? ` (${m.from.role})` : ''} → ${addr(m.to)}`)
@@ -423,6 +435,125 @@ function render(m) {
   list.append(box)
   if (atBottom) { pinned = true; list.scrollTop = list.scrollHeight }
   return box
+}
+
+// 検知イベント (hook 由来。design.md §3.4)。UI は届いた Event をそのまま出し、状態は推定しない。
+// payload は Claude Code の hook 入力そのまま (source: claude-code) なので、読むキーはここに閉じ込める。値は外部由来のデータとして textContent で入れる
+const seenEvents = new Set()
+const lastEventByMailbox = new Map() // Mailbox 名 → 最新の Event (カードに出す)
+const EVENT_LABEL = { 'turn.end': 'turn end', question: 'question', 'question.answered': 'answered', permission: 'permission', notification: 'notification', 'session.boundary': 'boundary' }
+// 人の手を待っている Event。目立たせ、非表示のタブでは未読として数える
+const WAITING = new Set(['question', 'permission'])
+const str = (v) => (typeof v === 'string' ? v : '')
+
+function eventBody(ev) {
+  const p = ev.payload && typeof ev.payload === 'object' ? ev.payload : {}
+  const box = el('div')
+  if (ev.kind === 'question') {
+    const qs = p.tool_input && Array.isArray(p.tool_input.questions) ? p.tool_input.questions : []
+    for (const q of qs) {
+      if (!q || typeof q !== 'object') continue
+      box.append(el('div', 'body', (q.header ? `[${str(q.header)}] ` : '') + str(q.question)))
+      const opts = Array.isArray(q.options) ? q.options : []
+      if (opts.length) {
+        const ul = el('ul', 'opts')
+        for (const o of opts) ul.append(el('li', '', o && typeof o === 'object' ? str(o.label) + (o.description ? ` — ${str(o.description)}` : '') : str(o)))
+        box.append(ul)
+      }
+    }
+    // channel の通知は質問への回答にならない (design.md §6.1c)。ここからの返信は、ターミナルで答えた後に届く
+    box.append(el('div', 'note', 'Answer in the terminal. A message sent from here arrives after the question is answered.'))
+  } else if (ev.kind === 'permission' || ev.kind === 'notification') {
+    const text = [str(p.title), str(p.message)].filter(Boolean).join(': ')
+    if (text) box.append(el('div', 'body', text))
+    if (ev.kind === 'notification' && p.notification_type) box.append(el('div', 'note', str(p.notification_type)))
+    if (ev.kind === 'permission') box.append(el('div', 'note', 'Approve or deny in the terminal.'))
+  } else if (ev.kind === 'turn.end') {
+    const last = str(p.last_assistant_message)
+    if (last) {
+      // 最終応答は長いことがあるので、先頭の数行だけ見せて残りは開いて読む
+      const lines = last.split('\n')
+      if (lines.length <= 6 && last.length <= 600) box.append(el('div', 'body', last))
+      else {
+        const d = el('details')
+        d.append(el('summary', '', lines[0].slice(0, 200) + ' …'), el('div', 'body', last))
+        box.append(d)
+      }
+    }
+  }
+  return box
+}
+
+function mailboxColor(name) {
+  const mb = mailboxList.find((x) => x.name === name)
+  return colorIndex(mb && mb.role ? `role:${mb.role}` : `mailbox:${name}`)
+}
+
+// 時刻順に挟む。Message は届いた順に末尾へ足すので、Event だけ ts で位置を決める (畳みの行には ts がないので飛ばす)
+function insertByTs(box, ts) {
+  const list = $('list')
+  const items = list.querySelectorAll('.msg, .evt')
+  const last = items[items.length - 1]
+  if (!last || last.dataset.ts <= ts) { list.append(box); return } // ライブの新着はほぼここ
+  const after = [...items].find((x) => x.dataset.ts > ts)
+  if (after) list.insertBefore(box, after)
+  else list.append(box)
+}
+
+function renderEvent(ev, counts) {
+  if (seenEvents.has(ev.id)) return
+  seenEvents.add(ev.id)
+  const list = $('list')
+  const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40
+  const ci = ev.mailbox ? mailboxColor(ev.mailbox) : null
+  const box = el('div', `evt${ci === null ? '' : ` c${ci}`}${WAITING.has(ev.kind) ? ' waiting' : ''}`)
+  box.dataset.ts = ev.ts
+  const head = el('div', 'head')
+  head.append(
+    ev.mailbox ? el('span', `chip c${ci}`, ev.mailbox) : el('span', '', 'unknown session'),
+    el('span', '', time(ev.ts)),
+    el('span', 'kind', EVENT_LABEL[ev.kind] || ev.kind),
+  )
+  if (ev.mailbox) {
+    const actions = el('span', 'actions')
+    const btn = el('button', 'linkbtn', 'Reply')
+    btn.type = 'button'
+    btn.title = `Write a request to mailbox:${ev.mailbox}`
+    btn.onclick = () => startEventReply(ev)
+    actions.append(btn)
+    head.append(actions)
+  }
+  box.append(head, eventBody(ev))
+  insertByTs(box, ev.ts)
+  if (atBottom) { pinned = true; list.scrollTop = list.scrollHeight }
+  if (ev.mailbox) {
+    const prev = lastEventByMailbox.get(ev.mailbox)
+    if (!prev || prev.ts <= ev.ts) lastEventByMailbox.set(ev.mailbox, ev)
+  }
+  if (counts && document.hidden && WAITING.has(ev.kind)) countTabUnread()
+}
+
+// Event への返信: その Mailbox 宛ての request を書き始める (Event は Message ではないので replyTo は付けない)
+function startEventReply(ev) {
+  replyTo = null
+  setKind('request')
+  chooseTo(`mailbox:${ev.mailbox}`)
+  updateReplyInfo()
+  $('body').focus()
+}
+
+// 新しい方から 200 件。/events がない古い Hub (404) では何も出さない
+async function loadEvents(counts) {
+  let events
+  try {
+    ({ events } = await api('/events?limit=200'))
+  } catch (err) {
+    if (err.status === 404) return
+    throw err
+  }
+  for (const ev of events) renderEvent(ev, counts)
+  // 一覧をまだ取れていなければ描かない ("None yet" で上書きしないため。取れたときに描かれる)
+  if (mailboxList.length) renderMailboxes(mailboxList)
 }
 
 // 畳み: 古い分は DOM から外して folded に退避する (seen からは消さない。重複除去と ↩ #seq の解決に使うため)。
@@ -457,9 +588,11 @@ function makeStub() {
   return s
 }
 
+// 畳んだ中の Message の seq の範囲を添える (Event だけなら範囲は出さない)
 function updateStub() {
-  const first = folded[0].seq, last = folded[folded.length - 1].seq
-  stub.querySelector('.stub-text').textContent = `${folded.length} older messages compacted (#${first}–#${last})`
+  const seqs = folded.map((f) => f.seq).filter((s) => s !== null)
+  const range = seqs.length ? ` (#${seqs[0]}–#${seqs[seqs.length - 1]})` : ''
+  stub.querySelector('.stub-text').textContent = `${folded.length} older items compacted${range}`
 }
 
 function fold() {
@@ -467,12 +600,13 @@ function fold() {
   const keep = parseKeep($('keep').value)
   $('keep').value = keep
   saveKeep(keep)
-  const visible = [...list.querySelectorAll('.msg')]
+  // Message と検知イベントを合わせて数える
+  const visible = [...list.querySelectorAll('.msg, .evt')]
   const n = visible.length - keep
   if (n <= 0) return
   // 今回の分は退避済みのものより新しいので、末尾に足すと古い順が保たれる
   for (const box of visible.slice(0, n)) {
-    folded.push({ box, seq: Number(box.dataset.seq) })
+    folded.push({ box, seq: box.dataset.seq ? Number(box.dataset.seq) : null })
     box.remove()
   }
   if (!stub) { stub = makeStub(); list.prepend(stub) }
@@ -861,6 +995,13 @@ $('body').addEventListener('input', updateHint)
 
 async function loadMailboxes() {
   const { mailboxes } = await api('/mailboxes')
+  mailboxList = mailboxes
+  renderMailboxes(mailboxes)
+  buildTo(mailboxes)
+}
+
+// カードの描画。Event が届いたときは一覧を取り直さず、手元の一覧で描き直す
+function renderMailboxes(mailboxes) {
   const root = $('mailboxes')
   root.textContent = ''
   if (mailboxes.length === 0) root.append(el('div', 'meta', 'None yet'))
@@ -876,6 +1017,9 @@ async function loadMailboxes() {
     meta.push(`${mb.unread} unread`)
     box.append(el('div', 'meta', meta.join(' · ')))
     if (mb.effectiveSubscriptions.length) box.append(el('div', 'meta', `Subscribed: ${mb.effectiveSubscriptions.join(', ')}`))
+    // 直近の検知イベント。状態の推定はせず、最後に届いたものをそのまま出す
+    const ev = lastEventByMailbox.get(mb.name)
+    if (ev) box.append(el('div', `status${WAITING.has(ev.kind) ? ' waiting' : ''}`, `Last event: ${EVENT_LABEL[ev.kind] || ev.kind} · ${time(ev.ts)}`))
     // 接続していない Mailbox だけ削除できる。ボタンの click がカードの選択 (宛先にする) まで届かないようにする
     if (!mb.attachment) {
       const del = el('button', 'linkbtn', 'Delete')
@@ -887,8 +1031,6 @@ async function loadMailboxes() {
     box.onclick = () => { chooseTo(`mailbox:${mb.name}`); $('body').focus() }
     root.append(box)
   }
-  mailboxList = mailboxes
-  buildTo(mailboxes)
 }
 
 // 接続していない Mailbox を削除する。確認してから DELETE し、結果にかかわらず一覧を取り直す (消えたカードは取り直しで外れる)。
@@ -999,8 +1141,10 @@ function connect() {
     $('conn').className = 'ok'; $('conn').textContent = 'Connected'
     // 切れていた間の分を取り直す。開いた時点の lastSeq を起点にする (この接続の新着より前の値)。
     // 最初の接続は loadHistory が受け持つ。取り直しに失敗しても止めず、次に開いたとき取り直す
-    if (!historyReady) loadHistory().catch(() => {})
-    else catchUp(lastSeq, true).then(() => refreshMailboxes(0), () => {})
+    // Event は Message の後に挟む (時刻順に入れるので、先に Message があると位置が決まる)。
+    // 取り直しは新しい方から 200 件で、見たものは id で飛ばす
+    if (!historyReady) loadHistory().then(() => loadEvents(false)).catch(() => {})
+    else catchUp(lastSeq, true).then(() => { refreshMailboxes(0); return loadEvents(true) }).catch(() => {})
     mailboxTries = 0
     refreshMailboxes(0)
   }
@@ -1009,6 +1153,10 @@ function connect() {
     receive(JSON.parse(e.data), true) // 重複なら描画も数えもしない
     // 未読数は新着と ack で変わるので、まとめて取り直す
     refreshMailboxes()
+  })
+  es.addEventListener('event', (e) => {
+    renderEvent(JSON.parse(e.data), true)
+    if (mailboxList.length) renderMailboxes(mailboxList)
   })
   for (const ev of ['mailbox.created', 'mailbox.deleted', 'attachment.attached', 'attachment.detached', 'attachment.superseded', 'subscription.changed']) {
     es.addEventListener(ev, () => refreshMailboxes())

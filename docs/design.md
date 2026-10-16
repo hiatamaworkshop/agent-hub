@@ -99,7 +99,8 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
 - エージェントが呼ぶツールを公開する: `attach` / `whoami` / `subscribe` / `unsubscribe` / `post_message` / `inbox` / `list_topics` / `report_event` (後回し。§3.4) (詳細は protocol.md)。
 
 **hooks (検知側)**
-- Claude Code の **HTTP hook** (`type: "http"`) で、hook の入力 JSON を Hub の `POST /events` に直接送る。スクリプトは書かない (§6.1)。
+- Claude Code の **HTTP hook** (`type: "http"`) で、hook の入力 JSON を Hub の `POST /events` に直接送る。スクリプトは書かない (§6.1)。設定例は `tools/hooks/settings.json`。
+  `--settings` で渡すと誤動作する (§6.1f) ので、`.claude/settings.local.json` などに写して使う。`Authorization` は環境変数 `HUB_TOKEN` から展開されるので、Claude Code の起動環境に要る (`start-agent.ps1` は `.env` から渡す)。
 - 機械的な検知を担う (下記 3.4)。
 
 **ブラウザ UI**
@@ -107,7 +108,10 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
 - 機能: イベント/メッセージのライブ表示 (SSE)、メッセージ作成・送信、受信メッセージの無編集転送ボタン、Mailbox 一覧 (接続状態・購読・未読数)。
 - 画面は固定し、スクロールはスレッド (`#list`) と Mailbox 一覧 (サイドバー) だけ。上部はスレッド操作バー (表示の見せ方: Compact・Keep latest、今後のフィルタ・検索など)、下部はコンポーザー (送る操作: kind・宛先・本文・Send、今後の添付など) に置く。
 - メッセージは送り手の role で色分けする (ラベルのチップと縁取り。role がなければ mailbox 名)。kind は枠線だけのバッジで示し、色には使わない。送信フォームの kind も同じバッジを並べたトグルにし、選んだものだけ塗る。
-- タブの未読: 非表示中に SSE で届いた、人間宛て (`to.type === 'user'`) の他者のメッセージ数をタイトル `(n) agent-hub` と favicon のバッジで示す。agent 同士のメッセージ (`mailbox:*` / `role:*` / `topic:*` 宛て) は数えない。前面に戻るかフォーカスで消す。自分の送信と履歴読み込みは数えない。再接続後に取り直した分も同じ規則で数える。
+- 検知イベント (§3.4): スレッドに Message と時刻順に挟み、破線の枠で Message と区別する (縁取りは Mailbox の色)。中身は種類ごとに出す: 質問は質問文と選択肢、許可待ちと通知は文言、ターン終了は最終応答 (長ければ先頭だけ見せて開いて読む)。
+  `question` と `permission` は人の手を待つものとして目立たせる。Mailbox のカードには最後に届いた Event の種類と時刻を出す (状態は推定しない)。Event の Reply は、その Mailbox 宛ての `request` を書き始める (Event は Message ではないので `replyTo` は付けない)。
+  Compact は Message と Event を合わせて数える。`/events` のない古い Hub (404) では Event を出さない。
+- タブの未読: 非表示中に SSE で届いた、人間宛て (`to.type === 'user'`) の他者のメッセージ数と、`question` / `permission` の Event の数をタイトル `(n) agent-hub` と favicon のバッジで示す。agent 同士のメッセージ (`mailbox:*` / `role:*` / `topic:*` 宛て) は数えない。前面に戻るかフォーカスで消す。自分の送信と履歴読み込みは数えない。再接続後に取り直した分も同じ規則で数える。
 - 接続の回復: SSE が開き直すたびに `GET /messages?after=<開いた時点の描画済みの最大 seq>` で取り直し、描画する (最初の接続は履歴の読み込みが受け持つ)。取り直しに失敗しても表示は止めず、次に開いたとき取り直す。Mailbox 一覧が失敗したら #err に出し、少し待って数回まで試す (SSE が開き直したときも試す)。履歴と新着は一覧の成否と独立に動く。
 - 送信: 送信中に打ち足した本文と、送信後に足した画像は残す。送ったもの (送信時点の本文と画像) だけを消す。失敗したときは何も消さない。起動時の `/settings` は 1 回だけ読み、初期の宛先と Commands に使う (Commands のダイアログは開くたびに読み直す)。
 - Mailbox の削除: 接続していない Mailbox のカードにだけ Delete を出す (確認のあと `DELETE /mailboxes/:name`)。カードの選択は起こさない。409 (その間に attach された) と、削除に対応しない古い Hub の 404 は #err に出し、カードは外さずに一覧を取り直す。`mailbox.deleted` を受けた他のタブも一覧を取り直す。
@@ -146,6 +150,7 @@ MCP Events (SEP-3415) が購読 ID をクライアント生成にせず、購読
 | ターン終了 (区切り候補) | `Stop` hook | 確定的・機械的 |
 | 許可待ち・入力待ち | `Notification` hook | 確定的 |
 | エージェントからの質問 | `PreToolUse` hook (matcher: `AskUserQuestion`) | 確定的 |
+| 質問への回答 | `PostToolUse` hook (matcher: `AskUserQuestion`) | 確定的。UI で質問待ちが終わったことを示し、質問の表示による `permission_prompt` を見分けるのに使う |
 | 「ここでセッションを区切るべきか」の意味判断 | clear-timing skill のような skill | 意味的 (エージェント側の判断) |
 
 機械的な検知は hook、意味的な判断は skill、と役割を分ける。
@@ -157,6 +162,7 @@ skill が「区切りに来た」と判断した場合は、エージェント�
 - 作る: hook → `POST /events` → Mailbox の解決 → UI で「質問待ち」「許可待ち」「ターン終了」を区別して出す。中身 (質問文、`last_assistant_message`、通知の文言) も出す。
   そこから返信を作り、今の送信 (Channels) でそのセッションに届ける。
 - Agent View が使う Notification (`agent_needs_input` / `agent_completed`) も、ほかの Notification と同じ経路で取り込む。区別は Claude Code 用の変換で行う。
+- 質問にはブラウザから答えられない。channel の通知は回答として扱われず、回答の後に届く (§6.1c)。UI はそう書いて、ターミナルで答えるよう促す。
 - 許可プロンプトは P1 では表示だけにする。UI から許可を出す (Channels の permission relay) のは将来の検討 (§6.1)。Agent View もその場では答えられないので、ここは借りられない部分にあたる。
 - 後回し: `report_event` と、`Stop` との重複除去。区切りの意味判断は、今はエージェントが人間への返事で言えば足りる。`Stop` の表示だけでは足りないと分かってから足す (§1.1 の基準 2)。
 
@@ -215,7 +221,8 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 `inbox()` の入出力は MCP Events の `events/poll` (`cursor`, `truncated`, `hasMore`, `nextPollMs`) に揃える。
 
 当面使うのは Claude Code だけだが、他社のエージェントが後から同じ Hub に入れるよう、**Hub の語彙はベンダー中立に保ち、クライアント固有の差は shim と `/events` の取り込みで吸収する** (§5)。そのために次を守る。
-- **Event の取り込みはクライアントごとの変換を通す**: hook の入力 JSON は `payload` にそのまま残し、`kind` (`turn.end` / `notification` / `question` …) への対応付けはクライアントごとの変換に閉じ込める (protocol.md §2 Event)。Hub の保存形式と UI は `kind` だけを見る。
+- **Event の取り込みはクライアントごとの変換を通す**: hook の入力 JSON は `payload` にそのまま残し、`kind` (`turn.end` / `notification` / `question` …) への対応付けはクライアントごとの変換に閉じ込める (protocol.md §2 Event、`src/hub/events.ts`)。Hub の保存形式は `kind` だけを見る。
+  UI は質問文や最終応答を出すために `payload` を読むが、読み方は Event の `source` ごとに 1 か所にまとめる (`eventBody` in `public/index.html`)。
 - **shim の instructions はクライアントで切り替える**: 今の文面は `<channel>` で届く前提。MCP の `initialize` の `clientInfo.name` で、Channels 経路か `inbox()` 経路かの説明を選ぶ。
 - **「本文はデータ」の守りは agent-hub 側だけで成り立たせる**: Claude Code は channel 由来の内容に注意書きを自動で付けるが (§6.1c)、他のクライアントは付けない。`<hub-message>` の包みと instructions の文面だけで足りるように書く。
 - **role の説明は MCP の instructions で渡す**: `roles.json` の `description` を shim が instructions に差し込む (§3.5、P2)。Claude の起動フラグ (`--append-system-prompt-file`。`tools/dev/` の試験用) には頼らない。ただし instructions をどう使うかはクライアント次第で、未確認。

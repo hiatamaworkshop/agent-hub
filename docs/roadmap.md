@@ -52,19 +52,20 @@
 - [x] 着手前に、公式 Agent View (design.md §8.1) と重なる部分を削る → 状態一覧・ターミナルからの返信・エージェント間のアイドル通知は借りる。
   作るのは「ブラウザで見て、ブラウザから返す」部分だけ。`report_event` と重複除去は後回し (design.md §3.4 の「P1 で作る範囲」)
 - [x] Event をトピックとして他の Mailbox にも配信するか → **UI に出すだけ** (design.md §9-2)
-- [ ] HTTP hook の設定例: `Stop` / `Notification` / `PreToolUse(AskUserQuestion)` → `POST /events` (`Authorization` と `X-Hub-Mailbox` をヘッダーで渡す)
-- [ ] Hub: `/events` の取り込みを、クライアントごとの変換 (まず Claude Code の hook 用) で共通の `kind` に揃える。`payload` は元の JSON のまま (design.md §3.7)
-  - Notification は `notification_type` (許可待ち・`agent_needs_input` など) を変換で区別し、UI が「質問待ち」「許可待ち」を分けられるようにする
-  - 変更の事実 (`git diff --name-only`、HEAD) を hook から足せる形にしておく。§3.11 の導く欄を hook で書く場合に、この経路をそのまま使う (design.md §3.11 の未決 1)
-- [ ] Hub: `sessionId` → Attachment → Mailbox の解決
-- [ ] イベント ID を上流の値 (`session_id` + hook 固有の値) から決定的に生成する (hook の再送の重複除去)
-- [ ] UI: 「質問待ち」「許可待ち」「ターン終了」を Mailbox ごとに区別して表示。時刻と該当内容。状態の推定はしない
-- [ ] 検知イベントから、ブラウザ上で返信メッセージを作る導線
+- [x] HTTP hook の設定例: `Stop` / `Notification` / `PreToolUse(AskUserQuestion)` / `PostToolUse(AskUserQuestion)` → `POST /events` (`tools/hooks/settings.json`。`Authorization` と `X-Hub-Mailbox` をヘッダーで渡す)
+- [x] Hub: `/events` の取り込みを、クライアントごとの変換 (まず Claude Code の hook 用、`src/hub/events.ts`) で共通の `kind` に揃える。`payload` は元の JSON のまま (design.md §3.7)
+  - [x] `permission_prompt` は `permission` にし、質問の表示で出た分 (直前が回答前の `question`) は落とす。ほかの Notification は `notification`
+  - [ ] 変更の事実 (`git diff --name-only`、HEAD) を hook から足せる形にしておく。§3.11 の導く欄を hook で書く場合に、この経路をそのまま使う (design.md §3.11 の未決 1)
+- [x] Hub: `sessionId` → Mailbox の解決 (shim の申告 → `X-Hub-Mailbox` → cwd。後の 2 つで解決したら session を覚える)
+- [x] イベント ID: 上流に一意の値がある `question` / `question.answered` だけ `tool_use_id` から決定的に作り、重複を落とす。`Stop` / `Notification` は採番 (protocol.md §2 Event)
+- [x] UI: 「質問待ち」「許可待ち」「ターン終了」をスレッドに区別して出し、Mailbox のカードに最後の Event を出す。時刻と該当内容。状態の推定はしない
+- [x] 検知イベントから、ブラウザ上で返信メッセージを作る導線 (Event の Reply → その Mailbox 宛ての request)
+- [ ] 受け入れ条件を実セッションで確かめる
 
 **受け入れ条件**
 1. Claude が `AskUserQuestion` を呼ぶと、UI に質問内容が該当 Mailbox の下に出る。
 2. ターン終了と許可待ちが区別して表示される。
-3. UI の返信が該当セッションに届く。
+3. UI の返信が該当セッションに届く。質問への回答はターミナルで行い、UI の返信はその後に届く (channel の通知は回答にならない。design.md §6.1c)。
 
 ## P2: 複数セッション・交代・メッセージパッシング
 

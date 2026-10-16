@@ -26,15 +26,26 @@ $filesDir = if ($env:HUB_FILES_DIR) { $env:HUB_FILES_DIR } else { Join-Path $env
 New-Item -ItemType Directory -Force -Path $filesDir | Out-Null
 $claudeArgs += @('--add-dir', $filesDir)
 
-# 起動したシェルに HUB_ROLE / HUB_MAILBOX を残さない
-$saved = @{ HUB_ROLE = $env:HUB_ROLE; HUB_MAILBOX = $env:HUB_MAILBOX }
+# HTTP hook (tools/hooks/settings.json) の Authorization は環境変数 HUB_TOKEN から展開される。
+# shim は .env を自分で読むが、hook は読まないので、未設定なら .env の値を渡す
+$token = $env:HUB_TOKEN
+$envFile = Join-Path $root '.env'
+if (-not $token -and (Test-Path $envFile)) {
+  $line = Get-Content $envFile | Where-Object { $_ -match '^\s*HUB_TOKEN\s*=' } | Select-Object -Last 1
+  if ($line) { $token = ($line -replace '^\s*HUB_TOKEN\s*=\s*', '').Trim().Trim('"', "'") }
+}
+
+# 起動したシェルに HUB_ROLE / HUB_MAILBOX / HUB_TOKEN を残さない
+$saved = @{ HUB_ROLE = $env:HUB_ROLE; HUB_MAILBOX = $env:HUB_MAILBOX; HUB_TOKEN = $env:HUB_TOKEN }
 Push-Location $root
 try {
   $env:HUB_ROLE = $Role
   $env:HUB_MAILBOX = $Mailbox  # 空なら未設定になり、shim は role 名を Mailbox 名にする
+  $env:HUB_TOKEN = $token
   claude @claudeArgs
 } finally {
   $env:HUB_ROLE = $saved.HUB_ROLE
   $env:HUB_MAILBOX = $saved.HUB_MAILBOX
+  $env:HUB_TOKEN = $saved.HUB_TOKEN
   Pop-Location
 }

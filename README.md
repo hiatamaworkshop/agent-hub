@@ -21,7 +21,7 @@
 
 ## ステータス
 
-P0 (1 セッションで往復する) を実装済み。Claude Code 上での受け入れ確認は手動で行う (下の手順)。設計は [docs/design.md](docs/design.md) から読む。
+P0 (1 セッションで往復する) を実装済み。P1 (質問待ち・ターン終了の検知) は実装済みで、実セッションでの受け入れ確認はまだ。Claude Code 上での受け入れ確認は手動で行う (下の手順)。設計は [docs/design.md](docs/design.md) から読む。
 Channels の仕様は公式資料と実機で確認済み (design.md §6.1〜6.1c)。MCP Events (SEP-3415, Draft) との関係は design.md §7。
 
 ## 使い方 (P0)
@@ -93,6 +93,22 @@ shim は届いた画像を OS の一時フォルダの `agent-hub/<Mailbox 名>/
 - 保存先は `HUB_FILES_DIR` で変えられる (その下に Mailbox 名のフォルダを作る)。
 - 起動時に 24 時間より古い画像を消す。
 - 保存先は作業フォルダの外なので、`Read` が許可を求めることがある。`tools/dev/start-agent.ps1` は起動時に `--add-dir` で保存先を許可する (`HUB_FILES_DIR` を設定していればそのフォルダ)。手で `claude` を起動するなら、`claude --add-dir "<保存先>"` を付ける。
+
+### 質問待ち・許可待ち・ターン終了をブラウザに出す (hook)
+
+Claude Code の HTTP hook で、`AskUserQuestion`・許可待ち・ターン終了を Hub に送る。ブラウザのスレッドに破線の枠で出て、左の Mailbox のカードに最後のものが出る。
+
+1. [tools/hooks/settings.json](tools/hooks/settings.json) の `hooks` を、このリポジトリの `.claude/settings.local.json` (コミットされない) に写す。
+   ほかのリポジトリでも使うなら `~/.claude/settings.json` に写す。ポートを変えているなら `url` の `7777` も変える。
+   `--settings` で渡す方法は 2.1.301 で誤動作した (design.md §6.1f) ので使わない。
+2. hook の `Authorization` は環境変数 `HUB_TOKEN` から作られる。`tools/dev/start-agent.ps1` は `.env` の値を渡すので何もしなくてよい。手で `claude` を起動するなら、先に `$env:HUB_TOKEN` を設定する。
+   その場合、トークンはセッションの Bash などからも見える。`.env` と同じ扱い。
+3. Hub が止まっていると、hook はエラーを表示するだけで作業は止まらない (タイムアウト 5 秒)。
+
+- どの Mailbox の出来事かは、shim が申告した session → `X-Hub-Mailbox` (`HUB_MAILBOX`) → フォルダ名の順で決まる。
+- **質問にはブラウザから答えられない**。ターミナルで答える。ブラウザから送ったメッセージは、回答の後にセッションに届く。
+- Event の **Reply** は、その Mailbox 宛ての `request` を書き始める。
+- この機能も Hub 側の API を使うので、**既に起動している Hub は再起動が必要** (古い Hub では Event が出ないだけ)。
 
 ### 購読は Mailbox ごとに 1 回でよい
 

@@ -1,9 +1,9 @@
 // shim の設定。shim は状態を持たないので、ここで決まるのは接続先と名乗る名前だけ
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { isValidName } from '../shared/types.js'
+import { isValidName, mailboxFromFolder } from '../shared/types.js'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
@@ -16,16 +16,6 @@ export interface ShimConfig {
   cwd: string
   // 添付画像の保存先のルート (既定は OS の一時フォルダの agent-hub。その下に <mailbox>/ を作る)
   filesDir: string
-}
-
-// フォルダ名を Mailbox 名の規則 (protocol.md §1) に寄せる。寄せられなければ main
-export function mailboxFromFolder(dir: string): string {
-  const s = basename(dir)
-    .toLowerCase()
-    .replace(/[^a-z0-9_.-]+/g, '-')
-    .replace(/^[^a-z0-9]+/, '')
-    .slice(0, 64)
-  return isValidName(s) ? s : 'main'
 }
 
 // 環境変数の値。空や空白だけは未設定として扱う (HUB_URL= のように空で渡されたら既定値を使う)

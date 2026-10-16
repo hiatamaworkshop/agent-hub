@@ -130,6 +130,19 @@ export function createApp(opts: AppOptions) {
     return c.json({ messages: hub.store.listMessages(after, limit), lastSeq: hub.store.lastSeq })
   })
 
+  // HTTP hook の入力 JSON をそのまま受ける。取り込まない hook も 200 で返す (非 2xx は hook 側でエラー表示になるだけで意味がない)
+  app.post('/events', limited(1024 * 1024, 'payload_too_large', 'event must be 1 MB or smaller'), async (c) => {
+    const body = await readJson(c)
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) return invalid(c, 'the body must be a JSON object (the hook input)')
+    return c.json(hub.addEvent(body as Record<string, unknown>, c.req.header('x-hub-mailbox')))
+  })
+
+  app.get('/events', (c) => {
+    const limit = intParam(c.req.query('limit'), 100, 1, 1000)
+    if (limit === null) return invalid(c, 'limit は 1〜1000 の整数')
+    return c.json({ events: hub.store.listEvents(limit) })
+  })
+
   app.get('/mailboxes', (c) => c.json({ mailboxes: hub.describeMailboxes() }))
 
   // 接続中の Mailbox は 409 (mailbox_attached) で残す。未知の名前は 404

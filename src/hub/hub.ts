@@ -1,5 +1,6 @@
 // Hub の振る舞い (配信・購読・Attachment)。HTTP から独立させ、app.ts は入出力の変換だけにする
-import type { Attachment, Mailbox, Message, PostMessageInput, Sender } from '../shared/types.js'
+import { isValidName, mailboxFromFolder, type Attachment, type HubEvent, type Mailbox, type Message, type PostMessageInput, type Sender } from '../shared/types.js'
+import { fromClaudeCodeHook } from './events.js'
 import { newId } from './ids.js'
 import type { Store } from './store.js'
 
@@ -36,6 +37,11 @@ export interface AttachInput {
   cwd?: string
 }
 
+// POST /events の結果。ignored は変換が取り込まなかった理由 (hook の判断には関与しない)
+export type AddEventResult =
+  | { id: string; kind: HubEvent['kind']; mailbox: string | null; duplicate: boolean }
+  | { ignored: string }
+
 export interface AttachResult {
   attachmentId: string
   role: string | null
@@ -61,6 +67,9 @@ export class Hub {
   private readonly sinks = new Map<string, AttachmentSink>()
   private readonly graceTimers = new Map<string, NodeJS.Timeout>()
   readonly attachments = new Map<string, Attachment>()
+  // sessionId → Mailbox 名。attach の申告と、ヘッダー・cwd で解決できた Event から覚える。
+  // detach 後も残す (セッションは shim が切れても続きうる)。永続化はしない
+  private readonly sessionMailbox = new Map<string, string>()
   private readonly now: () => Date
   private readonly disconnectGraceMs: number
 
@@ -123,6 +132,53 @@ export class Hub {
       .map((mb) => mb.name)
   }
 
+  // --- Event ---
+
+  // hook の入力を変換して記録し、UI に流す。Mailbox には配信しない (design.md §9-2)
+  addEvent(input: Record<string, unknown>, headerMailbox?: string): AddEventResult {
+    const sessionId = typeof input.session_id === 'string' && input.session_id !== '' ? input.session_id : undefined
+    const previous = sessionId ? this.store.lastEventOf(sessionId) : undefined
+    const converted = fromClaudeCodeHook(input, previous, this.now())
+    if ('ignored' in converted) return converted
+    const draft = converted.event
+
+    const existing = draft.id ? this.store.getEvent(draft.id) : undefined
+    if (existing) return { id: existing.id, kind: existing.kind, mailbox: existing.mailbox ?? null, duplicate: true }
+
+    const mailbox = this.resolveMailbox(draft.sessionId, headerMailbox, draft.cwd)
+    const event: HubEvent = {
+      id: draft.id ?? newId('e'),
+      ts: this.now().toISOString(),
+      kind: draft.kind,
+      source: draft.source,
+      ...(draft.sessionId ? { sessionId: draft.sessionId } : {}),
+      ...(mailbox ? { mailbox } : {}),
+      payload: input,
+    }
+    this.store.addEvent(event)
+    this.emitUi('event', event)
+    return { id: event.id, kind: event.kind, mailbox: mailbox ?? null, duplicate: false }
+  }
+
+  // 優先順: sessionId (shim の申告か記録済み) → X-Hub-Mailbox → cwd のフォルダ名 (protocol.md §2 Event、design.md §3.4)。
+  // cwd からの推測は、その名前の Mailbox があるときだけ使う
+  private resolveMailbox(sessionId: string | undefined, header: string | undefined, cwd: string | undefined): string | undefined {
+    const known = sessionId ? this.sessionMailbox.get(sessionId) : undefined
+    if (known) return known
+    let name: string | undefined
+    if (header && isValidName(header)) name = header
+    else if (cwd && this.store.getMailbox(mailboxFromFolder(cwd))) name = mailboxFromFolder(cwd)
+    if (!name) return undefined
+    // 第二・第三手段で解決できたら session を覚え、以後は第一手段と同じに扱う
+    if (sessionId) {
+      this.sessionMailbox.set(sessionId, name)
+      const atId = this.store.getMailbox(name)?.attachment
+      const at = atId ? this.attachments.get(atId) : undefined
+      if (at && !at.sessionId) at.sessionId = sessionId
+    }
+    return name
+  }
+
   // --- Mailbox / Attachment ---
 
   // 接続中 (attach 中) の Mailbox は消さない。消すのは購読・role・cursor・未読の状態で、ログの Message は残す。
@@ -154,6 +210,8 @@ export class Hub {
     }
     this.attachments.set(at.attachmentId, at)
     this.store.setAttachment(name, at.attachmentId)
+    // attach ツールで Mailbox を切り替えても、session の対応は最新の attach に追従する
+    if (input.sessionId) this.sessionMailbox.set(input.sessionId, name)
     this.armGrace(at.attachmentId)
     this.emitUi('attachment.attached', at)
 

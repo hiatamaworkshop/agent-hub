@@ -8,13 +8,12 @@ import { serve, type ServerType } from '@hono/node-server'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { z } from 'zod'
-import type { Message } from '../shared/types.js'
+import { mailboxFromFolder, type Message } from '../shared/types.js'
 import sharp from 'sharp'
 import { createApp } from '../hub/app.js'
 import { FileStore, resolveMeta } from '../hub/files.js'
 import { Hub } from '../hub/hub.js'
 import { Store } from '../hub/store.js'
-import { mailboxFromFolder } from './config.js'
 import { HubClient, parseSse } from './hub-client.js'
 
 const TOKEN = 'test-token-0123456789'
@@ -26,6 +25,12 @@ describe('mailboxFromFolder', () => {
     assert.equal(mailboxFromFolder('/home/x/My Project'), 'my-project')
     assert.equal(mailboxFromFolder('/home/x/_tmp'), 'tmp')
     assert.equal(mailboxFromFolder('/home/x/日本語'), 'main')
+  })
+
+  it('区切りは OS によらず \\ と / の両方で切る (Hub が Linux で Windows の cwd を受ける場合)', () => {
+    assert.equal(mailboxFromFolder('C:\\Users\\x\\agent-hub\\'), 'agent-hub')
+    assert.equal(mailboxFromFolder('C:/Users/x/Agent Hub'), 'agent-hub')
+    assert.equal(mailboxFromFolder(''), 'main')
   })
 })
 
