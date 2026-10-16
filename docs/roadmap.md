@@ -67,6 +67,7 @@
 
 - [ ] 複数 Mailbox の同時接続、Mailbox 一覧と接続状態・role・購読・未読数の UI 表示
 - [ ] role: `roles.json` の読み込み、attach 時の role 指定 (`HUB_ROLE`)、既定購読との和で実効購読を計算、`to: role` 宛ての配信、`description` の `instructions` への差し込み
+  - `roles.json` の形は、後でメッセージの形の宣言 (送ってよい相手と kind、必須見出し) を足せるようにしておく (design.md §3.11)
 - [ ] Attachment のリースと heartbeat、detached 状態
 - [ ] takeover (design.md §9 の方針決定後) と `terminated(superseded)`
 - [ ] attach の `maxAgeMs` / `truncated` と、省略通知
@@ -90,6 +91,7 @@
 ## 将来の検討 (未確定)
 
 - 配信ルール (人間確認なしの自動転送) の opt-in 設計
+- メッセージの形の宣言と Hub での検査、依頼ごとの SCOPE と `git diff` の突き合わせ (design.md §3.11、§9-6)
 - Channels の permission relay を使い、UI から tool 実行許可を出す (design.md §6.1)
 - 配信経路として plugin の monitor を Channels と比較する (design.md §6.2-3)
 - Claude Code が MCP Events に対応したら、shim に `io.modelcontextprotocol/events` (`events/stream`) を追加する (design.md §7)
