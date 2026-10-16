@@ -6,19 +6,22 @@
 
 **ゴール**: ブラウザで書いたメッセージが Claude セッションに届き、Claude が `post_message` で返信し、ブラウザに表示される。
 
-- [ ] 公式資料で未確認事項 (design.md §6 の 1〜3) を確認し、結果を design.md に追記
+- [x] Channels の仕様を公式資料で確認し、結果を design.md §6.1 に追記
+- [ ] design.md §6.2 の 2〜4 (閉じタグのエスケープ、`session_id` の取得手段、`HUB_MAILBOX` の継承) を実機で確認
 - [ ] プロジェクト雛形 (TypeScript, ビルド/起動スクリプト)
 - [ ] Hub: 認証付き HTTP、`/messages`、`/stream` (SSE)、JSONL 追記ログ
-- [ ] shim: channel MCP サーバー。登録、Hub SSE 受信、`notifications/claude/channel` で push、`subscribe` / `post_message`
+- [ ] Hub: Mailbox の最小実装 (attach で作成、購読、cursor)。リースと takeover は P2
+- [ ] shim: channel MCP サーバー。`HUB_MAILBOX` で attach、Hub SSE 受信、`notifications/claude/channel` で push、`subscribe` / `post_message`
 - [ ] UI: 1 枚の HTML。メッセージ一覧 (ライブ)、送信フォーム
 - [ ] 起動手順を README に追記
 
 **受け入れ条件**
-1. Hub を起動し、Claude Code を channel 有効で起動できる。
-2. エージェントが `subscribe("user.message")` を呼ぶ。
-3. ブラウザから `user.message` に送ると、Claude の会話に `<hub-message>` として入る。
-4. Claude が `post_message` で返信すると、ブラウザに表示される。
-5. トークンなしの API 呼び出しは 401。127.0.0.1 以外からは到達しない。
+1. Hub を起動し、Claude Code を channel 有効 (`--dangerously-load-development-channels`) で起動できる。
+2. shim が `HUB_MAILBOX` (未指定ならフォルダ名) の Mailbox に attach する。
+3. エージェントが `subscribe("user.message")` を呼ぶ。
+4. ブラウザから `user.message` に送ると、Claude の会話に `<hub-message>` として入る。
+5. Claude が `post_message` で返信すると、ブラウザに表示される。
+6. トークンなしの API 呼び出しは 401。127.0.0.1 以外からは到達しない。
 
 ## P1: 区切り・質問の検知
 
@@ -26,33 +29,42 @@
 
 - [ ] hook スクリプト: `Stop` / `Notification` / `PreToolUse(AskUserQuestion)` → `POST /events`
 - [ ] hook 設定例を docs に追加 (Windows のコマンド記述を含む)
-- [ ] UI: 「質問待ち」「ターン終了」をエージェントごとに表示。時刻と該当内容
+- [ ] Hub: `sessionId` → Attachment → Mailbox の解決
+- [ ] イベント ID を上流の値から決定的に生成し、`Stop` と `report_event` の重複を除去
+- [ ] UI: 「質問待ち」「ターン終了」を Mailbox ごとに表示。時刻と該当内容
 - [ ] `report_event` ツール (skill からの区切り申告)
 - [ ] 検知イベントから、ブラウザ上で返信メッセージを作る導線
 
 **受け入れ条件**
-1. Claude が `AskUserQuestion` を呼ぶと、UI に質問内容が出る。
+1. Claude が `AskUserQuestion` を呼ぶと、UI に質問内容が該当 Mailbox の下に出る。
 2. ターン終了と許可待ちが区別して表示される。
 3. UI の返信が該当セッションに届く。
 
-## P2: 複数セッションとメッセージパッシング
+## P2: 複数セッション・交代・メッセージパッシング
 
-**ゴール**: 複数エージェントが購読ベースで互いにやり取りでき、取りこぼさない。
+**ゴール**: 複数エージェントが購読ベースで互いにやり取りでき、交代や再起動をまたいで取りこぼさない。
 
-- [ ] 複数 shim 同時接続、エージェント一覧、購読状況の UI 表示
+- [ ] 複数 Mailbox の同時接続、Mailbox 一覧と接続状態・購読・未読数の UI 表示
+- [ ] Attachment のリースと heartbeat、detached 状態
+- [ ] takeover (design.md §8 の方針決定後) と `terminated(superseded)`
+- [ ] attach の `maxAgeMs` / `truncated` と、省略通知
 - [ ] 無編集転送 (`/messages/:id/forward`) と UI ボタン
-- [ ] 未読キュー + ack + 再接続時の再送 (`after=<seq>`)
-- [ ] `inbox()` による polling 経路 (Claude Code 以外向け)
+- [ ] `inbox()` による polling 経路 (Claude Code 以外向け。`events/poll` 互換の応答)
 - [ ] 永続化の見直し (SQLite 化を検討)
 - [ ] engram への区切り知見の保存連携 (任意)
 
 **受け入れ条件**
-1. 2 セッションが別トピックを購読し、それぞれの購読分だけ受け取る。
-2. 片方のセッションを閉じて再起動した後、未読が再送される (重複は id で除去できる)。
-3. ブラウザから、あるエージェントの出力を無編集で別エージェントへ転送できる。
+1. 2 つの Mailbox が別トピックを購読し、それぞれの購読分だけ受け取る。
+2. セッションを閉じている間に届いたメッセージが、同じ Mailbox に attach した次のセッションに再送される (重複は id で除去できる)。
+3. **交代**: Mailbox `reviewer` のセッション A を `/clear` または終了し、新しいセッション B が `reviewer` に attach すると、購読と未読を引き継ぐ。A がまだ接続中なら A は切り離され、UI に表示される。
+4. `maxAgeMs` を超えた未読は渡されず、エージェントに省略件数が 1 件の通知で伝わる。
+5. ブラウザから、ある Mailbox の出力を無編集で別の Mailbox へ転送できる。
 
 ## 将来の検討 (未確定)
 
 - 配信ルール (人間確認なしの自動転送) の opt-in 設計
+- Channels の permission relay を使い、UI から tool 実行許可を出す (design.md §6.1)
+- 配信経路として plugin の monitor を Channels と比較する (design.md §6.2-10)
+- Claude Code が MCP Events に対応したら、shim に `io.modelcontextprotocol/events` (`events/stream`) を追加する (design.md §7)
 - デスクトップアプリ向けの画面操作ベース連携 (本プロジェクトの範囲外の可能性が高い)
 - 常駐化 (Windows サービス / タスクスケジューラ) と自動起動
