@@ -369,6 +369,15 @@ OWL は開世界、agent-hub は閉世界。**持ち込むのは「関係と形�
 - **注意**: leader の依頼には「実際に Hub を起動してメッセージを流して確認」という例があった。deployer はこれをせず、fetch / EventSource を差し替えて確認したが、
   稼働中の Hub に試験メッセージを流すと自分たちを起こしうる。試験用 Hub は別の `HUB_PORT` / `HUB_DATA_DIR` で立てるよう deployer の role の説明に追記した。
 
+### 6.1f `--settings <file>` でモデル名が誤認される (2026-10-16、Claude Code 2.1.301 / Windows 11)
+
+- `start-agent.ps1 -Role leader` で output style 用に `--settings tools/dev/settings/leader.json` (中身は `{"outputStyle":"Concise"}` だけ) を渡すと、
+  起動時の表示が `--settings with high effort` になり、`Model "--settings" isn't recognized · context assumed to be 200k tokens` と警告された。
+- スクリプトが渡す引数は正しかった (`claude` を引数を表示する関数に差し替えて確認。leader では `--model` 自体を渡していない)。
+  中継の `claude.ps1` / `claude.cmd` も `$args` / `%*` をそのまま渡しているだけなので、Claude Code 側の引数の扱いとみられる。原因は特定していない。
+- 対処: `--settings` を渡すのをやめ、leader のターミナル応答を簡潔にする指示は role の説明 (`--append-system-prompt-file`) に書いた。
+  output style を `/output-style` で切り替えると `.claude/settings.local.json` に保存され、同じフォルダの全セッション (deployer も) に効くので使わない。
+
 ### 6.2 未検証
 
 1. **Windows 固有**: パス表記、改行コード。daemon の常駐は Docker (§3.8) で解決する見込み。

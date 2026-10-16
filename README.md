@@ -120,7 +120,7 @@ npm run hub                                   # ターミナル A
 
 - メッセージの形式は role の説明で決めている。leader → deployer は英語の固定見出し (`GOAL` / `SCOPE` / `SPEC` / `DONE WHEN`)、
   deployer → leader は英語で、変更ファイルの一覧 (`CHANGED`) だけ DCP 形式。leader → user は日本語で `結果` / `確認` / `要対応` の 3 項目。
-- leader は output style を Concise で起動する ([tools/dev/settings/leader.json](tools/dev/settings/leader.json))。`/output-style` で切り替えると同じフォルダの全セッションに効くので、role ごとの設定は起動時に渡す。
+- leader のターミナルでの応答を簡潔にする指示も role の説明に書いている。output style (`/output-style concise`) は `.claude/settings.local.json` に保存され、同じフォルダの全セッションに効くので使わない。起動時に `--settings` で渡す方法は 2.1.301 で誤動作した (design.md §6.1f)。
 - 2 つのセッションは同じフォルダで動くので、deployer の変更は leader から `git diff` で見える。
 - deployer のファイル編集の許可は、ターミナル C で承認する。
 

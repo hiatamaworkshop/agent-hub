@@ -17,11 +17,8 @@ $claudeArgs = @(
   '--append-system-prompt-file', (Join-Path $root "tools/dev/roles/$Role.md")
 )
 if ($Model) { $claudeArgs += @('--model', $Model) }
-# role ごとの Claude Code 設定 (leader は output style を Concise にする)。
-# /output-style は .claude/settings.local.json に書き、同じフォルダの全セッションに効くので、起動時に role ごとに渡す。
-# JSON 文字列ではなくファイルで渡す (claude.cmd へ渡す引数の " を PowerShell が落とすことがある)
-$settings = Join-Path $root "tools/dev/settings/$Role.json"
-if (Test-Path $settings) { $claudeArgs += @('--settings', $settings) }
+# --settings は渡さない。2.1.301 で --settings <file> を付けると、モデル名が "--settings" と読まれた (design.md §6.1f)。
+# leader の応答を簡潔にする指示は roles/leader.md に書く
 # 添付画像の保存先 (shim の既定は OS の一時フォルダの agent-hub。HUB_FILES_DIR で変えていればそれ) を読めるようにする。
 # agent は Read でその画像を開くため。--add-dir は可変長の引数なので、最後に置く
 $filesDir = if ($env:HUB_FILES_DIR) { $env:HUB_FILES_DIR } else { Join-Path $env:TEMP 'agent-hub' }
