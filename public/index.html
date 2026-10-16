@@ -233,8 +233,9 @@ $('form').onsubmit = async (e) => {
   try {
     const { recipients, ...m } = await api('/messages', { method: 'POST', body: JSON.stringify(msg) })
     render(m)
-    // user 宛ては Mailbox を通らず UI に出るだけなので、0 件でよい
-    if (m.to.type !== 'user' && recipients.length === 0) {
+    // user 宛ては Mailbox を通らず UI に出るだけなので、0 件でよい。
+    // UI は Hub を再起動しなくても差し替わるので、recipients を返さない古い Hub でも送信は成功扱いにする
+    if (m.to.type !== 'user' && Array.isArray(recipients) && recipients.length === 0) {
       $('warn').textContent = `${addr(m.to)} を受け取る Mailbox がありません (#${m.seq} は記録済み)`
     }
     $('body').value = ''
