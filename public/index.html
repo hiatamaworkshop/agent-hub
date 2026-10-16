@@ -788,6 +788,47 @@ async function loadHistory() {
   $('list').scrollTop = $('list').scrollHeight
 }
 
+// タブの未読: 非表示のときにライブで届いた他者のメッセージ数を、タイトルと favicon のバッジで示す (前面に戻る・フォーカスで消す)
+// 数えるのは SSE の新着だけ。履歴の読み込み・自分の送信・重複は数えない。失敗してもメッセージ表示は止めない
+let tabUnread = 0
+let iconLink = document.querySelector('link[rel~="icon"]')
+const iconOrig = iconLink ? iconLink.getAttribute('href') : undefined // undefined: 元から link がなかった
+function setIcon(url) { // url が null のときは元の状態へ戻す
+  try {
+    if (!iconLink) {
+      if (url === null) return
+      iconLink = el('link')
+      iconLink.rel = 'icon'
+      document.head.append(iconLink)
+    }
+    if (url !== null) iconLink.href = url
+    else if (iconOrig === undefined) { iconLink.remove(); iconLink = null }
+    else if (iconOrig === null) iconLink.removeAttribute('href')
+    else iconLink.setAttribute('href', iconOrig)
+  } catch {}
+}
+function badgeIcon(label) {
+  const c = document.createElement('canvas')
+  c.width = c.height = 32
+  const g = c.getContext('2d')
+  g.fillStyle = '#b3261e'
+  g.beginPath(); g.arc(16, 16, 16, 0, Math.PI * 2); g.fill()
+  g.fillStyle = '#ffffff'
+  g.font = `bold ${label.length > 1 ? 14 : 20}px system-ui, sans-serif`
+  g.textAlign = 'center'; g.textBaseline = 'middle'
+  g.fillText(label, 16, 17)
+  return c.toDataURL('image/png')
+}
+function showTabUnread() {
+  const label = tabUnread > 99 ? '99+' : String(tabUnread)
+  try { document.title = tabUnread > 0 ? `(${label}) agent-hub` : 'agent-hub' } catch {}
+  try { setIcon(tabUnread > 0 ? badgeIcon(label) : null) } catch {}
+}
+function countTabUnread() { tabUnread++; showTabUnread() }
+function clearTabUnread() { if (tabUnread === 0) return; tabUnread = 0; showTabUnread() }
+document.addEventListener('visibilitychange', () => { if (!document.hidden) clearTabUnread() })
+window.addEventListener('focus', clearTabUnread)
+
 function connect() {
   // 履歴より先に購読を始め、取りこぼしを id の重複除去で吸収する
   const es = new EventSource('/stream')
@@ -796,7 +837,14 @@ function connect() {
   // 未読数は新着と ack で変わるので、まとめて取り直す
   let timer = null
   const refresh = () => { clearTimeout(timer); timer = setTimeout(() => loadMailboxes().catch(() => {}), 300) }
-  es.addEventListener('message', (e) => { render(JSON.parse(e.data)); refresh() })
+  es.addEventListener('message', (e) => {
+    const m = JSON.parse(e.data)
+    const box = render(m) // 重複なら undefined
+    // 人間宛て (to.type === 'user') だけ数える。自分の送信は user 宛てでも数えない
+    const self = m.from.type === 'user' && m.from.id === 'browser'
+    if (box && document.hidden && m.to.type === 'user' && !self) countTabUnread()
+    refresh()
+  })
   for (const ev of ['mailbox.created', 'mailbox.deleted', 'attachment.attached', 'attachment.detached', 'attachment.superseded', 'subscription.changed']) {
     es.addEventListener(ev, refresh)
   }
