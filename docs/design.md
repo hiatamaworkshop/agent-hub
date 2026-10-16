@@ -387,6 +387,14 @@ OWL は開世界、agent-hub は閉世界。**持ち込むのは「関係と形�
 - 対処: `--settings` を渡すのをやめ、leader のターミナル応答を簡潔にする指示は role の説明 (`--append-system-prompt-file`) に書いた。
   output style を `/output-style` で切り替えると `.claude/settings.local.json` に保存され、同じフォルダの全セッション (deployer も) に効くので使わない。
 
+### 6.1g 公式 cross-session messaging の受信口 (§8.3 の検証 1・2、2026-10-16、Claude Code 2.1.301 / Windows 11)
+
+- **検証 1: shim に受信口の情報は渡る (公式資料に記載なし)**。Claude Code が stdio の MCP サーバーとして起動したプローブ (`logs/probe.jsonl` の 07:50 の startup) の環境に、
+  `CLAUDE_CODE_MESSAGING_SOCKET` (`\\.\pipe\LOCAL\cc-msg…` の名前付きパイプ) と `CLAUDE_CODE_MESSAGING_TOKEN` があった。公式資料は hook と Bash に渡すとしか書いていない。
+- **検証 2: 投函の形式が公開されておらず、試せない**。公式資料にあるのは 1 行目の `{"type":"auth","token":"…"}` だけで、その後に送るメッセージ本体の形式は cross-session messaging・env-vars・hooks のどの資料にもない。
+  自分のセッションの受信口に auth 行と推測した形式 (`{"type":"message","text":"…"}`) を送ったところ、応答もエラーもなく、メッセージも届かなかった (黙って捨てられた)。これ以上の推測は非公開の仕様の解析になるので止めた。
+- **含意**: 配送を移すと、記載のない環境変数 (検証 1) と非公開の形式 (検証 2) の 2 つに依存することになる。Channels (研究プレビュー、開発用フラグ) より安定とは言えない。形式が公開されるまでは Channels のままが妥当 (§9-5)。
+
 ### 6.2 未検証
 
 1. **Windows 固有**: パス表記、改行コード。daemon の常駐は Docker (§3.8) で解決する見込み。
@@ -471,6 +479,7 @@ P0 の後に、同じ領域の公式機能と OSS を調べた。**セッショ�
 4. **`maxAgeMs` の既定値**: 指定なしの attach で何時間分まで流すか。
 5. **配送を公式 cross-session messaging に移すか**: Channels のまま続けるか、shim から自セッションの受信口へ投函する形に移すか (§8.3)。P1 に入る前に決める。
    どちらでも Mailbox・role・未読の正本は Hub に置く (§3.7)。移す場合は、配信アダプタの差し替え口をここで作る (§3.9)。
+   検証結果 (§6.1g): 受信口の情報は shim に渡るが、投函の形式が公開されていない。形式が公開されるまでは Channels のままにする案が有力。
 6. **メッセージの形を宣言して検査するか** (§3.11): 違反を 400 で拒否するか、受理して UI に警告するだけにするか。SCOPE の検査を Hub が行うか (Hub は作業ツリーを読まない。§3.8)、leader が `git diff` で行うか。
 
 (決定済み: ブラウザへのトークンの渡し方は cookie。§4)
