@@ -3,8 +3,8 @@ import { Hono, type Context } from 'hono'
 import { setCookie } from 'hono/cookie'
 import { bodyLimit } from 'hono/body-limit'
 import { streamSSE } from 'hono/streaming'
-import type { z } from 'zod'
-import { postMessageSchema, type Sender } from '../shared/types.js'
+import { z } from 'zod'
+import { isValidName, nameSchema, postMessageSchema, type Sender } from '../shared/types.js'
 import { Auth, COOKIE_NAME, type AuthEnv } from './auth.js'
 import { Hub, HubError } from './hub.js'
 import { pump } from './sse.js'
@@ -32,6 +32,18 @@ function invalid(c: Context, error: z.ZodError | string) {
   if (typeof error === 'string') return c.json({ error: 'invalid_request', message: error }, 400)
   return c.json({ error: 'invalid_request', issues: error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) }, 400)
 }
+
+const attachSchema = z.object({
+  client: z.string().min(1).max(64).default('other'),
+  // P0 では roles.json を読まないので role 名は検証しない (P2)
+  role: nameSchema.nullable().optional(),
+  sessionId: z.string().min(1).max(256).optional(),
+  cwd: z.string().max(4096).optional(),
+  // P2 で実装する。P0 では受け取るだけ
+  maxAgeMs: z.number().int().positive().optional(),
+})
+
+const ackSchema = z.object({ upTo: z.number().int().nonnegative() })
 
 async function readJson(c: Context): Promise<unknown> {
   try {
@@ -87,6 +99,64 @@ export function createApp(opts: AppOptions) {
     const limit = intParam(c.req.query('limit'), 100, 1, 1000)
     if (after === null || limit === null) return invalid(c, 'after は 0 以上、limit は 1〜1000 の整数')
     return c.json({ messages: hub.store.listMessages(after, limit), lastSeq: hub.store.lastSeq })
+  })
+
+  app.get('/mailboxes', (c) => c.json({ mailboxes: hub.describeMailboxes() }))
+
+  app.post('/mailboxes/:name/attach', async (c) => {
+    const name = c.req.param('name')
+    if (!isValidName(name)) return invalid(c, 'Mailbox 名が不正')
+    const parsed = attachSchema.safeParse((await readJson(c)) ?? {})
+    if (!parsed.success) return invalid(c, parsed.error)
+    return c.json(hub.attach(name, parsed.data))
+  })
+
+  for (const method of ['put', 'delete'] as const) {
+    app[method]('/mailboxes/:name/subscriptions/:topic', (c) => {
+      const { name, topic } = c.req.param()
+      if (!isValidName(name) || !isValidName(topic)) return invalid(c, 'Mailbox 名またはトピック名が不正')
+      const mb = method === 'put' ? hub.subscribe(name, topic) : hub.unsubscribe(name, topic)
+      return c.json({ subscriptions: mb.subscriptions, effectiveSubscriptions: hub.store.effectiveSubscriptions(name) })
+    })
+  }
+
+  // shim 向け SSE。未読を seq 順に送ってから新着を流す (protocol.md §3)
+  app.get('/attachments/:id/stream', (c) => {
+    const id = c.req.param('id')
+    const after = intParam(c.req.query('after'), 0, 0, Number.MAX_SAFE_INTEGER)
+    if (after === null) return invalid(c, 'after は 0 以上の整数')
+    hub.cursorOf(id) // 存在しなければここで 404
+    return streamSSE(c, (stream) =>
+      pump(stream, {
+        subscribe: (send, close) =>
+          hub.openStream(id, after, {
+            message: (m) => send({ event: 'message', id: String(m.seq), data: JSON.stringify(m) }),
+            close: (reason) => {
+              if (reason) send({ event: 'terminated', data: JSON.stringify({ reason }) })
+              close()
+            },
+          }),
+        heartbeatMs,
+        heartbeat: () => {
+          try {
+            return { event: 'heartbeat', data: JSON.stringify({ cursor: hub.cursorOf(id) }) }
+          } catch {
+            return ': ping\n\n'
+          }
+        },
+      }),
+    )
+  })
+
+  app.post('/attachments/:id/ack', async (c) => {
+    const parsed = ackSchema.safeParse(await readJson(c))
+    if (!parsed.success) return invalid(c, parsed.error)
+    return c.json({ cursor: hub.ack(c.req.param('id'), parsed.data.upTo) })
+  })
+
+  app.delete('/attachments/:id', (c) => {
+    hub.detach(c.req.param('id'))
+    return c.json({})
   })
 
   // UI 向け SSE (protocol.md §7)

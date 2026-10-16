@@ -1,10 +1,11 @@
 import type { SSEMessage, SSEStreamingApi } from 'hono/streaming'
 
-// 購読元からの送信を 1 本の直列キューで書き、切断まで待つ。heartbeat は無通信が続いた間隔ごとに送る
+// 購読元からの送信を 1 本の直列キューで書き、切断 (または close) まで待つ。heartbeat は一定間隔で送る
 export async function pump(
   stream: SSEStreamingApi,
   opts: {
-    subscribe: (send: (m: SSEMessage) => void) => () => void
+    // close を呼ぶと、それまでに積んだ送信を書き終えてから閉じる
+    subscribe: (send: (m: SSEMessage) => void, close: () => void) => () => void
     heartbeatMs: number
     heartbeat: () => SSEMessage | string
   },
@@ -18,10 +19,15 @@ export async function pump(
       })
       .catch(() => undefined)
   }
-  const unsubscribe = opts.subscribe(write)
+  let closed!: () => void
+  const done = new Promise<void>((resolve) => {
+    closed = resolve
+    stream.onAbort(resolve)
+  })
+  const unsubscribe = opts.subscribe(write, () => void chain.then(closed))
   const timer = setInterval(() => write(opts.heartbeat()), opts.heartbeatMs)
   try {
-    await new Promise<void>((resolve) => stream.onAbort(resolve))
+    await done
   } finally {
     clearInterval(timer)
     unsubscribe()
