@@ -152,3 +152,32 @@ describe('settings: 検証 (違反は 400 と英語の message)', () => {
     assert.equal(saved.commands[0]!.text.length, 8000)
   })
 })
+
+describe('settings: defaultTo (手編集のみ、UI の初期の宛先)', () => {
+  it('文字列の defaultTo は GET (read) に返し、PUT で commands を変えても残す', async () => {
+    const { store, file } = await tempStore()
+    await mkdir(join(file, '..'), { recursive: true })
+    await writeFile(file, JSON.stringify({ version: 1, commands: [], defaultTo: 'mailbox:leader' }))
+    assert.deepEqual(await store.read(), { version: 1, commands: [], defaultTo: 'mailbox:leader' })
+    const saved = await store.write({ commands: [{ name: 'cp', text: 'x' }] })
+    assert.deepEqual(saved, { version: 1, commands: [{ name: 'cp', text: 'x' }], defaultTo: 'mailbox:leader' })
+    const onDisk = JSON.parse(await readFile(file, 'utf8'))
+    assert.equal(onDisk.defaultTo, 'mailbox:leader')
+    assert.deepEqual(onDisk.commands, [{ name: 'cp', text: 'x' }])
+  })
+
+  it('defaultTo がなければ返さない (古い形のファイルと同じ応答)', async () => {
+    const { store } = await tempStore()
+    await store.write({ commands: [] })
+    assert.deepEqual(Object.keys(await store.read()).sort(), ['commands', 'version'])
+  })
+
+  it('文字列でない・形式が合わない defaultTo は無視し、ファイルは壊れ扱いにしない', async () => {
+    const { store, file } = await tempStore()
+    await mkdir(join(file, '..'), { recursive: true })
+    for (const value of [42, null, ['mailbox:leader'], 'leader', '', 'mailbox:']) {
+      await writeFile(file, JSON.stringify({ version: 1, commands: [{ name: 'cp', text: 'x' }], defaultTo: value }))
+      assert.deepEqual(await store.read(), { version: 1, commands: [{ name: 'cp', text: 'x' }] }, JSON.stringify(value))
+    }
+  })
+})

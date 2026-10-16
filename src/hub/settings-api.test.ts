@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
@@ -130,5 +130,20 @@ describe('/settings: HTTP', () => {
     assert.equal(res.status, 200)
     const after2 = await app.request('/settings', { headers: bearer })
     assert.equal(after2.status, 200)
+  })
+})
+
+describe('/settings: defaultTo の往復', () => {
+  it('手編集の defaultTo は GET に出て、PUT (commands) の後も file に残る', async () => {
+    const { app, file } = await setup()
+    await mkdir(join(file, '..'), { recursive: true })
+    await writeFile(file, JSON.stringify({ version: 1, commands: [], defaultTo: 'mailbox:leader' }))
+    const got = await app.request('/settings', { headers: bearer })
+    assert.deepEqual(await got.json(), { version: 1, commands: [], defaultTo: 'mailbox:leader' })
+    const res = await put(app, { commands: [{ name: 'cp', text: 'commit and push' }] }, bearer)
+    assert.equal(res.status, 200)
+    assert.deepEqual(await res.json(), { version: 1, commands: [{ name: 'cp', text: 'commit and push' }], defaultTo: 'mailbox:leader' })
+    const onDisk = JSON.parse(await readFile(file, 'utf8'))
+    assert.equal(onDisk.defaultTo, 'mailbox:leader')
   })
 })

@@ -14,6 +14,16 @@ export interface Command {
 export interface Settings {
   version: 1
   commands: Command[]
+  // 手編集のみ。UI の初期の宛先に使う ("<type>:<id>")。形式が合わなければ返さない
+  defaultTo?: string
+}
+
+const DEFAULT_TO_RE = /^[a-z]+:.+$/
+
+// 手編集の defaultTo を読む。文字列でなければ無視する (ファイルは壊れていない扱い)
+function readDefaultTo(extra: Record<string, unknown>): string | undefined {
+  const v = extra.defaultTo
+  return typeof v === 'string' && DEFAULT_TO_RE.test(v) ? v : undefined
 }
 
 // HTTP にそのまま返せる失敗。code と status は app.ts の onError で使う
@@ -64,6 +74,11 @@ export function validateBody(body: unknown): Command[] {
   return validateCommands((body as { commands: unknown }).commands)
 }
 
+function withDefaultTo(s: Settings, extra: Record<string, unknown>): Settings {
+  const defaultTo = readDefaultTo(extra)
+  return defaultTo === undefined ? s : { ...s, defaultTo }
+}
+
 // ファイルの中身を読む。壊れていれば理由だけを返す (中身はエラーに含めない)
 function parseFile(raw: string): { commands: Command[]; extra: Record<string, unknown> } {
   const invalid = (reason: string) => new SettingsError(500, 'settings_invalid', `settings file is invalid: ${reason}`)
@@ -93,7 +108,8 @@ export class SettingsStore {
   async read(): Promise<Settings> {
     const raw = await this.readRaw()
     if (raw === undefined) return { version: 1, commands: [] }
-    return { version: 1, commands: parseFile(raw).commands }
+    const { commands, extra } = parseFile(raw)
+    return withDefaultTo({ version: 1, commands }, extra)
   }
 
   // 検証してから保存する。壊れたファイルは .bak に退避してから新しく書く
@@ -109,7 +125,7 @@ export class SettingsStore {
     let extra: Record<string, unknown> = {}
     if (raw !== undefined) {
       try {
-        extra = parseFile(raw).extra
+        extra = parseFile(raw).extra // defaultTo もここで保持される
       } catch {
         // 手編集の内容を黙って消さない
         await copyFile(this.file, `${this.file}.bak`)
@@ -126,7 +142,7 @@ export class SettingsStore {
       await rm(tmp, { force: true }).catch(() => {})
       throw new SettingsError(500, 'settings_write_failed', `could not save settings: ${(e as Error).message}`)
     }
-    return { version: 1, commands }
+    return withDefaultTo({ version: 1, commands }, extra)
   }
 
   private async readRaw(): Promise<string | undefined> {

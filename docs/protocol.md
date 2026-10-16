@@ -133,8 +133,8 @@
 | GET | `/` | UI の HTML。`?token=` 付きなら cookie を設定してリダイレクト (§1) |
 | GET | `/stream` | SSE。Event / Message / Mailbox・Attachment の状態変化を流す |
 | POST | `/messages/:id/forward` | 無編集転送。body: `{ "to": {...} }` |
-| GET | `/settings` | カスタムコマンドの設定。`{ "version": 1, "commands": [{ "name", "text" }] }`。ファイルがなければ空。毎回ファイルから読む。壊れていれば 500 `settings_invalid` (中身は返さない) |
-| PUT | `/settings` | 設定を保存。body `{ "commands": [...] }` を検証し、保存後の設定を返す。違反は 400 (英語の `message`)。本文上限 64KB。ファイルの commands 以外のキーは保持する。壊れていたファイルは `settings.json.bak` に退避してから書く。保存先は `HUB_DATA_DIR/settings.json`。name は `^[a-z0-9][a-z0-9_-]{0,31}$`、重複不可、最大 100 個、text は 1〜8000 文字 |
+| GET | `/settings` | カスタムコマンドの設定。`{ "version": 1, "commands": [{ "name", "text" }] }`。ファイルがなければ空。手編集の `defaultTo` (文字列 `<type>:<id>`) があれば併せて返し、なければ省く (形式が合わない値は無視する)。毎回ファイルから読む。壊れていれば 500 `settings_invalid` (中身は返さない) |
+| PUT | `/settings` | 設定を保存。body `{ "commands": [...] }` を検証し、保存後の設定を返す。違反は 400 (英語の `message`)。本文上限 64KB。ファイルの commands 以外のキーは保持する (`defaultTo` を含む。PUT は `defaultTo` を受け付けず、変えない)。壊れていたファイルは `settings.json.bak` に退避してから書く。保存先は `HUB_DATA_DIR/settings.json`。name は `^[a-z0-9][a-z0-9_-]{0,31}$`、重複不可、最大 100 個、text は 1〜8000 文字 |
 | POST | `/files` | 画像を 1 枚保存する。本文は生のバイト列で、`Content-Type` は使わずデコードして判定する。PNG / JPEG / GIF / WebP のみ (SVG やデコードできないものは 400)。長辺 `HUB_FILE_MAX_EDGE` (既定 1568) に収まるよう縮小し、EXIF を落として再エンコードする。20MB を超えると 413。`?persistent=1` で持続扱いにする。応答は記録 (新規は 201、同じ内容の再送は既存の記録を 200 で返す) |
 | GET | `/files/:id` | 保存した画像本体。`Content-Type` は記録の mime、`X-Content-Type-Options: nosniff`、`Content-Security-Policy: sandbox; default-src 'none'`、`Cache-Control: private, max-age=3600`。なければ 404 |
 | GET | `/files/:id/meta` | 記録。`{ id, mime, size, width, height, persistent, createdAt, resized, original: { mime, size, width, height } }`。なければ 404 |

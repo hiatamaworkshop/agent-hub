@@ -514,8 +514,29 @@ function buildTo(mailboxes) {
   if (topics.size) sel.append(group('Subscribed topics', [...topics].sort()))
   sel.append(group('User', ['user:browser']))
   sel.append(option(MANUAL_TOPIC, 'Enter a topic…'))
-  // 最初は購読中の user.message、なければ先頭の Mailbox を選ぶ
-  setTo(prev || (topics.has('topic:user.message') ? 'topic:user.message' : sel.options[0].value))
+  // 初回だけ初期の宛先を決める。以後の再構築 (Mailbox 一覧の更新) は今の選択を保つ
+  setTo(prev || initialTo(mailboxes))
+}
+
+// 初期の宛先: (1) 前回送った宛先 → (2) settings.json の defaultTo → (3) 接続中の先頭 Mailbox。
+// 候補は「今つながっている先」だけ。topic と role は接続中の Mailbox が持つものに限る (届け先がない宛先は選ばない)
+const LAST_TO_KEY = 'agent-hub.lastTo'
+let defaultTo = null // GET /settings の defaultTo。読めなければ null (古い Hub や 404 でも null)
+function readLastTo() { try { return localStorage.getItem(LAST_TO_KEY) } catch { return null } }
+function saveLastTo(v) { try { localStorage.setItem(LAST_TO_KEY, v) } catch {} }
+function initialTo(mailboxes) {
+  const live = new Set(['user:browser'])
+  for (const mb of mailboxes) {
+    live.add(`mailbox:${mb.name}`)
+    if (!mb.attachment) continue
+    if (mb.role) live.add(`role:${mb.role}`)
+    for (const t of mb.effectiveSubscriptions) live.add(`topic:${t}`)
+  }
+  const last = readLastTo()
+  if (last && live.has(last)) return last
+  if (defaultTo && live.has(defaultTo)) return defaultTo
+  const first = mailboxes.find((mb) => mb.attachment) || mailboxes[0]
+  return first ? `mailbox:${first.name}` : 'user:browser'
 }
 
 // 一覧にない宛先 (返信先の Mailbox が消えた後など) も選べるよう、その場で足す
@@ -575,13 +596,17 @@ $('form').onsubmit = async (e) => {
     // 添付は先に保存する。1 枚でも失敗したら送らず、本文と添付を残す
     const meta = attachments.length ? { files: await uploadAll() } : undefined
     setSendLabel('Sending…')
-    const msg = { kind, body: body.trim() ? expandBody(body) : '[image]', to: selectedTo() }
+    const to = selectedTo()
+    const msg = { kind, body: body.trim() ? expandBody(body) : '[image]', to }
     if (meta) msg.meta = meta
     if (kind === 'reply') msg.replyTo = replyTo.id
     const { recipients, ...m } = await api('/messages', { method: 'POST', body: JSON.stringify(msg) })
     render(m)
     showOwn(m)
     setStatus(`Sent #${m.seq}`)
+    // 次に開いたとき初期の宛先にする。候補 (option) にある宛先だけ覚える (手入力の topic で候補外なら覚えない)
+    const sentTo = `${to.type}:${to.id}`
+    if ([...$('to').options].some((o) => o.value === sentTo)) saveLastTo(sentTo)
     // user 宛ては Mailbox を通らず UI に出るだけなので、0 件でよい。
     // UI は Hub を再起動しなくても差し替わるので、recipients を返さない古い Hub でも送信は成功扱いにする
     if (m.to.type !== 'user' && Array.isArray(recipients) && recipients.length === 0) {
@@ -614,6 +639,16 @@ let commandsState = 'loading' // 'loading' | 'ok' | 'unavailable' | 'invalid'
 let commandsError = ''
 const COMMAND_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/
 const COMMAND_CALL_RE = /^\/([A-Za-z0-9_-]+)(?:\s+([\s\S]*))?$/
+
+// 初期の宛先の判定より前に読む (1 回の GET)。/settings がない古い Hub や 404 では defaultTo なしのまま
+async function loadDefaultTo() {
+  try {
+    const s = await api('/settings')
+    defaultTo = typeof s.defaultTo === 'string' ? s.defaultTo : null
+  } catch {
+    defaultTo = null
+  }
+}
 
 async function loadCommands() {
   try {
@@ -852,6 +887,7 @@ function connect() {
 }
 
 ;(async () => {
+  await loadDefaultTo()
   try {
     await loadMailboxes()
   } catch { return }

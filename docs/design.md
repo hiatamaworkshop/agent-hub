@@ -81,6 +81,7 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
 - タブの未読: 非表示中に SSE で届いた、人間宛て (`to.type === 'user'`) の他者のメッセージ数をタイトル `(n) agent-hub` と favicon のバッジで示す。agent 同士のメッセージ (`mailbox:*` / `role:*` / `topic:*` 宛て) は数えない。前面に戻るかフォーカスで消す。自分の送信と履歴読み込みは数えない。
 - UI の表示文言は英語にする (メッセージ本文は対象外で、そのまま表示する)。このドキュメント自体は日本語のまま。
 - カスタムコマンド: 本文の `/name` (または `/name 引数`) を Send の瞬間に定義済みの text へ置換して送る。置換は UI が行い、Hub はコマンドを知らない (置換後の本文を普通のメッセージとして受ける)。スレッドに残るのも置換後の本文なので、何を送ったかがそのまま見える。人間が Send を押したときだけ動き、自動送信はしない。設定は Hub 側の `HUB_DATA_DIR/settings.json` にあり、手で編集できる (読みは毎回ファイルから行う)。Hub が `/settings` を持たない古い版のときは Commands を無効にし、送信はこれまでどおり。
+- 初期の宛先 (To): 起動時は (1) 前回送った宛先 (localStorage `agent-hub.lastTo`、今も候補にあるものだけ) → (2) settings.json の `defaultTo` (例 `mailbox:leader`。候補にあるときだけ) → (3) 接続中の先頭 Mailbox の順に選ぶ。候補は接続中の先に限る (topic と role は接続中の Mailbox が持つものだけ)。topic:user.message を既定にはしない。`defaultTo` は初回の判定より前に読む。以後の Mailbox 一覧の更新では今の選択を保つ。Reply は元の送り手を選ぶ。
 
 ### 3.3 Mailbox と Attachment (R5, R6)
 
