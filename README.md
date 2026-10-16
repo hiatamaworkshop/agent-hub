@@ -59,9 +59,17 @@ claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels s
 ### 4. 往復を確かめる
 
 1. Claude に「agent-hub の `user.message` を購読して」と頼む (`subscribe` が呼ばれる)。
-2. ブラウザのフォームで `request` → `topic` `user.message` に本文を書いて Send。Claude の会話に `<channel source="agent-hub" …>` として届く。
+2. ブラウザのフォームで `request` と宛先 `topic:user.message` を選び、本文を書いて Send。Claude の会話に `<channel source="agent-hub" …>` として届く。
 3. Claude に返信させる (`post_message`、`kind: reply`)。ブラウザの一覧に `reply` として出る。
 4. ブラウザの左側に Mailbox `agent-hub` が「接続中」と表示される。
+
+### 購読は Mailbox ごとに 1 回でよい
+
+- 購読はセッションではなく **Mailbox に保存される** (`data/hub.jsonl`)。Hub の再起動や、新しいセッションが同じ Mailbox に attach したときも残るので、起動のたびに頼み直さなくてよい。
+  同じフォルダで起動すれば同じ Mailbox になる (上の Mailbox 名の決まり方を参照)。
+- **`mailbox:<名前>` 宛てなら購読は要らない**。購読が要るのは、`topic:<名前>` のように購読者全員へ送るときだけ。
+- 購読が消えるのは `data/` を消したとき (Docker では volume を作り直したとき)。設定として宣言しておく方法は role の既定購読 (P2、`roles.json` + `HUB_ROLE`)。
+- 宛先のドロップダウンには購読中のトピックだけが出る。購読者のいないトピックは「トピックを手入力…」で送れるが、誰にも届かなければ Send の横に警告が出る。
 
 ### 他のリポジトリで使う
 
