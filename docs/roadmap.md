@@ -98,8 +98,8 @@
 
 ## 既知の問題・後回し
 
-- **shim の seq 巻き戻し** (`src/shim/hub-client.ts` 付近): Hub の `data/` を消して再起動すると seq が採番し直される。shim は覚えた seq より大きいものしか受けないため、新しいメッセージを黙って捨てる。案: Hub の起動ごとの ID (epoch) を返し、変わったら cursor を捨てる。または seq が戻ったら reset する。
-- **未読の算出が全件走査** (`src/hub/store.ts` の `unread()` 付近): 呼ぶたびにログ全体を見る。今の件数では問題ないが、ログが増えたら Mailbox ごとの cursor の索引を持つ。
+- [x] **shim の seq 巻き戻し**: Hub の `data/` を消して再起動すると seq が 1 から振り直され、shim が前の Hub で覚えた seq を stream の `after` に使うため、attach 時の未読を黙って捨てていた。attach のたびに `after` を Hub の `cursor` から数え直すようにした (ack 漏れの再送は id で除去)
+- [x] **未読の算出が全件走査**: `unread()` と `listMessages()` が毎回ログ全体を見ていた。ログは seq の昇順なので、二分探索で `cursor` (または `after`) の位置から見るようにした。長く ack しない Mailbox はその未読分だけ走査する
 
 ## 将来の検討 (未確定)
 

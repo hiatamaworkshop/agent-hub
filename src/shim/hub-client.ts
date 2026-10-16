@@ -1,5 +1,5 @@
 // Hub との通信。attach → stream → ack を繰り返し、切れたら attach からやり直す。
-// 未読の正本は Hub の cursor にあるので、ここで持つのは重複除去用の直近 id と、このプロセスで渡し終えた seq だけ
+// 未読の正本は Hub の cursor にあるので、ここで持つのは重複除去用の直近 id と、今の Attachment で渡し終えた seq だけ
 import type { Message } from '../shared/types.js'
 import type { ShimConfig } from './config.js'
 
@@ -112,6 +112,9 @@ export class HubClient {
       cwd: this.cfg.cwd,
     })
     this.attachment = r
+    // stream の after は Hub の cursor から数え直す。Hub の data/ を消して再起動すると seq が 1 から振り直されるため、
+    // 前の Hub で覚えた seq を使うと attach 時の未読を黙って捨てる。ack 漏れで再送された分は id の重複除去で落ちる
+    this.delivered = r.cursor
     this.log(`attached mailbox=${this.cfg.mailbox} attachment=${r.attachmentId} cursor=${r.cursor}${r.superseded ? ` superseded=${r.superseded}` : ''}`)
   }
 

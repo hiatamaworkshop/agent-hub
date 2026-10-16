@@ -148,7 +148,20 @@ export class Store {
   }
 
   listMessages(after = 0, limit = 100): Message[] {
-    return this.messages.filter((m) => m.seq > after).slice(0, limit)
+    const i = this.indexAfter(after)
+    return this.messages.slice(i, i + limit)
+  }
+
+  // seq が after より大きい最初の位置。messages は追記順 = seq の昇順なので二分探索できる
+  private indexAfter(after: number): number {
+    let lo = 0
+    let hi = this.messages.length
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1
+      if (this.messages[mid]!.seq > after) hi = mid
+      else lo = mid + 1
+    }
+    return lo
   }
 
   // --- Mailbox ---
@@ -259,9 +272,9 @@ export class Store {
   unread(name: string, after?: number, limit = Infinity): Message[] {
     const from = Math.max(after ?? 0, this.must(name).cursor)
     const out: Message[] = []
-    for (const m of this.messages) {
-      if (out.length >= limit) break
-      if (m.seq > from && this.isRecipient(name, m)) out.push(m)
+    for (let i = this.indexAfter(from); i < this.messages.length && out.length < limit; i++) {
+      const m = this.messages[i]!
+      if (this.isRecipient(name, m)) out.push(m)
     }
     return out
   }

@@ -184,6 +184,7 @@
 - 既に別の Attachment がある場合は takeover する (暫定: 排他・新しい方が勝つ。design.md §9)。旧 Attachment の stream に `terminated` を送って閉じる。
 - `truncated: true` のとき、切り捨てた範囲は放棄済みとして `cursor` を進める。
 - Attachment は Hub のメモリにだけあり、永続化しない。Hub の再起動後は stream / ack が 404 (`attachment_not_found`) になるので、shim は attach し直す。
+  attach し直したら、stream の `after` は応答の `cursor` から数え直す (`data/` を消した Hub では seq が 1 から振り直されるため、前の Hub の seq を使わない)。
   `terminated` を受け取った後は attach し直さない (取り返しの応酬を避ける)。
 - **P0 の範囲**: role 名は `roles.json` と照合せず受け付け、`roleDescription` は常に `null`。リースは値を返すだけで期限切れを判定しない。`maxAgeMs` は受け取るが切り捨てはしない (`truncated: false`)。いずれも P2。
 

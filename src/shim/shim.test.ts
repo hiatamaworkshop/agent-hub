@@ -15,7 +15,7 @@ import { FileStore, resolveMeta } from '../hub/files.js'
 import { Hub } from '../hub/hub.js'
 import { Store } from '../hub/store.js'
 import { mailboxFromFolder } from './config.js'
-import { parseSse } from './hub-client.js'
+import { HubClient, parseSse } from './hub-client.js'
 
 const TOKEN = 'test-token-0123456789'
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -193,5 +193,51 @@ describe('shim と Hub の結合', () => {
     await client.close()
     await until(() => hub.store.getMailbox('test-mb')!.attachment === null)
     assert.equal(hub.attachments.size, 0)
+  })
+})
+
+// Hub の data/ を消して再起動すると seq が 1 から振り直される (roadmap「既知の問題」)
+describe('HubClient: Hub の seq が巻き戻ったとき', () => {
+  it('attach し直したら Hub の cursor から数え直し、その間に届いた未読を受け取る', async () => {
+    let hub = new Hub(new Store(), { disconnectGraceMs: 300 })
+    let app = createApp({ hub, token: TOKEN, uiHtml: async () => null })
+    let hubUrl = ''
+    const server = await new Promise<ServerType>((resolve) => {
+      const s = serve({ fetch: (req) => app.fetch(req), hostname: '127.0.0.1', port: 0 }, (info) => {
+        hubUrl = `http://127.0.0.1:${info.port}`
+        resolve(s)
+      })
+    })
+    const got: Message[] = []
+    const cfg = { hubUrl, token: TOKEN, mailbox: 'rewind', role: null, sessionId: undefined, cwd: ROOT, filesDir: tmpdir() }
+    const hc = new HubClient(cfg, async (m) => void got.push(m), () => undefined)
+    const until = async (f: () => boolean, ms = 10_000) => {
+      const deadline = Date.now() + ms
+      while (!f()) {
+        if (Date.now() > deadline) throw new Error('timeout')
+        await new Promise((r) => setTimeout(r, 30))
+      }
+    }
+    const browser = { type: 'user', id: 'browser', role: null } as const
+    try {
+      hc.start()
+      await until(() => hc.state === 'attached')
+      for (const body of ['a', 'b', 'c']) hub.postMessage({ kind: 'notice', to: { type: 'mailbox', id: 'rewind' }, body }, browser)
+      await until(() => got.length === 3)
+
+      // 空のデータで起動し直した Hub に差し替える。shim が attach し直す前に届いた分は、attach 時の未読として渡る
+      // (新着の push は after で絞らないので、取りこぼすのはこの未読の方)
+      const old = hub
+      hub = new Hub(new Store(), { disconnectGraceMs: 300 })
+      app = createApp({ hub, token: TOKEN, uiHtml: async () => null })
+      const queued = ['x', 'y'].map((body) => hub.postMessage({ kind: 'notice', to: { type: 'mailbox', id: 'rewind' }, body }, browser))
+      assert.deepEqual(queued.map((m) => m.seq), [1, 2])
+      old.detach(hc.attachment!.attachmentId)
+      await until(() => got.length === 5)
+      assert.deepEqual(got.slice(3).map((m) => m.body), ['x', 'y'])
+    } finally {
+      await hc.stop()
+      await new Promise((r) => server.close(r))
+    }
   })
 })
