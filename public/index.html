@@ -69,7 +69,13 @@
   .evt.waiting .kind, .mb .status.waiting { color: var(--warn); border-color: var(--warn); }
   .mb .status { font-size: 12px; color: var(--muted); }
   .mb .status.waiting { font-weight: 600; }
-  .msg .actions { margin-left: auto; }
+  .msg .actions { margin-left: auto; display: inline-flex; gap: 10px; }
+  /* 転送に選んだメッセージ */
+  .msg.picked { outline: 2px solid var(--accent); outline-offset: -1px; }
+  /* 向き付きの組ごとの未送の件数 (foldbar の右側) */
+  #relay { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin-left: auto; }
+  #relay:empty { display: none; }
+  #relay .pair { font-family: var(--mono); }
   .linkbtn { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font: inherit; }
   /* コンポーザー (下)。送る操作だけを置く */
   form { flex: none; border-top: 1px solid var(--line); background: var(--panel); padding: 8px 16px; display: grid; gap: 6px; }
@@ -146,6 +152,7 @@
     <div class="foldbar">
       <button type="button" id="fold" title="Hide messages older than the latest N and show them as one row. Display only: the Hub record and unread counts are unchanged.">Compact</button>
       <label title="How many latest messages stay visible after Compact (default 10)">Keep latest <input id="keep" type="number" min="1" step="1"></label>
+      <span id="relay" title="Messages from a Mailbox not yet forwarded to a Mailbox you forwarded to before"></span>
     </div>
     <div id="list"></div>
     <form id="form">
@@ -186,6 +193,9 @@ const $ = (id) => document.getElementById(id)
 const seen = new Map() // id → Message
 let lastSeq = 0 // 描画済みの最大 seq。再接続後に取り直す起点 (render() だけが更新する)
 let replyTo = null
+// 転送に選んだメッセージ (id → Message)。選んでいる間は本文欄が添え書きになる
+const forwarding = new Map()
+const msgBoxes = new Map() // id → 描画したカード (Compact で DOM から外れたものも含む)
 
 const addr = (a) => `${a.type}:${a.id}`
 const time = (ts) => new Date(ts).toLocaleTimeString()
@@ -205,6 +215,7 @@ async function api(path, init) {
   if (!res.ok) {
     const err = new Error(json.message || (json.issues && json.issues.map((i) => `${i.path}: ${i.message}`).join('; ')) || json.error || res.status)
     err.status = res.status
+    err.code = json.error
     throw err
   }
   return json
@@ -273,7 +284,7 @@ function setStatus(text) {
 // Send ボタンの表示。送信中は無効にして、今の段階をラベルで示す
 function setSendLabel(label) {
   const b = $('send')
-  b.textContent = label
+  b.textContent = label === 'Send' && forwarding.size ? `Forward ${forwarding.size}` : label
   b.disabled = label !== 'Send'
 }
 
@@ -423,16 +434,28 @@ function render(m) {
     const orig = seen.get(m.replyTo)
     head.append(el('span', '', `↩ ${orig ? '#' + orig.seq : m.replyTo}`))
   }
-  if (m.forwardedFrom) head.append(el('span', '', `forwarded ${m.forwardedFrom}`))
+  // 転送は本文の書き手 (forwardedSender) を添える。古い Hub の転送には書き手がないので id だけ
+  if (m.forwardedFrom) {
+    const orig = seen.get(m.forwardedFrom)
+    const who = m.forwardedSender ? ` from ${senderLabel(m.forwardedSender)}` : ''
+    head.append(el('span', '', `forwarded${who} ${orig ? '#' + orig.seq : m.forwardedFrom}`))
+  }
   const actions = el('span', 'actions')
   const btn = el('button', 'linkbtn', 'Reply')
   btn.type = 'button'
   btn.onclick = () => startReply(m)
-  actions.append(btn)
+  const fwd = el('button', 'linkbtn fwd', 'Forward')
+  fwd.type = 'button'
+  fwd.title = 'Select to forward unchanged (select several to forward them together)'
+  fwd.setAttribute('aria-pressed', 'false')
+  fwd.onclick = () => toggleForward(m)
+  actions.append(btn, fwd)
   head.append(actions)
   box.append(head, el('div', 'body', m.body))
   renderFiles(box, m.meta)
   list.append(box)
+  msgBoxes.set(m.id, box)
+  scheduleRelay()
   if (atBottom) { pinned = true; list.scrollTop = list.scrollHeight }
   return box
 }
@@ -739,6 +762,7 @@ $('to').onchange = () => {
 for (const ev of ['pointerdown', 'keydown']) $('to').addEventListener(ev, () => { autoTo = false })
 
 function startReply(m) {
+  clearForward()
   replyTo = m
   setKind('reply')
   chooseTo(addr(m.from))
@@ -749,6 +773,16 @@ function startReply(m) {
 function updateReplyInfo() {
   const info = $('replyInfo')
   info.textContent = ''
+  if (forwarding.size) {
+    const seqs = [...forwarding.values()].map((m) => m.seq).sort((a, b) => a - b)
+    const shown = seqs.slice(0, 6).map((s) => `#${s}`).join(', ') + (seqs.length > 6 ? `, … (+${seqs.length - 6})` : '')
+    info.append(`Forwarding ${shown} unchanged `)
+    const clear = el('button', 'linkbtn', 'Clear')
+    clear.type = 'button'
+    clear.onclick = clearForward
+    info.append(clear)
+    return
+  }
   if (getKind() !== 'reply' || !replyTo) return
   info.append(`Replying to #${replyTo.seq} `)
   const cancel = el('button', 'linkbtn', 'Cancel')
@@ -781,11 +815,193 @@ for (const [i, b] of kindButtons.entries()) {
   }
 }
 
+// 次に開いたとき初期の宛先にする。候補 (option) にある宛先だけ覚える (手入力の topic で候補外なら覚えない)
+function rememberTo(to) {
+  const sentTo = `${to.type}:${to.id}`
+  if ([...$('to').options].some((o) => o.value === sentTo)) saveLastTo(sentTo)
+}
+
+// user 宛ては Mailbox を通らず UI に出るだけなので、0 件でよい。
+// UI は Hub を再起動しなくても差し替わるので、recipients を返さない古い Hub でも送信は成功扱いにする
+// 届く先が全部未接続なら記録されるが、読む人がいない (mailbox / role / topic のどれでも)。0 件の警告が出るときはそちらを優先する。
+// 一覧にない名前は接続状態が分からないので、未接続とみなさない (警告しない側に倒す)
+function warnDelivery(m, recipients) {
+  const nobodyReading = Array.isArray(recipients) && recipients.length > 0 &&
+    recipients.every((name) => { const mb = mailboxList.find((x) => x.name === name); return mb !== undefined && !mb.attachment })
+  if (m.to.type !== 'user' && Array.isArray(recipients) && recipients.length === 0) {
+    $('warn').textContent = `No Mailbox will receive ${addr(m.to)} (#${m.seq} was recorded)`
+  } else if (m.to.type !== 'user' && nobodyReading) {
+    $('warn').textContent = `Accepted, but nobody is reading ${addr(m.to)} now; it will stay unread until it attaches (#${m.seq} was recorded).`
+  }
+}
+
+// 無編集転送 (protocol.md §3)。選んだメッセージを seq 順に POST /messages/:id/forward で運ぶ。
+// 本文欄は人間の添え書きになり、書いたときだけ別のメッセージとして先に送る (転送する本文には混ぜない)
+const BODY_PLACEHOLDER = 'Message (Ctrl+Enter to send)'
+const NOTE_PLACEHOLDER = 'Optional note, sent first as a separate message (Ctrl+Enter to forward)'
+
+function markPicked(id) {
+  const box = msgBoxes.get(id)
+  if (!box) return
+  const on = forwarding.has(id)
+  box.classList.toggle('picked', on)
+  const b = box.querySelector('.fwd')
+  if (b) { b.textContent = on ? 'Unselect' : 'Forward'; b.setAttribute('aria-pressed', String(on)) }
+}
+
+function updateForwardUi() {
+  $('body').placeholder = forwarding.size ? NOTE_PLACEHOLDER : BODY_PLACEHOLDER
+  updateReplyInfo()
+  if (!sending) setSendLabel('Send')
+}
+
+// 返信と転送は同時にしない。転送を始めたら返信は取り消す
+function pickForward(list) {
+  if (replyTo) { replyTo = null; setKind('request') }
+  for (const m of list) { forwarding.set(m.id, m); markPicked(m.id) }
+  updateForwardUi()
+}
+
+function toggleForward(m) {
+  if (forwarding.has(m.id)) {
+    forwarding.delete(m.id)
+    markPicked(m.id)
+    updateForwardUi()
+  } else pickForward([m])
+  $('body').focus()
+}
+
+function clearForward() {
+  const ids = [...forwarding.keys()]
+  forwarding.clear()
+  for (const id of ids) markPicked(id)
+  updateForwardUi()
+}
+
+// 古い Hub は転送の API を持たない (UI は Hub を再起動しなくても差し替わる)。添え書きだけが届くのを避けるため、送る前に確かめる。
+// 新しい Hub は存在しない id に 404 message_not_found を返す。確かめられたら覚え、だめなら次の送信でまた確かめる
+let forwardSupported = false
+async function checkForward() {
+  if (forwardSupported) return true
+  try {
+    await api('/messages/m_probe/forward', { method: 'POST', body: JSON.stringify({ to: { type: 'user', id: 'browser' } }) })
+    forwardSupported = true // 起こらないはず (m_probe は存在しない)
+  } catch (err) {
+    if (err.code === 'message_not_found') forwardSupported = true
+    else if (err.status !== 404) throw err
+  }
+  return forwardSupported
+}
+
+async function forwardSelected() {
+  if (!$('to').value) { $('err').textContent = 'Choose a destination first.'; return }
+  const kind = getKind()
+  const body = $('body').value
+  const hasNote = body.trim() !== '' || attachments.length > 0
+  if (hasNote && kind === 'reply') { $('err').textContent = 'Send the note as a request or notice (a reply starts from the "Reply" button).'; return }
+  if (sending) return
+  autoTo = false
+  sending = true
+  const picked = [...forwarding.values()].sort((a, b) => a.seq - b.seq)
+  const sentFiles = attachments.slice()
+  const to = selectedTo()
+  const done = []
+  try {
+    if (!(await checkForward())) throw new Error('This Hub cannot forward yet. Restart the Hub to enable forwarding.')
+    if (hasNote) {
+      setSendLabel(sentFiles.length ? 'Uploading…' : 'Sending…')
+      const meta = sentFiles.length ? { files: await uploadAll(sentFiles) } : undefined
+      const msg = { kind, body: body.trim() ? expandBody(body) : '[image]', to }
+      if (meta) msg.meta = meta
+      const { recipients: _r, ...note } = await api('/messages', { method: 'POST', body: JSON.stringify(msg) })
+      render(note)
+      if ($('body').value === body) $('body').value = ''
+      dropAttachments(sentFiles)
+      updateHint()
+    }
+    setSendLabel('Forwarding…')
+    let last = null
+    let recipients
+    for (const src of picked) {
+      const res = await api(`/messages/${encodeURIComponent(src.id)}/forward`, { method: 'POST', body: JSON.stringify({ to }) })
+      ;({ recipients, ...last } = res)
+      render(last)
+      done.push(last)
+      forwarding.delete(src.id)
+      markPicked(src.id)
+    }
+    showOwn(last)
+    setStatus(`Forwarded ${done.length} to ${addr(to)}`)
+    rememberTo(to)
+    warnDelivery(last, recipients)
+  } catch (err) {
+    const msg = String(err.message || err)
+    $('err').textContent = done.length ? `Forwarded ${done.length} of ${picked.length}; the rest are still selected. ${msg}` : msg
+  } finally {
+    sending = false
+    updateForwardUi()
+  }
+}
+
+// 向き付きの組 (A → B) ごとの未送の件数 (README「発想の元」の Relay の画面が手本)。
+// 組は転送の履歴から作る: Mailbox A が書いたメッセージを Mailbox B へ転送したことがあれば A → B。
+// 未送は、A が書いたメッセージのうち、B へ最後に転送した大元より新しく、B 宛て (mailbox / B の role) でないもの。
+// 表示だけで、Hub の記録や未読には触らない
+let relayTimer = null
+function scheduleRelay() {
+  if (relayTimer) return
+  relayTimer = setTimeout(() => { relayTimer = null; renderRelay() }, 0)
+}
+
+function relayPairs() {
+  const last = new Map() // `${A}\n${B}` → B へ転送した A の大元の seq の最大
+  for (const m of seen.values()) {
+    if (!m.forwardedFrom || !m.forwardedSender || m.forwardedSender.type !== 'mailbox' || m.to.type !== 'mailbox') continue
+    if (m.forwardedSender.id === m.to.id) continue
+    const src = seen.get(m.forwardedFrom)
+    const key = `${m.forwardedSender.id}\n${m.to.id}`
+    last.set(key, Math.max(last.get(key) ?? 0, src ? src.seq : 0))
+  }
+  const pairs = []
+  for (const [key, after] of last) {
+    const [a, b] = key.split('\n')
+    const roleB = (mailboxList.find((x) => x.name === b) || {}).role
+    const pending = [...seen.values()].filter((m) =>
+      m.from.type === 'mailbox' && m.from.id === a && !m.forwardedFrom && m.seq > after &&
+      !(m.to.type === 'mailbox' && m.to.id === b) && !(roleB && m.to.type === 'role' && m.to.id === roleB))
+    pairs.push({ a, b, pending: pending.sort((x, y) => x.seq - y.seq) })
+  }
+  return pairs.sort((x, y) => (x.a + x.b).localeCompare(y.a + y.b))
+}
+
+function renderRelay() {
+  const root = $('relay')
+  root.textContent = ''
+  const pairs = relayPairs()
+  if (!pairs.length) return
+  root.append(el('span', '', 'Relay'))
+  for (const { a, b, pending } of pairs) {
+    const label = `${a} → ${b}`
+    if (!pending.length) { root.append(el('span', 'pair', `${label} · up to date`)); continue }
+    const btn = el('button', 'linkbtn pair', `${label} · ${pending.length} new`)
+    btn.type = 'button'
+    btn.title = `Select the ${pending.length} message(s) from ${a} not yet forwarded to ${b}`
+    btn.onclick = () => {
+      clearForward()
+      pickForward(pending)
+      chooseTo(`mailbox:${b}`)
+      $('body').focus()
+    }
+    root.append(btn)
+  }
+}
+
 $('form').onsubmit = async (e) => {
   e.preventDefault()
   setStatus('')
   $('err').textContent = ''
   $('warn').textContent = ''
+  if (forwarding.size) return forwardSelected()
   const kind = getKind()
   const body = $('body').value
   if (!body.trim() && attachments.length === 0) return
@@ -809,20 +1025,8 @@ $('form').onsubmit = async (e) => {
     render(m)
     showOwn(m)
     setStatus(`Sent #${m.seq}`)
-    // 次に開いたとき初期の宛先にする。候補 (option) にある宛先だけ覚える (手入力の topic で候補外なら覚えない)
-    const sentTo = `${to.type}:${to.id}`
-    if ([...$('to').options].some((o) => o.value === sentTo)) saveLastTo(sentTo)
-    // user 宛ては Mailbox を通らず UI に出るだけなので、0 件でよい。
-    // UI は Hub を再起動しなくても差し替わるので、recipients を返さない古い Hub でも送信は成功扱いにする
-    // 届く先が全部未接続なら記録されるが、読む人がいない (mailbox / role / topic のどれでも)。0 件の警告が出るときはそちらを優先する。
-    // 一覧にない名前は接続状態が分からないので、未接続とみなさない (警告しない側に倒す)
-    const nobodyReading = Array.isArray(recipients) && recipients.length > 0 &&
-      recipients.every((name) => { const mb = mailboxList.find((x) => x.name === name); return mb !== undefined && !mb.attachment })
-    if (m.to.type !== 'user' && Array.isArray(recipients) && recipients.length === 0) {
-      $('warn').textContent = `No Mailbox will receive ${addr(m.to)} (#${m.seq} was recorded)`
-    } else if (m.to.type !== 'user' && nobodyReading) {
-      $('warn').textContent = `Accepted, but nobody is reading ${addr(m.to)} now; it will stay unread until it attaches (#${m.seq} was recorded).`
-    }
+    rememberTo(to)
+    warnDelivery(m, recipients)
     if ($('body').value === body) $('body').value = '' // 送信中に書き足されていれば残す
     dropAttachments(sentFiles)
     // プログラムからの値変更では input イベントが出ないので、ヒントを明示的に更新する
@@ -1017,6 +1221,7 @@ async function loadMailboxes() {
   mailboxList = mailboxes
   renderMailboxes(mailboxes)
   buildTo(mailboxes)
+  scheduleRelay() // 未送の判定に B の role を使う
 }
 
 // カードの描画。Event が届いたときは一覧を取り直さず、手元の一覧で描き直す

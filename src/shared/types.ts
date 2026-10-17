@@ -62,7 +62,9 @@ export interface Message {
   to: Address
   body: string
   replyTo?: string
+  // 無編集転送の大元のメッセージ id と、その送り手。転送の転送でも大元を指す (from は転送した人)
   forwardedFrom?: string
+  forwardedSender?: Sender
   // 送り手が付ける任意の JSON。Hub が解釈するのは meta.files だけで、ほかのキーはそのまま通す (protocol.md §2)
   meta?: Record<string, unknown>
 }
@@ -98,6 +100,9 @@ export const postMessageSchema = z
     path: ['to'],
   })
 export type PostMessageInput = z.infer<typeof postMessageSchema>
+
+// POST /messages/:id/forward の入力。本文・kind・meta は元のメッセージから写すので受け取らない
+export const forwardSchema = z.object({ to: addressSchema })
 
 export interface Mailbox {
   name: string

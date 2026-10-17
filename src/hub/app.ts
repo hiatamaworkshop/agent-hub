@@ -4,7 +4,7 @@ import { setCookie } from 'hono/cookie'
 import { bodyLimit } from 'hono/body-limit'
 import { streamSSE } from 'hono/streaming'
 import { z } from 'zod'
-import { isValidName, nameSchema, postMessageSchema, type PostMessageInput, type Sender } from '../shared/types.js'
+import { forwardSchema, isValidName, nameSchema, postMessageSchema, type PostMessageInput, type Sender } from '../shared/types.js'
 import { Auth, COOKIE_NAME, type AuthEnv } from './auth.js'
 import { Hub, HubError } from './hub.js'
 import { pump } from './sse.js'
@@ -112,15 +112,26 @@ export function createApp(opts: AppOptions) {
     return auth.middleware()(c, next)
   })
 
+  // 送り手はリクエストから受け取らず、認証の種類と X-Hub-Attachment で決める (protocol.md §2 Message)
+  const senderOf = (c: Context<AuthEnv>): Sender => {
+    if (c.get('auth') === 'cookie') return BROWSER
+    const attachmentId = c.req.header('x-hub-attachment')
+    return attachmentId ? hub.senderOf(attachmentId) : CLI
+  }
+
   app.post('/messages', limited(1024 * 1024, 'payload_too_large', 'message must be 1 MB or smaller'), async (c) => {
     const parsed = postMessageSchema.safeParse(await readJson(c))
     if (!parsed.success) return invalid(c, parsed.error)
-    const attachmentId = c.req.header('x-hub-attachment')
-    let from: Sender
-    if (c.get('auth') === 'cookie') from = BROWSER
-    else from = attachmentId ? hub.senderOf(attachmentId) : CLI
-    const m = hub.postMessage(await withMeta(parsed.data, opts.files), from)
+    const m = hub.postMessage(await withMeta(parsed.data, opts.files), senderOf(c))
     // recipients は応答にだけ付ける (Message には含めない)。0 件なら誰にも届いていない
+    return c.json({ ...m, recipients: hub.recipientsOf(m) }, 201)
+  })
+
+  // 無編集転送。本文・kind・meta は元のメッセージのまま運ぶ。応答は POST /messages と同じ形
+  app.post('/messages/:id/forward', async (c) => {
+    const parsed = forwardSchema.safeParse(await readJson(c))
+    if (!parsed.success) return invalid(c, parsed.error)
+    const m = hub.forwardMessage(c.req.param('id'), parsed.data.to, senderOf(c))
     return c.json({ ...m, recipients: hub.recipientsOf(m) }, 201)
   })
 

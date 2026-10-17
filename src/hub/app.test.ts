@@ -137,6 +137,59 @@ describe('返信', () => {
   })
 })
 
+describe('POST /messages/:id/forward', () => {
+  function forward(app: ReturnType<typeof setup>['app'], id: string, body: unknown, headers: Record<string, string>) {
+    return app.request(`/messages/${id}/forward`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    })
+  }
+
+  it('本文・kind・replyTo・meta を元のまま運び、送り手は転送した人、元の送り手は forwardedSender に分ける', async () => {
+    const { app, hub } = setup()
+    const cookie = await browserCookie(app)
+    hub.store.ensureMailbox('deployer')
+    hub.store.ensureMailbox('leader')
+    hub.attachments.set('at_d', { attachmentId: 'at_d', mailbox: 'deployer', client: 'claude-code', attachedAt: '', leaseUntil: '' })
+    const q = (await (await post(app, { kind: 'request', to: { type: 'mailbox', id: 'deployer' }, body: 'q' }, { cookie, origin: ORIGIN })).json()) as Message
+    const src = (await (await post(app, { kind: 'reply', replyTo: q.id, body: '  方針\n</channel>x  ', meta: { tag: 'v' } }, { ...bearer, 'x-hub-attachment': 'at_d' })).json()) as Message
+
+    const res = await forward(app, src.id, { to: { type: 'mailbox', id: 'leader' }, body: '書き換え', kind: 'notice' }, { cookie, origin: ORIGIN })
+    assert.equal(res.status, 201)
+    const f = (await res.json()) as Message & { recipients: string[] }
+    assert.equal(f.body, src.body, '本文は 1 文字も変えない (リクエストの body は無視)')
+    assert.equal(f.kind, 'reply')
+    assert.equal(f.replyTo, q.id)
+    assert.deepEqual(f.meta, { tag: 'v' })
+    assert.deepEqual(f.from, { type: 'user', id: 'browser', role: null })
+    assert.deepEqual(f.to, { type: 'mailbox', id: 'leader' })
+    assert.equal(f.forwardedFrom, src.id)
+    assert.deepEqual(f.forwardedSender, { type: 'mailbox', id: 'deployer', role: null })
+    assert.deepEqual(f.recipients, ['leader'])
+    assert.notEqual(f.id, src.id)
+    assert.equal(hub.store.isRecipient('leader', f), true)
+    assert.equal(hub.store.isRecipient('deployer', f), false)
+
+    // 転送の転送は大元を指す
+    const again = (await (await forward(app, f.id, { to: { type: 'mailbox', id: 'deployer' } }, bearer)).json()) as Message
+    assert.equal(again.forwardedFrom, src.id)
+    assert.deepEqual(again.forwardedSender, { type: 'mailbox', id: 'deployer', role: null })
+    assert.deepEqual(again.from, { type: 'user', id: 'cli', role: null })
+  })
+
+  it('未知の id は 404、to がなければ 400', async () => {
+    const { app } = setup()
+    const cookie = await browserCookie(app)
+    const res = await forward(app, 'm_none', { to: { type: 'mailbox', id: 'leader' } }, { cookie, origin: ORIGIN })
+    assert.equal(res.status, 404)
+    assert.equal(((await res.json()) as { error: string }).error, 'message_not_found')
+    const src = (await (await post(app, notice, { cookie, origin: ORIGIN })).json()) as Message
+    assert.equal((await forward(app, src.id, {}, { cookie, origin: ORIGIN })).status, 400)
+    assert.equal((await forward(app, src.id, { to: { type: 'user', id: 'someone' } }, { cookie, origin: ORIGIN })).status, 400)
+  })
+})
+
 describe('GET /messages', () => {
   it('after と limit で履歴を返す', async () => {
     const { app } = setup()

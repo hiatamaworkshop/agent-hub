@@ -123,7 +123,8 @@
   "to": { "type": "mailbox | role | topic | user", "id": "…" },
   "body": "本文 (文字列)",
   "replyTo": "m_… (kind=reply では必須)",
-  "forwardedFrom": "m_… (無編集転送の場合)",
+  "forwardedFrom": "m_… (無編集転送の場合。大元のメッセージ id)",
+  "forwardedSender": { "type": "mailbox", "id": "deployer", "role": "deployer | null" },
   "meta": { "files": [{ "id": "f_…", "mime": "image/png", "size": 27068, "width": 1568, "height": 784 }] }
 }
 ```
@@ -136,7 +137,9 @@
 - `to.type = user`: どの Mailbox にも配信せず、UI にだけ出る (ブラウザへの返信先。`from` と対称にするため)。
   `id` は Hub が付与する送り手と同じ `browser` / `cli` に限り、それ以外は 400 (`mailbox` のつもりで種類を誤選択した送信を受理しないため)。
 - `to.type = role`: その role を持つ全 Mailbox に配信する。該当する Mailbox がなければ 400 ではなく受理し、後からその role で attach した Mailbox の未読になる。
-- 無編集転送では `kind` も元のメッセージのまま運ぶ。
+- 無編集転送 (`POST /messages/:id/forward`): `body`・`kind`・`replyTo`・`meta` を元のメッセージのまま写す。`from` は転送した人 (上の規則で Hub が付与)、本文の書き手は `forwardedSender` に分ける。
+  転送の転送では `forwardedFrom` / `forwardedSender` は大元を指す (本文の出どころを 1 段で示す)。`forwardedSender` のない転送 (この欄を足す前の記録) もありうる。
+  人間の添え書きは転送に含めない。UI は別のメッセージ (`user:browser` からの `request` か `notice`) として転送より先に送る。Channels の属性値のエスケープが未確認 (design.md §6.2-4) で、自由文を属性に載せられないため。
 - `meta`: 任意。送り手が付ける JSON オブジェクト。直列化して 8KB まで。キーは `^[a-z][a-z0-9_]{0,31}$`。Hub が解釈するのは既知のキー `files` だけで、ほかのキーは触らずに通す。空の `{}` は保存しない。
 - `meta.files`: `[{ "id": "f_…" }]` で送る (4 件まで。重複は 1 つにまとめる)。Hub は各 id が存在するかを確かめ (なければ 400、message に id)、保存するときは記録から `{ id, mime, size, width, height }` に書き直す。送り手が付けた mime や size は捨てる。
 
@@ -158,7 +161,7 @@
 |---|---|---|
 | GET | `/` | UI の HTML。`?token=` 付きなら cookie を設定してリダイレクト (§1) |
 | GET | `/stream` | SSE。Event / Message / Mailbox・Attachment の状態変化を流す |
-| POST | `/messages/:id/forward` | 無編集転送。body: `{ "to": {...} }` |
+| POST | `/messages/:id/forward` | 無編集転送。body: `{ "to": {...} }` (ほかのキーは無視。本文や kind は受け取らない)。応答は `POST /messages` と同じ (201、`recipients` 付き)。未知の id は 404 `message_not_found`。送り手の決め方は `POST /messages` と同じ (§2 Message) |
 | GET | `/settings` | カスタムコマンドの設定。`{ "version": 1, "commands": [{ "name", "text" }] }`。ファイルがなければ空。手編集の `defaultTo` (文字列 `<type>:<id>`) があれば併せて返し、なければ省く (形式が合わない値は無視する)。毎回ファイルから読む。壊れていれば 500 `settings_invalid` (中身は返さない) |
 | PUT | `/settings` | 設定を保存。body `{ "commands": [...] }` を検証し、保存後の設定を返す。違反は 400 (英語の `message`)。本文上限 64KB (超えると 413 `payload_too_large`)。ファイルの commands 以外のキーは保持する (`defaultTo` を含む。PUT は `defaultTo` を受け付けず、変えない)。壊れていたファイルは `settings.json.bak` に退避してから書く。保存先は `HUB_DATA_DIR/settings.json`。name は `^[a-z0-9][a-z0-9_-]{0,31}$`、重複不可、最大 100 個、text は 1〜8000 文字 |
 | POST | `/files` | 画像を 1 枚保存する。本文は生のバイト列で、`Content-Type` は使わずデコードして判定する。PNG / JPEG / GIF / WebP のみ (SVG やデコードできないものは 400)。長辺 `HUB_FILE_MAX_EDGE` (既定 1568) に収まるよう縮小し、EXIF を落として再エンコードする。20MB を超えると 413 `file_too_large`。`?persistent=1` で持続扱いにする。応答は記録 (新規は 201、同じ内容の再送は既存の記録を 200 で返す) |
@@ -322,7 +325,7 @@ Claude 側では次のように見える:
 
 - `from` は `user:browser` または `mailbox:<名前>`。送り手が role を持つ場合は `from_role` を足す。
 - `to` は `mailbox:<名前>` / `role:<名前>` / `topic:<名前>` (`user:` 宛ては Mailbox に届かない)。自分がなぜ受け取ったか (直接・role・購読) がこれで分かる。
-- `reply` のときは `reply_to` を、無編集転送のときは `forwarded_from` を足す。
+- `reply` のときは `reply_to` を、無編集転送のときは `forwarded_from` (大元の id) と `forwarded_sender` (本文の書き手。`mailbox:<名前>` など) を足す。書き手が role を持つ場合は `forwarded_sender_role` も足す。`from` は転送した人。
 - 本文中の `</channel>` は shim が `<\/channel>` に置き換える。Claude Code も同じ変換をする (design.md §6.1c) が、記載のない挙動なので頼り切らない。
   `</channel >` や `</CHANNEL>` も閉じタグとして解釈されうるため、大小を問わず `</channel` の並びをすべて置き換える (§6.2 の `</hub-message` も同じ)。
   本文は外側のタグを閉じられないので、本文に偽の属性や偽の開きタグを書かれても、外側のタグの中の文字列として見える。

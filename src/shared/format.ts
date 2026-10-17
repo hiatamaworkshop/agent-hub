@@ -28,6 +28,11 @@ function attributes(m: Message, meta: Record<string, unknown> | undefined): Reco
   a.to = formatAddress(m.to)
   if (m.replyTo) a.reply_to = m.replyTo
   if (m.forwardedFrom) a.forwarded_from = m.forwardedFrom
+  // 転送された本文の書き手。from (転送した人) とは別の属性にする
+  if (m.forwardedSender) {
+    a.forwarded_sender = formatSender(m.forwardedSender)
+    if (m.forwardedSender.role) a.forwarded_sender_role = m.forwardedSender.role
+  }
   if (meta && Object.keys(meta).length > 0) a.meta = JSON.stringify(meta)
   return a
 }

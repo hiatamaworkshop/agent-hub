@@ -80,7 +80,23 @@ describe('toChannelParams', () => {
     assert.equal(p.meta.from_role, 'reviewer')
     assert.equal(p.meta.reply_to, 'm_00')
     assert.equal(p.meta.forwarded_from, 'm_x')
+    assert.equal(p.meta.forwarded_sender, undefined)
     for (const k of Object.keys(p.meta)) assert.match(k, /^[A-Za-z0-9_]+$/)
+  })
+
+  it('転送は本文の書き手を forwarded_sender に、転送した人を from に分ける', () => {
+    const p = toChannelParams(
+      { ...base, forwardedFrom: 'm_src', forwardedSender: { type: 'mailbox', id: 'deployer', role: 'deployer' } },
+      'leader',
+    )
+    assert.equal(p.content, 'hello')
+    assert.equal(p.meta.from, 'user:browser')
+    assert.equal(p.meta.forwarded_from, 'm_src')
+    assert.equal(p.meta.forwarded_sender, 'mailbox:deployer')
+    assert.equal(p.meta.forwarded_sender_role, 'deployer')
+    const plain = toChannelParams({ ...base, forwardedFrom: 'm_src', forwardedSender: { type: 'user', id: 'cli', role: null } }, 'leader')
+    assert.equal(plain.meta.forwarded_sender, 'user:cli')
+    assert.equal('forwarded_sender_role' in plain.meta, false)
   })
 
   it('本文の </channel> をエスケープする', () => {

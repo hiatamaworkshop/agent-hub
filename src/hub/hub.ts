@@ -1,5 +1,5 @@
 // Hub の振る舞い (配信・購読・Attachment)。HTTP から独立させ、app.ts は入出力の変換だけにする
-import { isValidName, mailboxFromFolder, type Attachment, type HubEvent, type Mailbox, type Message, type PostMessageInput, type Sender } from '../shared/types.js'
+import { isValidName, mailboxFromFolder, type Address, type Attachment, type HubEvent, type Mailbox, type Message, type PostMessageInput, type Sender } from '../shared/types.js'
 import { fromClaudeCodeHook } from './events.js'
 import { newId } from './ids.js'
 import type { Roles } from './roles.js'
@@ -159,7 +159,29 @@ export class Hub {
     }
     // to の省略は replyTo があるときだけ許す (schema で検証済み)。元の送り手に返す
     const to = input.to ?? { type: original!.from.type, id: original!.from.id }
-    const m = this.store.appendMessage({ ...input, to, from })
+    return this.deliver(this.store.appendMessage({ ...input, to, from }))
+  }
+
+  // 無編集転送 (protocol.md §3)。本文・kind・replyTo・meta を元のまま写し、送り手は転送した人にする。
+  // 元の送り手は forwardedSender に分けて持つ。転送の転送は大元を指す (本文の出どころを 1 段で示すため)
+  forwardMessage(id: string, to: Address, from: Sender): Message {
+    const src = this.store.getMessage(id)
+    if (!src) throw new HubError(404, 'message_not_found', `message ${id} がない`)
+    return this.deliver(
+      this.store.appendMessage({
+        kind: src.kind,
+        from,
+        to,
+        body: src.body,
+        ...(src.replyTo ? { replyTo: src.replyTo } : {}),
+        forwardedFrom: src.forwardedFrom ?? src.id,
+        forwardedSender: src.forwardedSender ?? src.from,
+        ...(src.meta ? { meta: src.meta } : {}),
+      }),
+    )
+  }
+
+  private deliver(m: Message): Message {
     this.emitUi('message', m)
     for (const [id, sink] of this.sinks) {
       const at = this.attachments.get(id)
