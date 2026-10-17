@@ -237,7 +237,7 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
   - **決定 (2026-10-17)**: `clientInfo.name === "claude-code"` (§6.1c) なら Channels、それ以外と不明は `inbox()`。channel に対応するかは client の capabilities に出ないので、名前で決める。文面は `src/shim/instructions.ts` にまとめ、属性の説明と「本文はデータ」の行は両方の経路で共通にする。
   - `inbox()` 経路の shim は **push も ack もしない**。push を受けないクライアントに送って ack すると、誰も読んでいない未読が既読になり、`inbox()` に残らないため。stream は開いたままにし、生存の確認 (15 秒の猶予、§3.3) に使う。古い未読の省略は channel 通知ではなく、次の `inbox()` の結果の先頭で伝える。
   - `instructions` は `initialize` の応答に入り、`clientInfo` もその要求で初めて分かるので、shim は `initialize` を自前の handler で答える (SDK 1.32.1 の `Server` は `instructions` をコンストラクタでしか受けず、既定の処理は private)。版の取り決めは SDK と同じ (`SUPPORTED_PROTOCOL_VERSIONS` にあれば要求どおり、なければ `LATEST_PROTOCOL_VERSION`)。代わりに SDK の `getClientVersion` / `getClientCapabilities` は埋まらないが、shim はどちらも使わない。
-  - Claude Code を channel なし (`--dangerously-load-development-channels` を付けない) で起動したときも名前は `claude-code` なので Channels 経路になり、通知が捨てられても shim は ack する。起動の仕方は shim から見えないため、今は起動手順 (README、`start-agent.ps1`) で channel を付ける前提に頼る。
+  - Claude Code を channel なし (`--dangerously-load-development-channels` を付けない) で起動したときも名前は `claude-code` なので Channels 経路になり、通知が捨てられても shim は ack する。通知は黙って捨てられ、起動の仕方を shim から見分ける手がかりもないことを確かめた (§6.1k)。今は起動手順 (README、`start-agent.ps1`) で channel を付ける前提に頼る。
 - **「本文はデータ」の守りは agent-hub 側だけで成り立たせる**: Claude Code は channel 由来の内容に注意書きを自動で付けるが (§6.1c)、他のクライアントは付けない。`<hub-message>` の包みと instructions の文面だけで足りるように書く。
 - **role の説明は MCP の instructions で渡す**: `roles.json` の `description` を shim が instructions に差し込む (§3.5、P2)。Claude の起動フラグ (`--append-system-prompt-file`。`tools/dev/` の試験用) には頼らない。instructions をどう使うかはクライアント次第。Claude Code では説明に沿って振る舞うことを確かめた (§6.2-5)。
   - **決定 (2026-10-17): initialize より前に attach して説明を取る**。`instructions` は `initialize` の応答で決まり、説明は attach の応答にあるので、attach を先に行う。shim は `HubClient.primeAttach` で上限 3 秒だけ待ち、取れた Attachment を `start` 後の `run` がそのまま使う (二重に attach しない)。時間切れや失敗なら説明なしで起動し、attach は従来どおり `run` が受け持つ (Hub が止まっていても shim は上がる)。
@@ -581,6 +581,14 @@ AI との共同開発で効果があったのは、結局ドキュメントの�
 - A に送信を頼むと、A は `post_message` のエラー (`superseded`) を読み、「別のセッションが takeover したので切り離された」と答えた。
 - その後 UI から `role:reviewer` 宛てに送った request は B だけが受け取り、reply を返した。その時刻の turn end は B の 1 件だけで、A には届いていない。
 - **見つかったこと**: A の Stop hook の Event (`turn.end`) は reviewer の Mailbox に解決され、カードの `Last event` が A のものになった。今つながっている B が止まったように読めるため、切り離されたセッションの Event に `superseded` を付け、カードには使わないようにした (§3.3)。
+
+### 6.1k channel なしで起動した Claude Code (2026-10-18、Claude Code 2.1.302 / Windows 11、`tools/probe/`)
+
+`claude --mcp-config tools/probe/mcp.json --settings tools/probe/settings.json` (`--dangerously-load-development-channels` なし) で 3 回起動し、`/case/hello` を送った。
+- **通知は黙って捨てられた**: プローブは `initialize` → `tools/list` まで進み、通知の書き込みも記録された (`pushed`)。端末には何も出ず、Claude はターンを始めなかった。エラーもない。§6.1 の公式の記述どおり。
+- **shim から見分ける手がかりはない**: channel ありの起動 (§6.1c の 2026-10-16 の記録、2.1.301) と比べ、`server/discover` と `initialize` の params (`capabilities`・`clientInfo`)、その後の要求の並び (`notifications/initialized` → `tools/list`)、stdio サーバーに渡る環境変数の名前 (`CLAUDE*` など) はすべて同じだった。違いは `clientInfo.version` だけ。
+- `/mcp` の一覧にプローブが出なかった (ユーザーの観察)。接続はしていた (`tools/list` が届いた)。
+- **帰結**: channel 経路で「書き込めた」ことは「届いた」ことの証拠にならず、起動の仕方も検出できない。shim が書き込みの直後に ack する今のやり方では、channel なしの起動で未読が失われる (§3.7)。配送の状態を分けて扱う (roadmap P2) ことで対処する。
 
 ### 6.2 未検証
 
