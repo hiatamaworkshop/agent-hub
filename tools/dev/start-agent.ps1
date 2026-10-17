@@ -1,4 +1,4 @@
-# role を指定して Claude Code を channel 有効で起動する (2 エージェントの往復を試す開発用)。
+﻿# role を指定して Claude Code を channel 有効で起動する (2 エージェントの往復を試す開発用)。
 # role の説明は roles.json の description が shim の instructions に入る。tools/dev/roles/<role>.md があれば
 # 運用の細かい指示として system prompt にも足す (leader / deployer だけ。reviewer などは roles.json の説明だけで動く)
 param(
@@ -10,6 +10,14 @@ param(
 )
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+# roles.json にない role は、Hub が 400 unknown_role を返し shim が attach を繰り返すだけになる。claude を起動する前に止める
+# roles.json がなければ確かめない (Hub も role 名を検査しない)
+$rolesFile = Join-Path $root 'roles.json'
+if (Test-Path $rolesFile) {
+  # Windows PowerShell 5.1 は既定で ANSI として読むので、UTF-8 を指定する
+  $known = @((Get-Content $rolesFile -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties.Name)
+  if ($known -notcontains $Role) { throw "roles.json にない role: $Role (roles.json の role: $($known -join ', '))" }
+}
 if (-not $Model -and $Role -eq 'deployer') { $Model = 'haiku' }
 
 $claudeArgs = @(
