@@ -22,7 +22,7 @@
   - §4 セキュリティ / §5 設計判断のメモ (技術選定の理由)
   - §6 検証の記録 — Channels・hook の実挙動 (6.1〜6.1j)、未検証 (6.2)。**仕様の事実はまずここ**
   - §8 既存の仕組みとの関係 / §9 未決事項 (決定済みのものは決定と日付つき)
-- [docs/protocol.md](docs/protocol.md) (約 360 行)
+- [docs/protocol.md](docs/protocol.md) (約 390 行)
   - §1 共通 (認証・名前・エラー形式) / §2 データモデル (Mailbox・Role・Attachment・Event・Message)
   - §3 HTTP API / §4 配信保証 / §5 MCP ツール / §6 channel 通知の書式 / §7 UI の SSE 名 / §8 MCP Events との語彙対応
 

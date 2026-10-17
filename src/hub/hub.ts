@@ -1,5 +1,5 @@
 // Hub の振る舞い (配信・購読・Attachment)。HTTP から独立させ、app.ts は入出力の変換だけにする
-import { isValidName, mailboxFromFolder, type Address, type Attachment, type HubEvent, type Mailbox, type Message, type PostMessageInput, type Sender } from '../shared/types.js'
+import { isValidName, mailboxFromFolder, type Address, type Attachment, type HubEvent, type InboxResult, type Mailbox, type Message, type PostMessageInput, type Sender } from '../shared/types.js'
 import { fromClaudeCodeHook } from './events.js'
 import { newId } from './ids.js'
 import type { Roles } from './roles.js'
@@ -89,6 +89,8 @@ export interface HubOptions {
 
 export const DEFAULT_UNREAD_MAX_AGE_MS = 7 * 24 * 60 * 60_000
 export const DEFAULT_UNREAD_MAX = 50
+// inbox の nextPollMs (続きがないとき)。目安で、Hub は間隔を強制しない
+export const INBOX_POLL_MS = 5000
 
 export class Hub {
   private readonly uiListeners = new Set<(e: UiEvent) => void>()
@@ -420,6 +422,22 @@ export class Hub {
     const cursor = this.store.advanceCursor(name, upTo)
     if (cursor > before) this.emitUi('mailbox.acked', { name, cursor })
     return cursor
+  }
+
+  // polling 経路 (protocol.md §3 の inbox)。読むだけで cursor は進めない (進めるのは ack)。
+  // 残りがなければ、宛先でない分も含めて採番済みの seq まで見終えているので、次の after をそこまで進める (同じ範囲を走査し直さない)
+  inbox(name: string, after: number, limit: number): InboxResult {
+    const start = Math.max(after, this.mustMailbox(name).cursor)
+    const found = this.store.unread(name, start, limit + 1)
+    const hasMore = found.length > limit
+    const messages = found.slice(0, limit)
+    return {
+      messages,
+      cursor: hasMore ? messages.at(-1)!.seq : Math.max(start, this.store.lastSeq),
+      truncated: false,
+      hasMore,
+      nextPollMs: hasMore ? 0 : INBOX_POLL_MS,
+    }
   }
 
   cursorOf(attachmentId: string): number {

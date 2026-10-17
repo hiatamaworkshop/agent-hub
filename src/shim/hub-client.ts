@@ -197,11 +197,16 @@ export class HubClient {
     }
   }
 
+  // 渡し終えた id を覚える。inbox で渡した分も覚え、stream から重ねて渡さない
+  remember(id: string): void {
+    this.seen.add(id)
+    if (this.seen.size > DEDUPE_SIZE) this.seen.delete(this.seen.values().next().value!)
+  }
+
   private async onMessage(m: Message): Promise<void> {
     if (!this.seen.has(m.id)) {
       await this.deliver(m)
-      this.seen.add(m.id)
-      if (this.seen.size > DEDUPE_SIZE) this.seen.delete(this.seen.values().next().value!)
+      this.remember(m.id)
     }
     this.delivered = Math.max(this.delivered, m.seq)
     const at = this.attachment

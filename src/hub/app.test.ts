@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import type { Message } from '../shared/types.js'
+import type { InboxResult, Message } from '../shared/types.js'
 import { createApp } from './app.js'
 import { COOKIE_NAME } from './auth.js'
 import { Hub } from './hub.js'
@@ -200,6 +200,54 @@ describe('GET /messages', () => {
     assert.equal(json.lastSeq, 3)
     assert.equal((await app.request('/messages?limit=0', { headers: bearer })).status, 400)
     assert.equal((await app.request('/messages?after=-1', { headers: bearer })).status, 400)
+  })
+})
+
+describe('GET /mailboxes/:name/inbox', () => {
+  const browser = { type: 'user', id: 'browser', role: null } as const
+  const inbox = async (app: ReturnType<typeof setup>['app'], q = '') => {
+    const res = await app.request(`/mailboxes/poller/inbox${q}`, { headers: bearer })
+    return { status: res.status, json: (await res.json()) as InboxResult }
+  }
+
+  it('自分宛ての未読だけを seq 順に返し、cursor は進めない (進めるのは ack)', async () => {
+    const { hub, app } = setup()
+    hub.attach('poller', { client: 'other' })
+    const mine = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'poller' }, body: 'a' }, browser)
+    hub.postMessage({ kind: 'notice', to: { type: 'mailbox', id: 'other' }, body: 'x' }, browser)
+    const { status, json } = await inbox(app)
+    assert.equal(status, 200)
+    assert.deepEqual(json.messages.map((m) => m.id), [mine.id])
+    // 残りがなければ、宛先でない分も含めて採番済みの seq まで進めた値を返す
+    assert.deepEqual({ ...json, messages: [] }, { messages: [], cursor: 2, truncated: false, hasMore: false, nextPollMs: 5000 })
+    assert.equal(hub.store.getMailbox('poller')!.cursor, 0)
+    assert.equal((await inbox(app)).json.messages.length, 1, '読むだけでは既読にならない')
+  })
+
+  it('limit を超える分は hasMore で知らせ、cursor は返した最後の seq。ack の後は続きから返す', async () => {
+    const { hub, app } = setup()
+    const { attachmentId } = hub.attach('poller', { client: 'other' })
+    const sent = ['a', 'b', 'c'].map((body) => hub.postMessage({ kind: 'notice', to: { type: 'mailbox', id: 'poller' }, body }, browser))
+    const first = (await inbox(app, '?limit=2')).json
+    assert.deepEqual(first.messages.map((m) => m.body), ['a', 'b'])
+    assert.equal(first.hasMore, true)
+    assert.equal(first.nextPollMs, 0)
+    assert.equal(first.cursor, sent[1]!.seq)
+    hub.ack(attachmentId, first.cursor)
+    const rest = (await inbox(app, '?limit=2')).json
+    assert.deepEqual(rest.messages.map((m) => m.body), ['c'])
+    assert.equal(rest.hasMore, false)
+    // after は cursor より前には戻れない
+    assert.deepEqual((await inbox(app, '?after=0')).json.messages.map((m) => m.body), ['c'])
+    assert.deepEqual((await inbox(app, `?after=${sent[2]!.seq}`)).json.messages, [])
+  })
+
+  it('未知の Mailbox は 404、不正な after / limit は 400、トークンなしは 401', async () => {
+    const { app } = setup()
+    assert.equal((await inbox(app)).status, 404)
+    assert.equal((await app.request('/mailboxes/poller/inbox?limit=101', { headers: bearer })).status, 400)
+    assert.equal((await app.request('/mailboxes/poller/inbox?after=x', { headers: bearer })).status, 400)
+    assert.equal((await app.request('/mailboxes/poller/inbox')).status, 401)
   })
 })
 

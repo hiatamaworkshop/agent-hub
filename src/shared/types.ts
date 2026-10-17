@@ -69,6 +69,17 @@ export interface Message {
   meta?: Record<string, unknown>
 }
 
+// GET /mailboxes/:name/inbox の応答。MCP Events の events/poll に揃える (protocol.md §5)
+export interface InboxResult {
+  messages: Message[]
+  // 次の after。ack の upTo にもそのまま使える
+  cursor: number
+  // 切り捨ては attach の時点で行うので、inbox では常に false
+  truncated: boolean
+  hasMore: boolean
+  nextPollMs: number
+}
+
 // POST /messages と post_message の入力。from / id / seq などは含まれていても捨てる (z.object は未知キーを落とす)
 // meta のキーとサイズ (保存・配信の前に検証する)
 export const META_KEY_RE = /^[a-z][a-z0-9_]{0,31}$/

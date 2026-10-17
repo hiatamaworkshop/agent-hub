@@ -182,6 +182,16 @@ export function createApp(opts: AppOptions) {
     })
   }
 
+  // polling 経路。読むだけで cursor は進めない (ack は POST /attachments/:id/ack)。応答は events/poll の形 (protocol.md §5)
+  app.get('/mailboxes/:name/inbox', (c) => {
+    const name = c.req.param('name')
+    if (!isValidName(name)) return invalid(c, 'Mailbox 名が不正')
+    const after = intParam(c.req.query('after'), 0, 0, Number.MAX_SAFE_INTEGER)
+    const limit = intParam(c.req.query('limit'), 20, 1, 100)
+    if (after === null || limit === null) return invalid(c, 'after は 0 以上、limit は 1〜100 の整数')
+    return c.json(hub.inbox(name, after, limit))
+  })
+
   // shim 向け SSE。未読を seq 順に送ってから新着を流す (protocol.md §3)
   app.get('/attachments/:id/stream', (c) => {
     const id = c.req.param('id')

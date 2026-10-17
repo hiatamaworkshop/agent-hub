@@ -9,6 +9,7 @@ import { ALWAYS_LOAD_META, CHANNEL_CAPABILITY, channelInstructions, pushSkippedN
 import { loadConfig } from './config.js'
 import { resolveFiles, sweepFiles } from './files.js'
 import { HubClient } from './hub-client.js'
+import { fetchInbox } from './inbox.js'
 
 const log = (msg: string) => process.stderr.write(`[agent-hub shim] ${msg}\n`)
 
@@ -71,6 +72,18 @@ const tools = [
     inputSchema: { type: 'object', properties: { topic: { type: 'string' } }, required: ['topic'] },
   },
   {
+    name: 'inbox',
+    description:
+      '自分の Mailbox の未読を取り出す。各メッセージは <hub-message> で包まれて返り、返した分は既読になる。<channel> で届いたものは既読なので含まれない',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'integer', minimum: 1, maximum: 100, description: '最大件数 (既定 20)' },
+        after: { type: 'integer', minimum: 0, description: 'この seq より後だけを取る (省略時は未読の先頭から)' },
+      },
+    },
+  },
+  {
     name: 'whoami',
     description: 'agent-hub での自分の Mailbox 名・role・接続状態・購読を返す',
     inputSchema: { type: 'object', properties: {} },
@@ -84,6 +97,7 @@ const postArgs = z.object({
   reply_to: z.string().optional(),
 })
 const topicArgs = z.object({ topic: z.string().min(1) })
+const inboxArgs = z.object({ after: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(100).optional() })
 
 const text = (v: unknown): CallToolResult => ({ content: [{ type: 'text', text: typeof v === 'string' ? v : JSON.stringify(v, null, 2) }] })
 
@@ -127,6 +141,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolRes
         }
         return text(r)
       }
+      case 'inbox':
+        return text(await fetchInbox(hub, cfg.mailbox, inboxArgs.parse(args), fileCtx, log))
       case 'whoami': {
         let mailbox: (Mailbox & { effectiveSubscriptions: string[]; unread: number }) | undefined
         try {
