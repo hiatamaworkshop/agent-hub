@@ -380,6 +380,16 @@ describe('リースと detached', () => {
     assert.equal(after.detached!.attachmentId, b.attachmentId)
   })
 
+  it('同じセッションの attach し直し (古い方が猶予中に残っていた) は takeover に出さない。sessionId がなければ出す', async () => {
+    const { call, attach } = setup()
+    await attach('x', { client: 'claude-code', sessionId: 's1' })
+    await attach('x', { client: 'claude-code', sessionId: 's1' })
+    assert.equal((await listed(call, 'x')).takeover, null)
+    await attach('y', { client: 'other' })
+    await attach('y', { client: 'other' })
+    assert.ok((await listed(call, 'y')).takeover)
+  })
+
   it('takeover の後継は購読と未読を引き継ぐ (受け入れ条件 3)', async () => {
     const { app, call, attach, send } = setup()
     const a = await attach('rev-a')

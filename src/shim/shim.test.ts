@@ -202,6 +202,55 @@ describe('shim と Hub の結合', () => {
   })
 })
 
+describe('shim: takeover で引き継がれた後', () => {
+  it('post_message / subscribe / unsubscribe はエラーにし、後継の購読を変えない。whoami は答える', async () => {
+    const hub = new Hub(new Store(), { disconnectGraceMs: 300 })
+    const app = createApp({ hub, token: TOKEN, uiHtml: async () => null })
+    let hubUrl = ''
+    const server = await new Promise<ServerType>((resolve) => {
+      const s = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 }, (info) => {
+        hubUrl = `http://127.0.0.1:${info.port}`
+        resolve(s)
+      })
+    })
+    const client = new Client({ name: 'test', version: '0' })
+    const env = { ...(process.env as Record<string, string>), HUB_URL: hubUrl, HUB_TOKEN: TOKEN, HUB_MAILBOX: 'handover', CLAUDE_CODE_SESSION_ID: 'sess-a' }
+    delete env.HUB_ROLE
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const r = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean }
+      return { isError: r.isError ?? false, text: r.content[0]!.text }
+    }
+    const until = async (f: () => Promise<boolean>, ms = 5000) => {
+      const deadline = Date.now() + ms
+      while (!(await f())) {
+        if (Date.now() > deadline) throw new Error('timeout')
+        await new Promise((r) => setTimeout(r, 30))
+      }
+    }
+    const state = async () => (JSON.parse((await call('whoami')).text) as { state: string }).state
+    try {
+      await client.connect(new StdioClientTransport({ command: process.execPath, args: ['--import', 'tsx', 'src/shim/main.ts'], cwd: ROOT, env, stderr: 'pipe' }))
+      await until(async () => (await state()) === 'attached')
+      assert.equal((await call('subscribe', { topic: 'keep.me' })).isError, false)
+
+      // 別のセッションが同じ Mailbox に attach する
+      hub.attach('handover', { client: 'claude-code', sessionId: 'sess-b' })
+      await until(async () => (await state()) === 'terminated')
+
+      for (const [name, args] of [['post_message', { kind: 'notice', body: 'x', to: 'user:browser' }], ['subscribe', { topic: 'other' }], ['unsubscribe', { topic: 'keep.me' }]] as const) {
+        const r = await call(name, args)
+        assert.equal(r.isError, true, name)
+        assert.match(r.text, /superseded/)
+      }
+      assert.deepEqual(hub.store.getMailbox('handover')!.subscriptions, ['keep.me'])
+      assert.equal((await call('whoami')).isError, false)
+    } finally {
+      await client.close().catch(() => undefined)
+      await new Promise((r) => server.close(r))
+    }
+  })
+})
+
 describe('HubClient: attach で古い未読が省かれたとき', () => {
   it('stream の未読より先に、省いた件数を 1 度だけ伝える', async () => {
     const hub = new Hub(new Store(), { unreadMax: 2 })

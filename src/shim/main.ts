@@ -92,9 +92,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }))
 server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolResult> => {
   const args = req.params.arguments ?? {}
   try {
+    // 引き継がれた後は、送信も購読の変更もしない (購読は Mailbox に保存されるので、後継の購読を変えてしまう)
+    if (hub.terminatedReason === 'superseded' && req.params.name !== 'whoami') {
+      throw new Error(`Mailbox ${cfg.mailbox} は別のセッションに引き継がれた (superseded)。このセッションからは送受信も購読の変更もしない`)
+    }
     switch (req.params.name) {
       case 'post_message': {
-        if (hub.terminatedReason === 'superseded') throw new Error(`Mailbox ${cfg.mailbox} は別のセッションに引き継がれた (superseded)。このセッションからは送受信しない`)
         if (!hub.attachment) throw new Error(`Hub に接続していない (${hub.state}${hub.lastError ? `: ${hub.lastError}` : ''})`)
         const a = postArgs.parse(args)
         const m = await hub.request<Message & { recipients: string[] }>('POST', '/messages', {

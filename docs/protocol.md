@@ -232,7 +232,7 @@
 
 - `GET /mailboxes`: `{ "mailboxes": [Mailbox + { "effectiveSubscriptions", "unread": <件数>, "attachment": Attachment | null, "detached": DetachedAttachment | null, "takeover": { "at", "previous": Attachment } | null }] }`
   - `detached` は接続していない Mailbox で最後に detach した Attachment に `detachedAt` と `reason` (`closed` / `disconnected` / `lease_expired`) を足したもの。接続中・この Hub の起動後に attach がない・takeover で切り離されただけのときは `null`。古い Hub はこの項目を返さない
-  - `takeover` は今の Attachment が takeover で始まったときの時刻 (`at`) と切り離した旧 Attachment (`previous`)。今の Attachment が終わるまで出す (Hub のメモリのみ)。それ以外は `null`。古い Hub はこの項目を返さない
+  - `takeover` は今の Attachment が takeover で始まったときの時刻 (`at`) と切り離した旧 Attachment (`previous`)。今の Attachment が終わるまで出す (Hub のメモリのみ)。同じ `sessionId` どうしの attach し直しでは出さない。それ以外は `null`。古い Hub はこの項目を返さない
 - `PUT` / `DELETE /mailboxes/:name/subscriptions/:topic`: `{ "subscriptions": [...], "effectiveSubscriptions": [...] }`。Mailbox がなければ 404
 - `DELETE` で外せるのは**個別購読だけ**。role の既定購読 (`roles.json` の `subscribe`) のトピックは外れず、`effectiveSubscriptions` に残る。応答の形は変えていない。残ったかどうかは `effectiveSubscriptions` で分かる (shim の `unsubscribe` ツールは、残ったときに `note` を足す)。
 - `POST /attachments/:id/ack`: `{ "cursor": <進めた後の値> }`。`cursor` は後退せず、採番済みの `seq` を超えない

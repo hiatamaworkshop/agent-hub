@@ -264,7 +264,8 @@ export class Hub {
       leaseUntil: '',
     }
     this.attachments.set(at.attachmentId, at)
-    if (previous) this.takeovers.set(at.attachmentId, { at: at.attachedAt, previous })
+    // 同じセッションの attach し直し (/mcp の再接続などで古い方が猶予中に残っていた) は交代ではないので出さない
+    if (previous && !(previous.sessionId && previous.sessionId === input.sessionId)) this.takeovers.set(at.attachmentId, { at: at.attachedAt, previous })
     this.store.setAttachment(name, at.attachmentId)
     this.lastDetached.delete(name)
     // attach ツールで Mailbox を切り替えても、session の対応は最新の attach に追従する
