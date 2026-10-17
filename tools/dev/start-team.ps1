@@ -68,7 +68,11 @@ function Test-Attached([string]$Name) {
 }
 
 # --- role を決める ---
-$rolesFile = Join-Path $root 'roles.json'
+# 検査は Hub と同じ roles ファイル (環境変数 HUB_ROLES_FILE → .env → 既定 roles.json。相対パスはリポジトリ直下から)
+$hubRolesFile = Get-EnvValue 'HUB_ROLES_FILE' ''
+$hubRolesFile = if ($hubRolesFile) { [System.IO.Path]::Combine($root, $hubRolesFile) } else { Join-Path $root 'roles.json' }
+# 選ぶ一覧は、そのファイルがなければ roles.example.json から出す
+$rolesFile = $hubRolesFile
 if (-not (Test-Path $rolesFile)) { $rolesFile = Join-Path $root 'roles.example.json' }
 $known = @()
 # Windows PowerShell 5.1 は既定で ANSI として読むので、UTF-8 を指定する
@@ -92,8 +96,9 @@ if (-not $Roles) {
 # 選んだ順を保ち、重複は除く
 $Roles = @($Roles | Select-Object -Unique)
 # Hub は roles.json にない role を 400 で拒み、shim は attach を繰り返すだけになる。ここで止める
-$unknown = @($Roles | Where-Object { $known.Count -gt 0 -and $known -notcontains $_ })
-if ($unknown.Count -gt 0 -and (Test-Path (Join-Path $root 'roles.json'))) { throw "roles.json にない role: $($unknown -join ', ')" }
+# 大文字小文字を区別する (Hub と同じ)
+$unknown = @($Roles | Where-Object { $known.Count -gt 0 -and $known -cnotcontains $_ })
+if ($unknown.Count -gt 0 -and (Test-Path $hubRolesFile)) { throw "role ファイル ($hubRolesFile) にない role: $($unknown -join ', ')" }
 
 # --- build (shim は dist/ から起動される) ---
 $dist = Join-Path $root 'dist/shim/main.js'

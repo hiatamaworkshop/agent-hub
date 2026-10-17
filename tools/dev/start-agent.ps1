@@ -10,13 +10,20 @@ param(
 )
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-# roles.json にない role は、Hub が 400 unknown_role を返し shim が attach を繰り返すだけになる。claude を起動する前に止める
-# roles.json がなければ確かめない (Hub も role 名を検査しない)
-$rolesFile = Join-Path $root 'roles.json'
+$envFile = Join-Path $root '.env'
+# roles ファイルは Hub と同じ順に決める: 環境変数 HUB_ROLES_FILE → .env の HUB_ROLES_FILE → <リポジトリ>/roles.json。相対パスはリポジトリ直下から解決する
+$rolesFile = $env:HUB_ROLES_FILE
+if (-not $rolesFile -and (Test-Path $envFile)) {
+  $line = Get-Content $envFile -Encoding UTF8 | Where-Object { $_ -match '^\s*HUB_ROLES_FILE\s*=' } | Select-Object -Last 1
+  if ($line) { $rolesFile = ($line -replace '^\s*HUB_ROLES_FILE\s*=\s*', '').Trim().Trim('"', "'") }
+}
+$rolesFile = if ($rolesFile) { [System.IO.Path]::Combine($root, $rolesFile) } else { Join-Path $root 'roles.json' }
+# roles ファイルにない role は、Hub が 400 unknown_role を返し shim が attach を繰り返すだけになる。claude を起動する前に止める
+# ファイルがなければ確かめない (Hub も role 名を検査しない)。Hub と同じく名前は大文字小文字を区別する
 if (Test-Path $rolesFile) {
   # Windows PowerShell 5.1 は既定で ANSI として読むので、UTF-8 を指定する
   $known = @((Get-Content $rolesFile -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties.Name)
-  if ($known -notcontains $Role) { throw "roles.json にない role: $Role (roles.json の role: $($known -join ', '))" }
+  if ($known -cnotcontains $Role) { throw "role $Role は $rolesFile にない (有効な role: $($known -join ', '))" }
 }
 if (-not $Model -and $Role -eq 'deployer') { $Model = 'haiku' }
 
@@ -39,7 +46,6 @@ $claudeArgs += @('--add-dir', $filesDir)
 # HTTP hook (tools/hooks/settings.json) の Authorization は環境変数 HUB_TOKEN から展開される。
 # shim は .env を自分で読むが、hook は読まないので、未設定なら .env の値を渡す
 $token = $env:HUB_TOKEN
-$envFile = Join-Path $root '.env'
 if (-not $token -and (Test-Path $envFile)) {
   $line = Get-Content $envFile | Where-Object { $_ -match '^\s*HUB_TOKEN\s*=' } | Select-Object -Last 1
   if ($line) { $token = ($line -replace '^\s*HUB_TOKEN\s*=\s*', '').Trim().Trim('"', "'") }
