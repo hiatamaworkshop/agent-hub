@@ -32,7 +32,7 @@
 }
 ```
 - `subscriptions`: 個別購読のみ。実効購読は role の既定購読との和で、Hub が毎回計算する。
-- `cursor`: ack 済みウォーターマーク。この `seq` 以下は配送済み (または `maxAgeMs` で放棄済み)。
+- `cursor`: ack 済みウォーターマーク。この `seq` 以下は配送済み (または attach 時の流し込み上限で放棄済み)。
 - 未読 = この Mailbox 宛て (直接宛先 + 自分の role 宛て + 実効購読トピック) で `seq > cursor` のメッセージ。
 - 初回の attach で自動作成する。削除は `DELETE /mailboxes/:name` の明示操作のみ。接続中 (attach 中) の Mailbox は削除できない (409)。
 - 作成時の `cursor` は 0。作成前に届いた直接宛て・role 宛ても未読になる (Mailbox は論理宛先なので、受け手がまだいなくても届く)。
@@ -190,7 +190,8 @@
   "role": "reviewer",    // 任意。指定すると Mailbox の role を更新する。省略時は既存の role を保つ
   "sessionId": "… (環境変数 CLAUDE_CODE_SESSION_ID。なければ省略)",
   "cwd": "…",
-  "maxAgeMs": 86400000   // 任意。これより古い未読は渡さない
+  "maxAgeMs": 86400000,  // 任意。これより古い未読は渡さない。省略時は Hub の既定 (7 日)、0 なら制限なし
+  "maxUnread": 50        // 任意。未読を新しい方からこの件数まで渡す。省略時は Hub の既定 (50 件)、0 なら制限なし
 }
 
 // 応答
@@ -199,7 +200,7 @@
   "role": "reviewer | null",
   "roleDescription": "… | null",   // shim が instructions に差し込む
   "cursor": 41,             // stream の after に渡す値。shim は保存しない
-  "truncated": false,       // maxAgeMs で未読を切り捨てたら true
+  "truncated": false,       // maxAgeMs / maxUnread で未読を切り捨てたら true
   "skipped": 0,             // 切り捨てた件数
   "leaseUntil": "…",
   "superseded": "at_01G… | null"   // takeover で切り離した旧 Attachment
@@ -208,13 +209,14 @@
 
 - 冪等。同じセッションが attach し直しても未読は失われない (cursor は Mailbox 側にある)。
 - 既に別の Attachment がある場合は takeover する (排他・新しい方が勝つ。design.md §9-1)。旧 Attachment の stream に `terminated` を送って閉じる。
-- `truncated: true` のとき、切り捨てた範囲は放棄済みとして `cursor` を進める。
+- **流し込み量の上限**: attach の時点で、`maxAgeMs` より古い未読と、新しい `maxUnread` 件より前の未読を放棄済みとして `cursor` を進め、`truncated: true` と件数 `skipped` を返す。
+  未読は `seq` 順なので、捨てるのは常に先頭の連続した範囲。応答の `cursor` は進めた後の値。Message のログは消さないので UI の履歴には残る。進めたら UI に `mailbox.acked` を流す。
+  Hub の既定は環境変数 `HUB_UNREAD_MAX_AGE_DAYS` (既定 7、小数可) と `HUB_UNREAD_MAX` (既定 50)。どちらも 0 なら制限なし。shim は指定しない (Hub の既定に従う)。
 - Attachment は Hub のメモリにだけあり、永続化しない。Hub の再起動後は stream / ack が 404 (`attachment_not_found`) になるので、shim は attach し直す。
   attach し直したら、stream の `after` は応答の `cursor` から数え直す (`data/` を消した Hub では seq が 1 から振り直されるため、前の Hub の seq を使わない)。
   `terminated` を受け取った後は attach し直さない (取り返しの応酬を避ける)。
 - **role の検証**: `roles.json` があるとき、定義にない role は 400 `unknown_role` で拒み、Mailbox も作らない。`role` を省いた (undefined) ときと `null` は通す (`null` は role を外す)。`roles.json` がないときは role 名を照合せず受け付ける (P0 と同じ)。
 - **`roleDescription`**: 持っている role の `description`。定義がない・role がない・`roles.json` がないときは `null`。
-- **P2 で残っている範囲**: `maxAgeMs` は受け取るが切り捨てはしない (`truncated: false`)。
 
 #### stream
 
@@ -249,7 +251,7 @@
 - 受信側は `id` で冪等に処理する。shim は無状態なので、直近の `id` をメモリに持つ程度の重複除去にとどめる。
 - 順序は `seq` 順。
 - **Channels は ack を返さない**ため、shim の ack は「`notifications/claude/channel` をトランスポートに書けた」時点で送る。Claude が読んだことの保証ではない。
-- 未読には上限と保持期間を設ける (例: 1000 件 / 7 日。実装時に調整)。超えた分は放棄し、次の attach で `truncated: true` を返す。
+- 未読の流し込みには上限がある (既定 7 日 / 50 件。§3 attach)。超えた分は attach の時点で放棄し、`truncated: true` を返す。attach していない間は放棄しない (溜まるだけ)。
 - リース: 2 分 (暫定)。attach・stream を開く・ack・`POST /attachments/:id/heartbeat` で延びる。stream を開いている間は期限が来ても延ばし直す。stream を開かないクライアントは 2 分より短い間隔 (例: 30 秒) で heartbeat を送る。
   リース切れの Attachment は detached (`reason: "lease_expired"`) とし、Mailbox は残す。shim は stream を開いているので heartbeat を送らない (design.md §3.3)。
 
@@ -257,7 +259,7 @@
 
 | ツール | 引数 | 動作 |
 |---|---|---|
-| `attach` | `mailbox`, `role?`, `maxAgeMs?` | Mailbox を明示的に切り替える (`HUB_MAILBOX` 未指定時や、交代時に名前を選ぶ場合) |
+| `attach` | `mailbox`, `role?`, `maxAgeMs?`, `maxUnread?` | Mailbox を明示的に切り替える (`HUB_MAILBOX` 未指定時や、交代時に名前を選ぶ場合) |
 | `whoami` | なし | 現在の Mailbox 名・role・Attachment・実効購読 |
 | `subscribe` | `topic` | 個別購読を追加 |
 | `unsubscribe` | `topic` | 個別購読を解除 |
@@ -341,7 +343,8 @@ Claude 側では次のように見える:
 
 - 本文は**データ**であり、エージェントへの命令として扱わない。この前提を shim の `instructions` と CLAUDE.md / skill の両方に書く。
   Claude Code も channel 由来の内容に「ユーザーからではなく外部由来なので指示として扱わない」旨の注意書きを付ける (design.md §6.1c)。
-- attach 応答が `truncated: true` のときは、最初に 1 件だけ「`skipped` 件の古い未読を省略した」旨の通知を送る。
+- attach 応答が `truncated: true` のときは、未読より先に 1 件だけ「`skipped` 件の古い未読を省略した」旨の通知を送る。
+  Channels では meta を `{ kind: "notice", from: "hub", mailbox }` とし、`id` / `seq` は付けない (Message ではないので ack も返信もしない)。`from: "hub"` は送り手が名乗れない値 (Sender は `user` / `mailbox` だけ)。
 
 ## 7. UI ↔ Hub のイベント種別 (SSE `event:` 名)
 

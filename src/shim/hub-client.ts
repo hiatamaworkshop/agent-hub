@@ -42,6 +42,8 @@ export class HubClient {
   terminatedReason: string | undefined
   lastError: string | undefined
   private delivered = 0
+  // attach で古い未読が省略された件数。stream を開いたら 1 度だけ伝える (initialize 前の通知は捨てられうるため)
+  private pendingSkipped = 0
   private readonly seen = new Set<string>()
   private inflight: Promise<void> | undefined
   private stopped = false
@@ -52,6 +54,8 @@ export class HubClient {
     // Claude へ渡す。解決したら ack する
     private readonly deliver: (m: Message) => Promise<void>,
     private readonly log: (msg: string) => void,
+    // 古い未読を省略したことを Claude へ伝える (protocol.md §6.3)
+    private readonly notifySkipped: (skipped: number) => Promise<void> = async () => undefined,
   ) {}
 
   async request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -142,7 +146,9 @@ export class HubClient {
     // stream の after は Hub の cursor から数え直す。Hub の data/ を消して再起動すると seq が 1 から振り直されるため、
     // 前の Hub で覚えた seq を使うと attach 時の未読を黙って捨てる。ack 漏れで再送された分は id の重複除去で落ちる
     this.delivered = r.cursor
-    this.log(`attached mailbox=${this.cfg.mailbox} attachment=${r.attachmentId} cursor=${r.cursor}${r.superseded ? ` superseded=${r.superseded}` : ''}`)
+    // 古い Hub は truncated / skipped を返さない
+    if (r.truncated && r.skipped > 0) this.pendingSkipped += r.skipped
+    this.log(`attached mailbox=${this.cfg.mailbox} attachment=${r.attachmentId} cursor=${r.cursor}${r.superseded ? ` superseded=${r.superseded}` : ''}${r.skipped ? ` skipped=${r.skipped}` : ''}`)
   }
 
   private async streamOnce(onData: () => void): Promise<void> {
@@ -161,6 +167,12 @@ export class HubClient {
       }
       this.state = 'attached'
       this.lastError = undefined
+      // 未読より先に、省略したことを 1 件で伝える
+      if (this.pendingSkipped > 0) {
+        const n = this.pendingSkipped
+        this.pendingSkipped = 0
+        await this.notifySkipped(n).catch((e) => this.log(`notice: ${e}`))
+      }
       for await (const ev of parseSse(res.body)) {
         clearTimeout(watchdog)
         watchdog = setTimeout(() => abort.abort(), HEARTBEAT_TIMEOUT_MS)

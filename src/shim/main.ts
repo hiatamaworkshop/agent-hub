@@ -5,7 +5,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { ADDRESS_TYPES, MESSAGE_KINDS, type Address, type Mailbox, type Message } from '../shared/types.js'
-import { ALWAYS_LOAD_META, CHANNEL_CAPABILITY, channelInstructions, pushToChannel } from './channel.js'
+import { ALWAYS_LOAD_META, CHANNEL_CAPABILITY, channelInstructions, pushSkippedNotice, pushToChannel } from './channel.js'
 import { loadConfig } from './config.js'
 import { resolveFiles, sweepFiles } from './files.js'
 import { HubClient } from './hub-client.js'
@@ -17,7 +17,12 @@ if (!cfg.token) log('HUB_TOKEN が未設定。agent-hub の .env か環境変数
 
 // 添付画像は配信の直前に取得し、path / error を足す (元のメッセージは書き換えない)
 const fileCtx = { hubUrl: cfg.hubUrl, token: cfg.token, baseDir: cfg.filesDir, mailbox: cfg.mailbox, log }
-const hub = new HubClient(cfg, async (m: Message): Promise<void> => pushToChannel(server, await resolveFiles(m, fileCtx), cfg.mailbox), log)
+const hub = new HubClient(
+  cfg,
+  async (m: Message): Promise<void> => pushToChannel(server, await resolveFiles(m, fileCtx), cfg.mailbox),
+  log,
+  async (skipped: number): Promise<void> => pushSkippedNotice(server, skipped, cfg.mailbox),
+)
 
 // role の説明は instructions (initialize の応答) に入るので、それより前に attach して取る。待ちは上限付きで、
 // 過ぎたら説明なしで起動する (Hub が止まっていても shim は立ち上がる)。design.md §3.7

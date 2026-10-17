@@ -202,6 +202,36 @@ describe('shim と Hub の結合', () => {
   })
 })
 
+describe('HubClient: attach で古い未読が省かれたとき', () => {
+  it('stream の未読より先に、省いた件数を 1 度だけ伝える', async () => {
+    const hub = new Hub(new Store(), { unreadMax: 2 })
+    const app = createApp({ hub, token: TOKEN, uiHtml: async () => null })
+    let hubUrl = ''
+    const server = await new Promise<ServerType>((resolve) => {
+      const s = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 }, (info) => {
+        hubUrl = `http://127.0.0.1:${info.port}`
+        resolve(s)
+      })
+    })
+    const browser = { type: 'user', id: 'browser', role: null } as const
+    hub.detach(hub.attach('backlog', { client: 'other' }).attachmentId)
+    for (const body of ['a', 'b', 'c', 'd']) hub.postMessage({ kind: 'notice', to: { type: 'mailbox', id: 'backlog' }, body }, browser)
+
+    const got: string[] = []
+    const cfg = { hubUrl, token: TOKEN, mailbox: 'backlog', role: null, sessionId: undefined, cwd: ROOT, filesDir: tmpdir() }
+    const hc = new HubClient(cfg, async (m) => void got.push(m.body), () => undefined, async (n) => void got.push(`skipped:${n}`))
+    try {
+      hc.start()
+      const deadline = Date.now() + 5000
+      while (got.length < 3 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 30))
+      assert.deepEqual(got, ['skipped:2', 'c', 'd'])
+    } finally {
+      await hc.stop()
+      await new Promise((r) => server.close(r))
+    }
+  })
+})
+
 // Hub の data/ を消して再起動すると seq が 1 から振り直される (roadmap「既知の問題」)
 describe('HubClient: Hub の seq が巻き戻ったとき', () => {
   it('attach し直したら Hub の cursor から数え直し、その間に届いた未読を受け取る', async () => {

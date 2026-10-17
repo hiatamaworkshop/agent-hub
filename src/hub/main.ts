@@ -38,6 +38,18 @@ if (!Number.isFinite(ttlDays) || ttlDays < 0) {
   process.exit(1)
 }
 
+// attach 時に流す未読の上限: 日数 (小数可) と件数。0 なら制限なし。超えた古い未読は放棄済みにする (design.md §3.3)
+const unreadMaxAgeDays = Number(process.env.HUB_UNREAD_MAX_AGE_DAYS ?? 7)
+const unreadMax = Number(process.env.HUB_UNREAD_MAX ?? 50)
+if (!Number.isFinite(unreadMaxAgeDays) || unreadMaxAgeDays < 0) {
+  console.error('HUB_UNREAD_MAX_AGE_DAYS は 0 以上の数で設定してください (0 で制限なし)')
+  process.exit(1)
+}
+if (!Number.isInteger(unreadMax) || unreadMax < 0) {
+  console.error('HUB_UNREAD_MAX は 0 以上の整数で設定してください (0 で制限なし)')
+  process.exit(1)
+}
+
 // role 定義。読めない・形が違うなら黙って既定に戻さず、ファイル名と理由を出して止まる (ファイルがなければ P0 と同じ)
 const rolesFile = resolve(process.env.HUB_ROLES_FILE ?? join(ROOT, 'roles.json'))
 let roles: Roles | null
@@ -57,7 +69,7 @@ const store = new Store({
 const settings = new SettingsStore(join(dataDir, 'settings.json'))
 const files = new FileStore({ dir: join(dataDir, 'files'), maxEdge, ttlDays })
 const app = createApp({
-  hub: new Hub(store, { roles }),
+  hub: new Hub(store, { roles, unreadMaxAgeMs: Math.round(unreadMaxAgeDays * 24 * 60 * 60_000), unreadMax }),
   token,
   settings,
   files,

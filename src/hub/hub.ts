@@ -53,6 +53,9 @@ export interface AttachInput {
   role?: string | null
   sessionId?: string
   cwd?: string
+  // 流し込み量の上限。省略したら Hub の既定、0 なら制限なし (design.md §3.3)
+  maxAgeMs?: number
+  maxUnread?: number
 }
 
 // POST /events の結果。ignored は変換が取り込まなかった理由 (hook の判断には関与しない)
@@ -79,7 +82,13 @@ export interface HubOptions {
   leaseMs?: number
   // roles.json の内容。null (ファイルなし) なら role 名を検証せず、説明も返さない
   roles?: Roles | null
+  // attach 時の流し込み量の既定 (0 なら制限なし)。超えた古い未読は放棄済みとして cursor を進める (design.md §3.3)
+  unreadMaxAgeMs?: number
+  unreadMax?: number
 }
+
+export const DEFAULT_UNREAD_MAX_AGE_MS = 7 * 24 * 60 * 60_000
+export const DEFAULT_UNREAD_MAX = 50
 
 export class Hub {
   private readonly uiListeners = new Set<(e: UiEvent) => void>()
@@ -101,6 +110,8 @@ export class Hub {
   private readonly disconnectGraceMs: number
   private readonly leaseMs: number
   private readonly roles: Roles | null
+  private readonly unreadMaxAgeMs: number
+  private readonly unreadMax: number
 
   constructor(
     readonly store: Store,
@@ -110,6 +121,8 @@ export class Hub {
     this.roles = opts.roles ?? null
     this.disconnectGraceMs = opts.disconnectGraceMs ?? 15_000
     this.leaseMs = opts.leaseMs ?? 2 * 60_000
+    this.unreadMaxAgeMs = opts.unreadMaxAgeMs ?? DEFAULT_UNREAD_MAX_AGE_MS
+    this.unreadMax = opts.unreadMax ?? DEFAULT_UNREAD_MAX
   }
 
   onUi(fn: (e: UiEvent) => void): () => void {
@@ -259,17 +272,35 @@ export class Hub {
     // stream を開かないクライアント (polling) もあるので、切断の猶予ではなくリースで待つ
     this.renewLease(at.attachmentId)
     this.emitUi('attachment.attached', at)
+    const skipped = this.trimUnread(name, input.maxAgeMs ?? this.unreadMaxAgeMs, input.maxUnread ?? this.unreadMax)
 
     return {
       attachmentId: at.attachmentId,
       role: mailbox.role,
       roleDescription: (mailbox.role && this.roles?.get(mailbox.role)?.description) || null,
-      cursor: mailbox.cursor,
-      truncated: false,
-      skipped: 0,
+      // 省いた分だけ進んでいる (store の Mailbox は書き込みのたびに差し替わる)
+      cursor: this.mustMailbox(name).cursor,
+      truncated: skipped > 0,
+      skipped,
       leaseUntil: at.leaseUntil,
       superseded,
     }
+  }
+
+  // 長く離れた後の attach に古い未読を一度に流し込まない (design.md §3.3)。maxAgeMs より古いものと、
+  // 新しい maxUnread 件より前のものを放棄済みとして cursor を進める。未読は seq 順なので、捨てるのは常に先頭の連続した範囲。
+  // Message のログは消さない (UI からは見える)。戻り値は捨てた件数
+  private trimUnread(name: string, maxAgeMs: number, maxUnread: number): number {
+    const unread = this.store.unread(name)
+    let drop = maxUnread > 0 ? Math.max(0, unread.length - maxUnread) : 0
+    if (maxAgeMs > 0) {
+      const cutoff = this.now().getTime() - maxAgeMs
+      while (drop < unread.length && Date.parse(unread[drop]!.ts) < cutoff) drop++
+    }
+    if (drop === 0) return 0
+    const cursor = this.store.advanceCursor(name, unread[drop - 1]!.seq)
+    this.emitUi('mailbox.acked', { name, cursor })
+    return drop
   }
 
   detach(attachmentId: string): void {

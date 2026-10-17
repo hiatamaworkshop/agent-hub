@@ -188,6 +188,58 @@ describe('再送と ack', () => {
   })
 })
 
+describe('流し込み量の制御 (maxAgeMs / maxUnread)', () => {
+  const to = { type: 'mailbox', id: 'x' }
+
+  it('上限を超えた古い未読を放棄済みにして cursor を進め、新しい分だけ流す。UI には mailbox.acked', async () => {
+    const hub = new Hub(new Store(), { unreadMax: 3 })
+    const ui: { event: string; data: unknown }[] = []
+    hub.onUi((e) => ui.push(e))
+    const { app, call, attach, send } = setup(hub)
+    const a = await attach('x')
+    assert.equal(a.truncated, false)
+    assert.equal(a.skipped, 0)
+    await call('DELETE', `/attachments/${a.attachmentId}`)
+    const sent = []
+    for (const body of ['1', '2', '3', '4', '5']) sent.push(await send(to, body))
+
+    const b = await attach('x')
+    assert.equal(b.truncated, true)
+    assert.equal(b.skipped, 2)
+    assert.equal(b.cursor, sent[1]!.seq)
+    assert.deepEqual(ui.filter((e) => e.event === 'mailbox.acked').map((e) => e.data), [{ name: 'x', cursor: sent[1]!.seq }])
+    const got = await collect(await app.request(`/attachments/${b.attachmentId}/stream`, { headers: auth }), (evs) => messages(evs).length >= 3)
+    assert.deepEqual(messages(got.events).map((m) => m.body), ['3', '4', '5'])
+    // ログには残る
+    assert.equal(hub.store.listMessages().length, 5)
+  })
+
+  it('maxAgeMs より古い未読を省く (既定は 7 日)', async () => {
+    let t = Date.parse('2026-10-01T00:00:00Z')
+    const now = () => new Date(t)
+    const { call, attach, send } = setup(new Hub(new Store({ now }), { now }))
+    const a = await attach('x')
+    await call('DELETE', `/attachments/${a.attachmentId}`)
+    await send(to, 'old-1')
+    await send(to, 'old-2')
+    t += 7 * 24 * 60 * 60_000
+    await send(to, 'new')
+    t += 1
+    const b = await attach('x')
+    assert.equal(b.skipped, 2)
+  })
+
+  it('attach ごとに上書きでき、0 なら制限なし', async () => {
+    const { call, attach, send } = setup(new Hub(new Store(), { unreadMax: 1 }))
+    const a = await attach('x')
+    await call('DELETE', `/attachments/${a.attachmentId}`)
+    for (const body of ['1', '2', '3']) await send(to, body)
+    assert.equal((await attach('x', { client: 'claude-code', maxUnread: 0 })).skipped, 0)
+    assert.equal((await attach('x', { client: 'claude-code', maxUnread: 2 })).skipped, 1)
+    assert.equal((await call('POST', '/mailboxes/x/attach', { client: 'claude-code', maxUnread: -1 })).status, 400)
+  })
+})
+
 describe('takeover と detach', () => {
   it('新しい attach で旧 stream に terminated(superseded) を送って閉じる', async () => {
     const { app, attach } = setup()

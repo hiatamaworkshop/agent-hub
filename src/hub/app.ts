@@ -46,8 +46,9 @@ const attachSchema = z.object({
   role: nameSchema.nullable().optional(),
   sessionId: z.string().min(1).max(256).optional(),
   cwd: z.string().max(4096).optional(),
-  // P2 で実装する。P0 では受け取るだけ
-  maxAgeMs: z.number().int().positive().optional(),
+  // 流し込み量の上限。省略したら Hub の既定、0 なら制限なし
+  maxAgeMs: z.number().int().nonnegative().optional(),
+  maxUnread: z.number().int().nonnegative().optional(),
 })
 
 const ackSchema = z.object({ upTo: z.number().int().nonnegative() })
