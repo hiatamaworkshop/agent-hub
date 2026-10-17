@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { isValidName, mailboxFromFolder } from '../shared/types.js'
+import { defaultMailboxName, isValidName } from '../shared/types.js'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
@@ -32,8 +32,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ShimConfig {
 
   const cwd = envValue(env, 'CLAUDE_PROJECT_DIR') ?? process.cwd()
   const role = envValue(env, 'HUB_ROLE') ?? null
-  // 優先順: HUB_MAILBOX → HUB_ROLE → フォルダ名 (design.md §3.3)
-  const mailbox = envValue(env, 'HUB_MAILBOX') ?? role ?? mailboxFromFolder(cwd)
+  // 優先順: HUB_MAILBOX → HUB_ROLE なら <フォルダ名>.<role> → フォルダ名 (design.md §3.3)
+  const mailbox = envValue(env, 'HUB_MAILBOX') ?? defaultMailboxName(cwd, role)
   if (!isValidName(mailbox)) throw new Error(`Mailbox 名 "${mailbox}" は ^[a-z0-9][a-z0-9_.-]{0,63}$ に合わない`)
   if (role !== null && !isValidName(role)) throw new Error(`role 名 "${role}" は ^[a-z0-9][a-z0-9_.-]{0,63}$ に合わない`)
   const port = envValue(env, 'HUB_PORT') ?? '7777'

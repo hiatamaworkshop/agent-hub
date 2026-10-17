@@ -41,6 +41,7 @@ describe('Store: 復元', () => {
     s1.ensureMailbox('gone')
     s1.deleteMailbox('gone')
     s1.setAttachment('rev-a', 'at_x')
+    s1.setProject('rev-a', 'C:\\work\\cairn')
 
     const s2 = new Store({ file })
     assert.equal(s2.lastSeq, 2)
@@ -49,6 +50,7 @@ describe('Store: 復元', () => {
     assert.equal(mb.role, 'reviewer')
     assert.deepEqual(mb.subscriptions, ['user.message'])
     assert.equal(mb.cursor, 1)
+    assert.equal(mb.project, 'C:\\work\\cairn')
     assert.equal(mb.attachment, null, 'Attachment は永続化しない')
     assert.equal(s2.getMailbox('gone'), undefined)
     assert.deepEqual(s2.unread('rev-a').map((m) => m.seq), [2])

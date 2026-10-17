@@ -29,9 +29,11 @@
   "subscriptions": ["agent.main"],
   "cursor": 41,
   "received": 38,
+  "project": "C:/work/cairn | null",
   "attachment": "at_01H… | null"
 }
 ```
+- `project`: 最後に attach した Attachment の `cwd` (申告されたままの文字列)。`cwd` のない attach では変えない。この項目より前のログから復元した Mailbox は、次の attach まで `null`。前回と違う `project` からの attach は `GET /mailboxes` の `projectChanged` で知らせる (§3 応答の形、design.md §3.3)。
 - `subscriptions`: 個別購読のみ。実効購読は role の既定購読との和で、Hub が毎回計算する。
 - `cursor`: ack 済みウォーターマーク。この `seq` 以下は配送済み (または attach 時の流し込み上限で放棄済み)。
 - 未読 = この Mailbox 宛て (直接宛先 + 自分の role 宛て + 実効購読トピック) で `seq > cursor` のメッセージ。
@@ -194,7 +196,7 @@
   "client": "claude-code",
   "role": "reviewer",    // 任意。指定すると Mailbox の role を更新する。省略時は既存の role を保つ
   "sessionId": "… (環境変数 CLAUDE_CODE_SESSION_ID。なければ省略)",
-  "cwd": "…",
+  "cwd": "…",            // 任意。作業フォルダ。Mailbox の project に記録する
   "maxAgeMs": 86400000,  // 任意。これより古い未読は渡さない。省略時は Hub の既定 (7 日)、0 なら制限なし
   "maxUnread": 50,       // 任意。未読を新しい方からこの件数まで渡す。省略時は Hub の既定 (50 件)、0 なら制限なし
   "previous": "at_01G…"  // 任意。attach し直しのとき、失った (404 になった) 前の Attachment ID
@@ -237,9 +239,10 @@
 
 #### 応答の形
 
-- `GET /mailboxes`: `{ "mailboxes": [Mailbox + { "effectiveSubscriptions", "unread": <件数>, "unconfirmed": <件数>, "attachment": Attachment | null, "detached": DetachedAttachment | null, "takeover": { "at", "previous": Attachment } | null }] }`
+- `GET /mailboxes`: `{ "mailboxes": [Mailbox + { "effectiveSubscriptions", "unread": <件数>, "unconfirmed": <件数>, "attachment": Attachment | null, "detached": DetachedAttachment | null, "takeover": { "at", "previous": Attachment } | null, "projectChanged": { "at", "from": "<前の project>" } | null }] }`
   - `detached` は接続していない Mailbox で最後に detach した Attachment に `detachedAt` と `reason` (`closed` / `disconnected` / `lease_expired`) を足したもの。接続中・この Hub の起動後に attach がない・takeover で切り離されただけのときは `null`。古い Hub はこの項目を返さない
   - `takeover` は今の Attachment が takeover で始まったときの時刻 (`at`) と切り離した旧 Attachment (`previous`)。今の Attachment が終わるまで出す (Hub のメモリのみ)。同じ `sessionId` どうしの attach し直しでは出さない。それ以外は `null`。古い Hub はこの項目を返さない
+  - `projectChanged` は直近の attach が前の `project` と違うフォルダからだったときの時刻 (`at`) と前の `project` (`from`)。比較は区切り・末尾の区切り・ドライブ文字のパスの大文字小文字を揃えて行う。次の attach か Mailbox の削除まで出す (Hub のメモリのみ)。拒みはしない。それ以外は `null`。古い Hub はこの項目を返さない
 - `PUT` / `DELETE /mailboxes/:name/subscriptions/:topic`: `{ "subscriptions": [...], "effectiveSubscriptions": [...] }`。Mailbox がなければ 404
 - `DELETE` で外せるのは**個別購読だけ**。role の既定購読 (`roles.json` の `subscribe`) のトピックは外れず、`effectiveSubscriptions` に残る。応答の形は変えていない。残ったかどうかは `effectiveSubscriptions` で分かる (shim の `unsubscribe` ツールは、残ったときに `note` を足す)。
 - `POST /attachments/:id/ack`: `{ "cursor": <進めた後の値>, "received": <進めた後の値> }`。どちらも後退せず、採番済みの `seq` を超えない

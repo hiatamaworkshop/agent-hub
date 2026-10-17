@@ -577,3 +577,39 @@ describe('切断中の後継 (previous)', () => {
     assert.equal((await attachWith({})).status, 200)
   })
 })
+
+describe('project (attach の cwd)', () => {
+  const list = async (call: ReturnType<typeof setup>['call']) =>
+    ((await (await call('GET', '/mailboxes')).json()) as { mailboxes: { name: string; project: string | null; projectChanged: { at: string; from: string } | null }[] }).mailboxes
+  const one = async (call: ReturnType<typeof setup>['call'], name: string) => (await list(call)).find((m) => m.name === name)!
+
+  it('attach の cwd を記録し、表記の揺れだけなら警告しない', async () => {
+    const { call, attach } = setup()
+    await attach('cairn.deployer', { client: 'claude-code', cwd: 'C:\\work\\cairn' })
+    assert.equal((await one(call, 'cairn.deployer')).project, 'C:\\work\\cairn')
+    await attach('cairn.deployer', { client: 'claude-code', cwd: 'c:/Work/Cairn/' })
+    const mb = await one(call, 'cairn.deployer')
+    assert.equal(mb.projectChanged, null)
+    assert.equal(mb.project, 'c:/Work/Cairn/', '記録は新しい方に揃える')
+  })
+
+  it('違うフォルダからの attach は記録を更新し、前のフォルダを次の attach まで projectChanged に出す', async () => {
+    const { call, attach } = setup()
+    await attach('deployer', { client: 'claude-code', cwd: 'C:\\work\\cairn' })
+    await attach('deployer', { client: 'claude-code', cwd: 'C:\\work\\agent-hub' })
+    const mb = await one(call, 'deployer')
+    assert.equal(mb.project, 'C:\\work\\agent-hub')
+    assert.equal(mb.projectChanged?.from, 'C:\\work\\cairn')
+    await attach('deployer', { client: 'claude-code', cwd: 'C:\\work\\agent-hub' })
+    assert.equal((await one(call, 'deployer')).projectChanged, null)
+  })
+
+  it('cwd のない attach は project を変えない', async () => {
+    const { call, attach } = setup()
+    await attach('x', { client: 'claude-code', cwd: '/home/u/cairn' })
+    await attach('x', { client: 'codex' })
+    const mb = await one(call, 'x')
+    assert.equal(mb.project, '/home/u/cairn')
+    assert.equal(mb.projectChanged, null)
+  })
+})

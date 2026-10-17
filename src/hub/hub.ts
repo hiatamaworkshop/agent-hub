@@ -1,5 +1,5 @@
 // Hub の振る舞い (配信・購読・Attachment)。HTTP から独立させ、app.ts は入出力の変換だけにする
-import { isValidName, mailboxFromFolder, type Address, type Attachment, type HubEvent, type InboxResult, type Mailbox, type Message, type PostMessageInput, type Sender } from '../shared/types.js'
+import { isValidName, mailboxFromFolder, normalizeProjectPath, type Address, type Attachment, type HubEvent, type InboxResult, type Mailbox, type Message, type PostMessageInput, type Sender } from '../shared/types.js'
 import { fromClaudeCodeHook } from './events.js'
 import { newId } from './ids.js'
 import type { Roles } from './roles.js'
@@ -39,6 +39,12 @@ export interface DetachedAttachment extends Attachment {
 export interface Takeover {
   at: string
   previous: Attachment
+}
+
+// 直近の attach が前の project と違うフォルダからだったとき。次の attach か削除まで GET /mailboxes に出す (メモリのみ)
+export interface ProjectChange {
+  at: string
+  from: string
 }
 
 // Attachment の stream 1 本ぶん (protocol.md §3 shim 向け SSE)
@@ -104,6 +110,8 @@ export class Hub {
   private readonly lastDetached = new Map<string, DetachedAttachment>()
   // takeover した Attachment の ID → 切り離した旧 Attachment。その Attachment が終わったら消す
   private readonly takeovers = new Map<string, Takeover>()
+  // Mailbox 名 → 前と違うフォルダからの attach。起動の間違いに気づけるよう警告するだけで、拒まない (design.md §3.3)
+  private readonly projectChanges = new Map<string, ProjectChange>()
   // takeover で切り離された Attachment の sessionId。そのセッションの Event に superseded を付ける。
   // 同じセッションが attach し直したら外す。永続化はしない
   private readonly supersededSessions = new Set<string>()
@@ -263,6 +271,7 @@ export class Hub {
     if (mb.attachment) throw new HubError(409, 'mailbox_attached', `mailbox ${name} は attach 中のため削除できない。先に detach する`)
     this.store.deleteMailbox(name)
     this.lastDetached.delete(name)
+    this.projectChanges.delete(name)
     this.emitUi('mailbox.deleted', { name })
   }
 
@@ -303,6 +312,7 @@ export class Hub {
     if (previous && !(previous.sessionId && previous.sessionId === input.sessionId)) this.takeovers.set(at.attachmentId, { at: at.attachedAt, previous })
     this.store.setAttachment(name, at.attachmentId)
     this.lastDetached.delete(name)
+    this.recordProject(name, mailbox.project, input.cwd, at.attachedAt)
     // attach ツールで Mailbox を切り替えても、session の対応は最新の attach に追従する
     if (input.sessionId) this.sessionMailbox.set(input.sessionId, name)
     // stream を開かないクライアント (polling) もあるので、切断の猶予ではなくリースで待つ
@@ -488,6 +498,14 @@ export class Hub {
     return this.mustMailbox(name)
   }
 
+  // cwd のない attach (cwd を申告しないクライアント) では project を変えず、前の警告も外す
+  private recordProject(name: string, before: string | null, cwd: string | undefined, at: string): void {
+    this.projectChanges.delete(name)
+    if (!cwd) return
+    if (before && normalizeProjectPath(before) !== normalizeProjectPath(cwd)) this.projectChanges.set(name, { at, from: before })
+    this.store.setProject(name, cwd)
+  }
+
   // GET /mailboxes 向け。実効購読・未読数・Attachment と、接続していなければ最後に detached になった Attachment、
   // 接続中の Attachment が takeover で始まったなら切り離した旧 Attachment を添える
   describeMailboxes() {
@@ -501,6 +519,7 @@ export class Hub {
         attachment,
         detached: attachment ? null : (this.lastDetached.get(mb.name) ?? null),
         takeover: attachment ? (this.takeovers.get(attachment.attachmentId) ?? null) : null,
+        projectChanged: this.projectChanges.get(mb.name) ?? null,
       }
     })
   }

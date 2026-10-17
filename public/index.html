@@ -35,6 +35,7 @@
   .mb:hover { border-color: var(--accent); border-left-color: var(--pc, var(--accent)); }
   .mb .name { font-weight: 600; font-family: var(--mono); }
   .mb .meta { font-size: 12px; color: var(--muted); }
+  .mb .meta.warn { color: var(--warn); overflow-wrap: anywhere; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
   .dot.on { background: var(--reply); }
   section { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -1224,6 +1225,11 @@ async function loadMailboxes() {
   scheduleRelay() // 未送の判定に B の role を使う
 }
 
+// パスの最後のフォルダ名 (\ と / のどちらの区切りでも)
+function folderName(p) {
+  return p.split(/[\\/]+/).filter(Boolean).pop() || p
+}
+
 // カードの描画。Event が届いたときは一覧を取り直さず、手元の一覧で描き直す
 function renderMailboxes(mailboxes) {
   const root = $('mailboxes')
@@ -1236,6 +1242,18 @@ function renderMailboxes(mailboxes) {
     const title = el('div')
     title.append(el('span', `dot${mb.attachment ? ' on' : ''}`), el('span', 'name', mb.name), el('span', `chip c${ci}`, mb.role || mb.name))
     box.append(title)
+    // どのリポジトリの Mailbox か。最後に attach した作業フォルダ (古い Hub と、記録より前の Mailbox は返さない)
+    if (mb.project) {
+      const p = el('div', 'meta', `Project: ${folderName(mb.project)}`)
+      p.title = mb.project
+      box.append(p)
+    }
+    // 直近の attach が前と違うフォルダから。起動の間違いの見込みが高いので知らせる (Hub は拒まない。design.md §3.3)
+    if (mb.projectChanged) {
+      const w = el('div', 'meta warn', `Attached from a different folder ${time(mb.projectChanged.at)} (was ${mb.projectChanged.from})`)
+      w.title = 'The newest session started in a different folder than the previous one. If that was a mistake, restart it in the project root.'
+      box.append(w)
+    }
     // detached は最後に切れた Attachment (この Hub の起動中だけ)。古い Hub は返さないので Disconnected のまま
     const meta = [mb.attachment ? `Connected (${mb.attachment.client})` : mb.detached ? `Detached ${time(mb.detached.detachedAt)} (${DETACH_LABEL[mb.detached.reason] || mb.detached.reason})` : 'Disconnected']
     // takeover は今の Attachment が旧セッションを切り離して始まったとき (古い Hub は返さない)

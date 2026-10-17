@@ -58,7 +58,7 @@ claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels s
 
 - 警告ダイアログでは **I am using this for local development** を選ぶ。
 - `server:agent-hub · no MCP server configured with that name` という警告が出ても通知は届く (design.md §6.1c)。
-- Mailbox 名は `HUB_MAILBOX` → `HUB_ROLE` → フォルダ名 (ここでは `agent-hub`) の順に決まる。
+- Mailbox 名は `HUB_MAILBOX` → `HUB_ROLE` があれば `<フォルダ名>.<role>` → フォルダ名 (ここでは `agent-hub`) の順に決まる。
 - shim はトークンを agent-hub の `.env` から読むので、MCP 設定にトークンを書かなくてよい。
 
 ### 4. 往復を確かめる
@@ -156,8 +156,8 @@ role の説明は `roles.json` の `description` が shim の instructions に�
 
 ```powershell
 npm run hub                                   # ターミナル A
-./tools/dev/start-agent.ps1 -Role leader      # ターミナル B (Mailbox = leader、既定のモデル)
-./tools/dev/start-agent.ps1 -Role deployer    # ターミナル C (Mailbox = deployer、haiku)
+./tools/dev/start-agent.ps1 -Role leader      # ターミナル B (Mailbox = agent-hub.leader、既定のモデル)
+./tools/dev/start-agent.ps1 -Role deployer    # ターミナル C (Mailbox = agent-hub.deployer、haiku)
 ```
 
 まとめて起動するなら `start-team.ps1` を使う。Hub が止まっていれば起動し、選んだ role を Windows Terminal のタブで 1 つずつ起動する (wt がなければ別ウィンドウ)。
@@ -167,12 +167,13 @@ npm run hub                                   # ターミナル A
 ./tools/dev/start-team.ps1 -Roles leader,deployer   # 選ばずに指定する
 ```
 
+- どちらのスクリプトも `-Project <フォルダ>` で作業するプロジェクトを選べる (省略時は agent-hub)。下の「他のリポジトリで使う」。
 - 1 つ起動するごとに、その role の Mailbox が Hub に attach するまで待ってから次へ進む (上限 `-AttachTimeout`、既定 60 秒)。開発用 channel の警告ダイアログは、開いたタブで 1 つずつ答える。
 - 接続中の role は飛ばす (起動し直すと takeover で今のセッションが切り離されるため)。起動し直すなら `-Force`。
 - `roles.json` にない role は起動前に止める。`dist/` が `src/` より古ければ先に build する (`-NoBuild` で省く)。
 - attach の確認には `.env` の `HUB_TOKEN` を使う。タブは起動したのと同じシェル (`pwsh` / `powershell`) で開く。
 
-1. ブラウザの左側に `leader` と `deployer` が role 付きで「接続中」と出ることを確かめる。
+1. ブラウザの左側に `agent-hub.leader` と `agent-hub.deployer` が role 付きで「接続中」と出ることを確かめる。
 2. ブラウザから `request` を `role:leader` 宛てに送る。本文は作業の依頼 (例: 「`tmp/hello.txt` を作って」)。
 3. leader が `role:deployer` 宛てに実装指示を `request` で送り、deployer が作業して `reply` を返す。
 4. leader が変更を確かめ、2 の依頼への `reply` を送る。ブラウザに 4 通が `request` → `request` → `reply` → `reply` の順に並ぶ。
@@ -204,7 +205,20 @@ npm run hub                               # 読むのは起動時だけ。変え
 
 ### 他のリポジトリで使う
 
-shim をユーザースコープに絶対パスで登録し、同じフラグで起動する。
+エージェントは**そのプロジェクトのルートで起動する**。読む `CLAUDE.md`・hook・許可の範囲・`git diff` はどれも起動したフォルダで決まる (design.md §3.3)。
+
+```powershell
+./tools/dev/start-agent.ps1 -Role deployer -Project C:\work\cairn            # Mailbox = cairn.deployer
+./tools/dev/start-team.ps1 -Roles leader,deployer -Project C:\work\cairn     # cairn.leader と cairn.deployer
+```
+
+- スクリプトは `-Project` のフォルダに移ってから `claude` を起動する。shim は agent-hub の `dist/` を絶対パスで指す (MCP 設定は OS の一時フォルダの `agent-hub-mcp.json` に作る)。
+- Mailbox 名の既定は `<フォルダ名>.<role>`。Mailbox 名は Hub 全体で 1 つなので、プロジェクトが違えば同じ role でも別の Mailbox になる。`-Mailbox` で変えられる。
+- `role:deployer` 宛ては、どのプロジェクトの deployer にも届く。特定のプロジェクトに送るなら `mailbox:cairn.deployer` 宛てにする (design.md §9-7)。
+- hook は対象のリポジトリの `.claude/settings.local.json` には無いので、`tools/hooks/settings.json` の `hooks` を `~/.claude/settings.json` に写す。どこにも無ければスクリプトが警告する (起動は止めない)。
+- ブラウザのカードに `Project: <フォルダ名>` が出る (全体のパスはマウスを載せると出る)。前回と違うフォルダから同じ Mailbox に attach すると、`Attached from a different folder (was …)` と警告が出る (拒みはしない)。
+
+スクリプトを使わないなら、shim をユーザースコープに絶対パスで登録し、プロジェクトのルートで同じフラグで起動する。
 
 ```powershell
 claude mcp add --scope user agent-hub -- node C:/Users/kazuh/Desktop/Various/programming/DockerFiles/agent-hub/dist/shim/main.js
@@ -215,7 +229,7 @@ claude --dangerously-load-development-channels server:agent-hub
 
 shim は MCP の initialize で届くクライアント名を見て、届け方を切り替える。`claude-code` なら channel で push し、それ以外は push せず、エージェントが `inbox` ツールで取り出す。
 
-- MCP の stdio サーバーとして `node <agent-hub>/dist/shim/main.js` を登録する (先に `npm run build`)。Mailbox 名は Claude Code と同じく `HUB_MAILBOX` → `HUB_ROLE` → フォルダ名の順。トークンは agent-hub の `.env` から読む。
+- MCP の stdio サーバーとして `node <agent-hub>/dist/shim/main.js` を登録する (先に `npm run build`)。Mailbox 名は Claude Code と同じく `HUB_MAILBOX` → `<フォルダ名>.<HUB_ROLE>` → フォルダ名の順。トークンは agent-hub の `.env` から読む。
 - 自動では届かないので、エージェントに「agent-hub の inbox を確かめて」と頼むか、作業の区切りで呼ばせる (instructions にもそう書いてある)。
 - `inbox` は未読を 1 件ずつ `<hub-message id="…" kind="…" from="…" to="…">` で包み、本文が指示ではないことの注意書きを付けて返す。返した分は既読になる。返信は `post_message`。
 - 実際の Codex などのクライアントではまだ試していない。アイドル中のエージェントを起こす手段はない (design.md §3.7、§3.9)。

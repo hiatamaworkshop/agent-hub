@@ -11,6 +11,8 @@ type LogRecord =
   | { op: 'mailbox.create'; name: string; role: string | null; createdAt: string; cursor: number; received?: number; seq: number }
   | { op: 'mailbox.delete'; name: string; seq: number }
   | { op: 'mailbox.role'; name: string; role: string | null; seq: number }
+  // attach で申告された cwd (design.md §3.3)。この行より前の Mailbox は project を持たない
+  | { op: 'mailbox.project'; name: string; project: string }
   | { op: 'subscribe'; name: string; topic: string; seq: number }
   | { op: 'unsubscribe'; name: string; topic: string }
   | { op: 'cursor'; name: string; cursor: number }
@@ -23,6 +25,7 @@ interface MailboxState {
   role: string | null
   roleSince: number
   createdAt: string
+  project: string | null
   // トピック → 購読した時点の seq。購読より前のトピック宛ては未読にしない
   subscriptions: Map<string, number>
   cursor: number
@@ -115,6 +118,7 @@ export class Store {
           role: rec.role,
           roleSince: rec.seq,
           createdAt: rec.createdAt,
+          project: null,
           subscriptions: new Map(),
           cursor: rec.cursor,
           received: rec.received ?? rec.cursor,
@@ -132,6 +136,11 @@ export class Store {
           mb.role = rec.role
           mb.roleSince = rec.seq
         }
+        break
+      }
+      case 'mailbox.project': {
+        const mb = this.mailboxes.get(rec.name)
+        if (mb) mb.project = rec.project
         break
       }
       case 'subscribe':
@@ -213,6 +222,7 @@ export class Store {
       subscriptions: [...mb.subscriptions.keys()],
       cursor: mb.cursor,
       received: mb.received,
+      project: mb.project,
       attachment: mb.attachment,
     }
   }
@@ -242,6 +252,11 @@ export class Store {
       this.write({ op: 'mailbox.role', name, role, seq: this.seq })
     }
     return { mailbox: this.view(this.must(name)), created }
+  }
+
+  // 同じ文字列なら記録しない。違うフォルダかの判断は Hub が行う (表記の揺れも記録は新しい方に揃える)
+  setProject(name: string, project: string): void {
+    if (this.must(name).project !== project) this.write({ op: 'mailbox.project', name, project })
   }
 
   deleteMailbox(name: string): boolean {

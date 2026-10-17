@@ -27,8 +27,8 @@ describe('loadConfig: 空の環境変数は未設定として扱う', () => {
     assert.equal(cfg.filesDir, join(tmpdir(), 'agent-hub'))
   })
 
-  it('空の HUB_MAILBOX は HUB_ROLE、その空も無ければフォルダ名に落ちる', () => {
-    assert.equal(loadConfig({ ...base, HUB_MAILBOX: '', HUB_ROLE: 'leader' }).mailbox, 'leader')
+  it('空の HUB_MAILBOX は <フォルダ名>.<role>、HUB_ROLE も空ならフォルダ名に落ちる', () => {
+    assert.equal(loadConfig({ ...base, HUB_MAILBOX: '', HUB_ROLE: 'leader' }).mailbox, 'some-folder.leader')
     assert.equal(loadConfig({ ...base, HUB_MAILBOX: '', HUB_ROLE: '' }).mailbox, 'some-folder')
   })
 

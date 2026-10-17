@@ -135,11 +135,18 @@ MCP Events (SEP-3415) が購読 ID をクライアント生成にせず、購読
 
 | 層 | 寿命 | キー | 持つもの |
 |---|---|---|---|
-| **Mailbox** | 長寿命。明示的に削除するまで残る | 論理名 (例 `main`, `rev-a`) | role、購読トピック、cursor (ack 済みウォーターマーク)、未読キュー |
+| **Mailbox** | 長寿命。明示的に削除するまで残る | 論理名 (例 `main`, `rev-a`) | role、project (最後に attach した作業フォルダ)、購読トピック、cursor (ack 済みウォーターマーク)、未読キュー |
 | **Attachment** | 一時的。セッションの生存期間 | Hub が払い出す `attachmentId` | `sessionId`、`client` (claude-code / codex など)、`cwd`、リース期限 |
 
-- **Mailbox 名の決め方** (優先順): 環境変数 `HUB_MAILBOX` → MCP ツール `attach(mailbox)` の明示呼び出し → `HUB_ROLE` があれば role 名 → 未指定ならカレントフォルダ名。
+- **Mailbox 名の決め方** (優先順): 環境変数 `HUB_MAILBOX` → MCP ツール `attach(mailbox)` の明示呼び出し → `HUB_ROLE` があれば `<フォルダ名>.<role>` → 未指定ならカレントフォルダ名。
   `HUB_MAILBOX` / `HUB_ROLE` が shim に渡るかは §6 で検証する。
+- **エージェントはプロジェクトのルートで起動する (2026-10-18)**。許可の範囲、読む `CLAUDE.md` と hook、メモリ、`git diff` はどれも起動したフォルダで決まり、別の場所から起動すると読むべきものを読まずに迷う。
+  Hub はプロジェクトに属さず、全プロジェクトのセッションが 1 つの Hub につながる。そのため Mailbox の名前空間は Hub 全体で 1 つで、role 名だけを Mailbox 名にすると、別のプロジェクトの同じ role が同じ Mailbox に attach して takeover が起きる。
+  `HUB_ROLE` だけのときの既定を、role 名から `<フォルダ名>.<role>` (例 `cairn.deployer`) に変えた (64 文字に収まるようフォルダ名の側を切る)。起動スクリプトは `-Project <path>` のフォルダに移動して起動し、同じ規則の名前を `HUB_MAILBOX` で渡す (hook のヘッダーにも載せるため)。
+  `role:` 宛てはプロジェクトをまたいで届く。プロジェクトの範囲に絞るかは、複数のプロジェクトで同じ role を同時に動かしてから決める (§9-7)。
+- **project**: attach で申告された `cwd` を Mailbox に記録する (ログに残り、Hub の再起動後も残る)。UI のカードに出し、どのリポジトリの Mailbox かを見分けられるようにする。
+  前回と違うフォルダから attach したら、記録を新しい方に更新し、前のフォルダを `projectChanged` として次の attach まで UI に警告する (Hub のメモリのみ)。起動の間違いの見込みが高いが、新しい検査は警告から始める方針 (§3.11) なので拒まない。
+  比較は区切り (`\` と `/`)・末尾の区切り・ドライブ文字のパスの大文字小文字を揃えて行う。
 - **attach は冪等**。同じ Mailbox に attach し直すと、Hub はその Mailbox の cursor 以降を再送する。shim は覚えなくてよい。
 - **交代 (R6)** は「新しいセッションが同じ Mailbox に attach する」だけで成立する。購読・未読・cursor は Mailbox に残っている。
 - **takeover (排他・新しい方が勝つ。§9-1 で決定)**: 既に Attachment がある Mailbox に別セッションが attach すると、旧 Attachment に `terminated(reason: superseded)` を送って切り離す。
@@ -183,7 +190,7 @@ skill が「区切りに来た」と判断した場合は、エージェント�
 - 第一手段: shim が `CLAUDE_CODE_SESSION_ID` を attach の `sessionId` として申告する。Hub は hook 入力の `session_id` → Attachment → Mailbox で解決する。
   実行中に `attach` ツールで Mailbox を切り替えても、この対応は正しく追従する。
 - 第二手段: HTTP hook の `headers` で `X-Hub-Mailbox: $HUB_MAILBOX` を送る (`allowedEnvVars` に `HUB_MAILBOX`)。shim も同じ `HUB_MAILBOX` で attach するので、名前で直接結びつけられる (実機で展開を確認済み)。
-- 第三手段: ヘッダーも空なら、hook 入力の `cwd` から shim と同じ規則 (フォルダ名) で Mailbox 名を導く。
+- 第三手段: ヘッダーも空なら、hook 入力の `cwd` から shim と同じ規則 (フォルダ名) で Mailbox 名を導く。hook の入力に role はないので、`<フォルダ名>.<role>` の Mailbox はこれでは引けない (第一・第二手段で引く。起動スクリプトは `HUB_MAILBOX` を渡す)。
 - 第二・第三手段で解決できたときは、そのイベントの `session_id` を Attachment に記録し、以後は第一手段と同じく扱う。
 親 PID 照合は Windows でシェル経由の親子関係が崩れうるため採らない。
 
@@ -204,7 +211,7 @@ engram (ユーザーの記憶 MCP) は**区切りで得た知見の永続化先*
   定義にない role の attach は拒否する (typo で黙って何も届かない事故を防ぐため)。
 - **宛先の種類**: `to` は `mailbox` (その Mailbox だけ) / `role` (その role を持つ全 Mailbox) / `topic` (購読者全員)。
   `mailbox` と `role` 宛ては購読なしでも受け取る。
-- reviewer が 1 人のうちは `HUB_ROLE=reviewer` だけ指定すれば Mailbox 名も `reviewer` になる。2 人目が要るときは `HUB_MAILBOX=rev-b` を足すだけでよい。
+- reviewer が 1 人のうちは `HUB_ROLE=reviewer` だけ指定すれば Mailbox 名も `<フォルダ名>.reviewer` になる (§3.3)。2 人目が要るときは `HUB_MAILBOX=rev-b` を足すだけでよい。
 - role は「何を読むか」の分離にとどめ、**「受け取ったら自動で動く」意味は持たせない** (非目標の自律オーケストレーションに入るため)。
 - トピック例: `user.message`, `agent.<mailbox>`。Event はトピックに流さない (§9-2)
 - SEP の `arguments` (購読時のフィルタ引数) は導入しない。トピック名の一致のみ。必要になったら追加する。
@@ -720,6 +727,8 @@ P0 の後に、同じ領域の公式機能と OSS を調べた。**セッショ�
    - 宣言は Hub: `role:deployer` 宛て request の `SCOPE` (glob の並び) を担当範囲として記録し、対応する reply で外す。エージェントに予約用のツールは呼ばせない。衝突しても拒まず UI に警告する (advisory、§8.4 の mcp_agent_mail と同じ)。ファイル以外の資源 (例: 本番 Hub の 7777 番) も同じ台帳に載せられる。
    - 強制は編集の現場: 止めたい場合だけ `PreToolUse(Edit/Write)` の hook か git の pre-commit hook を入れる。
    - **今は作らない**。書き手は deployer 1 人なので競合は起きない (§1.1 の基準 2)。書き手が 2 人以上になったら、まず worktree を試し、足りない分だけ宣言を足す。
+7. **`role:` 宛てをプロジェクトの範囲に絞るか** (§3.3): 今は Hub 全体の同じ role の Mailbox すべてに届く。Mailbox の `project` で同じプロジェクトの role だけに届ける案がある。
+   複数のプロジェクトで同じ role を同時に動かしてから決める。それまでは、プロジェクトをまたぐ依頼は `mailbox:<フォルダ名>.<role>` 宛てにする。
 
 (決定済み: ブラウザへのトークンの渡し方は cookie。§4)
 

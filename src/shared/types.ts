@@ -19,6 +19,21 @@ export function mailboxFromFolder(dir: string): string {
   return isValidName(s) ? s : 'main'
 }
 
+// role を持つセッションの既定の Mailbox 名は <フォルダ名>.<role>。Mailbox の名前空間は Hub 全体で 1 つなので、
+// プロジェクトが違えば同じ role でも別の Mailbox にする (design.md §3.3)。64 文字に収まるようフォルダ名の側を切る
+export function defaultMailboxName(dir: string, role: string | null): string {
+  const folder = mailboxFromFolder(dir)
+  if (!role) return folder
+  const room = 63 - role.length
+  return room > 0 ? `${folder.slice(0, room)}.${role}` : role
+}
+
+// Mailbox の project の比較用。区切り・末尾の区切り・ドライブ文字のパスの大文字小文字を揃える (Windows のパスは大文字小文字を区別しない)
+export function normalizeProjectPath(p: string): string {
+  const s = p.replace(/[\\/]+/g, '/').replace(/(.)\/$/, '$1')
+  return /^[a-z]:/i.test(s) ? s.toLowerCase() : s
+}
+
 export const MESSAGE_KINDS = ['request', 'reply', 'notice'] as const
 export type MessageKind = (typeof MESSAGE_KINDS)[number]
 
@@ -124,6 +139,8 @@ export interface Mailbox {
   cursor: number
   // ここまでは受領の確認がある (inbox で取り出した・replyTo で返信した)。protocol.md §4
   received: number
+  // 最後に attach した Attachment の cwd (design.md §3.3)。記録より前のログから復元したものは null
+  project: string | null
   attachment: string | null
 }
 

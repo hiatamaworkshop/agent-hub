@@ -2,9 +2,12 @@
 # Hub が動いていなければ起動し、role は 1 つずつ start-agent.ps1 で起動して、attach を確かめてから次へ進む。
 # 例: ./tools/dev/start-team.ps1                     # roles.json から番号で選ぶ
 #     ./tools/dev/start-team.ps1 -Roles leader,deployer
+#     ./tools/dev/start-team.ps1 -Roles leader,deployer -Project C:\work\cairn
 param(
   # 省略時は roles.json (なければ roles.example.json) の role から選ぶ
   [string[]]$Roles,
+  # 作業するプロジェクトのルート。各 role の claude はここで起動する (design.md §3.3)。省略時は agent-hub
+  [string]$Project,
   # 1 つの role の attach を待つ上限 (秒)。過ぎたら警告して次へ進む
   [int]$AttachTimeout = 60,
   # 接続中の role も起動し直す (takeover で今のセッションを切り離す)
@@ -16,6 +19,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $agentScript = Join-Path $PSScriptRoot 'start-agent.ps1'
+. (Join-Path $PSScriptRoot 'mailbox-name.ps1')
+if ($Project) {
+  if (-not (Test-Path -LiteralPath $Project -PathType Container)) { throw "プロジェクトのフォルダ $Project がない" }
+  $projectDir = (Resolve-Path -LiteralPath $Project).Path
+} else {
+  $projectDir = $root
+}
 # タブでも同じシェル (powershell.exe / pwsh.exe) を使う
 $shell = (Get-Process -Id $PID).Path
 $useWt = [bool](Get-Command wt.exe -ErrorAction SilentlyContinue)
@@ -131,22 +141,24 @@ if (Test-HubPort) {
 if (-not $token) { Write-Warning 'HUB_TOKEN がないので attach を確かめられない。待たずに起動だけする' }
 
 # --- role を 1 つずつ ---
+# Mailbox 名は start-agent.ps1 と同じく <プロジェクトのフォルダ名>.<role>
 foreach ($role in $Roles) {
-  if ($token -and -not $Force -and (Test-Attached $role)) {
-    Write-Host "$role は接続中なので飛ばす (起動し直すなら -Force)"
+  $mailbox = Get-DefaultMailbox $projectDir $role
+  if ($token -and -not $Force -and (Test-Attached $mailbox)) {
+    Write-Host "$mailbox は接続中なので飛ばす (起動し直すなら -Force)"
     continue
   }
-  Write-Host "$role を起動する"
-  Start-Tab $role @('-NoExit', '-File', $agentScript, '-Role', $role)
+  Write-Host "$mailbox を起動する ($projectDir)"
+  Start-Tab $mailbox @('-NoExit', '-File', $agentScript, '-Role', $role, '-Project', $projectDir)
   if (-not $token) { Start-Sleep -Seconds 3; continue }
   $deadline = (Get-Date).AddSeconds($AttachTimeout)
-  while (-not (Test-Attached $role)) {
+  while (-not (Test-Attached $mailbox)) {
     if ((Get-Date) -gt $deadline) {
-      Write-Warning "$role が $AttachTimeout 秒以内に attach しなかった。タブを確認する (初回の警告ダイアログ、claude の起動エラーなど)。次へ進む"
+      Write-Warning "$mailbox が $AttachTimeout 秒以内に attach しなかった。タブを確認する (初回の警告ダイアログ、claude の起動エラーなど)。次へ進む"
       break
     }
     Start-Sleep -Seconds 1
   }
-  if (Test-Attached $role) { Write-Host "$role が attach した" }
+  if (Test-Attached $mailbox) { Write-Host "$mailbox が attach した" }
 }
 Write-Host '完了'

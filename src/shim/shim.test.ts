@@ -8,7 +8,7 @@ import { serve, type ServerType } from '@hono/node-server'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { z } from 'zod'
-import { mailboxFromFolder, type Message } from '../shared/types.js'
+import { defaultMailboxName, isValidName, mailboxFromFolder, normalizeProjectPath, type Message } from '../shared/types.js'
 import sharp from 'sharp'
 import { createApp } from '../hub/app.js'
 import { FileStore, resolveMeta } from '../hub/files.js'
@@ -32,6 +32,28 @@ describe('mailboxFromFolder', () => {
     assert.equal(mailboxFromFolder('C:\\Users\\x\\agent-hub\\'), 'agent-hub')
     assert.equal(mailboxFromFolder('C:/Users/x/Agent Hub'), 'agent-hub')
     assert.equal(mailboxFromFolder(''), 'main')
+  })
+})
+
+describe('defaultMailboxName', () => {
+  it('role があれば <フォルダ名>.<role>、なければフォルダ名', () => {
+    assert.equal(defaultMailboxName('C:\\work\\cairn', 'deployer'), 'cairn.deployer')
+    assert.equal(defaultMailboxName('C:\\work\\cairn', null), 'cairn')
+  })
+
+  it('64 文字に収まるようフォルダ名の側を切る', () => {
+    const name = defaultMailboxName(`/x/${'a'.repeat(64)}`, 'reviewer')
+    assert.equal(name, `${'a'.repeat(55)}.reviewer`)
+    assert.ok(isValidName(name))
+    assert.equal(defaultMailboxName('/x/cairn', 'r'.repeat(64)), 'r'.repeat(64))
+  })
+})
+
+describe('normalizeProjectPath', () => {
+  it('区切り・末尾の区切り・ドライブ文字のパスの大文字小文字を揃える', () => {
+    assert.equal(normalizeProjectPath('C:\\Work\\Cairn\\'), normalizeProjectPath('c:/work/cairn'))
+    assert.notEqual(normalizeProjectPath('/home/x/Cairn'), normalizeProjectPath('/home/x/cairn'))
+    assert.equal(normalizeProjectPath('/'), '/')
   })
 })
 
