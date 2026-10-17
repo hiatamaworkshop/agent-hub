@@ -108,6 +108,12 @@
 - 配信ルール (人間確認なしの自動転送) の opt-in 設計
 - `report_event` ツール (skill からの区切り申告) と、`Stop` との重複除去。P1 の `Stop` の表示で足りないと分かってから (design.md §3.4)
 - 配送を公式 cross-session messaging に移す。投函の形式が公式資料に載ってから (design.md §9-5)
+- ドキュメントの作法を照らす (design.md §3.12)
+  - 層 1: 決定的な検査のスクリプト (`npm run docs:check`。地図のずれ、API と列挙の表のずれ、`CHANGED` の docs 漏れ、§9 の決定の日付)。結果は notice か Event で UI に出す
+  - 作法の表を正本にし、CLAUDE.md・leader.md・deployer.md はそこを指すだけにする
+  - 層 2 (軽量ジャッジ): 層 1 が逃したずれが材料として貯まってから、作る価値を測る
+- leader を使い捨てにできるようにする: 台帳の最小版 (未返信の request の一覧) と、捨てるきっかけを誰が持つか (design.md §3.13 の未決)
+- 本文が `/clear` などの組み込みコマンドで始まるとき、UI で「文字列として届き、実行されない」と警告する (design.md §6.1h。任意)
 - 依頼の台帳と整合点: メッセージの形の宣言と Hub での検査、依頼ごとの SCOPE と `git diff` の突き合わせ、受け入れの指紋と要再確認 (design.md §3.11、§9-6)
   - 始め方: 語彙は leader / deployer の運用で毎回使っている見出しから取り、先に設計しない。新しい検査は警告だけで始め、人の判断と一致するのを見てから 400 に上げる
 - 担当範囲と競合: 書き手 (deployer) が 2 人以上になったら着手する。まず deployer ごとに git worktree を分け、足りなければ request の `SCOPE` を担当範囲として記録して衝突を UI に警告する。止めたい場合だけ hook で強制する (design.md §9-6)
