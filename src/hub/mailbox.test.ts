@@ -555,3 +555,25 @@ describe('受領の確認 (received / unconfirmed)', () => {
     assert.deepEqual(hub.store.unconfirmed('x'), [])
   })
 })
+
+describe('切断中の後継 (previous)', () => {
+  it('前の Attachment ID を示した attach し直しは、後継がいれば 409 successor_attached で拒み、いなければ通す', async () => {
+    const { call } = setup()
+    const attachWith = (body: Record<string, unknown>) => call('POST', '/mailboxes/x/attach', { client: 'claude-code', ...body })
+    const a = (await (await attachWith({})).json()) as AttachResult
+    await call('DELETE', `/attachments/${a.attachmentId}`)
+    const b = (await (await attachWith({})).json()) as AttachResult
+
+    const back = await attachWith({ previous: a.attachmentId })
+    assert.equal(back.status, 409)
+    assert.equal(((await back.json()) as { error: string }).error, 'successor_attached')
+    // 後継は切り離されていない
+    assert.equal(((await (await call('GET', '/mailboxes')).json()) as { mailboxes: { attachment: { attachmentId: string } | null }[] }).mailboxes[0]!.attachment?.attachmentId, b.attachmentId)
+
+    // 後継がいなければ通す (Hub の再起動・猶予切れの後の attach し直し)
+    await call('DELETE', `/attachments/${b.attachmentId}`)
+    assert.equal((await attachWith({ previous: a.attachmentId })).status, 200)
+    // 前の ID を示さない attach (新しいセッション) は今どおり takeover する
+    assert.equal((await attachWith({})).status, 200)
+  })
+})

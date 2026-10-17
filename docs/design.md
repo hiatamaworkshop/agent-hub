@@ -145,6 +145,8 @@ MCP Events (SEP-3415) が購読 ID をクライアント生成にせず、購読
 - **takeover (排他・新しい方が勝つ。§9-1 で決定)**: 既に Attachment がある Mailbox に別セッションが attach すると、旧 Attachment に `terminated(reason: superseded)` を送って切り離す。
   切り離された shim は attach し直さず (取り返しの応酬を避ける)、`post_message` / `subscribe` / `unsubscribe` は引き継がれた旨のエラーを返す (購読は Mailbox に保存されるので、通すと後継の購読を変えてしまう)。
   UI のカードには、今の Attachment が takeover で始まったことを `took over <時刻>` と出す (`GET /mailboxes` の `takeover`。Hub のメモリのみ)。同じセッションの attach し直し (`/mcp` の再接続で古い Attachment が猶予中に残っていた場合など) は交代ではないので出さない。
+  **切断中の後継 (2026-10-18)**: stream が切れて猶予が過ぎ detached になった間に後継が attach すると、旧 shim には `terminated` が届かない。戻ってきた旧 shim が後継を切り離さないよう、shim は Attachment を失った (404) 後の attach し直しに前の Attachment ID (`previous`) を付け、Hub はその Mailbox に別の Attachment があれば 409 `successor_attached` で拒む。shim は superseded と同じく止まる。前の ID を示さない attach (新しいセッション) は今どおり takeover する。
+  Hub の再起動では Attachment を覚えていないので見分けられず、先に attach し直した方が残る (後継と旧 shim が同時に戻る場合だけの問題で、稀なので受け入れる)。
   切り離されたセッションも動き続けることがあり、その hook の Event は同じ Mailbox に解決される。Hub はその Event に `superseded: true` を付け、UI は `superseded session` と添えて出す。カードの `Last event` には使わず、Reply も出さない (Mailbox 宛てに返すと後継に届くため)。
 - **リース**: stream を開いている間はリースを保つ。stream を開かないクライアント (`inbox()` の polling 経路) は heartbeat でリースを延長する。リースが切れた Attachment は detached になり、その間のメッセージは Mailbox の未読キューに溜まる。Mailbox 自体はリース切れでは消えない。
   **決定 (2026-10-17)**: shim は heartbeat を送らない。shim は常に stream を開いていて、生死は stream の切断 (15 秒の猶予) で分かる。heartbeat を shim に義務づけると、更新前の shim を動かしたままの Claude Code が新しい Hub でリース切れになる。

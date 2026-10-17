@@ -196,7 +196,8 @@
   "sessionId": "… (環境変数 CLAUDE_CODE_SESSION_ID。なければ省略)",
   "cwd": "…",
   "maxAgeMs": 86400000,  // 任意。これより古い未読は渡さない。省略時は Hub の既定 (7 日)、0 なら制限なし
-  "maxUnread": 50        // 任意。未読を新しい方からこの件数まで渡す。省略時は Hub の既定 (50 件)、0 なら制限なし
+  "maxUnread": 50,       // 任意。未読を新しい方からこの件数まで渡す。省略時は Hub の既定 (50 件)、0 なら制限なし
+  "previous": "at_01G…"  // 任意。attach し直しのとき、失った (404 になった) 前の Attachment ID
 }
 
 // 応答
@@ -214,6 +215,7 @@
 
 - 冪等。同じセッションが attach し直しても未読は失われない (cursor は Mailbox 側にある)。
 - 既に別の Attachment がある場合は takeover する (排他・新しい方が勝つ。design.md §9-1)。旧 Attachment の stream に `terminated` を送って閉じる。
+  ただし `previous` があり、Mailbox に `previous` 以外の Attachment がある (切断中に後継が attach した) ときは 409 `successor_attached` で拒み、後継を切り離さない。shim はこれを `terminated(superseded)` と同じに扱い、attach し直さない (design.md §3.3)。
 - **流し込み量の上限**: attach の時点で、`maxAgeMs` より古い未読と、新しい `maxUnread` 件より前の未読を放棄済みとして `cursor` を進め、`truncated: true` と件数 `skipped` を返す。
   未読は `seq` 順なので、捨てるのは常に先頭の連続した範囲。応答の `cursor` は進めた後の値。Message のログは消さないので UI の履歴には残る。進めたら UI に `mailbox.acked` を流す。
   Hub の既定は環境変数 `HUB_UNREAD_MAX_AGE_DAYS` (既定 7、小数可) と `HUB_UNREAD_MAX` (既定 50)。どちらも 0 なら制限なし。shim は指定しない (Hub の既定に従う)。

@@ -56,6 +56,8 @@ export interface AttachInput {
   // 流し込み量の上限。省略したら Hub の既定、0 なら制限なし (design.md §3.3)
   maxAgeMs?: number
   maxUnread?: number
+  // attach し直しのとき、失った前の Attachment ID。その間に後継が attach していれば取り返さない (design.md §3.3)
+  previous?: string
 }
 
 // POST /events の結果。ignored は変換が取り込まなかった理由 (hook の判断には関与しない)
@@ -269,6 +271,12 @@ export class Hub {
     // 定義にない role は拒む (typo で黙って何も届かない事故を防ぐ)。role を省いた (undefined) と null は通す
     if (this.roles && typeof input.role === 'string' && !this.roles.has(input.role)) {
       throw new HubError(400, 'unknown_role', `role ${input.role} は roles.json にない`)
+    }
+    // 切れている間に別の Attachment が attach していたら、戻ってきた旧 shim は取り返さない (新しい方が勝つ、を守る)。
+    // 前の Attachment ID を示さない attach (新しいセッション) は今どおり takeover する
+    const current = this.store.getMailbox(name)?.attachment
+    if (input.previous && current && current !== input.previous) {
+      throw new HubError(409, 'successor_attached', `mailbox ${name} には切断中に別のセッションが attach した。attach し直さない`)
     }
     const { mailbox, created } = this.store.ensureMailbox(name, input.role)
     if (created) this.emitUi('mailbox.created', mailbox)

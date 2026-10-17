@@ -338,6 +338,44 @@ describe('HubClient: Hub の seq が巻き戻ったとき', () => {
   })
 })
 
+// stream が切れて猶予が過ぎ、その間に後継が attach した旧 shim (roadmap「既知の問題」)
+describe('HubClient: 切断中に後継が attach したとき', () => {
+  it('戻ってきても後継から Mailbox を取り返さず、superseded で止まる', async () => {
+    const hub = new Hub(new Store())
+    const app = createApp({ hub, token: TOKEN, uiHtml: async () => null })
+    let hubUrl = ''
+    const server = await new Promise<ServerType>((resolve) => {
+      const s = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 }, (info) => {
+        hubUrl = `http://127.0.0.1:${info.port}`
+        resolve(s)
+      })
+    })
+    const cfg = { hubUrl, token: TOKEN, mailbox: 'stale', role: null, sessionId: undefined, cwd: ROOT, filesDir: tmpdir() }
+    const hc = new HubClient(cfg, async () => undefined, () => undefined)
+    const until = async (f: () => boolean, ms = 10_000) => {
+      const deadline = Date.now() + ms
+      while (!f()) {
+        if (Date.now() > deadline) throw new Error('timeout')
+        await new Promise((r) => setTimeout(r, 30))
+      }
+    }
+    try {
+      hc.start()
+      await until(() => hc.state === 'attached')
+      const old = hc.attachment!.attachmentId
+      // 猶予切れで detached になった (stream は terminated なしで閉じる) 間に、後継が attach する
+      hub.detach(old)
+      const successor = hub.attach('stale', { client: 'claude-code' })
+      await until(() => hc.state === 'terminated')
+      assert.equal(hc.terminatedReason, 'superseded')
+      assert.equal(hub.store.getMailbox('stale')!.attachment, successor.attachmentId)
+    } finally {
+      await hc.stop()
+      await new Promise((r) => server.close(r))
+    }
+  })
+})
+
 // stream を開かない (primeAttach だけの) HubClient で、inbox の取り出しを確かめる
 describe('inbox ツール (fetchInbox)', () => {
   it('未読を <hub-message> で包んで返し、返した分を ack する。続きがあれば has_more を案内する', async () => {

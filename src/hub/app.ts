@@ -49,6 +49,8 @@ const attachSchema = z.object({
   // 流し込み量の上限。省略したら Hub の既定、0 なら制限なし
   maxAgeMs: z.number().int().nonnegative().optional(),
   maxUnread: z.number().int().nonnegative().optional(),
+  // attach し直しのとき、失った前の Attachment ID。後継がいれば 409 successor_attached (protocol.md §3)
+  previous: z.string().min(1).max(64).optional(),
 })
 
 // received: 受け手が受け取ったと言える範囲 (inbox で返した最初と最後の seq)。省略は「渡した」だけ (protocol.md §4)

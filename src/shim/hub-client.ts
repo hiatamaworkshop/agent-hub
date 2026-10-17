@@ -48,6 +48,8 @@ export class HubClient {
   // false なら stream で受けた Message を渡さず ack もしない (inbox 経路。未読は inbox で取り出すまで残す)。
   // stream は生存の確認のために開いたままにする
   private push = true
+  // Attachment を失った (404) ときの ID。attach し直しで Hub に示し、後継がいれば取り返さない (design.md §3.3)
+  private previousAttachment: string | undefined
   private readonly seen = new Set<string>()
   private inflight: Promise<void> | undefined
   private stopped = false
@@ -132,7 +134,17 @@ export class HubClient {
       } catch (e) {
         if (this.stopped) break
         // Hub の再起動などで Attachment が消えたら attach し直す (protocol.md §3)
-        if (e instanceof HubHttpError && e.status === 404) this.attachment = undefined
+        if (e instanceof HubHttpError && e.status === 404 && this.attachment) {
+          this.previousAttachment = this.attachment.attachmentId
+          this.attachment = undefined
+        }
+        // 切れている間に別のセッションが attach していた。terminated (superseded) と同じく attach し直さない
+        if (e instanceof HubHttpError && e.status === 409 && e.code === 'successor_attached') {
+          this.state = 'terminated'
+          this.terminatedReason = 'superseded'
+          this.log(`terminated: superseded (${e.message})`)
+          break
+        }
         this.lastError = e instanceof Error ? e.message : String(e)
         this.log(`hub: ${this.lastError}`)
       }
@@ -156,8 +168,10 @@ export class HubClient {
       ...(this.cfg.role ? { role: this.cfg.role } : {}),
       ...(this.cfg.sessionId ? { sessionId: this.cfg.sessionId } : {}),
       cwd: this.cfg.cwd,
+      ...(this.previousAttachment ? { previous: this.previousAttachment } : {}),
     })
     this.attachment = r
+    this.previousAttachment = undefined
     // stream の after は Hub の cursor から数え直す。Hub の data/ を消して再起動すると seq が 1 から振り直されるため、
     // 前の Hub で覚えた seq を使うと attach 時の未読を黙って捨てる。ack 漏れで再送された分は id の重複除去で落ちる
     this.delivered = r.cursor
