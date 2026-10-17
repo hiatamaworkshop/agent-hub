@@ -161,7 +161,10 @@ export class Hub {
     }
     // to の省略は replyTo があるときだけ許す (schema で検証済み)。元の送り手に返す
     const to = input.to ?? { type: original!.from.type, id: original!.from.id }
-    return this.deliver(this.store.appendMessage({ ...input, to, from }))
+    const m = this.deliver(this.store.appendMessage({ ...input, to, from }))
+    // 自分宛てに返信したなら、その Message を受け取っている。受領の確認として received を進める (protocol.md §4)
+    if (original && from.type === 'mailbox' && this.store.isRecipient(from.id, original)) this.markReceived(from.id, original.seq)
+    return m
   }
 
   // 無編集転送 (protocol.md §3)。本文・kind・replyTo・meta を元のまま写し、送り手は転送した人にする。
@@ -323,8 +326,9 @@ export class Hub {
       while (drop < unread.length && Date.parse(unread[drop]!.ts) < cutoff) drop++
     }
     if (drop === 0) return 0
-    const cursor = this.store.advanceCursor(name, unread[drop - 1]!.seq)
-    this.emitUi('mailbox.acked', { name, cursor })
+    // 放棄した分は渡していないので、受領の確認待ちにも数えない (received も進める)
+    this.store.advanceReceived(name, unread[drop - 1]!.seq)
+    this.emitAcked(name)
     return drop
   }
 
@@ -414,21 +418,40 @@ export class Hub {
     }
   }
 
-  // cursor が実際に進んだときだけ mailbox.acked を UI に流す (未読数が変わるのはこのとき)
-  ack(attachmentId: string, upTo: number): number {
+  // received (inbox で返した範囲) があれば受領の確認として received も進める (protocol.md §4)。
+  // 範囲が received の直後から続いているときだけ進める。間に確認のない分 (channel で渡しただけ) があれば飛び越えない。
+  // cursor か received が実際に進んだときだけ mailbox.acked を UI に流す (未読数・確認待ちの数が変わるのはこのとき)
+  ack(attachmentId: string, upTo: number, received?: { first: number; last: number }): { cursor: number; received: number } {
     const name = this.mustAttachment(attachmentId).mailbox
     this.renewLease(attachmentId)
-    const before = this.mustMailbox(name).cursor
-    const cursor = this.store.advanceCursor(name, upTo)
-    if (cursor > before) this.emitUi('mailbox.acked', { name, cursor })
-    return cursor
+    const before = this.mustMailbox(name)
+    if (received) {
+      const next = this.store.addressed(name, before.received, 1)[0]
+      if (!next || next.seq >= received.first) this.store.advanceReceived(name, received.last)
+    }
+    this.store.advanceCursor(name, upTo)
+    const after = this.mustMailbox(name)
+    if (after.cursor > before.cursor || after.received > before.received) this.emitAcked(name)
+    return { cursor: after.cursor, received: after.received }
+  }
+
+  private markReceived(name: string, upTo: number): void {
+    const before = this.mustMailbox(name).received
+    if (this.store.advanceReceived(name, upTo) > before) this.emitAcked(name)
+  }
+
+  private emitAcked(name: string): void {
+    const mb = this.mustMailbox(name)
+    this.emitUi('mailbox.acked', { name, cursor: mb.cursor, received: mb.received, unconfirmed: this.store.unconfirmed(name).length })
   }
 
   // polling 経路 (protocol.md §3 の inbox)。読むだけで cursor は進めない (進めるのは ack)。
+  // unconfirmed なら、渡したが受領の確認がない分 (received より後) も返す (channel が捨てられたときの取り直し)。
   // 残りがなければ、宛先でない分も含めて採番済みの seq まで見終えているので、次の after をそこまで進める (同じ範囲を走査し直さない)
-  inbox(name: string, after: number, limit: number): InboxResult {
-    const start = Math.max(after, this.mustMailbox(name).cursor)
-    const found = this.store.unread(name, start, limit + 1)
+  inbox(name: string, after: number, limit: number, unconfirmed = false): InboxResult {
+    const mb = this.mustMailbox(name)
+    const start = Math.max(after, unconfirmed ? mb.received : mb.cursor)
+    const found = this.store.addressed(name, start, limit + 1)
     const hasMore = found.length > limit
     const messages = found.slice(0, limit)
     return {
@@ -466,6 +489,7 @@ export class Hub {
         ...mb,
         effectiveSubscriptions: this.store.effectiveSubscriptions(mb.name),
         unread: this.store.unread(mb.name).length,
+        unconfirmed: this.store.unconfirmed(mb.name).length,
         attachment,
         detached: attachment ? null : (this.lastDetached.get(mb.name) ?? null),
         takeover: attachment ? (this.takeovers.get(attachment.attachmentId) ?? null) : null,

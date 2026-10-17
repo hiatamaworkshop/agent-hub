@@ -141,3 +141,40 @@ describe('Store: 未読', () => {
     assert.equal(s.ensureMailbox('a').created, false)
   })
 })
+
+describe('Store: 受領の確認 (received)', () => {
+  it('received は cursor も進め、再起動後に戻る。cursor だけ進んだ分は unconfirmed', () => {
+    const file = tmpFile()
+    const s1 = new Store({ file })
+    s1.ensureMailbox('x')
+    for (let i = 0; i < 3; i++) s1.appendMessage(msg({ type: 'mailbox', id: 'x' }))
+    s1.advanceReceived('x', 1)
+    s1.advanceCursor('x', 3)
+    assert.deepEqual(s1.unconfirmed('x').map((m) => m.seq), [2, 3])
+
+    const s2 = new Store({ file })
+    const mb = s2.getMailbox('x')!
+    assert.equal(mb.received, 1)
+    assert.equal(mb.cursor, 3)
+    assert.deepEqual(s2.unconfirmed('x').map((m) => m.seq), [2, 3])
+    assert.equal(s2.advanceReceived('x', 99), 3, '採番済みの seq を超えない')
+    assert.equal(s2.advanceReceived('x', 0), 3, '後退しない')
+  })
+
+  it('received を持たない前の形式の記録は、received を cursor に追従させる (過去の分を確認待ちに数えない)', () => {
+    const file = tmpFile()
+    const lines = [
+      { op: 'mailbox.create', name: 'x', role: null, createdAt: '2026-10-16T00:00:00.000Z', cursor: 0, seq: 0 },
+      { op: 'message', message: { id: 'm_1', seq: 1, ts: '2026-10-16T00:00:01.000Z', ...msg({ type: 'mailbox', id: 'x' }) } },
+      { op: 'cursor', name: 'x', cursor: 1 },
+    ]
+    appendFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n') + '\n')
+    const s = new Store({ file })
+    assert.equal(s.getMailbox('x')!.received, 1)
+    assert.deepEqual(s.unconfirmed('x'), [])
+    // 復元の後に記録した cursor には追従しない
+    s.appendMessage(msg({ type: 'mailbox', id: 'x' }))
+    s.advanceCursor('x', 2)
+    assert.deepEqual(new Store({ file }).unconfirmed('x').map((m) => m.seq), [2])
+  })
+})

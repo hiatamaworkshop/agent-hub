@@ -1244,6 +1244,13 @@ function renderMailboxes(mailboxes) {
     // unread が無い古い Hub では未読の項目を出さない (undefined unread と出さないため)
     if (typeof mb.unread === 'number') meta.push(`${mb.unread} unread`)
     box.append(el('div', 'meta', meta.join(' · ')))
+    // 渡したが受領の確認 (inbox で取り出す・reply_to で返信) がない件数。古い Hub は返さない。
+    // channel なしで起動した Claude Code は通知を黙って捨てるので、増え続けるならセッションに inbox を頼む (design.md §6.1k)
+    if (typeof mb.unconfirmed === 'number' && mb.unconfirmed > 0) {
+      const u = el('div', 'meta', `${mb.unconfirmed} handed, unconfirmed`)
+      u.title = 'Handed to the session, but it has not fetched them with inbox or replied to them yet. This is not proof they were lost. If the session seems not to receive messages, ask it to call inbox with unconfirmed: true.'
+      box.append(u)
+    }
     const subs = subscriptionsOf(mb)
     if (subs.length) box.append(el('div', 'meta', `Subscribed: ${subs.join(', ')}`))
     // 直近の検知イベント。状態の推定はせず、最後に届いたものをそのまま出す

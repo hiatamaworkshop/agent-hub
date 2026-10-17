@@ -7,12 +7,15 @@ import { newId } from './ids.js'
 
 type LogRecord =
   | { op: 'message'; message: Message }
-  | { op: 'mailbox.create'; name: string; role: string | null; createdAt: string; cursor: number; seq: number }
+  // received がない行は受領の記録を持つ前の形式。received は cursor に追従させる
+  | { op: 'mailbox.create'; name: string; role: string | null; createdAt: string; cursor: number; received?: number; seq: number }
   | { op: 'mailbox.delete'; name: string; seq: number }
   | { op: 'mailbox.role'; name: string; role: string | null; seq: number }
   | { op: 'subscribe'; name: string; topic: string; seq: number }
   | { op: 'unsubscribe'; name: string; topic: string }
   | { op: 'cursor'; name: string; cursor: number }
+  // 受領の確認 (protocol.md §4)。cursor も少なくともここまで進む
+  | { op: 'received'; name: string; received: number }
   | { op: 'event'; event: HubEvent }
 
 interface MailboxState {
@@ -23,6 +26,10 @@ interface MailboxState {
   // トピック → 購読した時点の seq。購読より前のトピック宛ては未読にしない
   subscriptions: Map<string, number>
   cursor: number
+  // 受領の確認がある seq の上限。cursor との間が「渡したが確認がない」分 (protocol.md §4)
+  received: number
+  // 前の形式の記録から復元中の Mailbox。received を cursor に追従させる (復元の後に received を記録して外す)
+  legacy: boolean
   attachment: string | null
 }
 
@@ -63,6 +70,10 @@ export class Store {
         // 途中で切れた最終行に次の追記がつながらないよう閉じておく
         if (text.length > 0 && !text.endsWith('\n')) appendFileSync(this.file, '\n')
       }
+    }
+    // 前の形式の Mailbox は、復元した cursor までを確認済みとして記録し、以後は received を cursor に追従させない
+    for (const mb of this.mailboxes.values()) {
+      if (mb.legacy) this.write({ op: 'received', name: mb.name, received: mb.cursor })
     }
   }
 
@@ -106,6 +117,8 @@ export class Store {
           createdAt: rec.createdAt,
           subscriptions: new Map(),
           cursor: rec.cursor,
+          received: rec.received ?? rec.cursor,
+          legacy: rec.received === undefined,
           attachment: null,
         })
         break
@@ -129,7 +142,19 @@ export class Store {
         break
       case 'cursor': {
         const mb = this.mailboxes.get(rec.name)
-        if (mb) mb.cursor = rec.cursor
+        if (mb) {
+          mb.cursor = rec.cursor
+          if (mb.legacy) mb.received = rec.cursor
+        }
+        break
+      }
+      case 'received': {
+        const mb = this.mailboxes.get(rec.name)
+        if (mb) {
+          mb.legacy = false
+          mb.received = rec.received
+          mb.cursor = Math.max(mb.cursor, rec.received)
+        }
         break
       }
       case 'event':
@@ -187,6 +212,7 @@ export class Store {
       createdAt: mb.createdAt,
       subscriptions: [...mb.subscriptions.keys()],
       cursor: mb.cursor,
+      received: mb.received,
       attachment: mb.attachment,
     }
   }
@@ -201,12 +227,14 @@ export class Store {
   ensureMailbox(name: string, role?: string | null): { mailbox: Mailbox; created: boolean } {
     let created = false
     if (!this.mailboxes.has(name)) {
+      const cursor = this.deletedAt.get(name) ?? 0
       this.write({
         op: 'mailbox.create',
         name,
         role: role ?? null,
         createdAt: this.now().toISOString(),
-        cursor: this.deletedAt.get(name) ?? 0,
+        cursor,
+        received: cursor,
         seq: this.seq,
       })
       created = true
@@ -250,6 +278,14 @@ export class Store {
     return mb.cursor
   }
 
+  // 受領の確認。received と cursor を upTo まで進める (後退させず、採番済みの seq を超えさせない)。進めた後の received を返す
+  advanceReceived(name: string, upTo: number): number {
+    const mb = this.must(name)
+    const next = Math.min(Math.floor(upTo), this.seq)
+    if (next > mb.received) this.write({ op: 'received', name, received: next })
+    return mb.received
+  }
+
   // Attachment は実行時の状態なので記録しない
   setAttachment(name: string, attachmentId: string | null): void {
     this.must(name).attachment = attachmentId
@@ -275,9 +311,24 @@ export class Store {
   }
 
   unread(name: string, after?: number, limit = Infinity): Message[] {
-    const from = Math.max(after ?? 0, this.must(name).cursor)
+    return this.addressed(name, Math.max(after ?? 0, this.must(name).cursor), limit)
+  }
+
+  // after より後のこの Mailbox 宛て (cursor で切らない。inbox の unconfirmed 用)
+  addressed(name: string, after: number, limit = Infinity): Message[] {
     const out: Message[] = []
-    for (let i = this.indexAfter(from); i < this.messages.length && out.length < limit; i++) {
+    for (let i = this.indexAfter(after); i < this.messages.length && out.length < limit; i++) {
+      const m = this.messages[i]!
+      if (this.isRecipient(name, m)) out.push(m)
+    }
+    return out
+  }
+
+  // 渡したが受領の確認がない分 (received より後で cursor まで)
+  unconfirmed(name: string): Message[] {
+    const mb = this.must(name)
+    const out: Message[] = []
+    for (let i = this.indexAfter(mb.received); i < this.messages.length && this.messages[i]!.seq <= mb.cursor; i++) {
       const m = this.messages[i]!
       if (this.isRecipient(name, m)) out.push(m)
     }

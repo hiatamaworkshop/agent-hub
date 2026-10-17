@@ -149,7 +149,7 @@ describe('再送と ack', () => {
     assert.deepEqual(messages(again.events).map((m) => m.id), [m1.id])
 
     const ack = await call('POST', `/attachments/${b.attachmentId}/ack`, { upTo: m1.seq })
-    assert.deepEqual(await ack.json(), { cursor: m1.seq })
+    assert.deepEqual(await ack.json(), { cursor: m1.seq, received: 0 })
 
     const c = await attach('rev-a')
     assert.equal(c.cursor, m1.seq)
@@ -167,7 +167,7 @@ describe('再送と ack', () => {
     assert.equal((await call('GET', '/attachments/at_none/stream')).status, 404)
   })
 
-  it('cursor が進んだときだけ mailbox.acked を UI に流す (payload は { name, cursor })', async () => {
+  it('cursor か received が進んだときだけ mailbox.acked を UI に流す', async () => {
     const hub = new Hub(new Store())
     const app = createApp({ hub, token: TOKEN, uiHtml: async () => null, heartbeatMs: 50 })
     const events: { event: string; data: unknown }[] = []
@@ -179,12 +179,16 @@ describe('再送と ack', () => {
     const acked = () => events.filter((e) => e.event === 'mailbox.acked')
 
     await call('POST', `/attachments/${a.attachmentId}/ack`, { upTo: m1.seq })
-    assert.deepEqual(acked(), [{ event: 'mailbox.acked', data: { name: 'x', cursor: m1.seq } }])
+    assert.deepEqual(acked(), [{ event: 'mailbox.acked', data: { name: 'x', cursor: m1.seq, received: 0, unconfirmed: 1 } }])
 
     // 進まない ack (同じ値・後退) は流さない
     await call('POST', `/attachments/${a.attachmentId}/ack`, { upTo: m1.seq })
     await call('POST', `/attachments/${a.attachmentId}/ack`, { upTo: 0 })
     assert.equal(acked().length, 1)
+
+    // cursor は進まなくても received が進めば流す
+    await call('POST', `/attachments/${a.attachmentId}/ack`, { upTo: m1.seq, received: { first: m1.seq, last: m1.seq } })
+    assert.deepEqual(acked()[1]?.data, { name: 'x', cursor: m1.seq, received: m1.seq, unconfirmed: 0 })
   })
 })
 
@@ -207,7 +211,7 @@ describe('流し込み量の制御 (maxAgeMs / maxUnread)', () => {
     assert.equal(b.truncated, true)
     assert.equal(b.skipped, 2)
     assert.equal(b.cursor, sent[1]!.seq)
-    assert.deepEqual(ui.filter((e) => e.event === 'mailbox.acked').map((e) => e.data), [{ name: 'x', cursor: sent[1]!.seq }])
+    assert.deepEqual(ui.filter((e) => e.event === 'mailbox.acked').map((e) => e.data), [{ name: 'x', cursor: sent[1]!.seq, received: sent[1]!.seq, unconfirmed: 0 }])
     const got = await collect(await app.request(`/attachments/${b.attachmentId}/stream`, { headers: auth }), (evs) => messages(evs).length >= 3)
     assert.deepEqual(messages(got.events).map((m) => m.body), ['3', '4', '5'])
     // ログには残る
@@ -481,5 +485,73 @@ describe('Mailbox の削除', () => {
     const live = collect(res2, (evs) => messages(evs).length >= 1, 800)
     const later = await send({ type: 'mailbox', id: 'x' }, 'after re-creation')
     assert.deepEqual(messages((await live).events).map((m) => m.seq), [later.seq])
+  })
+})
+
+describe('受領の確認 (received / unconfirmed)', () => {
+  const user = { type: 'user', id: 'browser', role: null } as const
+  const toX = { type: 'mailbox', id: 'x' } as const
+
+  it('渡しただけの ack は unconfirmed に数え、inbox の unconfirmed で取り直せる。received の ack で確認済みになる', () => {
+    const hub = new Hub(new Store())
+    const a = hub.attach('x', { client: 'claude-code' })
+    const m1 = hub.postMessage({ kind: 'request', to: toX, body: 'one' }, user)
+    const m2 = hub.postMessage({ kind: 'notice', to: toX, body: 'two' }, user)
+    hub.ack(a.attachmentId, m2.seq)
+    const mb = () => hub.describeMailboxes().find((d) => d.name === 'x')!
+    assert.equal(mb().unread, 0)
+    assert.equal(mb().unconfirmed, 2)
+
+    assert.deepEqual(hub.inbox('x', 0, 20).messages, [], '既定では既読は返さない')
+    const again = hub.inbox('x', 0, 20, true)
+    assert.deepEqual(again.messages.map((m) => m.id), [m1.id, m2.id])
+    assert.deepEqual(hub.ack(a.attachmentId, again.cursor, { first: m1.seq, last: m2.seq }), { cursor: m2.seq, received: m2.seq })
+    assert.equal(mb().unconfirmed, 0)
+  })
+
+  it('返した範囲が received の直後から続いていなければ received を進めない (確認のない分を飛び越えない)', () => {
+    const hub = new Hub(new Store())
+    const a = hub.attach('x', { client: 'claude-code' })
+    const handed = hub.postMessage({ kind: 'notice', to: toX, body: 'handed' }, user)
+    hub.ack(a.attachmentId, handed.seq)
+    const m = hub.postMessage({ kind: 'notice', to: toX, body: 'new' }, user)
+    const r = hub.inbox('x', 0, 20)
+    assert.deepEqual(r.messages.map((x) => x.id), [m.id])
+    assert.deepEqual(hub.ack(a.attachmentId, r.cursor, { first: m.seq, last: m.seq }), { cursor: m.seq, received: 0 })
+    assert.deepEqual(hub.store.unconfirmed('x').map((x) => x.id), [handed.id, m.id])
+  })
+
+  it('ack の received の範囲を検証する', async () => {
+    const { call, attach } = setup()
+    const a = await attach('x')
+    assert.equal((await call('POST', `/attachments/${a.attachmentId}/ack`, { upTo: 1, received: { first: 2, last: 1 } })).status, 400)
+    assert.equal((await call('POST', `/attachments/${a.attachmentId}/ack`, { upTo: 1, received: true })).status, 400)
+  })
+
+  it('自分宛ての Message に reply_to で返信すると、その seq まで受領の確認になる', () => {
+    const hub = new Hub(new Store())
+    const a = hub.attach('x', { client: 'claude-code' })
+    hub.attach('y', { client: 'claude-code' })
+    const m1 = hub.postMessage({ kind: 'request', to: toX, body: 'one' }, user)
+    const other = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'y' }, body: 'for y' }, user)
+    const m2 = hub.postMessage({ kind: 'notice', to: toX, body: 'two' }, user)
+    hub.ack(a.attachmentId, m2.seq)
+
+    // 自分宛てでない Message への返信は確認にしない
+    hub.postMessage({ kind: 'reply', replyTo: other.id, body: 'not mine' }, hub.senderOf(a.attachmentId))
+    assert.equal(hub.store.getMailbox('x')!.received, 0)
+
+    hub.postMessage({ kind: 'reply', replyTo: m1.id, body: 'ok' }, hub.senderOf(a.attachmentId))
+    assert.equal(hub.store.getMailbox('x')!.received, m1.seq)
+    assert.deepEqual(hub.store.unconfirmed('x').map((m) => m.id), [m2.id])
+  })
+
+  it('attach で放棄した古い未読は確認待ちに数えない', () => {
+    const hub = new Hub(new Store())
+    for (const body of ['1', '2', '3']) hub.postMessage({ kind: 'notice', to: toX, body }, user)
+    hub.store.ensureMailbox('x')
+    const a = hub.attach('x', { client: 'claude-code', maxUnread: 1 })
+    assert.equal(a.skipped, 2)
+    assert.deepEqual(hub.store.unconfirmed('x'), [])
   })
 })

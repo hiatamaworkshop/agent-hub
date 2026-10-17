@@ -28,12 +28,14 @@
   "createdAt": "…",
   "subscriptions": ["agent.main"],
   "cursor": 41,
+  "received": 38,
   "attachment": "at_01H… | null"
 }
 ```
 - `subscriptions`: 個別購読のみ。実効購読は role の既定購読との和で、Hub が毎回計算する。
 - `cursor`: ack 済みウォーターマーク。この `seq` 以下は配送済み (または attach 時の流し込み上限で放棄済み)。
 - 未読 = この Mailbox 宛て (直接宛先 + 自分の role 宛て + 実効購読トピック) で `seq > cursor` のメッセージ。
+- `received`: 受領の確認があるウォーターマーク (`received ≤ cursor`)。`received < seq ≤ cursor` のこの Mailbox 宛てが「渡したが確認がない」(unconfirmed) 分。配送の状態は §4。作成時は `cursor` と同じ。`received` を持たない前の形式のログから復元した Mailbox は、起動時に復元した `cursor` までを確認済みとして記録する。
 - 初回の attach で自動作成する。削除は `DELETE /mailboxes/:name` の明示操作のみ。接続中 (attach 中) の Mailbox は削除できない (409)。
 - 作成時の `cursor` は 0。作成前に届いた直接宛て・role 宛ても未読になる (Mailbox は論理宛先なので、受け手がまだいなくても届く)。
   同名を削除して作り直した場合は、削除時点の `seq` から始める (削除前の直接宛ては再送しない)。
@@ -177,12 +179,12 @@
 |---|---|---|
 | POST | `/mailboxes/:name/attach` | Mailbox に attach (なければ作成)。下記参照 |
 | GET | `/attachments/:id/stream?after=<seq>` | SSE。Mailbox の未読を `seq` 順に流し、以後の新着も流す |
-| POST | `/attachments/:id/ack` | 受信確認。body: `{ "upTo": <seq> }`。Mailbox の `cursor` を進める |
+| POST | `/attachments/:id/ack` | 受信確認。body: `{ "upTo": <seq>, "received"?: { "first": <seq>, "last": <seq> } }`。Mailbox の `cursor` を `upTo` まで進める。`received` は受け手が受け取ったと言える範囲 (`inbox` で返した最初と最後の `seq`) で、`received` の直後から続いている (間に確認のないこの Mailbox 宛てがない) ときだけ、Mailbox の `received` を `last` まで進める (§4) |
 | POST | `/attachments/:id/heartbeat` | リース延長。応答は `{ "leaseUntil": "…" }`。stream を開いていないクライアント向け (§4)。存在しない Attachment は 404 |
 | DELETE | `/attachments/:id` | detach (セッション終了時。Mailbox は残る) |
 | PUT | `/mailboxes/:name/subscriptions/:topic` | 購読 |
 | DELETE | `/mailboxes/:name/subscriptions/:topic` | 購読解除 (個別購読のみ。role の既定購読は外せない) |
-| GET | `/mailboxes/:name/inbox?after=<seq>&limit=<n>` | polling 経路 (§5 の `inbox`)。`after` と Mailbox の `cursor` の大きい方より後の、この Mailbox 宛ての Message を `seq` 順に `limit` 件 (既定 20、1〜100) 返す。**読むだけで `cursor` は進めない** (既読にするのは `POST /attachments/:id/ack`)。応答の形は §5。未知の Mailbox は 404 `mailbox_not_found` |
+| GET | `/mailboxes/:name/inbox?after=<seq>&limit=<n>&unconfirmed=<true\|false>` | polling 経路 (§5 の `inbox`)。`after` と Mailbox の `cursor` (`unconfirmed=true` なら `received`) の大きい方より後の、この Mailbox 宛ての Message を `seq` 順に `limit` 件 (既定 20、1〜100) 返す。**読むだけで `cursor` は進めない** (既読にするのは `POST /attachments/:id/ack`)。応答の形は §5。未知の Mailbox は 404 `mailbox_not_found` |
 
 #### attach
 
@@ -233,12 +235,12 @@
 
 #### 応答の形
 
-- `GET /mailboxes`: `{ "mailboxes": [Mailbox + { "effectiveSubscriptions", "unread": <件数>, "attachment": Attachment | null, "detached": DetachedAttachment | null, "takeover": { "at", "previous": Attachment } | null }] }`
+- `GET /mailboxes`: `{ "mailboxes": [Mailbox + { "effectiveSubscriptions", "unread": <件数>, "unconfirmed": <件数>, "attachment": Attachment | null, "detached": DetachedAttachment | null, "takeover": { "at", "previous": Attachment } | null }] }`
   - `detached` は接続していない Mailbox で最後に detach した Attachment に `detachedAt` と `reason` (`closed` / `disconnected` / `lease_expired`) を足したもの。接続中・この Hub の起動後に attach がない・takeover で切り離されただけのときは `null`。古い Hub はこの項目を返さない
   - `takeover` は今の Attachment が takeover で始まったときの時刻 (`at`) と切り離した旧 Attachment (`previous`)。今の Attachment が終わるまで出す (Hub のメモリのみ)。同じ `sessionId` どうしの attach し直しでは出さない。それ以外は `null`。古い Hub はこの項目を返さない
 - `PUT` / `DELETE /mailboxes/:name/subscriptions/:topic`: `{ "subscriptions": [...], "effectiveSubscriptions": [...] }`。Mailbox がなければ 404
 - `DELETE` で外せるのは**個別購読だけ**。role の既定購読 (`roles.json` の `subscribe`) のトピックは外れず、`effectiveSubscriptions` に残る。応答の形は変えていない。残ったかどうかは `effectiveSubscriptions` で分かる (shim の `unsubscribe` ツールは、残ったときに `note` を足す)。
-- `POST /attachments/:id/ack`: `{ "cursor": <進めた後の値> }`。`cursor` は後退せず、採番済みの `seq` を超えない
+- `POST /attachments/:id/ack`: `{ "cursor": <進めた後の値>, "received": <進めた後の値> }`。どちらも後退せず、採番済みの `seq` を超えない
 
 #### shim 向け SSE の `event:` 名
 
@@ -253,7 +255,18 @@
 - **Mailbox 単位の at-least-once**。ack されるまで未読に残り、再 attach / 再接続時に再送する。
 - 受信側は `id` で冪等に処理する。shim は無状態なので、直近の `id` をメモリに持つ程度の重複除去にとどめる。
 - 順序は `seq` 順。
-- **Channels は ack を返さない**ため、shim の ack は「`notifications/claude/channel` をトランスポートに書けた」時点で送る。Claude が読んだことの保証ではない。
+- **配送の状態** (確かめられる範囲だけを名付け、「モデルが読んだ」とは言わない。design.md §8.4):
+
+  | 状態 | 意味 | 根拠 |
+  |---|---|---|
+  | queued | Hub にあり、まだ渡していない | `seq > cursor` (未読) |
+  | handed | shim がクライアントに渡した | `received < seq ≤ cursor`。channel 通知をトランスポートに書けた |
+  | received | 受け手が受け取ったと言える | `seq ≤ received`。`inbox` ツールの結果として返した (エージェント自身が呼んだ)、またはこの Mailbox からその Message に `replyTo` で返信した |
+
+  - attach の流し込み上限で放棄した分は渡していないので、`cursor` と一緒に `received` も進める (unconfirmed に数えない)。
+  - `replyTo` による確認は、その Message の `seq` まで `received` を進める。それより前の handed も受け取ったとみなす目安で、1 件ずつの証拠ではない。
+  - `inbox` による確認は、返した範囲が `received` の直後から続いているときだけ進める。間に handed のまま確認のない分があれば飛び越えない (それらは `unconfirmed=true` の `inbox` で取り直すと確認になる)。
+- **Channels は ack を返さない**ため、shim の ack は「`notifications/claude/channel` をトランスポートに書けた」時点で送る (handed)。Claude が読んだことの保証ではない。channel なしで起動した Claude Code は通知を黙って捨て、shim からは見分けられない (design.md §6.1k)。その分は handed のまま unconfirmed に残り、UI のカードに件数が出る。再送はしない (未読には戻さない)。
 - shim の経路は initialize の `clientInfo.name` で決まる (`claude-code` なら Channels、それ以外は `inbox`。design.md §3.7)。`inbox` 経路の shim は stream で受けた Message を push も ack もせず、`inbox` ツールで返したときだけ ack する。
 - 未読の流し込みには上限がある (既定 7 日 / 50 件。§3 attach)。超えた分は attach の時点で放棄し、`truncated: true` を返す。attach していない間は放棄しない (溜まるだけ)。
 - リース: 2 分 (暫定)。attach・stream を開く・ack・`POST /attachments/:id/heartbeat` で延びる。stream を開いている間は期限が来ても延ばし直す。stream を開かないクライアントは 2 分より短い間隔 (例: 30 秒) で heartbeat を送る。
@@ -269,7 +282,7 @@
 | `unsubscribe` | `topic` | 個別購読を解除 |
 | `list_topics` | なし | 既知トピックと自分の購読状況 (role 由来か個別かを区別) |
 | `post_message` | `kind`, `body`, `to?`, `reply_to?` | Message を送る。`kind` は必須。`to` は channel の属性と同じ `type:id` 表記 (`mailbox:rev-a`、`user:browser` など)。`reply_to` があれば `to` は省略でき、送り手に返る。結果は `id` / `seq` / `to` と、`user` 宛てなら `delivered` (UI に出る旨。Mailbox を経由しないので `recipients` は返さない。空の配列をモデルが未達と読んだため)、それ以外なら `recipients`。`recipients` が空なら `warning` を添える |
-| `inbox` | `after?`, `limit?` (1〜100、既定 20) | 未読を取得 (polling 用。Claude Code 以外の縮退経路で、全クライアント共通の「中身を渡す」経路。design.md §3.9)。`GET /mailboxes/:name/inbox` で取り、添付画像に `path` / `error` を足し (§6)、応答の `cursor` まで ack してから、§6.2 の文面 (テキスト 1 つ) で返す。ack は結果を返す直前に送るので、Channels と同じく「クライアントに渡した」までしか言えない (§4)。本文は `structuredContent` などで別に渡さない (包みを通らない経路を作らないため)。channel で届いて ack 済みの分は含まれない。返した id は shim が覚え、stream から重ねて push しない |
+| `inbox` | `after?`, `limit?` (1〜100、既定 20), `unconfirmed?` | 未読を取得 (polling 用。Claude Code 以外の縮退経路で、全クライアント共通の「中身を渡す」経路。design.md §3.9)。`GET /mailboxes/:name/inbox` で取り、添付画像に `path` / `error` を足し (§6)、応答の `cursor` まで ack し (返した範囲は `received` として)、§6.2 の文面 (テキスト 1 つ) で返す。ツールの結果としてエージェント自身が受け取るので、返した分は received とする (§4)。本文は `structuredContent` などで別に渡さない (包みを通らない経路を作らないため)。channel で届いて ack 済みの分は含まれない。`unconfirmed: true` なら、handed のまま確認のない分 (channel が捨てられたかもしれない分) も含める。返した id は shim が覚え、stream から重ねて push しない |
 | `report_event` | `kind`, `payload` | skill が意味判断した結果 (区切り申告など) を Hub に出す。後回し (design.md §3.4) |
 
 P0 で実装するのは `post_message` / `subscribe` / `unsubscribe` / `whoami`。P2 で `inbox` を足した。いずれも `_meta["anthropic/alwaysLoad"]: true` を付ける (design.md §6.1c)。`attach` / `list_topics` / `report_event` は未実装。
@@ -370,7 +383,7 @@ Claude 側では次のように見える:
 - `event` は記録した Event (§2)。重複 (`duplicate: true`) と取り込まなかったものは流さない。
 - `mailbox.created` は作成された Mailbox (`name` `role` `createdAt` `subscriptions` `cursor` `attachment`。作成直後なので `attachment` は null)。`mailbox.deleted` は `{ "name": "<名前>" }`。UI は両方で一覧を取り直す。
 - `attachment.detached` は §3 の `detached` と同じ形 (Attachment + `detachedAt` + `reason`)。`attachment.superseded` は Attachment + `reason: "superseded"`。UI はどちらでも一覧を取り直す。
-- `mailbox.acked` は `{ "name": "<名前>", "cursor": <進めた後の値> }`。`POST /attachments/:id/ack` で cursor が実際に進んだときだけ流す (同じ値・後退では流さない)。未読数が減るのはこのとき。UI は一覧を取り直す。古い UI は知らない名前として無視し、古い Hub は送らないので、どちらの組み合わせでも壊れない。
+- `mailbox.acked` は `{ "name": "<名前>", "cursor": <進めた後の値>, "received": <進めた後の値>, "unconfirmed": <件数> }`。ack・`replyTo` の返信・attach の放棄で `cursor` か `received` が実際に進んだときだけ流す (同じ値・後退では流さない)。未読数・unconfirmed の件数が変わるのはこのとき。UI は一覧を取り直す。古い UI は知らない名前として無視し、古い Hub は送らないので、どちらの組み合わせでも壊れない。
 
 ## 8. MCP Events (SEP-3415) との語彙対応
 

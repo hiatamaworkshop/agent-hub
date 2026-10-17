@@ -51,7 +51,12 @@ const attachSchema = z.object({
   maxUnread: z.number().int().nonnegative().optional(),
 })
 
-const ackSchema = z.object({ upTo: z.number().int().nonnegative() })
+// received: 受け手が受け取ったと言える範囲 (inbox で返した最初と最後の seq)。省略は「渡した」だけ (protocol.md §4)
+const seqSchema = z.number().int().nonnegative()
+const ackSchema = z.object({
+  upTo: seqSchema,
+  received: z.object({ first: seqSchema, last: seqSchema }).refine((r) => r.first <= r.last, 'first は last 以下').optional(),
+})
 
 async function readJson(c: Context): Promise<unknown> {
   try {
@@ -189,7 +194,9 @@ export function createApp(opts: AppOptions) {
     const after = intParam(c.req.query('after'), 0, 0, Number.MAX_SAFE_INTEGER)
     const limit = intParam(c.req.query('limit'), 20, 1, 100)
     if (after === null || limit === null) return invalid(c, 'after は 0 以上、limit は 1〜100 の整数')
-    return c.json(hub.inbox(name, after, limit))
+    const unconfirmed = c.req.query('unconfirmed')
+    if (unconfirmed !== undefined && unconfirmed !== 'true' && unconfirmed !== 'false') return invalid(c, 'unconfirmed は true か false')
+    return c.json(hub.inbox(name, after, limit, unconfirmed === 'true'))
   })
 
   // shim 向け SSE。未読を seq 順に送ってから新着を流す (protocol.md §3)
@@ -223,7 +230,7 @@ export function createApp(opts: AppOptions) {
   app.post('/attachments/:id/ack', async (c) => {
     const parsed = ackSchema.safeParse(await readJson(c))
     if (!parsed.success) return invalid(c, parsed.error)
-    return c.json({ cursor: hub.ack(c.req.param('id'), parsed.data.upTo) })
+    return c.json(hub.ack(c.req.param('id'), parsed.data.upTo, parsed.data.received))
   })
 
   // リース延長。stream を開いていないクライアント向け (開いている間はリースが切れない)

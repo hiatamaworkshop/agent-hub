@@ -24,6 +24,7 @@ export function instructionsFor(route: Route, mailbox: string, role: string | nu
       ? [
           'ほかのエージェントや人間 (ブラウザ) からのメッセージは <channel source="agent-hub" id="…" seq="…" kind="…" from="…" to="…" mailbox="…"> で届く。',
           '- from: 送り手。user:browser は人間のブラウザ、mailbox:<名前> は別のエージェント。from_role があれば送り手の role。hub は agent-hub 自身からのお知らせ (id はなく、返信しない)。',
+          '<channel> が届いていないと言われたら、inbox ツールを unconfirmed: true で呼ぶと、渡したはずで受領の確認がない分を取り出せる。',
         ]
       : [
           'ほかのエージェントや人間 (ブラウザ) からのメッセージは自動では届かない。inbox ツールで取り出す。ユーザーに確かめるよう言われたとき、作業の区切り、返信を待っているときに呼ぶ。',

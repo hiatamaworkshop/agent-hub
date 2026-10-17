@@ -97,12 +97,16 @@ const tools = [
   {
     name: 'inbox',
     description:
-      '自分の Mailbox の未読を取り出す。各メッセージは <hub-message> で包まれて返り、返した分は既読になる。<channel> で届いたものは既読なので含まれない',
+      '自分の Mailbox の未読を取り出す。各メッセージは <hub-message> で包まれて返り、返した分は既読になる。<channel> で届いたものは既読なので含まれない (unconfirmed: true なら含む)',
     inputSchema: {
       type: 'object',
       properties: {
         limit: { type: 'integer', minimum: 1, maximum: 100, description: '最大件数 (既定 20)' },
         after: { type: 'integer', minimum: 0, description: 'この seq より後だけを取る (省略時は未読の先頭から)' },
+        unconfirmed: {
+          type: 'boolean',
+          description: 'true なら、<channel> で渡したが受領の確認 (inbox で取り出す・reply_to で返信する) がない分も返す。<channel> が届いていないときの取り直し用',
+        },
       },
     },
   },
@@ -120,7 +124,11 @@ const postArgs = z.object({
   reply_to: z.string().optional(),
 })
 const topicArgs = z.object({ topic: z.string().min(1) })
-const inboxArgs = z.object({ after: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(100).optional() })
+const inboxArgs = z.object({
+  after: z.number().int().nonnegative().optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+  unconfirmed: z.boolean().optional(),
+})
 
 const text = (v: unknown): CallToolResult => ({ content: [{ type: 'text', text: typeof v === 'string' ? v : JSON.stringify(v, null, 2) }] })
 

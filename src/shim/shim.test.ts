@@ -374,6 +374,16 @@ describe('inbox ツール (fetchInbox)', () => {
       assert.ok(rest.includes(`id="${sent[2]!.id}"`))
       assert.doesNotMatch(rest, /has_more/)
       assert.equal(hub.store.getMailbox('poller')!.cursor, sent[2]!.seq)
+      // inbox で返した分は受領の確認になる
+      assert.equal(hub.store.getMailbox('poller')!.received, sent[2]!.seq)
+
+      // 渡しただけ (channel 経路の ack) の分は、unconfirmed: true で取り直せる
+      const d = hub.postMessage({ kind: 'notice', to: { type: 'mailbox', id: 'poller' }, body: 'dropped' }, browser)
+      hub.ack(hc.attachment!.attachmentId, d.seq)
+      assert.match(await fetchInbox(hc, 'poller', {}, fileCtx, () => undefined), /未読はない/)
+      const retry = await fetchInbox(hc, 'poller', { unconfirmed: true }, fileCtx, () => undefined)
+      assert.ok(retry.includes(`id="${d.id}"`))
+      assert.equal(hub.store.getMailbox('poller')!.received, d.seq)
     } finally {
       await hc.stop()
       await new Promise((r) => server.close(r))

@@ -120,7 +120,10 @@ export interface Mailbox {
   role: string | null
   createdAt: string
   subscriptions: string[]
+  // ここまでは渡した (既読)。再送しない
   cursor: number
+  // ここまでは受領の確認がある (inbox で取り出した・replyTo で返信した)。protocol.md §4
+  received: number
   attachment: string | null
 }
 
