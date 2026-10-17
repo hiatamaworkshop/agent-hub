@@ -521,7 +521,14 @@ function renderEvent(ev, counts) {
     el('span', '', time(ev.ts)),
     el('span', 'kind', EVENT_LABEL[ev.kind] || ev.kind),
   )
-  if (ev.mailbox) {
+  // takeover で切り離されたセッションの Event。今その Mailbox にいるのは別のセッションなので、
+  // Reply (Mailbox 宛て) は出さず、カードの Last event にも使わない
+  if (ev.superseded) {
+    const tag = el('span', 'kind', 'superseded session')
+    tag.title = 'From a session that another session took over. The Mailbox now belongs to the newer session.'
+    head.append(tag)
+  }
+  if (ev.mailbox && !ev.superseded) {
     const actions = el('span', 'actions')
     const btn = el('button', 'linkbtn', 'Reply')
     btn.type = 'button'
@@ -533,7 +540,7 @@ function renderEvent(ev, counts) {
   box.append(head, eventBody(ev))
   insertByTs(box, ev.ts)
   if (atBottom) { pinned = true; list.scrollTop = list.scrollHeight }
-  if (ev.mailbox) {
+  if (ev.mailbox && !ev.superseded) {
     const prev = lastEventByMailbox.get(ev.mailbox)
     if (!prev || prev.ts <= ev.ts) lastEventByMailbox.set(ev.mailbox, ev)
   }

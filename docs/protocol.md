@@ -83,9 +83,11 @@
   "sessionId": "…",
   "mailbox": "reviewer (解決できた場合だけ)",
   "changes": { "head": "…", "changed": ["…"], "untracked": ["…"] },
+  "superseded": true,
   "payload": { "...": "hook の入力をそのまま (agent_hub_git を含むことがある)" }
 }
 ```
+- `superseded` は takeover で切り離されたセッション (その後同じセッションで attach し直していない) からの Event にだけ付く。`mailbox` は解決したとおりだが、今その Mailbox にいるのは後継のセッション。切り離しの記録は Hub のメモリにだけあり、Hub の再起動後は付かない。
 - hook からは HTTP hook が入力 JSON をそのまま `POST /events` に送ってくる (design.md §6.1b)。Hub はそれを `payload` にそのまま入れ、変換で `kind` を決める。`source` は変換したクライアント (今は `claude-code` だけ) で、`payload` の形はこれで決まる。
 - Claude Code の hook 用の変換 (`src/hub/events.ts`):
 

@@ -157,6 +157,28 @@ describe('Hub.addEvent: 記録と Mailbox の解決', () => {
     assert.equal(r.mailbox, 'deployer')
   })
 
+  it('takeover で切り離されたセッションの Event に superseded を付ける。同じセッションの attach し直しは付けない', () => {
+    const { hub } = setup()
+    hub.attach('reviewer', { client: 'claude-code', sessionId: 'sA' })
+    hub.attach('reviewer', { client: 'claude-code', sessionId: 'sA' })
+    hub.addEvent(stop('sA'))
+    hub.attach('reviewer', { client: 'claude-code', sessionId: 'sB' })
+    hub.addEvent(stop('sA'), 'reviewer')
+    hub.addEvent(stop('sB'))
+    const evs = hub.store.listEvents()
+    assert.deepEqual(evs.map((e) => [e.sessionId, e.mailbox, e.superseded ?? false]), [
+      ['sA', 'reviewer', false],
+      ['sA', 'reviewer', true],
+      ['sB', 'reviewer', false],
+    ])
+    // 切り離されたセッションが attach し直したら外す (今度は sB が切り離される)
+    hub.attach('reviewer', { client: 'claude-code', sessionId: 'sA' })
+    hub.addEvent(stop('sA'))
+    assert.equal(hub.store.listEvents().at(-1)!.superseded, undefined)
+    hub.addEvent(stop('sB'))
+    assert.equal(hub.store.listEvents().at(-1)!.superseded, true)
+  })
+
   it('Event は Mailbox の未読にならない (UI に出すだけ)', () => {
     const { hub } = setup()
     hub.attach('leader', { client: 'claude-code', sessionId: 's1' })

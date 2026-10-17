@@ -135,5 +135,7 @@ export interface HubEvent {
   mailbox?: string
   // 形が合った git の事実だけ。payload には入力のまま残る
   changes?: EventChanges
+  // takeover で切り離されたセッションからの Event。mailbox は今の接続のものではない (protocol.md §2 Event)
+  superseded?: true
   payload: unknown
 }

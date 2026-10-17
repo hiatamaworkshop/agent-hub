@@ -142,6 +142,7 @@ MCP Events (SEP-3415) が購読 ID をクライアント生成にせず、購読
 - **takeover (排他・新しい方が勝つ。§9-1 で決定)**: 既に Attachment がある Mailbox に別セッションが attach すると、旧 Attachment に `terminated(reason: superseded)` を送って切り離す。
   切り離された shim は attach し直さず (取り返しの応酬を避ける)、`post_message` は引き継がれた旨のエラーを返す。
   UI のカードには、今の Attachment が takeover で始まったことを `took over <時刻>` と出す (`GET /mailboxes` の `takeover`。Hub のメモリのみ)。
+  切り離されたセッションも動き続けることがあり、その hook の Event は同じ Mailbox に解決される。Hub はその Event に `superseded: true` を付け、UI は `superseded session` と添えて出す。カードの `Last event` には使わず、Reply も出さない (Mailbox 宛てに返すと後継に届くため)。
 - **リース**: stream を開いている間はリースを保つ。stream を開かないクライアント (`inbox()` の polling 経路) は heartbeat でリースを延長する。リースが切れた Attachment は detached になり、その間のメッセージは Mailbox の未読キューに溜まる。Mailbox 自体はリース切れでは消えない。
   **決定 (2026-10-17)**: shim は heartbeat を送らない。shim は常に stream を開いていて、生死は stream の切断 (15 秒の猶予) で分かる。heartbeat を shim に義務づけると、更新前の shim を動かしたままの Claude Code が新しい Hub でリース切れになる。
   detached の理由 (`closed` / `disconnected` / `lease_expired`) は、次の attach まで Mailbox に添えて UI に出す。Hub のメモリにだけ持ち、再起動で消える。
@@ -563,6 +564,14 @@ AI との共同開発で効果があったのは、結局ドキュメントの�
 - **実機の検証の範囲**: 別インスタンスの Hub (稼働中の Hub とは別のポートと保存先) に対して、`node tools/hooks/post-event.mjs` へ Stop の入力を流して確かめた。
 - **実機 (2026-10-17、Claude Code の leader / deployer セッション)**: `.claude/settings.local.json` の `Stop` を `settings.command.json` の形に置き換えたところ、exec 形式・`${CLAUDE_PROJECT_DIR}` の展開・stdin の受け渡しが働き、`turn.end` 6 件すべてに `changes` が付いた。HTTP の `Stop` を外したので、`turn.end` は 1 ターン 1 件だった。
 - **許可待ちとモード**: `permission_mode` が `auto` のセッションでは `permission_prompt` の Notification が出ない (許可を求めないため)。既定のモードの deployer では、ファイル作成の許可待ちで `permission` が出た。
+
+### 6.1j takeover の実セッション (2026-10-17、P2 の受け入れ条件 3。バージョンは記録していない)
+
+`./tools/dev/start-agent.ps1 -Role reviewer` でセッション A を起動し、A を残したまま同じコマンドでセッション B を起動した。
+- UI の reviewer のカードに `Connected (claude-code) · took over <時刻>` が出た。
+- A に送信を頼むと、A は `post_message` のエラー (`superseded`) を読み、「別のセッションが takeover したので切り離された」と答えた。
+- その後 UI から `role:reviewer` 宛てに送った request は B だけが受け取り、reply を返した。その時刻の turn end は B の 1 件だけで、A には届いていない。
+- **見つかったこと**: A の Stop hook の Event (`turn.end`) は reviewer の Mailbox に解決され、カードの `Last event` が A のものになった。今つながっている B が止まったように読めるため、切り離されたセッションの Event に `superseded` を付け、カードには使わないようにした (§3.3)。
 
 ### 6.2 未検証
 

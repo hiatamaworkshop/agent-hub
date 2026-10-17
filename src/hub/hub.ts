@@ -91,6 +91,9 @@ export class Hub {
   private readonly lastDetached = new Map<string, DetachedAttachment>()
   // takeover した Attachment の ID → 切り離した旧 Attachment。その Attachment が終わったら消す
   private readonly takeovers = new Map<string, Takeover>()
+  // takeover で切り離された Attachment の sessionId。そのセッションの Event に superseded を付ける。
+  // 同じセッションが attach し直したら外す。永続化はしない
+  private readonly supersededSessions = new Set<string>()
   // sessionId → Mailbox 名。attach の申告と、ヘッダー・cwd で解決できた Event から覚える。
   // detach 後も残す (セッションは shim が切れても続きうる)。永続化はしない
   private readonly sessionMailbox = new Map<string, string>()
@@ -182,6 +185,7 @@ export class Hub {
       ...(draft.sessionId ? { sessionId: draft.sessionId } : {}),
       ...(mailbox ? { mailbox } : {}),
       ...(draft.changes ? { changes: draft.changes } : {}),
+      ...(draft.sessionId && this.supersededSessions.has(draft.sessionId) ? { superseded: true as const } : {}),
       payload: input,
     }
     this.store.addEvent(event)
@@ -233,6 +237,9 @@ export class Hub {
     const superseded = mailbox.attachment
     const previous = superseded ? this.attachments.get(superseded) : undefined
     if (superseded) this.endAttachment(superseded, 'superseded')
+    // 同じセッションの attach し直し (shim の再起動など) は切り離しではない
+    if (previous?.sessionId && previous.sessionId !== input.sessionId) this.supersededSessions.add(previous.sessionId)
+    if (input.sessionId) this.supersededSessions.delete(input.sessionId)
 
     const at: Attachment = {
       attachmentId: newId('at'),
