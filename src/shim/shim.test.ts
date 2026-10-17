@@ -149,8 +149,9 @@ describe('shim と Hub の結合', () => {
     assert.deepEqual(sent.to, { type: 'user', id: 'browser' })
     assert.deepEqual(sent.from, { type: 'mailbox', id: 'test-mb', role: null })
     const out = JSON.parse(r.text) as Record<string, unknown>
-    assert.deepEqual(out.recipients, [])
-    assert.equal(out.warning, undefined, 'user 宛ては 0 件でも警告しない')
+    assert.equal('recipients' in out, false, 'user 宛ては空の recipients を返さない (未達と読まれるため)')
+    assert.match(String(out.delivered), /UI/)
+    assert.equal(out.warning, undefined, 'user 宛ては警告しない')
   })
 
   it('post_message は受け取る Mailbox がない宛先に警告を添える', async () => {

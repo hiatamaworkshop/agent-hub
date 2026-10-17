@@ -93,9 +93,13 @@ server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolRes
           ...(a.reply_to ? { replyTo: a.reply_to } : {}),
         })
         const to = `${m.to.type}:${m.to.id}`
-        const out: Record<string, unknown> = { id: m.id, seq: m.seq, to, recipients: m.recipients }
-        // user 宛ては Mailbox を経由せず UI に出るので、0 件でも届いている
-        if (m.to.type !== 'user' && m.recipients.length === 0) out.warning = `${to} を受け取る Mailbox がない (受理はされた)`
+        const out: Record<string, unknown> = { id: m.id, seq: m.seq, to }
+        // user 宛ては Mailbox を経由せず UI に出るので recipients は常に空。空の配列をモデルが「未達」と読んだので返さない (2026-10-17)
+        if (m.to.type === 'user') out.delivered = 'UI に表示される (user 宛ては Mailbox を経由しない)'
+        else {
+          out.recipients = m.recipients
+          if (m.recipients.length === 0) out.warning = `${to} を受け取る Mailbox がない (受理はされた)`
+        }
         return text(out)
       }
       case 'subscribe':

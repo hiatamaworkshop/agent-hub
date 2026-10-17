@@ -1,13 +1,14 @@
 // クライアントの hook 入力を Event の形に揃える (protocol.md §2 Event、design.md §3.7)。
 // クライアント固有の知識はここに閉じ込め、Hub の保存形式と UI は kind だけを見る
 import { createHash } from 'node:crypto'
-import type { EventKind, HubEvent } from '../shared/types.js'
+import type { EventChanges, EventKind, HubEvent } from '../shared/types.js'
 
 export interface EventDraft {
   kind: EventKind
   source: string
   sessionId?: string
   cwd?: string
+  changes?: EventChanges
   // 上流に一意の値があるときだけ決める (重複の除去に使う)。なければ Hub が採番する
   id?: string
 }
@@ -17,8 +18,32 @@ export type Converted = { event: EventDraft } | { ignored: string }
 // AskUserQuestion の表示から permission_prompt の Notification が出るまでの猶予。実機では 6 秒だった (design.md §6.1c)
 export const QUESTION_PERMISSION_WINDOW_MS = 60_000
 
+// hook (tools/hooks/post-event.mjs) が入力に足す欄。値の形は parseChanges で検査する
+export const CHANGES_FIELD = 'agent_hub_git'
+// 配列 1 つの上限。hook も同じ数で切る。超えた入力は事実だけ捨て、イベントは記録する
+export const CHANGES_MAX_ITEMS = 1000
+const CHANGES_MAX_PATH = 1000
+const CHANGES_MAX_HEAD = 64
+
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v !== '' ? v : undefined
+}
+
+function paths(v: unknown): string[] | undefined {
+  if (!Array.isArray(v) || v.length > CHANGES_MAX_ITEMS) return undefined
+  if (!v.every((p) => typeof p === 'string' && p !== '' && p.length <= CHANGES_MAX_PATH)) return undefined
+  return v as string[]
+}
+
+// 形が合わなければ undefined。呼び出し側は事実を捨てるだけで、イベントは止めない
+export function parseChanges(v: unknown): EventChanges | undefined {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return undefined
+  const { head, changed, untracked } = v as Record<string, unknown>
+  if (typeof head !== 'string' || head === '' || head.length > CHANGES_MAX_HEAD) return undefined
+  const c = paths(changed)
+  const u = paths(untracked)
+  if (!c || !u) return undefined
+  return { head, changed: c, untracked: u }
 }
 
 function stableId(...parts: string[]): string {
@@ -30,7 +55,8 @@ export function fromClaudeCodeHook(input: Record<string, unknown>, previous: Hub
   const hook = str(input.hook_event_name)
   if (!hook) return { ignored: 'no_hook_event_name' }
   const sessionId = str(input.session_id)
-  const base = { source: 'claude-code', sessionId, cwd: str(input.cwd) }
+  const changes = parseChanges(input[CHANGES_FIELD])
+  const base = { source: 'claude-code', sessionId, cwd: str(input.cwd), ...(changes ? { changes } : {}) }
   const toolUseId = str(input.tool_use_id)
 
   switch (hook) {

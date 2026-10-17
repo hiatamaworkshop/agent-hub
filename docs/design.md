@@ -317,7 +317,10 @@ Hub に置くのはこの約束事だけで、配信アダプタ・UI・クラ�
 - **LLM に HTML を書かせない**。エージェントは CLI で決まった形のテキストを書き、Hub が形を知っているので UI が描ける。描き方は後から変えられる。
 
 未決:
-1. 導く欄を書くのは shim (`post_message` の時点で作業フォルダの diff を取る) か、hook (`Stop` / `PostToolUse`) か。shim は状態を持たないまま計算だけする形になる。
+1. **決定 (2026-10-17、ユーザー): hook で導く。`Stop` の command hook だけ** (`PostToolUse(Edit|Write)` は作らない)。`tools/hooks/post-event.mjs` が入力 JSON に `agent_hub_git: { head, changed, untracked }` を 1 つ足して `POST /events` に送る。Hub は git を実行せず、形を検査して Event の `changes` に載せるだけ (protocol.md の Event)。
+   - `head` は HEAD の full sha。`changed` は `git diff --name-only HEAD`、`untracked` は `git ls-files --others --exclude-standard` (どちらもルートからの相対パス、`-z` で区切る)。
+   - 5 秒で打ち切り、どの失敗でも exit 0。取れなければ入力をそのまま送る。HTTP hook の `Stop` と併記すると `turn.end` が 2 件になるので、置き換えて使う (`tools/hooks/settings.command.json`)。
+   - shim で `post_message` の時点に diff を取る案は採らない (送るたびに作業フォルダを読むことになり、状態を持たない計算もここでは要らない)。
 2. 指紋の対象。`SCOPE` の範囲の diff か、作業ツリー全体の diff か、HEAD か。複数のエージェントが同じ作業ツリーを使う間は、他者の変更で指紋が揺れる (§9-6 の worktree と合わせて決める)。
 3. いつ作るか。§1.1 の基準 2 に従い、宣言の語彙は leader / deployer の運用で毎回使っている見出しから始め、先に語彙を設計しない。
 
@@ -540,6 +543,18 @@ AI との共同開発で効果があったのは、結局ドキュメントの�
 - ブラウザから `/clear` などを本文として送っても、コマンドとしては実行されず、本文としてモデルに届いた。
 - 理由: スラッシュコマンドは CLI が入力欄で解釈する。channel の通知は入力欄を通らず、モデルの文脈に `<channel>` 付きで直接入る。外部の本文でコマンドが動かないのは、「本文はデータ」(protocol.md §6) の守りとも一致する。
 - 自作のコマンドや skill は、モデルが Skill ツールで呼ぶことはありうる (モデルの判断で、確実ではない)。`/clear` や `/compact` などの組み込みは呼べない。代わりの手段は §3.13。
+
+### 6.1i command hook と git の事実 (2026-10-17、公式 hooks のドキュメントで確認)
+
+出典: <https://code.claude.com/docs/en/hooks.md>
+- **command hook の入力**: stdin に JSON が届く (HTTP hook は POST 本文)。共通入力は §6.1b の欄。
+- **`timeout`**: 秒。command hook の既定は 600 秒。`tools/hooks/settings.command.json` は 6 秒で、スクリプト自身の 5 秒の上限が先に効く。
+- **`${CLAUDE_PROJECT_DIR}`**: セッションを起動したプロジェクトのルート。worktree に入っても元のルートを指す。
+- **exec 形式**: `"command": "node", "args": [...]` と書くと、シェルを通さずに直接起動する。Windows の既定シェル (Git Bash / PowerShell) の差を避けられる。
+- **Stop の入力**: `last_assistant_message` は公式で確認。ただし Stop の全欄は取得が途中で切れたので未確認。スクリプトが読むのは §6.1b で実機確認した `session_id` / `cwd` だけ。
+- **実機の検証の範囲**: 別インスタンスの Hub (稼働中の Hub とは別のポートと保存先) に対して、`node tools/hooks/post-event.mjs` へ Stop の入力を流して確かめた。
+- **実機 (2026-10-17、Claude Code の leader / deployer セッション)**: `.claude/settings.local.json` の `Stop` を `settings.command.json` の形に置き換えたところ、exec 形式・`${CLAUDE_PROJECT_DIR}` の展開・stdin の受け渡しが働き、`turn.end` 6 件すべてに `changes` が付いた。HTTP の `Stop` を外したので、`turn.end` は 1 ターン 1 件だった。
+- **許可待ちとモード**: `permission_mode` が `auto` のセッションでは `permission_prompt` の Notification が出ない (許可を求めないため)。既定のモードの deployer では、ファイル作成の許可待ちで `permission` が出た。
 
 ### 6.2 未検証
 

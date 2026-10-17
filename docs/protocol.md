@@ -79,7 +79,8 @@
   "source": "claude-code",
   "sessionId": "…",
   "mailbox": "reviewer (解決できた場合だけ)",
-  "payload": { "...": "hook の入力をそのまま" }
+  "changes": { "head": "…", "changed": ["…"], "untracked": ["…"] },
+  "payload": { "...": "hook の入力をそのまま (agent_hub_git を含むことがある)" }
 }
 ```
 - hook からは HTTP hook が入力 JSON をそのまま `POST /events` に送ってくる (design.md §6.1b)。Hub はそれを `payload` にそのまま入れ、変換で `kind` を決める。`source` は変換したクライアント (今は `claude-code` だけ) で、`payload` の形はこれで決まる。
@@ -87,13 +88,17 @@
 
 | hook 入力 | `kind` |
 |---|---|
-| `Stop` | `turn.end` |
+| `Stop` | `turn.end`。入力に `agent_hub_git` があれば `changes` に載せる (下の「変更の事実」) |
 | `PreToolUse` + `tool_name: AskUserQuestion` | `question` |
 | `PostToolUse` + `tool_name: AskUserQuestion` | `question.answered` |
 | `Notification` + `notification_type: permission_prompt` | `permission`。ただし、同じ session の直前の Event が 60 秒以内の `question` なら取り込まない (質問の表示でも出るため。design.md §6.1c) |
 | ほかの `Notification` (`idle_prompt`、`agent_needs_input`、`elicitation_dialog` など) | `notification`。種類は `payload.notification_type` で見る |
 | それ以外の hook、`AskUserQuestion` 以外のツール | 取り込まない |
 
+- **変更の事実** (`changes`、design.md §3.11 の未決 1 の決定): `tools/hooks/post-event.mjs` (Stop の command hook) が入力に足す `agent_hub_git` を検査して `changes` に載せる。Hub は git を実行しない。
+  - 形: `agent_hub_git: { head: string, changed: string[], untracked: string[] }`。`head` は HEAD の full sha (1〜64 文字)、`changed` は `git diff --name-only HEAD`、`untracked` は `git ls-files --others --exclude-standard`。パスはリポジトリのルートからの相対パスで、どちらの配列も 1000 件まで。
+  - 形が合わなければ `changes` だけ捨て、Event は記録する。`payload` には入力のまま残る。欄がない古い hook は従来どおり (`changes` なし)。
+  - UI は `turn.end` に `changed + untracked` の件数を出す。`changes` がなければ何も出さない。
 - `report_event` からは `kind` を明示して送る (`session.boundary` はこの経路用。`report_event` は後回し。design.md §3.4)。
 - Event は UI に出すだけで、トピックとして Mailbox には配信しない (design.md §9-2)。
 - 変換はクライアントごとに分けて持つ。他のクライアントの hook は、別の変換で同じ `kind` に揃える。Hub の保存形式は `kind` だけに依存する (design.md §3.7)。UI は表示の中身 (質問文など) を読むために `source` ごとに `payload` のキーを知る。
@@ -244,7 +249,7 @@
 | `subscribe` | `topic` | 個別購読を追加 |
 | `unsubscribe` | `topic` | 個別購読を解除 |
 | `list_topics` | なし | 既知トピックと自分の購読状況 (role 由来か個別かを区別) |
-| `post_message` | `kind`, `body`, `to?`, `reply_to?` | Message を送る。`kind` は必須。`to` は channel の属性と同じ `type:id` 表記 (`mailbox:rev-a`、`user:browser` など)。`reply_to` があれば `to` は省略でき、送り手に返る。結果は `id` / `seq` / `to` / `recipients`。`user` 宛て以外で `recipients` が空なら `warning` を添える |
+| `post_message` | `kind`, `body`, `to?`, `reply_to?` | Message を送る。`kind` は必須。`to` は channel の属性と同じ `type:id` 表記 (`mailbox:rev-a`、`user:browser` など)。`reply_to` があれば `to` は省略でき、送り手に返る。結果は `id` / `seq` / `to` と、`user` 宛てなら `delivered` (UI に出る旨。Mailbox を経由しないので `recipients` は返さない。空の配列をモデルが未達と読んだため)、それ以外なら `recipients`。`recipients` が空なら `warning` を添える |
 | `inbox` | `after?`, `limit?` | 未読を取得 (polling 用。Claude Code 以外の縮退経路) |
 | `report_event` | `kind`, `payload` | skill が意味判断した結果 (区切り申告など) を Hub に出す。後回し (design.md §3.4) |
 

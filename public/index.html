@@ -480,6 +480,12 @@ function eventBody(ev) {
         box.append(d)
       }
     }
+    // 変更の事実は hook が足したときだけ (design.md §3.11)。古い Hub や hook では出さない
+    const c = ev.changes
+    if (c && Array.isArray(c.changed) && Array.isArray(c.untracked)) {
+      const n = c.changed.length + c.untracked.length
+      box.append(el('div', 'note', `${n} changed file${n === 1 ? '' : 's'} (${c.changed.length} modified, ${c.untracked.length} untracked)`))
+    }
   }
   return box
 }

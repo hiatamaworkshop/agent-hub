@@ -153,6 +153,7 @@ export class Hub {
       source: draft.source,
       ...(draft.sessionId ? { sessionId: draft.sessionId } : {}),
       ...(mailbox ? { mailbox } : {}),
+      ...(draft.changes ? { changes: draft.changes } : {}),
       payload: input,
     }
     this.store.addEvent(event)

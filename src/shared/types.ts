@@ -118,6 +118,13 @@ export interface Attachment {
   leaseUntil: string
 }
 
+// hook (tools/hooks/post-event.mjs) が Stop の入力に足す git の事実。Hub は git を実行しない (design.md §3.11)
+export interface EventChanges {
+  head: string
+  changed: string[]
+  untracked: string[]
+}
+
 export interface HubEvent {
   id: string
   ts: string
@@ -126,5 +133,7 @@ export interface HubEvent {
   source: string
   sessionId?: string
   mailbox?: string
+  // 形が合った git の事実だけ。payload には入力のまま残る
+  changes?: EventChanges
   payload: unknown
 }
