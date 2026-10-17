@@ -7,7 +7,7 @@
 
 - [README.md](README.md) — 起動・使い方の手順、curl の注意
 - [docs/roadmap.md](docs/roadmap.md) — フェーズごとの項目と受け入れ条件、既知の問題、将来の検討。**今どこまで進んだか**はここ
-- [docs/design.md](docs/design.md) (約 700 行)
+- [docs/design.md](docs/design.md) (約 730 行)
   - §1.1 位置付け — 何を自前で持ち何を借りるか、続けるかの基準
   - §2 要件 / 非目標 — 自動転送・自律オーケストレーションをしない
   - §3.2 コンポーネント — Hub / shim / hooks / UI の役割、UI の振る舞いの細部

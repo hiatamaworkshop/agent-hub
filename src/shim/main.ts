@@ -2,10 +2,18 @@
 // stdout は MCP が使うので、ログは stderr に書く
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import {
+  CallToolRequestSchema,
+  InitializeRequestSchema,
+  LATEST_PROTOCOL_VERSION,
+  ListToolsRequestSchema,
+  SUPPORTED_PROTOCOL_VERSIONS,
+  type CallToolResult,
+} from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { ADDRESS_TYPES, MESSAGE_KINDS, type Address, type Mailbox, type Message } from '../shared/types.js'
-import { ALWAYS_LOAD_META, CHANNEL_CAPABILITY, channelInstructions, pushSkippedNotice, pushToChannel } from './channel.js'
+import { ALWAYS_LOAD_META, CHANNEL_CAPABILITY, pushSkippedNotice, pushToChannel } from './channel.js'
+import { instructionsFor, routeFor, type Route } from './instructions.js'
 import { loadConfig } from './config.js'
 import { resolveFiles, sweepFiles } from './files.js'
 import { HubClient } from './hub-client.js'
@@ -30,10 +38,25 @@ const hub = new HubClient(
 const PRIME_ATTACH_MS = 3000
 const primed = cfg.token ? await hub.primeAttach(PRIME_ATTACH_MS) : undefined
 
-const server = new Server(
-  { name: 'agent-hub', version: '0.0.1' },
-  { capabilities: { experimental: CHANNEL_CAPABILITY, tools: {} }, instructions: channelInstructions(cfg.mailbox, cfg.role, primed?.roleDescription ?? null) },
-)
+const SERVER_INFO = { name: 'agent-hub', version: '0.0.1' }
+const CAPABILITIES = { experimental: CHANNEL_CAPABILITY, tools: {} }
+const server = new Server(SERVER_INFO, { capabilities: CAPABILITIES })
+
+// 経路 (channel / inbox) は clientInfo.name で決まり、instructions は initialize の応答に入るので、initialize を自前で答える。
+// SDK の既定の処理 (_oninitialize、private) と同じ版の取り決めをし、instructions だけを経路ごとに変える (design.md §3.7)。
+// SDK の getClientVersion / getClientCapabilities は埋まらないが、shim はどちらも使わない
+server.setRequestHandler(InitializeRequestSchema, (req) => {
+  const route: Route = routeFor(req.params.clientInfo?.name)
+  hub.setPush(route === 'channel')
+  log(`client=${req.params.clientInfo?.name ?? '?'} route=${route}`)
+  const requested = req.params.protocolVersion
+  return {
+    protocolVersion: SUPPORTED_PROTOCOL_VERSIONS.includes(requested) ? requested : LATEST_PROTOCOL_VERSION,
+    capabilities: CAPABILITIES,
+    serverInfo: SERVER_INFO,
+    instructions: instructionsFor(route, cfg.mailbox, cfg.role, primed?.roleDescription ?? null),
+  }
+})
 
 // "mailbox:rev-a" のような表記 (channel の from / to と同じ) を Address にする
 function parseAddress(s: string): Address {
@@ -49,7 +72,7 @@ const tools = [
   {
     name: 'post_message',
     description:
-      'agent-hub にメッセージを送る。受け取った <channel> への返信は kind="reply" と reply_to=<その id> を指定する (to を省略すると送り手に返る)。',
+      'agent-hub にメッセージを送る。受け取ったメッセージ (<channel> / <hub-message>) への返信は kind="reply" と reply_to=<その id> を指定する (to を省略すると送り手に返る)。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -63,7 +86,7 @@ const tools = [
   },
   {
     name: 'subscribe',
-    description: 'トピックを購読する。以後そのトピック宛てのメッセージが <channel> で届く',
+    description: 'トピックを購読する。以後そのトピック宛てのメッセージを受け取る',
     inputSchema: { type: 'object', properties: { topic: { type: 'string', description: '例: user.message' } }, required: ['topic'] },
   },
   {

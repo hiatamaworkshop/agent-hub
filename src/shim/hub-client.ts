@@ -42,8 +42,12 @@ export class HubClient {
   terminatedReason: string | undefined
   lastError: string | undefined
   private delivered = 0
-  // attach で古い未読が省略された件数。stream を開いたら 1 度だけ伝える (initialize 前の通知は捨てられうるため)
+  // attach で古い未読が省略された件数。stream を開いたら 1 度だけ伝える (initialize 前の通知は捨てられうるため)。
+  // push しないとき (inbox 経路) は takeSkipped で inbox の結果に載せる
   private pendingSkipped = 0
+  // false なら stream で受けた Message を渡さず ack もしない (inbox 経路。未読は inbox で取り出すまで残す)。
+  // stream は生存の確認のために開いたままにする
+  private push = true
   private readonly seen = new Set<string>()
   private inflight: Promise<void> | undefined
   private stopped = false
@@ -73,6 +77,17 @@ export class HubClient {
 
   start(): void {
     void this.run()
+  }
+
+  // initialize で経路が決まったら、start より前に呼ぶ
+  setPush(on: boolean): void {
+    this.push = on
+  }
+
+  takeSkipped(): number {
+    const n = this.pendingSkipped
+    this.pendingSkipped = 0
+    return n
   }
 
   async stop(): Promise<void> {
@@ -168,10 +183,8 @@ export class HubClient {
       this.state = 'attached'
       this.lastError = undefined
       // 未読より先に、省略したことを 1 件で伝える
-      if (this.pendingSkipped > 0) {
-        const n = this.pendingSkipped
-        this.pendingSkipped = 0
-        await this.notifySkipped(n).catch((e) => this.log(`notice: ${e}`))
+      if (this.push && this.pendingSkipped > 0) {
+        await this.notifySkipped(this.takeSkipped()).catch((e) => this.log(`notice: ${e}`))
       }
       for await (const ev of parseSse(res.body)) {
         clearTimeout(watchdog)
@@ -204,6 +217,7 @@ export class HubClient {
   }
 
   private async onMessage(m: Message): Promise<void> {
+    if (!this.push) return
     if (!this.seen.has(m.id)) {
       await this.deliver(m)
       this.remember(m.id)

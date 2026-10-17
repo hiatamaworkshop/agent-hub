@@ -3,6 +3,7 @@ import { toInboxText } from '../shared/format.js'
 import type { InboxResult } from '../shared/types.js'
 import { resolveFiles, type FileContext } from './files.js'
 import type { HubClient } from './hub-client.js'
+import { skippedText } from './instructions.js'
 
 export interface InboxArgs {
   after?: number
@@ -23,5 +24,7 @@ export async function fetchInbox(hub: HubClient, mailbox: string, args: InboxArg
   for (const m of r.messages) hub.remember(m.id)
   // 失敗しても次の inbox か attach で再送され、id で重複除去できる
   await hub.request('POST', `/attachments/${at.attachmentId}/ack`, { upTo: r.cursor }).catch((e) => log(`ack: ${e}`))
-  return toInboxText({ messages, hasMore: r.hasMore }, mailbox)
+  // 省略の件数は、届いた未読より先に agent-hub のお知らせとして 1 度だけ伝える (protocol.md §6.3)
+  const skipped = hub.takeSkipped()
+  return toInboxText({ messages, hasMore: r.hasMore }, mailbox, skipped > 0 ? [skippedText(skipped, mailbox)] : [])
 }

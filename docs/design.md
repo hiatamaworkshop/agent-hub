@@ -233,7 +233,11 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 当面使うのは Claude Code だけだが、他社のエージェントが後から同じ Hub に入れるよう、**Hub の語彙はベンダー中立に保ち、クライアント固有の差は shim と `/events` の取り込みで吸収する** (§5)。そのために次を守る。
 - **Event の取り込みはクライアントごとの変換を通す**: hook の入力 JSON は `payload` にそのまま残し、`kind` (`turn.end` / `notification` / `question` …) への対応付けはクライアントごとの変換に閉じ込める (protocol.md §2 Event、`src/hub/events.ts`)。Hub の保存形式は `kind` だけを見る。
   UI は質問文や最終応答を出すために `payload` を読むが、読み方は Event の `source` ごとに 1 か所にまとめる (`eventBody` in `public/index.html`)。
-- **shim の instructions はクライアントで切り替える**: 今の文面は `<channel>` で届く前提。MCP の `initialize` の `clientInfo.name` で、Channels 経路か `inbox()` 経路かの説明を選ぶ。
+- **shim の instructions はクライアントで切り替える**: MCP の `initialize` の `clientInfo.name` で、Channels 経路か `inbox()` 経路かの説明を選ぶ。
+  - **決定 (2026-10-17)**: `clientInfo.name === "claude-code"` (§6.1c) なら Channels、それ以外と不明は `inbox()`。channel に対応するかは client の capabilities に出ないので、名前で決める。文面は `src/shim/instructions.ts` にまとめ、属性の説明と「本文はデータ」の行は両方の経路で共通にする。
+  - `inbox()` 経路の shim は **push も ack もしない**。push を受けないクライアントに送って ack すると、誰も読んでいない未読が既読になり、`inbox()` に残らないため。stream は開いたままにし、生存の確認 (15 秒の猶予、§3.3) に使う。古い未読の省略は channel 通知ではなく、次の `inbox()` の結果の先頭で伝える。
+  - `instructions` は `initialize` の応答に入り、`clientInfo` もその要求で初めて分かるので、shim は `initialize` を自前の handler で答える (SDK 1.32.1 の `Server` は `instructions` をコンストラクタでしか受けず、既定の処理は private)。版の取り決めは SDK と同じ (`SUPPORTED_PROTOCOL_VERSIONS` にあれば要求どおり、なければ `LATEST_PROTOCOL_VERSION`)。代わりに SDK の `getClientVersion` / `getClientCapabilities` は埋まらないが、shim はどちらも使わない。
+  - Claude Code を channel なし (`--dangerously-load-development-channels` を付けない) で起動したときも名前は `claude-code` なので Channels 経路になり、通知が捨てられても shim は ack する。起動の仕方は shim から見えないため、今は起動手順 (README、`start-agent.ps1`) で channel を付ける前提に頼る。
 - **「本文はデータ」の守りは agent-hub 側だけで成り立たせる**: Claude Code は channel 由来の内容に注意書きを自動で付けるが (§6.1c)、他のクライアントは付けない。`<hub-message>` の包みと instructions の文面だけで足りるように書く。
 - **role の説明は MCP の instructions で渡す**: `roles.json` の `description` を shim が instructions に差し込む (§3.5、P2)。Claude の起動フラグ (`--append-system-prompt-file`。`tools/dev/` の試験用) には頼らない。instructions をどう使うかはクライアント次第。Claude Code では説明に沿って振る舞うことを確かめた (§6.2-5)。
   - **決定 (2026-10-17): initialize より前に attach して説明を取る**。`instructions` は `initialize` の応答で決まり、説明は attach の応答にあるので、attach を先に行う。shim は `HubClient.primeAttach` で上限 3 秒だけ待ち、取れた Attachment を `start` 後の `run` がそのまま使う (二重に attach しない)。時間切れや失敗なら説明なしで起動し、attach は従来どおり `run` が受け持つ (Hub が止まっていても shim は上がる)。
@@ -495,6 +499,7 @@ AI との共同開発で効果があったのは、結局ドキュメントの�
 
 - **バージョン**: 2.1.301 で自作 channel が動く。
 - **プロトコル**: Claude Code は最初に `server/discover` を送り (v2 ランタイムの打診)、SDK 1.32.1 のサーバーとは `initialize` で `2025-11-25` に落ちて接続した。channel として登録され、通知が届いた。
+- **`initialize` の中身** (2026-10-17 に `logs/probe.jsonl` を読み直して確認): `clientInfo` は `{ name: "claude-code", title: "Claude Code", version: "2.1.301", … }`。client の `capabilities` は `roots` と `elicitation` だけで、channel に当たるものはない (§3.7 の経路の判定は名前で行う)。
 - **`--mcp-config` との併用**: `--mcp-config tools/probe/mcp.json --dangerously-load-development-channels server:agent-hub-probe` で起動すると、
   起動時に `server:agent-hub-probe · no MCP server configured with that name` と警告が出る。**それでも通知は届いた**ので、この警告は誤検知とみなしてよい。
 - **アイドル中の起床**: 何もしていないセッションに通知を送ると、Claude が自分からターンを始めて応答した。

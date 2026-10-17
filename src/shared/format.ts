@@ -92,11 +92,14 @@ export const INBOX_NOTICE = [
   '返信は post_message で kind="reply", reply_to=<id> を指定する。',
 ].join('\n')
 
-// inbox() の結果をエージェントに渡す文面。見出し → 注意書き → 各 <hub-message> → 続きの案内、の順に固定する (protocol.md §6.2)。
-// 本文は必ずこの包みを通す (structuredContent などで本文だけを別に渡さない)
-export function toInboxText(r: { messages: Message[]; hasMore: boolean }, mailbox: string): string {
-  if (r.messages.length === 0) return `agent-hub: Mailbox "${mailbox}" に未読はない。`
+// inbox() の結果をエージェントに渡す文面。agent-hub からのお知らせ → 見出し → 注意書き → 各 <hub-message> → 続きの案内、
+// の順に固定する (protocol.md §6.2)。本文は必ずこの包みを通す (structuredContent などで本文だけを別に渡さない)。
+// notices は agent-hub 自身の文面 (古い未読の省略など) で、送り手の書いたものは入れない
+export function toInboxText(r: { messages: Message[]; hasMore: boolean }, mailbox: string, notices: string[] = []): string {
+  const hub = notices.map((n) => `agent-hub: ${n}`)
+  if (r.messages.length === 0) return [...hub, `agent-hub: Mailbox "${mailbox}" に未読はない。`].join('\n\n')
   return [
+    ...hub,
     `agent-hub: Mailbox "${mailbox}" の未読 ${r.messages.length} 件 (返した分は既読になった)。`,
     INBOX_NOTICE,
     ...r.messages.map(toHubMessageText),

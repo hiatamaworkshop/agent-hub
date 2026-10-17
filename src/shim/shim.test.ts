@@ -75,7 +75,7 @@ describe('shim と Hub の結合', () => {
         resolve()
       })
     })
-    client = new Client({ name: 'test', version: '0' })
+    client = new Client({ name: 'claude-code', version: '0' })
     client.setNotificationHandler(
       z.object({
         method: z.literal('notifications/claude/channel'),
@@ -224,7 +224,7 @@ describe('shim: takeover で引き継がれた後', () => {
         resolve(s)
       })
     })
-    const client = new Client({ name: 'test', version: '0' })
+    const client = new Client({ name: 'claude-code', version: '0' })
     const env = { ...(process.env as Record<string, string>), HUB_URL: hubUrl, HUB_TOKEN: TOKEN, HUB_MAILBOX: 'handover', CLAUDE_CODE_SESSION_ID: 'sess-a' }
     delete env.HUB_ROLE
     const call = async (name: string, args: Record<string, unknown> = {}) => {
@@ -376,6 +376,99 @@ describe('inbox ツール (fetchInbox)', () => {
       assert.equal(hub.store.getMailbox('poller')!.cursor, sent[2]!.seq)
     } finally {
       await hc.stop()
+      await new Promise((r) => server.close(r))
+    }
+  })
+})
+
+// Claude Code 以外のクライアント: push しないので、未読は inbox で取り出すまで残る (design.md §3.7)
+describe('shim: Claude Code 以外のクライアント (inbox 経路)', () => {
+  it('instructions は inbox を案内し、channel 通知を送らず ack もしない。inbox で取り出すと既読になる', async () => {
+    const hub = new Hub(new Store(), { disconnectGraceMs: 300 })
+    const app = createApp({ hub, token: TOKEN, uiHtml: async () => null })
+    let hubUrl = ''
+    const server = await new Promise<ServerType>((resolve) => {
+      const s = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 }, (info) => {
+        hubUrl = `http://127.0.0.1:${info.port}`
+        resolve(s)
+      })
+    })
+    const client = new Client({ name: 'codex', version: '0' })
+    const pushed: unknown[] = []
+    client.fallbackNotificationHandler = async (n) => void pushed.push(n)
+    const env = { ...(process.env as Record<string, string>), HUB_URL: hubUrl, HUB_TOKEN: TOKEN, HUB_MAILBOX: 'poll-mb', HUB_FILES_DIR: join(tmpdir(), 'agent-hub-poll-test') }
+    delete env.HUB_ROLE
+    delete env.CLAUDE_CODE_SESSION_ID
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const r = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean }
+      return { isError: r.isError ?? false, text: r.content[0]!.text }
+    }
+    const until = async (f: () => Promise<boolean>, ms = 5000) => {
+      const deadline = Date.now() + ms
+      while (!(await f())) {
+        if (Date.now() > deadline) throw new Error('timeout')
+        await new Promise((r) => setTimeout(r, 30))
+      }
+    }
+    try {
+      await client.connect(new StdioClientTransport({ command: process.execPath, args: ['--import', 'tsx', 'src/shim/main.ts'], cwd: ROOT, env, stderr: 'pipe' }))
+      const instructions = client.getInstructions() ?? ''
+      assert.match(instructions, /inbox ツールで取り出す/)
+      assert.doesNotMatch(instructions, /<channel/)
+      await until(async () => (JSON.parse((await call('whoami')).text) as { state: string }).state === 'attached')
+
+      const m = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'poll-mb' }, body: 'please review' }, { type: 'user', id: 'browser', role: null })
+      // stream には流れるが、shim は渡さず ack もしない
+      await new Promise((r) => setTimeout(r, 300))
+      assert.deepEqual(pushed, [])
+      assert.equal(hub.store.getMailbox('poll-mb')!.cursor, 0)
+
+      const r = await call('inbox')
+      assert.equal(r.isError, false, r.text)
+      assert.ok(r.text.includes(`<hub-message id="${m.id}"`))
+      assert.ok(r.text.includes('please review'))
+      assert.equal(hub.store.getMailbox('poll-mb')!.cursor, m.seq)
+      assert.match((await call('inbox')).text, /未読はない/)
+    } finally {
+      await client.close().catch(() => undefined)
+      server.closeAllConnections()
+      await new Promise((r) => server.close(r))
+    }
+  })
+})
+
+describe('inbox ツール (fetchInbox): attach で古い未読が省かれたとき', () => {
+  it('push しない経路では、省いた件数を次の inbox の先頭で 1 度だけ伝える', async () => {
+    const hub = new Hub(new Store(), { unreadMax: 1 })
+    const app = createApp({ hub, token: TOKEN, uiHtml: async () => null })
+    let hubUrl = ''
+    const server = await new Promise<ServerType>((resolve) => {
+      const s = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 }, (info) => {
+        hubUrl = `http://127.0.0.1:${info.port}`
+        resolve(s)
+      })
+    })
+    const browser = { type: 'user', id: 'browser', role: null } as const
+    hub.detach(hub.attach('backlog2', { client: 'other' }).attachmentId)
+    for (const body of ['a', 'b', 'c']) hub.postMessage({ kind: 'notice', to: { type: 'mailbox', id: 'backlog2' }, body }, browser)
+
+    const cfg = { hubUrl, token: TOKEN, mailbox: 'backlog2', role: null, sessionId: undefined, cwd: ROOT, filesDir: tmpdir() }
+    const notified: number[] = []
+    const hc = new HubClient(cfg, async () => undefined, () => undefined, async (n) => void notified.push(n))
+    const fileCtx = { hubUrl, token: TOKEN, baseDir: tmpdir(), mailbox: 'backlog2' }
+    try {
+      hc.setPush(false)
+      assert.ok(await hc.primeAttach(3000))
+      hc.start()
+      await new Promise((r) => setTimeout(r, 200))
+      assert.deepEqual(notified, [], 'channel には伝えない')
+      const first = await fetchInbox(hc, 'backlog2', {}, fileCtx, () => undefined)
+      assert.ok(first.startsWith('agent-hub: Mailbox backlog2 に溜まっていた古い未読 2 件を省略した'), first)
+      assert.ok(first.indexOf('省略した') < first.indexOf('<hub-message '))
+      assert.doesNotMatch(await fetchInbox(hc, 'backlog2', {}, fileCtx, () => undefined), /省略/)
+    } finally {
+      await hc.stop()
+      server.closeAllConnections()
       await new Promise((r) => server.close(r))
     }
   })
