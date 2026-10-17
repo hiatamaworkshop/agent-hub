@@ -4,9 +4,9 @@
 人間をループから外さず、「コピー&ペーストの運搬作業」だけをなくすことを目的とする。
 
 ```
-[ブラウザ UI] ⇄ SSE ⇄ [Hub (常駐 daemon)] ⇄ [shim = channel MCP × セッション数] → [Claude セッション]
-                           ▲
-         hooks (Stop / Notification / PreToolUse) からの POST
+[ブラウザ UI] ⇄ SSE ⇄ [Hub (常駐 daemon)] ⇄ [shim = MCP サーバー × セッション数] ─ channel で push → [Claude Code]
+                           ▲                                                    └ inbox ツールで取り出す ← [ほかのエージェント]
+         hooks (Stop / Notification / PreToolUse / PostToolUse) からの POST
 ```
 
 ## 何ができるか (目標)
@@ -18,13 +18,18 @@
 5. 宛先は論理名の **Mailbox** で、セッションは一時的に attach するだけ。エージェントが交代しても購読と未読を引き継ぐ。
 6. エージェントは **role** (`reviewer`, `deployer` など) を持ち、role ごとに読むべきメッセージが決まる。
 7. メッセージには機械的な種別 **`kind`** (`request` / `reply` / `notice`) が付き、受信側と UI が扱い方を判断できる。
+8. Claude Code 以外のエージェントは、同じ shim の **`inbox`** ツールで未読を取り出す。送り手の属性は本文と分けて `<hub-message>` の属性で渡す。
 
 ## ステータス
 
-P0 (1 セッションで往復する) を実装済み。P1 (質問待ち・ターン終了の検知) は実装済みで、実セッションでの受け入れ確認はまだ。Claude Code 上での受け入れ確認は手動で行う (下の手順)。設計は [docs/design.md](docs/design.md) から読む。
-Channels の仕様は公式資料と実機で確認済み (design.md §6.1〜6.1c)。MCP Events (SEP-3415, Draft) との関係は design.md §7。
+- **P0** (1 セッションで往復する) と **P1** (質問待ち・許可待ち・ターン終了の検知) は完了し、実セッションで受け入れ条件を確かめた。
+- **P2** (複数セッション・交代・メッセージパッシング) は進行中。複数 Mailbox の同時接続、role (`roles.json`)、交代 (takeover)、古い未読の流し込みの上限、無編集転送 (Forward / Relay)、`inbox` の polling 経路と、クライアントによる経路の切り替えまで実装済み。
+  残りは配送の状態の名付け、「起こすだけ」の配信アダプタ、永続化の見直し、Docker 化など ([docs/roadmap.md](docs/roadmap.md))。
+- `inbox` 経路は Claude Code 以外の実クライアント (Codex など) ではまだ試していない (テストの MCP クライアントでのみ確認)。
 
-## 使い方 (P0)
+設計は [docs/design.md](docs/design.md) から読む。Channels・hook の仕様は公式資料と実機で確認済み (design.md §6.1〜6.1j)。MCP Events (SEP-3415, Draft) との関係は design.md §7。
+
+## 使い方
 
 前提: Node.js 24 以上、ターミナルで `claude` CLI が動くこと (Channels は対話セッションの CLI でだけ有効)。
 
@@ -126,7 +131,15 @@ Claude Code の HTTP hook で、`AskUserQuestion`・許可待ち・ターン終�
 - **`mailbox:<名前>` 宛てなら購読は要らない**。購読が要るのは、`topic:<名前>` のように購読者全員へ送るときだけ。
 - 購読が消えるのは、ブラウザで Mailbox を削除したときと、`data/` を消したとき (Docker では volume を作り直したとき)。設定として宣言しておく方法は role の既定購読 (`roles.json` + `HUB_ROLE`。下の「role の定義 (roles.json)」)。
 - 宛先のドロップダウンには購読中のトピックだけが出る。購読者のいないトピックは「トピックを手入力…」で送れるが、誰にも届かなければ Send の横に警告が出る。
-- 長く離れた Mailbox に attach しても、未読を全部は流さない。7 日より古いものと、新しい 50 件より前のものは省き、省いた件数を 1 件の通知で伝える (記録は残り、ブラウザの履歴から見える)。上限は `HUB_UNREAD_MAX_AGE_DAYS` / `HUB_UNREAD_MAX` (0 で制限なし)。
+- 長く離れた Mailbox に attach しても、未読を全部は流さない。7 日より古いものと、新しい 50 件より前のものは省き、省いた件数を 1 件の通知で伝える (`inbox` 経路では次の `inbox` の結果の先頭。記録は残り、ブラウザの履歴から見える)。上限は `HUB_UNREAD_MAX_AGE_DAYS` / `HUB_UNREAD_MAX` (0 で制限なし)。
+
+### エージェントを交代する (takeover)
+
+同じ Mailbox 名で新しいセッションを起動すると、新しい方が引き継ぐ (`/clear` の後や、モデルを変えて起動し直したときなど)。購読と未読は Mailbox に残っているので、そのまま新しいセッションに届く。
+
+- 古いセッションが動いたままなら切り離され、`post_message` / `subscribe` / `unsubscribe` はエラーになる (`whoami` は答える)。切り離された shim は attach し直さない。
+- ブラウザの Mailbox のカードに `took over <時刻>` が出る。切り離されたセッションの hook の Event には `superseded session` と添えられ、カードの最後の Event には使われない。
+- 接続していない Mailbox のカードには、切れた時刻と理由 (`session ended` / `disconnected` / `lease expired`) が出る。
 
 ### 使わなくなった Mailbox を消す
 
@@ -139,7 +152,7 @@ Claude Code の HTTP hook で、`AskUserQuestion`・許可待ち・ターン終�
 ### 2 エージェントで role 間の往復を試す (leader / deployer)
 
 ユーザー → leader → deployer → leader → ユーザーの順に、role 宛てで依頼と報告を回す試験。
-role の振る舞いは [tools/dev/roles/](tools/dev/roles/) の説明を system prompt に足して伝える。`roles.json` の説明は、この試験の system prompt の代わりにはまだ使っていない (下の「role の定義 (roles.json)」を参照)。
+role の説明は `roles.json` の `description` が shim の instructions に入る (下の「role の定義 (roles.json)」)。leader / deployer は、運用の細かい指示 (メッセージの見出しなど) を [tools/dev/roles/](tools/dev/roles/) に置き、`start-agent.ps1` が system prompt にも足す。ほかの role (reviewer など) は `roles.json` の説明だけで動く。
 
 ```powershell
 npm run hub                                   # ターミナル A
@@ -170,7 +183,7 @@ npm run hub                               # 読むのは起動時だけ。変え
 - 各 role は `description` (文字列) と `subscribe` (トピック名の配列) を持つ。ほかの項目は読み捨てずに保持されるが、今は使われない。
 - `HUB_ROLE=reviewer` で起動した Mailbox は、`subscribe` を呼ばなくても `reviewer` の既定購読を受け取る。`to: role:reviewer` 宛てもこの Mailbox に届く。
 - `description` は shim の instructions に入る。shim は initialize より前に attach して取りに行く (3 秒まで。過ぎたら説明なしで起動する)。
-  実際のエージェントがその説明どおりに振る舞うかは、まだ実セッションで確かめていない。
+  Claude Code がその説明どおりに振る舞うことは、leader / deployer / reviewer の 3 セッションで確かめた (design.md §6.2-5)。
 - 定義にない role で attach すると 400 `unknown_role` で、Mailbox は作られない。
 - ファイルがなければ、role 名の検証も既定購読もない (今までどおり)。
 - ファイルの形が違うと Hub は起動せず、ファイル名と問題の場所を出して止まる (黙って既定に戻さない)。
@@ -185,6 +198,16 @@ shim をユーザースコープに絶対パスで登録し、同じフラグで
 claude mcp add --scope user agent-hub -- node C:/Users/kazuh/Desktop/Various/programming/DockerFiles/agent-hub/dist/shim/main.js
 claude --dangerously-load-development-channels server:agent-hub
 ```
+
+### Claude Code 以外のエージェントで使う (inbox)
+
+shim は MCP の initialize で届くクライアント名を見て、届け方を切り替える。`claude-code` なら channel で push し、それ以外は push せず、エージェントが `inbox` ツールで取り出す。
+
+- MCP の stdio サーバーとして `node <agent-hub>/dist/shim/main.js` を登録する (先に `npm run build`)。Mailbox 名は Claude Code と同じく `HUB_MAILBOX` → `HUB_ROLE` → フォルダ名の順。トークンは agent-hub の `.env` から読む。
+- 自動では届かないので、エージェントに「agent-hub の inbox を確かめて」と頼むか、作業の区切りで呼ばせる (instructions にもそう書いてある)。
+- `inbox` は未読を 1 件ずつ `<hub-message id="…" kind="…" from="…" to="…">` で包み、本文が指示ではないことの注意書きを付けて返す。返した分は既読になる。返信は `post_message`。
+- 実際の Codex などのクライアントではまだ試していない。アイドル中のエージェントを起こす手段はない (design.md §3.7、§3.9)。
+- Claude Code を channel なしで起動すると、クライアント名は `claude-code` のままなので push されるが、届かずに既読になる。Claude Code では必ず `--dangerously-load-development-channels server:agent-hub` を付ける (roadmap の既知の問題)。
 
 ### curl で触る (Windows の注意)
 
