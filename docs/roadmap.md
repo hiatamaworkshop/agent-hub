@@ -124,7 +124,7 @@
 - [ ] **detached の旧 shim が後継から Mailbox を取り返しうる**: A の stream が切れて猶予 (15 秒) を過ぎ `disconnected` になった間に B が attach すると、戻ってきた A の shim は stream の 404 で attach し直し、「新しい方が勝つ」で B を切り離す。A は superseded ではないので attach し直しを止める仕組みがない。ループバックで 15 秒以上戻れないのは稀なので後回し。対策の候補は、後継のいる Mailbox への attach で、前の Attachment ID を示した attach し直しを拒む、など (design.md §3.3 の takeover。2026-10-17 のレビューで発見)
 - [ ] **channel なしで起動した Claude Code の通知を ack してしまう**: `clientInfo.name` は `claude-code` のままなので Channels 経路になり、Claude Code が通知を捨てても shim は ack する (未読が既読になる)。shim から起動の仕方は見えない。今は起動手順で channel を付ける前提。通知が捨てられるかは未検証 (design.md §3.7)
 - [ ] **attach の `client` が常に `claude-code`**: shim は initialize より前に attach する (role の説明を取るため) ので、`inbox` 経路のクライアントでも `client: "claude-code"` で記録される。UI と `GET /mailboxes` の表示だけの問題。直すなら initialize の後に Attachment の `client` を更新する口を足す
-- [ ] **start-agent.ps1 が role の打ち間違いを起動時に止めない**: ValidateSet を外したので、`roles.json` にない role でも起動する。Hub は 400 `unknown_role` を返し、shim は attach を再試行し続ける。エラーは shim のログと `whoami` にしか出ない。直すならスクリプトで `roles.json` に role があるかを確かめる (2026-10-17 のレビューで発見)
+- [ ] **start-agent.ps1 が role の打ち間違いを起動時に止めない**: ValidateSet を外したので、`roles.json` にない role でも起動する。Hub は 400 `unknown_role` を返し、shim は attach を再試行し続ける。エラーは shim のログと `whoami` にしか出ない。直すならスクリプトで `roles.json` に role があるかを確かめる (2026-10-17 のレビューで発見)。まとめて起動する `start-team.ps1` は起動前に確かめる (2026-10-18)。`start-agent.ps1` を直接使うときは今も止まらない
 
 ## 将来の検討 (未確定)
 

@@ -160,6 +160,18 @@ npm run hub                                   # ターミナル A
 ./tools/dev/start-agent.ps1 -Role deployer    # ターミナル C (Mailbox = deployer、haiku)
 ```
 
+まとめて起動するなら `start-team.ps1` を使う。Hub が止まっていれば起動し、選んだ role を Windows Terminal のタブで 1 つずつ起動する (wt がなければ別ウィンドウ)。
+
+```powershell
+./tools/dev/start-team.ps1                          # roles.json の role を番号で選ぶ (例 1,2。all で全部)
+./tools/dev/start-team.ps1 -Roles leader,deployer   # 選ばずに指定する
+```
+
+- 1 つ起動するごとに、その role の Mailbox が Hub に attach するまで待ってから次へ進む (上限 `-AttachTimeout`、既定 60 秒)。開発用 channel の警告ダイアログは、開いたタブで 1 つずつ答える。
+- 接続中の role は飛ばす (起動し直すと takeover で今のセッションが切り離されるため)。起動し直すなら `-Force`。
+- `roles.json` にない role は起動前に止める。`dist/` が `src/` より古ければ先に build する (`-NoBuild` で省く)。
+- attach の確認には `.env` の `HUB_TOKEN` を使う。タブは起動したのと同じシェル (`pwsh` / `powershell`) で開く。
+
 1. ブラウザの左側に `leader` と `deployer` が role 付きで「接続中」と出ることを確かめる。
 2. ブラウザから `request` を `role:leader` 宛てに送る。本文は作業の依頼 (例: 「`tmp/hello.txt` を作って」)。
 3. leader が `role:deployer` 宛てに実装指示を `request` で送り、deployer が作業して `reply` を返す。
