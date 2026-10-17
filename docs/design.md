@@ -139,7 +139,9 @@ MCP Events (SEP-3415) が購読 ID をクライアント生成にせず、購読
   `HUB_MAILBOX` / `HUB_ROLE` が shim に渡るかは §6 で検証する。
 - **attach は冪等**。同じ Mailbox に attach し直すと、Hub はその Mailbox の cursor 以降を再送する。shim は覚えなくてよい。
 - **交代 (R6)** は「新しいセッションが同じ Mailbox に attach する」だけで成立する。購読・未読・cursor は Mailbox に残っている。
-- **takeover (暫定: 排他・新しい方が勝つ)**: 既に Attachment がある Mailbox に別セッションが attach すると、旧 Attachment に `terminated(reason: superseded)` を送って切り離す。複数同時 attach を許すかは §9 で未決。
+- **takeover (排他・新しい方が勝つ。§9-1 で決定)**: 既に Attachment がある Mailbox に別セッションが attach すると、旧 Attachment に `terminated(reason: superseded)` を送って切り離す。
+  切り離された shim は attach し直さず (取り返しの応酬を避ける)、`post_message` は引き継がれた旨のエラーを返す。
+  UI のカードには、今の Attachment が takeover で始まったことを `took over <時刻>` と出す (`GET /mailboxes` の `takeover`。Hub のメモリのみ)。
 - **リース**: stream を開いている間はリースを保つ。stream を開かないクライアント (`inbox()` の polling 経路) は heartbeat でリースを延長する。リースが切れた Attachment は detached になり、その間のメッセージは Mailbox の未読キューに溜まる。Mailbox 自体はリース切れでは消えない。
   **決定 (2026-10-17)**: shim は heartbeat を送らない。shim は常に stream を開いていて、生死は stream の切断 (15 秒の猶予) で分かる。heartbeat を shim に義務づけると、更新前の shim を動かしたままの Claude Code が新しい Hub でリース切れになる。
   detached の理由 (`closed` / `disconnected` / `lease_expired`) は、次の attach まで Mailbox に添えて UI に出す。Hub のメモリにだけ持ち、再起動で消える。
@@ -666,6 +668,8 @@ P0 の後に、同じ領域の公式機能と OSS を調べた。**セッショ�
 ## 9. 未決事項 (設計)
 
 1. **takeover の方針**: 排他 (新しい方が勝つ、暫定) か、複数同時 attach (全員に配信 / どれか 1 つに配信) を許すか。
+   **決定 (2026-10-17、ユーザー): 排他・新しい方が勝つ**。Mailbox は「論理的に誰宛てか」(§3.3) なので、受け手は 1 人に保つ。
+   並行して同じ仕事をさせたいときは、同じ role で別の Mailbox を作る (`to: role` 宛てで両方に届く)。
 2. **Event を購読で配信するか**: hook 由来の Event は UI に出すだけか、`session.boundary` などのトピックとして他の Mailbox にも配信するか。
    **決定 (2026-10-16)**: **UI に出すだけにする**。エージェントが相手のアイドル復帰を知る手段は公式にある (`notify_when_idle`、`TeammateIdle`。§8.1)。
    また、Event を他のエージェントに流すと、「受け取ったら自動で動く」形に近づく (§3.5)。エージェントに伝えたいときは、人間が UI から Send で送る。

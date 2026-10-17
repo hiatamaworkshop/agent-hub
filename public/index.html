@@ -1026,6 +1026,8 @@ function renderMailboxes(mailboxes) {
     box.append(title)
     // detached は最後に切れた Attachment (この Hub の起動中だけ)。古い Hub は返さないので Disconnected のまま
     const meta = [mb.attachment ? `Connected (${mb.attachment.client})` : mb.detached ? `Detached ${time(mb.detached.detachedAt)} (${DETACH_LABEL[mb.detached.reason] || mb.detached.reason})` : 'Disconnected']
+    // takeover は今の Attachment が旧セッションを切り離して始まったとき (古い Hub は返さない)
+    if (mb.attachment && mb.takeover) meta.push(`took over ${time(mb.takeover.at)}`)
     if (mb.role) meta.push(`role: ${mb.role}`)
     // unread が無い古い Hub では未読の項目を出さない (undefined unread と出さないため)
     if (typeof mb.unread === 'number') meta.push(`${mb.unread} unread`)

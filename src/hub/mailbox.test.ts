@@ -236,6 +236,7 @@ describe('リースと detached', () => {
     name: string
     attachment: { attachmentId: string; leaseUntil: string } | null
     detached: { attachmentId: string; reason: string; detachedAt: string } | null
+    takeover: { at: string; previous: { attachmentId: string; sessionId?: string } } | null
   }
   const listed = async (call: ReturnType<typeof setup>['call'], name: string) =>
     ((await (await call('GET', '/mailboxes')).json()) as { mailboxes: Listed[] }).mailboxes.find((mb) => mb.name === name)!
@@ -308,13 +309,40 @@ describe('リースと detached', () => {
     assert.equal((await listed(call, 'lost-mb')).detached!.reason, 'disconnected')
   })
 
-  it('takeover で切り離された側は detached に残らない', async () => {
+  it('takeover で切り離された側は detached に残らず、takeover に旧 Attachment が出る', async () => {
     const { call, attach } = setup()
-    await attach('x')
-    await attach('x')
+    const a = await attach('x', { client: 'claude-code', sessionId: 's-old' })
+    assert.equal((await listed(call, 'x')).takeover, null, 'takeover でない attach では null')
+    const b = await attach('x', { client: 'claude-code', sessionId: 's-new' })
     const mb = await listed(call, 'x')
-    assert.notEqual(mb.attachment, null)
+    assert.equal(mb.attachment!.attachmentId, b.attachmentId)
     assert.equal(mb.detached, null)
+    assert.equal(mb.takeover!.previous.attachmentId, a.attachmentId)
+    assert.equal(mb.takeover!.previous.sessionId, 's-old')
+    assert.ok(mb.takeover!.at)
+
+    // takeover した Attachment が終わったら消え、detached に替わる
+    await call('DELETE', `/attachments/${b.attachmentId}`)
+    const after = await listed(call, 'x')
+    assert.equal(after.takeover, null)
+    assert.equal(after.detached!.attachmentId, b.attachmentId)
+  })
+
+  it('takeover の後継は購読と未読を引き継ぐ (受け入れ条件 3)', async () => {
+    const { app, call, attach, send } = setup()
+    const a = await attach('rev-a')
+    assert.equal((await call('PUT', '/mailboxes/rev-a/subscriptions/review')).status, 200)
+    const res = await app.request(`/attachments/${a.attachmentId}/stream`, { headers: auth })
+    const pending = collect(res, () => false)
+    await new Promise((r) => setTimeout(r, 20))
+    await attach('rev-a')
+    assert.ok((await pending).closed)
+
+    // 旧が切り離された後に届いたトピック宛ても、後継の stream に出る
+    const m = await send({ type: 'topic', id: 'review' }, 'after-takeover')
+    const b = (await listed(call, 'rev-a')).attachment!
+    const got = await collect(await app.request(`/attachments/${b.attachmentId}/stream`, { headers: auth }), (evs) => messages(evs).length >= 1)
+    assert.deepEqual(messages(got.events).map((x) => x.id), [m.id])
   })
 })
 

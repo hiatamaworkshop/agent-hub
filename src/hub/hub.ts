@@ -35,6 +35,12 @@ export interface DetachedAttachment extends Attachment {
   reason: DetachReason
 }
 
+// 今の Attachment が takeover で切り離した旧 Attachment。その Attachment が続く間 GET /mailboxes に出す (メモリのみ)
+export interface Takeover {
+  at: string
+  previous: Attachment
+}
+
 // Attachment の stream 1 本ぶん (protocol.md §3 shim 向け SSE)
 export interface AttachmentSink {
   message(m: Message): void
@@ -83,6 +89,8 @@ export class Hub {
   readonly attachments = new Map<string, Attachment>()
   // Mailbox 名 → 最後に detached になった Attachment。attach・削除で消す。Hub の再起動では残らない
   private readonly lastDetached = new Map<string, DetachedAttachment>()
+  // takeover した Attachment の ID → 切り離した旧 Attachment。その Attachment が終わったら消す
+  private readonly takeovers = new Map<string, Takeover>()
   // sessionId → Mailbox 名。attach の申告と、ヘッダー・cwd で解決できた Event から覚える。
   // detach 後も残す (セッションは shim が切れても続きうる)。永続化はしない
   private readonly sessionMailbox = new Map<string, string>()
@@ -221,8 +229,9 @@ export class Hub {
     const { mailbox, created } = this.store.ensureMailbox(name, input.role)
     if (created) this.emitUi('mailbox.created', mailbox)
 
-    // takeover (暫定: 排他・新しい方が勝つ。design.md §8)
+    // takeover: 排他・新しい方が勝つ (design.md §9-1)
     const superseded = mailbox.attachment
+    const previous = superseded ? this.attachments.get(superseded) : undefined
     if (superseded) this.endAttachment(superseded, 'superseded')
 
     const at: Attachment = {
@@ -235,6 +244,7 @@ export class Hub {
       leaseUntil: '',
     }
     this.attachments.set(at.attachmentId, at)
+    if (previous) this.takeovers.set(at.attachmentId, { at: at.attachedAt, previous })
     this.store.setAttachment(name, at.attachmentId)
     this.lastDetached.delete(name)
     // attach ツールで Mailbox を切り替えても、session の対応は最新の attach に追従する
@@ -306,6 +316,7 @@ export class Hub {
     clearTimeout(this.leaseTimers.get(attachmentId))
     this.leaseTimers.delete(attachmentId)
     this.attachments.delete(attachmentId)
+    this.takeovers.delete(attachmentId)
     const mb = this.store.getMailbox(at.mailbox)
     if (mb?.attachment === attachmentId) this.store.setAttachment(at.mailbox, null)
     const sink = this.sinks.get(attachmentId)
@@ -367,7 +378,8 @@ export class Hub {
     return this.mustMailbox(name)
   }
 
-  // GET /mailboxes 向け。実効購読・未読数・Attachment と、接続していなければ最後に detached になった Attachment を添える
+  // GET /mailboxes 向け。実効購読・未読数・Attachment と、接続していなければ最後に detached になった Attachment、
+  // 接続中の Attachment が takeover で始まったなら切り離した旧 Attachment を添える
   describeMailboxes() {
     return this.store.listMailboxes().map((mb) => {
       const attachment = mb.attachment ? (this.attachments.get(mb.attachment) ?? null) : null
@@ -377,6 +389,7 @@ export class Hub {
         unread: this.store.unread(mb.name).length,
         attachment,
         detached: attachment ? null : (this.lastDetached.get(mb.name) ?? null),
+        takeover: attachment ? (this.takeovers.get(attachment.attachmentId) ?? null) : null,
       }
     })
   }

@@ -89,6 +89,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolRes
   try {
     switch (req.params.name) {
       case 'post_message': {
+        if (hub.terminatedReason === 'superseded') throw new Error(`Mailbox ${cfg.mailbox} は別のセッションに引き継がれた (superseded)。このセッションからは送受信しない`)
         if (!hub.attachment) throw new Error(`Hub に接続していない (${hub.state}${hub.lastError ? `: ${hub.lastError}` : ''})`)
         const a = postArgs.parse(args)
         const m = await hub.request<Message & { recipients: string[] }>('POST', '/messages', {

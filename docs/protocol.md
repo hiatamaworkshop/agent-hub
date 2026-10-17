@@ -205,7 +205,7 @@
 ```
 
 - 冪等。同じセッションが attach し直しても未読は失われない (cursor は Mailbox 側にある)。
-- 既に別の Attachment がある場合は takeover する (暫定: 排他・新しい方が勝つ。design.md §9)。旧 Attachment の stream に `terminated` を送って閉じる。
+- 既に別の Attachment がある場合は takeover する (排他・新しい方が勝つ。design.md §9-1)。旧 Attachment の stream に `terminated` を送って閉じる。
 - `truncated: true` のとき、切り捨てた範囲は放棄済みとして `cursor` を進める。
 - Attachment は Hub のメモリにだけあり、永続化しない。Hub の再起動後は stream / ack が 404 (`attachment_not_found`) になるので、shim は attach し直す。
   attach し直したら、stream の `after` は応答の `cursor` から数え直す (`data/` を消した Hub では seq が 1 から振り直されるため、前の Hub の seq を使わない)。
@@ -226,8 +226,9 @@
 
 #### 応答の形
 
-- `GET /mailboxes`: `{ "mailboxes": [Mailbox + { "effectiveSubscriptions", "unread": <件数>, "attachment": Attachment | null, "detached": DetachedAttachment | null }] }`
+- `GET /mailboxes`: `{ "mailboxes": [Mailbox + { "effectiveSubscriptions", "unread": <件数>, "attachment": Attachment | null, "detached": DetachedAttachment | null, "takeover": { "at", "previous": Attachment } | null }] }`
   - `detached` は接続していない Mailbox で最後に detach した Attachment に `detachedAt` と `reason` (`closed` / `disconnected` / `lease_expired`) を足したもの。接続中・この Hub の起動後に attach がない・takeover で切り離されただけのときは `null`。古い Hub はこの項目を返さない
+  - `takeover` は今の Attachment が takeover で始まったときの時刻 (`at`) と切り離した旧 Attachment (`previous`)。今の Attachment が終わるまで出す (Hub のメモリのみ)。それ以外は `null`。古い Hub はこの項目を返さない
 - `PUT` / `DELETE /mailboxes/:name/subscriptions/:topic`: `{ "subscriptions": [...], "effectiveSubscriptions": [...] }`。Mailbox がなければ 404
 - `DELETE` で外せるのは**個別購読だけ**。role の既定購読 (`roles.json` の `subscribe`) のトピックは外れず、`effectiveSubscriptions` に残る。応答の形は変えていない。残ったかどうかは `effectiveSubscriptions` で分かる (shim の `unsubscribe` ツールは、残ったときに `note` を足す)。
 - `POST /attachments/:id/ack`: `{ "cursor": <進めた後の値> }`。`cursor` は後退せず、採番済みの `seq` を超えない
