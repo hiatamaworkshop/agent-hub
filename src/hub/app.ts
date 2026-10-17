@@ -204,6 +204,9 @@ export function createApp(opts: AppOptions) {
     return c.json({ cursor: hub.ack(c.req.param('id'), parsed.data.upTo) })
   })
 
+  // リース延長。stream を開いていないクライアント向け (開いている間はリースが切れない)
+  app.post('/attachments/:id/heartbeat', (c) => c.json(hub.heartbeat(c.req.param('id'))))
+
   app.delete('/attachments/:id', (c) => {
     hub.detach(c.req.param('id'))
     return c.json({})

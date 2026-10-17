@@ -105,7 +105,7 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
 
 **ブラウザ UI**
 - Hub が配信する 1 枚の HTML (まずはフレームワークなし)。
-- 機能: イベント/メッセージのライブ表示 (SSE)、メッセージ作成・送信、受信メッセージの無編集転送ボタン、Mailbox 一覧 (接続状態・購読・未読数)。
+- 機能: イベント/メッセージのライブ表示 (SSE)、メッセージ作成・送信、受信メッセージの無編集転送ボタン、Mailbox 一覧 (接続状態・購読・未読数。切れていれば時刻と理由)。
 - 画面は固定し、スクロールはスレッド (`#list`) と Mailbox 一覧 (サイドバー) だけ。上部はスレッド操作バー (表示の見せ方: Compact・Keep latest、今後のフィルタ・検索など)、下部はコンポーザー (送る操作: kind・宛先・本文・Send、今後の添付など) に置く。
 - メッセージは送り手の role で色分けする (ラベルのチップと縁取り。role がなければ mailbox 名)。kind は枠線だけのバッジで示し、色には使わない。送信フォームの kind も同じバッジを並べたトグルにし、選んだものだけ塗る。
 - 検知イベント (§3.4): スレッドに Message と時刻順に挟み、破線の枠で Message と区別する (縁取りは Mailbox の色)。中身は種類ごとに出す: 質問は質問文と選択肢、許可待ちと通知は文言、ターン終了は最終応答 (長ければ先頭だけ見せて開いて読む)。
@@ -140,7 +140,9 @@ MCP Events (SEP-3415) が購読 ID をクライアント生成にせず、購読
 - **attach は冪等**。同じ Mailbox に attach し直すと、Hub はその Mailbox の cursor 以降を再送する。shim は覚えなくてよい。
 - **交代 (R6)** は「新しいセッションが同じ Mailbox に attach する」だけで成立する。購読・未読・cursor は Mailbox に残っている。
 - **takeover (暫定: 排他・新しい方が勝つ)**: 既に Attachment がある Mailbox に別セッションが attach すると、旧 Attachment に `terminated(reason: superseded)` を送って切り離す。複数同時 attach を許すかは §9 で未決。
-- **リース**: shim は heartbeat でリースを延長する。リースが切れた Attachment は detached になり、その間のメッセージは Mailbox の未読キューに溜まる。Mailbox 自体はリース切れでは消えない。
+- **リース**: stream を開いている間はリースを保つ。stream を開かないクライアント (`inbox()` の polling 経路) は heartbeat でリースを延長する。リースが切れた Attachment は detached になり、その間のメッセージは Mailbox の未読キューに溜まる。Mailbox 自体はリース切れでは消えない。
+  **決定 (2026-10-17)**: shim は heartbeat を送らない。shim は常に stream を開いていて、生死は stream の切断 (15 秒の猶予) で分かる。heartbeat を shim に義務づけると、更新前の shim を動かしたままの Claude Code が新しい Hub でリース切れになる。
+  detached の理由 (`closed` / `disconnected` / `lease_expired`) は、次の attach まで Mailbox に添えて UI に出す。Hub のメモリにだけ持ち、再起動で消える。
 - **後継への流し込み量の制御**: attach 時に `maxAgeMs` を指定でき、それより古い未読は渡さない。切り捨てがあれば `truncated: true` を返し、shim はその旨をエージェントに 1 件の通知で伝える。
   Channels は作業中に届いた通知を次のターンにまとめて渡すため、長期不在後の大量流し込みを防ぐ目的がある。
 

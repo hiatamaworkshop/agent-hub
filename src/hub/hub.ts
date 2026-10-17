@@ -21,8 +21,19 @@ export interface UiEvent {
   data: unknown
 }
 
-// 接続中の Mailbox は削除できない (409) ので、mailbox_deleted で終わる stream はない
+// 接続中の Mailbox は削除できない (409) ので、mailbox_deleted で終わる stream はない。
+// stream を開いている間はリースが切れないので、lease_expired は今は送らない (protocol.md §3)
 export type TerminateReason = 'superseded' | 'lease_expired'
+
+// detached になった理由。closed: shim が DELETE で切った / disconnected: stream が切れて猶予が過ぎた /
+// lease_expired: stream なしでリースが切れた
+export type DetachReason = 'closed' | 'disconnected' | 'lease_expired'
+
+// 最後に detached になった Attachment。Mailbox に次の attach があるまで GET /mailboxes に出す (メモリのみ)
+export interface DetachedAttachment extends Attachment {
+  detachedAt: string
+  reason: DetachReason
+}
 
 // Attachment の stream 1 本ぶん (protocol.md §3 shim 向け SSE)
 export interface AttachmentSink {
@@ -54,13 +65,12 @@ export interface AttachResult {
   superseded: string | null
 }
 
-// P0 ではリースを強制しない (heartbeat と期限切れは P2)。値だけ返す
-const LEASE_MS = 2 * 60_000
-
 export interface HubOptions {
   now?: () => Date
-  // stream が開かれていない Attachment をこの時間で detach する。shim の kill (Windows では終了処理が走らない) に備える
+  // stream が切れた Attachment をこの時間で detach する。shim の kill (Windows では終了処理が走らない) に備える
   disconnectGraceMs?: number
+  // リースの長さ。stream を開いている間は保ち、stream がなければ attach・heartbeat・ack で延ばす (protocol.md §4)
+  leaseMs?: number
   // roles.json の内容。null (ファイルなし) なら role 名を検証せず、説明も返さない
   roles?: Roles | null
 }
@@ -69,12 +79,16 @@ export class Hub {
   private readonly uiListeners = new Set<(e: UiEvent) => void>()
   private readonly sinks = new Map<string, AttachmentSink>()
   private readonly graceTimers = new Map<string, NodeJS.Timeout>()
+  private readonly leaseTimers = new Map<string, NodeJS.Timeout>()
   readonly attachments = new Map<string, Attachment>()
+  // Mailbox 名 → 最後に detached になった Attachment。attach・削除で消す。Hub の再起動では残らない
+  private readonly lastDetached = new Map<string, DetachedAttachment>()
   // sessionId → Mailbox 名。attach の申告と、ヘッダー・cwd で解決できた Event から覚える。
   // detach 後も残す (セッションは shim が切れても続きうる)。永続化はしない
   private readonly sessionMailbox = new Map<string, string>()
   private readonly now: () => Date
   private readonly disconnectGraceMs: number
+  private readonly leaseMs: number
   private readonly roles: Roles | null
 
   constructor(
@@ -84,6 +98,7 @@ export class Hub {
     this.now = opts.now ?? (() => new Date())
     this.roles = opts.roles ?? null
     this.disconnectGraceMs = opts.disconnectGraceMs ?? 15_000
+    this.leaseMs = opts.leaseMs ?? 2 * 60_000
   }
 
   onUi(fn: (e: UiEvent) => void): () => void {
@@ -193,6 +208,7 @@ export class Hub {
     const mb = this.mustMailbox(name)
     if (mb.attachment) throw new HubError(409, 'mailbox_attached', `mailbox ${name} は attach 中のため削除できない。先に detach する`)
     this.store.deleteMailbox(name)
+    this.lastDetached.delete(name)
     this.emitUi('mailbox.deleted', { name })
   }
 
@@ -216,13 +232,15 @@ export class Hub {
       sessionId: input.sessionId,
       cwd: input.cwd,
       attachedAt: this.now().toISOString(),
-      leaseUntil: new Date(this.now().getTime() + LEASE_MS).toISOString(),
+      leaseUntil: '',
     }
     this.attachments.set(at.attachmentId, at)
     this.store.setAttachment(name, at.attachmentId)
+    this.lastDetached.delete(name)
     // attach ツールで Mailbox を切り替えても、session の対応は最新の attach に追従する
     if (input.sessionId) this.sessionMailbox.set(input.sessionId, name)
-    this.armGrace(at.attachmentId)
+    // stream を開かないクライアント (polling) もあるので、切断の猶予ではなくリースで待つ
+    this.renewLease(at.attachmentId)
     this.emitUi('attachment.attached', at)
 
     return {
@@ -239,15 +257,37 @@ export class Hub {
 
   detach(attachmentId: string): void {
     this.mustAttachment(attachmentId)
-    this.endAttachment(attachmentId, null)
+    this.endAttachment(attachmentId, 'closed')
   }
 
-  // stream のない状態が disconnectGraceMs 続いたら detach する
+  // リースを延ばす。応答は延ばした後の期限
+  heartbeat(attachmentId: string): { leaseUntil: string } {
+    this.mustAttachment(attachmentId)
+    return { leaseUntil: this.renewLease(attachmentId) }
+  }
+
+  // 期限に来たとき stream が開いていれば延ばし直す (stream が生きている間はリースを保つ)。なければ detach する
+  private renewLease(attachmentId: string): string {
+    const at = this.mustAttachment(attachmentId)
+    at.leaseUntil = new Date(this.now().getTime() + this.leaseMs).toISOString()
+    clearTimeout(this.leaseTimers.get(attachmentId))
+    const t = setTimeout(() => {
+      this.leaseTimers.delete(attachmentId)
+      if (!this.attachments.has(attachmentId)) return
+      if (this.sinks.has(attachmentId)) this.renewLease(attachmentId)
+      else this.endAttachment(attachmentId, 'lease_expired')
+    }, this.leaseMs)
+    t.unref()
+    this.leaseTimers.set(attachmentId, t)
+    return at.leaseUntil
+  }
+
+  // stream が切れた状態が disconnectGraceMs 続いたら detach する
   private armGrace(attachmentId: string): void {
     this.clearGrace(attachmentId)
     const t = setTimeout(() => {
       this.graceTimers.delete(attachmentId)
-      if (!this.sinks.has(attachmentId)) this.endAttachment(attachmentId, null, 'disconnected')
+      if (!this.sinks.has(attachmentId)) this.endAttachment(attachmentId, 'disconnected')
     }, this.disconnectGraceMs)
     t.unref()
     this.graceTimers.set(attachmentId, t)
@@ -258,18 +298,27 @@ export class Hub {
     this.graceTimers.delete(attachmentId)
   }
 
-  // reason があれば stream に terminated を送ってから閉じる
-  private endAttachment(attachmentId: string, reason: TerminateReason | null, uiReason?: string): void {
+  // superseded だけ stream に terminated を送ってから閉じる。ほかは detached として Mailbox に残す
+  private endAttachment(attachmentId: string, reason: 'superseded' | DetachReason): void {
     const at = this.attachments.get(attachmentId)
     if (!at) return
     this.clearGrace(attachmentId)
+    clearTimeout(this.leaseTimers.get(attachmentId))
+    this.leaseTimers.delete(attachmentId)
     this.attachments.delete(attachmentId)
     const mb = this.store.getMailbox(at.mailbox)
     if (mb?.attachment === attachmentId) this.store.setAttachment(at.mailbox, null)
     const sink = this.sinks.get(attachmentId)
     this.sinks.delete(attachmentId)
-    sink?.close(reason ?? undefined)
-    this.emitUi(reason === 'superseded' ? 'attachment.superseded' : 'attachment.detached', { ...at, reason: uiReason ?? reason })
+    if (reason === 'superseded') {
+      sink?.close('superseded')
+      this.emitUi('attachment.superseded', { ...at, reason })
+      return
+    }
+    sink?.close()
+    const detached: DetachedAttachment = { ...at, detachedAt: this.now().toISOString(), reason }
+    this.lastDetached.set(at.mailbox, detached)
+    this.emitUi('attachment.detached', detached)
   }
 
   // stream を開く。after より後の未読を seq 順に送ってから新着を流す。
@@ -279,6 +328,7 @@ export class Hub {
     const old = this.sinks.get(attachmentId)
     this.sinks.set(attachmentId, sink)
     this.clearGrace(attachmentId)
+    this.renewLease(attachmentId)
     old?.close()
     // store の追記と配信は同期的に進むので、未読の送信と登録の間に新着が割り込むことはない
     for (const m of this.store.unread(at.mailbox, after)) sink.message(m)
@@ -293,6 +343,7 @@ export class Hub {
   // cursor が実際に進んだときだけ mailbox.acked を UI に流す (未読数が変わるのはこのとき)
   ack(attachmentId: string, upTo: number): number {
     const name = this.mustAttachment(attachmentId).mailbox
+    this.renewLease(attachmentId)
     const before = this.mustMailbox(name).cursor
     const cursor = this.store.advanceCursor(name, upTo)
     if (cursor > before) this.emitUi('mailbox.acked', { name, cursor })
@@ -316,13 +367,17 @@ export class Hub {
     return this.mustMailbox(name)
   }
 
-  // GET /mailboxes 向け。実効購読・未読数・Attachment を添える
+  // GET /mailboxes 向け。実効購読・未読数・Attachment と、接続していなければ最後に detached になった Attachment を添える
   describeMailboxes() {
-    return this.store.listMailboxes().map((mb) => ({
-      ...mb,
-      effectiveSubscriptions: this.store.effectiveSubscriptions(mb.name),
-      unread: this.store.unread(mb.name).length,
-      attachment: mb.attachment ? (this.attachments.get(mb.attachment) ?? null) : null,
-    }))
+    return this.store.listMailboxes().map((mb) => {
+      const attachment = mb.attachment ? (this.attachments.get(mb.attachment) ?? null) : null
+      return {
+        ...mb,
+        effectiveSubscriptions: this.store.effectiveSubscriptions(mb.name),
+        unread: this.store.unread(mb.name).length,
+        attachment,
+        detached: attachment ? null : (this.lastDetached.get(mb.name) ?? null),
+      }
+    })
   }
 }

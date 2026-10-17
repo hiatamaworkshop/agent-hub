@@ -8,8 +8,8 @@ import { Store } from './store.js'
 const TOKEN = 'test-token-0123456789'
 const auth = { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' }
 
-function setup() {
-  const app = createApp({ hub: new Hub(new Store()), token: TOKEN, uiHtml: async () => null, heartbeatMs: 50 })
+function setup(hub = new Hub(new Store())) {
+  const app = createApp({ hub, token: TOKEN, uiHtml: async () => null, heartbeatMs: 50 })
   const call = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>
     app.request(path, { method, headers: { ...auth, ...headers }, body: body === undefined ? undefined : JSON.stringify(body) })
   const attach = async (name: string, body: unknown = { client: 'claude-code' }) =>
@@ -227,6 +227,94 @@ describe('takeover と detach', () => {
     const a = await attach('rev-a', { client: 'claude-code', role: 'reviewer' })
     const m = await send({ type: 'topic', id: 't' }, 'b', { 'x-hub-attachment': a.attachmentId })
     assert.deepEqual(m.from, { type: 'mailbox', id: 'rev-a', role: 'reviewer' })
+  })
+})
+
+describe('リースと detached', () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+  interface Listed {
+    name: string
+    attachment: { attachmentId: string; leaseUntil: string } | null
+    detached: { attachmentId: string; reason: string; detachedAt: string } | null
+  }
+  const listed = async (call: ReturnType<typeof setup>['call'], name: string) =>
+    ((await (await call('GET', '/mailboxes')).json()) as { mailboxes: Listed[] }).mailboxes.find((mb) => mb.name === name)!
+
+  it('heartbeat でリースを延ばし、応答に leaseUntil を返す。未知の Attachment は 404', async () => {
+    let t = Date.parse('2026-10-17T00:00:00Z')
+    const { call, attach } = setup(new Hub(new Store(), { now: () => new Date(t) }))
+    const a = await attach('x')
+    assert.equal(a.leaseUntil, '2026-10-17T00:02:00.000Z')
+    t += 60_000
+    const res = await call('POST', `/attachments/${a.attachmentId}/heartbeat`)
+    assert.equal(res.status, 200)
+    assert.deepEqual(await res.json(), { leaseUntil: '2026-10-17T00:03:00.000Z' })
+    assert.equal((await listed(call, 'x')).attachment!.leaseUntil, '2026-10-17T00:03:00.000Z')
+    const missing = await call('POST', '/attachments/at_missing/heartbeat')
+    assert.equal(missing.status, 404)
+    assert.equal(((await missing.json()) as { error: string }).error, 'attachment_not_found')
+  })
+
+  it('stream なしでリースが切れると detached (lease_expired) になり、未読は Mailbox に残る', async () => {
+    const hub = new Hub(new Store(), { leaseMs: 80 })
+    const ui: { event: string; data: unknown }[] = []
+    hub.onUi((e) => ui.push(e))
+    const { app, call, attach, send } = setup(hub)
+    const a = await attach('x')
+    await sleep(150)
+    const mb = await listed(call, 'x')
+    assert.equal(mb.attachment, null)
+    assert.equal(mb.detached!.attachmentId, a.attachmentId)
+    assert.equal(mb.detached!.reason, 'lease_expired')
+    assert.ok(ui.some((e) => e.event === 'attachment.detached' && (e.data as { reason: string }).reason === 'lease_expired'))
+    assert.equal((await call('POST', `/attachments/${a.attachmentId}/heartbeat`)).status, 404)
+
+    await send({ type: 'mailbox', id: 'x' }, 'while-away')
+    const b = await attach('x')
+    assert.equal((await listed(call, 'x')).detached, null, 'attach し直すと detached は消える')
+    const back = await collect(await app.request(`/attachments/${b.attachmentId}/stream`, { headers: auth }), (evs) => messages(evs).length >= 1)
+    assert.deepEqual(messages(back.events).map((m) => m.body), ['while-away'])
+  })
+
+  it('heartbeat を続ければリースは切れない', async () => {
+    const { call, attach } = setup(new Hub(new Store(), { leaseMs: 80 }))
+    const a = await attach('x')
+    for (let i = 0; i < 4; i++) {
+      await sleep(40)
+      assert.equal((await call('POST', `/attachments/${a.attachmentId}/heartbeat`)).status, 200)
+    }
+    assert.equal((await listed(call, 'x')).attachment!.attachmentId, a.attachmentId)
+  })
+
+  it('stream を開いている間は heartbeat がなくてもリースが切れない', async () => {
+    const { app, call, attach } = setup(new Hub(new Store(), { leaseMs: 50 }))
+    const a = await attach('x')
+    const res = await app.request(`/attachments/${a.attachmentId}/stream`, { headers: auth })
+    const { closed } = await collect(res, () => false, 200)
+    assert.ok(!closed, 'stream は閉じない')
+    // collect の終わりで stream を切ったので、ここからは切断の猶予 (既定 15 秒) の内にいる
+    assert.equal((await listed(call, 'x')).attachment!.attachmentId, a.attachmentId)
+  })
+
+  it('detached の理由: DELETE は closed、stream が切れて猶予が過ぎたら disconnected', async () => {
+    const { app, call, attach } = setup(new Hub(new Store(), { disconnectGraceMs: 30 }))
+    const a = await attach('closed-mb')
+    await call('DELETE', `/attachments/${a.attachmentId}`)
+    assert.equal((await listed(call, 'closed-mb')).detached!.reason, 'closed')
+
+    const b = await attach('lost-mb')
+    await collect(await app.request(`/attachments/${b.attachmentId}/stream`, { headers: auth }), () => false, 50)
+    await sleep(80)
+    assert.equal((await listed(call, 'lost-mb')).detached!.reason, 'disconnected')
+  })
+
+  it('takeover で切り離された側は detached に残らない', async () => {
+    const { call, attach } = setup()
+    await attach('x')
+    await attach('x')
+    const mb = await listed(call, 'x')
+    assert.notEqual(mb.attachment, null)
+    assert.equal(mb.detached, null)
   })
 })
 

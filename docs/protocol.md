@@ -173,7 +173,7 @@
 | POST | `/mailboxes/:name/attach` | Mailbox に attach (なければ作成)。下記参照 |
 | GET | `/attachments/:id/stream?after=<seq>` | SSE。Mailbox の未読を `seq` 順に流し、以後の新着も流す |
 | POST | `/attachments/:id/ack` | 受信確認。body: `{ "upTo": <seq> }`。Mailbox の `cursor` を進める |
-| POST | `/attachments/:id/heartbeat` | リース延長。応答に `leaseUntil` |
+| POST | `/attachments/:id/heartbeat` | リース延長。応答は `{ "leaseUntil": "…" }`。stream を開いていないクライアント向け (§4)。存在しない Attachment は 404 |
 | DELETE | `/attachments/:id` | detach (セッション終了時。Mailbox は残る) |
 | PUT | `/mailboxes/:name/subscriptions/:topic` | 購読 |
 | DELETE | `/mailboxes/:name/subscriptions/:topic` | 購読解除 (個別購読のみ。role の既定購読は外せない) |
@@ -212,19 +212,22 @@
   `terminated` を受け取った後は attach し直さない (取り返しの応酬を避ける)。
 - **role の検証**: `roles.json` があるとき、定義にない role は 400 `unknown_role` で拒み、Mailbox も作らない。`role` を省いた (undefined) ときと `null` は通す (`null` は role を外す)。`roles.json` がないときは role 名を照合せず受け付ける (P0 と同じ)。
 - **`roleDescription`**: 持っている role の `description`。定義がない・role がない・`roles.json` がないときは `null`。
-- **P2 で残っている範囲**: リースは値を返すだけで期限切れを判定しない。`maxAgeMs` は受け取るが切り捨てはしない (`truncated: false`)。
+- **P2 で残っている範囲**: `maxAgeMs` は受け取るが切り捨てはしない (`truncated: false`)。
 
 #### stream
 
 - 開くと `after` (省略時 0) と Mailbox の `cursor` の大きい方より後の未読を `seq` 順に送り、続けて新着を送る。SSE の `id:` には `seq` を入れる。
 - 同じ Attachment で stream を開き直すと、古い stream は `terminated` なしで閉じる。
-- stream が開かれていない状態 (attach 直後、または相手から切られた後) が 15 秒続いた Attachment は Hub が detach する (UI には `attachment.detached` と `reason: "disconnected"`)。
-  Windows では shim が kill されると終了処理 (`DELETE /attachments/:id`) が走らないため。shim の再接続はこの猶予内に収まる前提。P2 のリースで置き換える。
-- `DELETE /attachments/:id` (detach) でも stream は `terminated` なしで閉じる (shim 自身が切ったため)。
+- 相手から切られた stream が 15 秒開き直されなければ、Hub はその Attachment を detach する (`reason: "disconnected"`)。
+  Windows では shim が kill されると終了処理 (`DELETE /attachments/:id`) が走らないため。shim の再接続はこの猶予内に収まる前提。
+  attach の後に一度も stream を開かない Attachment は、この猶予ではなくリース (§4) で detach する (`reason: "lease_expired"`)。
+- `DELETE /attachments/:id` (detach) でも stream は `terminated` なしで閉じる (shim 自身が切ったため。`reason: "closed"`)。
+- detach した Attachment は、次の attach か Mailbox の削除まで `GET /mailboxes` の `detached` に残る (Hub のメモリのみ。再起動で消える)。
 
 #### 応答の形
 
-- `GET /mailboxes`: `{ "mailboxes": [Mailbox + { "effectiveSubscriptions", "unread": <件数>, "attachment": Attachment | null }] }`
+- `GET /mailboxes`: `{ "mailboxes": [Mailbox + { "effectiveSubscriptions", "unread": <件数>, "attachment": Attachment | null, "detached": DetachedAttachment | null }] }`
+  - `detached` は接続していない Mailbox で最後に detach した Attachment に `detachedAt` と `reason` (`closed` / `disconnected` / `lease_expired`) を足したもの。接続中・この Hub の起動後に attach がない・takeover で切り離されただけのときは `null`。古い Hub はこの項目を返さない
 - `PUT` / `DELETE /mailboxes/:name/subscriptions/:topic`: `{ "subscriptions": [...], "effectiveSubscriptions": [...] }`。Mailbox がなければ 404
 - `DELETE` で外せるのは**個別購読だけ**。role の既定購読 (`roles.json` の `subscribe`) のトピックは外れず、`effectiveSubscriptions` に残る。応答の形は変えていない。残ったかどうかは `effectiveSubscriptions` で分かる (shim の `unsubscribe` ツールは、残ったときに `note` を足す)。
 - `POST /attachments/:id/ack`: `{ "cursor": <進めた後の値> }`。`cursor` は後退せず、採番済みの `seq` を超えない
@@ -235,7 +238,7 @@
 |---|---|---|
 | `message` | Message | 配信本体 |
 | `heartbeat` | `{ "cursor": <seq> }` | 30 秒ごと。60 秒途絶えたら shim は切断とみなして再接続する |
-| `terminated` | `{ "reason": "superseded \| lease_expired" }` | この Attachment は終了。shim は再 attach しない (`lease_expired` のみ再 attach してよい) |
+| `terminated` | `{ "reason": "superseded \| lease_expired" }` | この Attachment は終了。shim は再 attach しない (`lease_expired` のみ再 attach してよい)。stream を開いている間はリースが切れないので、Hub は今 `lease_expired` を送らない |
 
 ## 4. 配信保証
 
@@ -244,7 +247,8 @@
 - 順序は `seq` 順。
 - **Channels は ack を返さない**ため、shim の ack は「`notifications/claude/channel` をトランスポートに書けた」時点で送る。Claude が読んだことの保証ではない。
 - 未読には上限と保持期間を設ける (例: 1000 件 / 7 日。実装時に調整)。超えた分は放棄し、次の attach で `truncated: true` を返す。
-- リース: heartbeat 間隔 30 秒、リース 2 分 (暫定)。リース切れの Attachment は detached とし、Mailbox は残す。
+- リース: 2 分 (暫定)。attach・stream を開く・ack・`POST /attachments/:id/heartbeat` で延びる。stream を開いている間は期限が来ても延ばし直す。stream を開かないクライアントは 2 分より短い間隔 (例: 30 秒) で heartbeat を送る。
+  リース切れの Attachment は detached (`reason: "lease_expired"`) とし、Mailbox は残す。shim は stream を開いているので heartbeat を送らない (design.md §3.3)。
 
 ## 5. MCP ツール (shim が公開)
 
@@ -342,6 +346,7 @@ Claude 側では次のように見える:
 
 - `event` は記録した Event (§2)。重複 (`duplicate: true`) と取り込まなかったものは流さない。
 - `mailbox.created` は作成された Mailbox (`name` `role` `createdAt` `subscriptions` `cursor` `attachment`。作成直後なので `attachment` は null)。`mailbox.deleted` は `{ "name": "<名前>" }`。UI は両方で一覧を取り直す。
+- `attachment.detached` は §3 の `detached` と同じ形 (Attachment + `detachedAt` + `reason`)。`attachment.superseded` は Attachment + `reason: "superseded"`。UI はどちらでも一覧を取り直す。
 - `mailbox.acked` は `{ "name": "<名前>", "cursor": <進めた後の値> }`。`POST /attachments/:id/ack` で cursor が実際に進んだときだけ流す (同じ値・後退では流さない)。未読数が減るのはこのとき。UI は一覧を取り直す。古い UI は知らない名前として無視し、古い Hub は送らないので、どちらの組み合わせでも壊れない。
 
 ## 8. MCP Events (SEP-3415) との語彙対応

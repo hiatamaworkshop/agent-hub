@@ -441,6 +441,7 @@ function render(m) {
 // payload は Claude Code の hook 入力そのまま (source: claude-code) なので、読むキーはここに閉じ込める。値は外部由来のデータとして textContent で入れる
 const seenEvents = new Set()
 const lastEventByMailbox = new Map() // Mailbox 名 → 最新の Event (カードに出す)
+const DETACH_LABEL = { closed: 'session ended', disconnected: 'connection lost', lease_expired: 'lease expired' }
 const EVENT_LABEL = { 'turn.end': 'turn end', question: 'question', 'question.answered': 'answered', permission: 'permission', notification: 'notification', 'session.boundary': 'boundary' }
 // 人の手を待っている Event。目立たせ、非表示のタブでは未読として数える
 const WAITING = new Set(['question', 'permission'])
@@ -1023,7 +1024,8 @@ function renderMailboxes(mailboxes) {
     const title = el('div')
     title.append(el('span', `dot${mb.attachment ? ' on' : ''}`), el('span', 'name', mb.name), el('span', `chip c${ci}`, mb.role || mb.name))
     box.append(title)
-    const meta = [mb.attachment ? `Connected (${mb.attachment.client})` : 'Disconnected']
+    // detached は最後に切れた Attachment (この Hub の起動中だけ)。古い Hub は返さないので Disconnected のまま
+    const meta = [mb.attachment ? `Connected (${mb.attachment.client})` : mb.detached ? `Detached ${time(mb.detached.detachedAt)} (${DETACH_LABEL[mb.detached.reason] || mb.detached.reason})` : 'Disconnected']
     if (mb.role) meta.push(`role: ${mb.role}`)
     // unread が無い古い Hub では未読の項目を出さない (undefined unread と出さないため)
     if (typeof mb.unread === 'number') meta.push(`${mb.unread} unread`)
