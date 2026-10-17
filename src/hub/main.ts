@@ -6,6 +6,7 @@ import { serve } from '@hono/node-server'
 import { createApp } from './app.js'
 import { FileStore } from './files.js'
 import { Hub } from './hub.js'
+import { loadRoles, RolesError, type Roles } from './roles.js'
 import { SettingsStore } from './settings.js'
 import { Store } from './store.js'
 
@@ -37,11 +38,26 @@ if (!Number.isFinite(ttlDays) || ttlDays < 0) {
   process.exit(1)
 }
 
-const store = new Store({ file: join(dataDir, 'hub.jsonl') })
+// role 定義。読めない・形が違うなら黙って既定に戻さず、ファイル名と理由を出して止まる (ファイルがなければ P0 と同じ)
+const rolesFile = resolve(process.env.HUB_ROLES_FILE ?? join(ROOT, 'roles.json'))
+let roles: Roles | null
+try {
+  roles = loadRoles(rolesFile)
+} catch (e) {
+  if (!(e instanceof RolesError)) throw e
+  console.error(`[hub] ${e.message}`)
+  process.exit(1)
+}
+if (roles) console.log(`[hub] roles: ${rolesFile} (${roles.size} 件)`)
+
+const store = new Store({
+  file: join(dataDir, 'hub.jsonl'),
+  roleSubscriptions: (role) => roles?.get(role)?.subscribe ?? [],
+})
 const settings = new SettingsStore(join(dataDir, 'settings.json'))
 const files = new FileStore({ dir: join(dataDir, 'files'), maxEdge, ttlDays })
 const app = createApp({
-  hub: new Hub(store),
+  hub: new Hub(store, { roles }),
   token,
   settings,
   files,

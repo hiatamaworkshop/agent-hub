@@ -14,9 +14,11 @@ export async function pushToChannel(server: Server, m: Message, mailbox: string)
   await server.notification({ method: 'notifications/claude/channel', params: { ...toChannelParams(m, mailbox) } })
 }
 
-export function channelInstructions(mailbox: string, role: string | null): string {
+// roleDescription は roles.json の description (運用者が書いた設定)。届いた本文ではないので、ここに書いてよい
+export function channelInstructions(mailbox: string, role: string | null, roleDescription: string | null = null): string {
   return [
     `agent-hub (ローカルのメッセージ Hub) に Mailbox "${mailbox}"${role ? ` (role: ${role})` : ''} として接続している。`,
+    ...(role && roleDescription ? [`role "${role}" の役割: ${roleDescription}`] : []),
     'ほかのエージェントや人間 (ブラウザ) からのメッセージは <channel source="agent-hub" id="…" seq="…" kind="…" from="…" to="…" mailbox="…"> で届く。',
     '- from: 送り手。user:browser は人間のブラウザ、mailbox:<名前> は別のエージェント。from_role があれば送り手の role。',
     '- to: 受け取った理由。mailbox:<名前> は自分宛て、role:<名前> は自分の role 宛て、topic:<名前> は購読しているトピック。',

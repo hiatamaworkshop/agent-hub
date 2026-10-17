@@ -117,7 +117,7 @@ Claude Code の HTTP hook で、`AskUserQuestion`・許可待ち・ターン終�
 - 購読はセッションではなく **Mailbox に保存される** (`data/hub.jsonl`)。Hub の再起動や、新しいセッションが同じ Mailbox に attach したときも残るので、起動のたびに頼み直さなくてよい。
   同じフォルダで起動すれば同じ Mailbox になる (上の Mailbox 名の決まり方を参照)。
 - **`mailbox:<名前>` 宛てなら購読は要らない**。購読が要るのは、`topic:<名前>` のように購読者全員へ送るときだけ。
-- 購読が消えるのは、ブラウザで Mailbox を削除したときと、`data/` を消したとき (Docker では volume を作り直したとき)。設定として宣言しておく方法は role の既定購読 (P2、`roles.json` + `HUB_ROLE`)。
+- 購読が消えるのは、ブラウザで Mailbox を削除したときと、`data/` を消したとき (Docker では volume を作り直したとき)。設定として宣言しておく方法は role の既定購読 (`roles.json` + `HUB_ROLE`。下の「role の定義 (roles.json)」)。
 - 宛先のドロップダウンには購読中のトピックだけが出る。購読者のいないトピックは「トピックを手入力…」で送れるが、誰にも届かなければ Send の横に警告が出る。
 
 ### 使わなくなった Mailbox を消す
@@ -131,7 +131,7 @@ Claude Code の HTTP hook で、`AskUserQuestion`・許可待ち・ターン終�
 ### 2 エージェントで role 間の往復を試す (leader / deployer)
 
 ユーザー → leader → deployer → leader → ユーザーの順に、role 宛てで依頼と報告を回す試験。
-role の振る舞いは [tools/dev/roles/](tools/dev/roles/) の説明を system prompt に足して伝える (`roles.json` による差し込みは P2)。
+role の振る舞いは [tools/dev/roles/](tools/dev/roles/) の説明を system prompt に足して伝える。`roles.json` の説明は、この試験の system prompt の代わりにはまだ使っていない (下の「role の定義 (roles.json)」を参照)。
 
 ```powershell
 npm run hub                                   # ターミナル A
@@ -149,6 +149,25 @@ npm run hub                                   # ターミナル A
 - leader のターミナルでの応答を簡潔にする指示も role の説明に書いている。output style (`/output-style concise`) は `.claude/settings.local.json` に保存され、同じフォルダの全セッションに効くので使わない。起動時に `--settings` で渡す方法は 2.1.301 で誤動作した (design.md §6.1f)。
 - 2 つのセッションは同じフォルダで動くので、deployer の変更は leader から `git diff` で見える。
 - deployer のファイル編集の許可は、ターミナル C で承認する。
+
+### role の定義 (roles.json)
+
+role ごとの既定購読と説明を、Hub の設定ファイルに書く。見本は [roles.example.json](roles.example.json)。
+
+```powershell
+Copy-Item roles.example.json roles.json   # 自分の環境用。roles.json はコミットされない
+npm run hub                               # 読むのは起動時だけ。変えたら再起動する
+```
+
+- 各 role は `description` (文字列) と `subscribe` (トピック名の配列) を持つ。ほかの項目は読み捨てずに保持されるが、今は使われない。
+- `HUB_ROLE=reviewer` で起動した Mailbox は、`subscribe` を呼ばなくても `reviewer` の既定購読を受け取る。`to: role:reviewer` 宛てもこの Mailbox に届く。
+- `description` は shim の instructions に入る。shim は initialize より前に attach して取りに行く (3 秒まで。過ぎたら説明なしで起動する)。
+  実際のエージェントがその説明どおりに振る舞うかは、まだ実セッションで確かめていない。
+- 定義にない role で attach すると 400 `unknown_role` で、Mailbox は作られない。
+- ファイルがなければ、role 名の検証も既定購読もない (今までどおり)。
+- ファイルの形が違うと Hub は起動せず、ファイル名と問題の場所を出して止まる (黙って既定に戻さない)。
+- 既定購読のトピックは `unsubscribe` で外れない。外すには `roles.json` から消して Hub を再起動する。
+- 別の場所のファイルを使うときは `HUB_ROLES_FILE` (既定はリポジトリ直下の `roles.json`)。
 
 ### 他のリポジトリで使う
 

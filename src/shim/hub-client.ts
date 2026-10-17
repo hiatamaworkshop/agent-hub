@@ -43,6 +43,7 @@ export class HubClient {
   lastError: string | undefined
   private delivered = 0
   private readonly seen = new Set<string>()
+  private inflight: Promise<void> | undefined
   private stopped = false
   private abort: AbortController | undefined
 
@@ -73,8 +74,28 @@ export class HubClient {
   async stop(): Promise<void> {
     this.stopped = true
     this.abort?.abort()
-    if (this.attachment && this.state === 'attached') {
+    // start の前に primeAttach で取った Attachment も、ここで解放する
+    if (this.attachment) {
       await this.request('DELETE', `/attachments/${this.attachment.attachmentId}`).catch(() => undefined)
+    }
+  }
+
+  // initialize の応答 (instructions) より前に attach して、role の説明を取る (design.md §3.7)。
+  // 時間切れや失敗は undefined を返して先へ進む。attach は start の後に run が受け持つ (説明なしで動く)
+  async primeAttach(timeoutMs: number): Promise<AttachInfo | undefined> {
+    let timer: NodeJS.Timeout | undefined
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`attach が ${timeoutMs}ms 以内に終わらなかった`)), timeoutMs)
+    })
+    try {
+      await Promise.race([this.attach(), timeout])
+      return this.attachment
+    } catch (e) {
+      this.lastError = e instanceof Error ? e.message : String(e)
+      this.log(`hub: ${this.lastError}${this.cfg.role ? ' (role の説明なしで起動する)' : ''}`)
+      return undefined
+    } finally {
+      clearTimeout(timer)
     }
   }
 
@@ -103,7 +124,13 @@ export class HubClient {
     }
   }
 
-  private async attach(): Promise<void> {
+  // 進行中の attach があれば、それを待つ (primeAttach の時間切れの後に run が二重に attach しないように)
+  private attach(): Promise<void> {
+    this.inflight ??= this.doAttach().finally(() => (this.inflight = undefined))
+    return this.inflight
+  }
+
+  private async doAttach(): Promise<void> {
     this.attachment = undefined
     const r = await this.request<AttachInfo & { superseded: string | null }>('POST', `/mailboxes/${this.cfg.mailbox}/attach`, {
       client: 'claude-code',

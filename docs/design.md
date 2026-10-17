@@ -115,6 +115,7 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
 - 接続の回復: SSE が開き直すたびに `GET /messages?after=<開いた時点の描画済みの最大 seq>` で取り直し、描画する (最初の接続は履歴の読み込みが受け持つ)。取り直しに失敗しても表示は止めず、次に開いたとき取り直す。Mailbox 一覧が失敗したら #err に出し、少し待って数回まで試す (SSE が開き直したときも試す)。履歴と新着は一覧の成否と独立に動く。
 - 送信: 送信中に打ち足した本文と、送信後に足した画像は残す。送ったもの (送信時点の本文と画像) だけを消す。失敗したときは何も消さない。起動時の `/settings` は 1 回だけ読み、初期の宛先と Commands に使う (Commands のダイアログは開くたびに読み直す)。
 - Mailbox の削除: 接続していない Mailbox のカードにだけ Delete を出す (確認のあと `DELETE /mailboxes/:name`)。カードの選択は起こさない。409 (その間に attach された) と、削除に対応しない古い Hub の 404 は #err に出し、カードは外さずに一覧を取り直す。`mailbox.deleted` を受けた他のタブも一覧を取り直す。
+- Mailbox のカードの未読数: 新着 (`message`) と ack (`mailbox.acked`) で一覧を取り直し、ポーリングはしない。`effectiveSubscriptions` や `unread` を欠く古い Hub の応答では、購読は空、未読の項目は出さない (カード全体は描く)。
 - UI の表示文言は英語にする (メッセージ本文は対象外で、そのまま表示する)。このドキュメント自体は日本語のまま。
 - カスタムコマンド: 本文の `/name` (または `/name 引数`) を Send の瞬間に定義済みの text へ置換して送る。置換は UI が行い、Hub はコマンドを知らない (置換後の本文を普通のメッセージとして受ける)。スレッドに残るのも置換後の本文なので、何を送ったかがそのまま見える。人間が Send を押したときだけ動き、自動送信はしない。設定は Hub 側の `HUB_DATA_DIR/settings.json` にあり、手で編集できる (読みは毎回ファイルから行う)。Hub が `/settings` を持たない古い版のときは Commands を無効にし、送信はこれまでどおり。
 - 初期の宛先 (To): 自動で選ぶのは (1) 前回送った宛先 (localStorage `agent-hub.lastTo`) → (2) settings.json の `defaultTo` (例 `mailbox:leader`) の順で、どちらも**接続中 (attach 中) の先だけ**を候補にする。mailbox は attach 中のもの、role と topic は attach 中の Mailbox が持つものに限る。user:browser は常に候補。どちらも候補になければ**未選択** (先頭表示は "Select a destination…")。先頭の Mailbox や topic:user.message への後退はしない。`defaultTo` は初回の判定より前に読む。
@@ -225,7 +226,10 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
   UI は質問文や最終応答を出すために `payload` を読むが、読み方は Event の `source` ごとに 1 か所にまとめる (`eventBody` in `public/index.html`)。
 - **shim の instructions はクライアントで切り替える**: 今の文面は `<channel>` で届く前提。MCP の `initialize` の `clientInfo.name` で、Channels 経路か `inbox()` 経路かの説明を選ぶ。
 - **「本文はデータ」の守りは agent-hub 側だけで成り立たせる**: Claude Code は channel 由来の内容に注意書きを自動で付けるが (§6.1c)、他のクライアントは付けない。`<hub-message>` の包みと instructions の文面だけで足りるように書く。
-- **role の説明は MCP の instructions で渡す**: `roles.json` の `description` を shim が instructions に差し込む (§3.5、P2)。Claude の起動フラグ (`--append-system-prompt-file`。`tools/dev/` の試験用) には頼らない。ただし instructions をどう使うかはクライアント次第で、未確認。
+- **role の説明は MCP の instructions で渡す**: `roles.json` の `description` を shim が instructions に差し込む (§3.5、P2)。Claude の起動フラグ (`--append-system-prompt-file`。`tools/dev/` の試験用) には頼らない。ただし instructions をどう使うかはクライアント次第で、未確認 (§6.2-5)。
+  - **決定 (2026-10-17): initialize より前に attach して説明を取る**。`instructions` は `initialize` の応答で決まり、説明は attach の応答にあるので、attach を先に行う。shim は `HubClient.primeAttach` で上限 3 秒だけ待ち、取れた Attachment を `start` 後の `run` がそのまま使う (二重に attach しない)。時間切れや失敗なら説明なしで起動し、attach は従来どおり `run` が受け持つ (Hub が止まっていても shim は上がる)。
+  - 理由: 説明を後から別の経路で渡す案は、クライアントがそれを読むかが公式資料に無い。先に attach するのは Hub の既存の動きだけで足りる。代償は、initialize まで stream が開かず、その間は Hub の猶予 (15 秒) に頼ること。Claude Code の起動から initialize までの時間は未計測で、猶予内に収まる前提。実セッションで確かめる。
+  - initialize の前に正常に終了したとき (stdin が閉じた、SIGINT) は、`stop` が attachment を `DELETE` で解放する。kill されたときは従来どおり猶予切れで detach する。
 - **配送の手段を変えても正本は Hub に置く**: Claude 向けの配送を公式 cross-session messaging に移す場合も (§8.3)、それは Claude 用の配信アダプタの 1 つとして扱い (§3.9)、Mailbox・role・購読・未読は Hub が持ち続ける。
 
 未検証の最大の点は、**Claude 以外のエージェントがアイドル中に自分から `inbox()` を呼べるか** (§6.2-2)。起こす手段がなければ、当面は人間が一声かけて取りに行かせる運用になる。
@@ -565,6 +569,9 @@ AI との共同開発で効果があったのは、結局ドキュメントの�
 4. **Channels の `meta` 属性値のエスケープ (未検証)**: `toChannelParams` は `meta` の JSON 文字列を `"` `<` `>` `&` を変換せずに渡す (`escapeAttr` は polling 経路だけ)。公式資料 (§6.1) にも §6.1c の実機確認にも、属性値のエスケープの記載はない。確認済みなのは本文の `</channel>` だけ (§6.1c)。
    **暫定の制限**: 確認するまで、Channels に載せる `meta` は `files` の既知のキー (`id` `mime` `size` `width` `height` `path` `error`) だけにする (`channelMeta` in `src/shared/format.ts`)。ほかのキーと送り手の `meta` は `inbox()` (`<hub-message>`) からだけ読める。値は変換しない。確認できたら制限を外す。
    Claude Code が属性値を自分でエスケープするなら、こちらでも変換すると二重になる。そのため変換は保留している。確認方法: プローブを起動し、`GET /case/attr` で `probe_quote: 'a"b<c>&d'` を付けた通知を送る。セッションで「直前の channel 通知のタグを一字一句 probe_note に書き写して」と頼み、`note` の `probe_quote` が `a"b<c>&d` のまま見えるか、`&quot;` などに変換されたか、属性が途中で切れていないかを記録する。結果に応じて `escapeAttr` を meta にも使うか、そのままにするかを決め、ここに結果を書く。
+
+5. **role の説明が Claude Code の instructions として働くか (未検証、2026-10-17)**: `HUB_ROLE=<定義済みの role>` で起動した shim の instructions に説明が入ることは、テスト (`src/shim/role-instructions.test.ts`) で確認した。
+   実セッションで、その説明に沿って振る舞うか、`roles.json` の role が `to: role` 宛てと既定購読で届くかは未確認。確かめるまで roadmap の P2 項目は未完了のまま。
 
 ## 7. MCP Events (SEP-3415) との関係
 

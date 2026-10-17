@@ -53,9 +53,12 @@
   }
 }
 ```
-- パスは `HUB_ROLES_FILE` (既定 `./roles.json`)。Hub 起動時に読み、変更は再起動で反映する (P2 で再読み込みを検討)。
-- `description` は shim が MCP の `instructions` に差し込む。
-- 定義にない role での attach は 400。
+- パスは `HUB_ROLES_FILE` (既定はリポジトリ直下の `roles.json`。相対パスは起動したフォルダから解決する)。Hub 起動時に 1 度だけ読み、変更は再起動で反映する。見本は `roles.example.json`。
+- 項目: `description` (必須、文字列) と `subscribe` (必須、トピック名の配列。Mailbox 名と同じ規則)。**それ以外の項目は読み捨てず保持する**。後でメッセージの形の宣言 (design.md §3.11) を足すときに形を変えずに済ませるため。今の Hub は参照しない。
+- 形が違うとき (JSON として読めない、role 名や topic 名が規則に合わない、必須の項目がない・型が違う) は、Hub が起動時に止まり、ファイル名と場所を出す。黙って既定に戻さない。
+- ファイルがないときは P0 と同じ動きをする (role 名は検証せず、既定購読も説明もない)。
+- `description` は shim が MCP の `instructions` に差し込む (attach の `roleDescription`。shim は initialize より前に attach して取る。design.md §3.7)。
+- 定義にない role での attach は 400 `unknown_role` (ファイルがあるとき)。
 
 ### Attachment (一時的なセッション接続)
 ```json
@@ -145,7 +148,7 @@
 | POST | `/messages` | Message を作成して配信 (宛先は `to`)。body は `kind` / `to` / `body` / `replyTo?`。応答は 201 で、作成した Message に `recipients` (配信先 Mailbox 名の配列。未接続も含む) を足したもの。`recipients` は応答にだけ付き、Message には保存しない。`user` 宛て以外で空なら誰にも届いていない (受理はする)。`replyTo` が存在しなければ 400。本文上限 1MB (超えると 413 `payload_too_large`) |
 | GET | `/messages?after=<seq>&limit=<n>` | 履歴取得 (`limit` 既定 100、最大 1000)。応答 `{ "messages": [...], "lastSeq": <seq> }` |
 | GET | `/mailboxes` | Mailbox 一覧 (role・実効購読・未読数・Attachment の状態) |
-| GET | `/roles` | role 定義の一覧 |
+| GET | `/roles` | role 定義の一覧 (**未実装**。P2 で roles.json の読み込みは入ったが、この API はまだない。必要になったら足す) |
 | DELETE | `/mailboxes/:name` | Mailbox を削除し、応答は 200 `{}`。購読・role・cursor・未読の状態を消す。Message のログは消さない。接続中 (attach 中) の Mailbox は削除せず 409 `mailbox_attached` (先に detach する)。未知の名前は 404 `mailbox_not_found`。SSE `mailbox.deleted` (`{ name }`) を流す。同名で作り直すと cursor は削除時点の `seq` から始まる (§2) |
 
 ### UI 向け
@@ -207,7 +210,9 @@
 - Attachment は Hub のメモリにだけあり、永続化しない。Hub の再起動後は stream / ack が 404 (`attachment_not_found`) になるので、shim は attach し直す。
   attach し直したら、stream の `after` は応答の `cursor` から数え直す (`data/` を消した Hub では seq が 1 から振り直されるため、前の Hub の seq を使わない)。
   `terminated` を受け取った後は attach し直さない (取り返しの応酬を避ける)。
-- **P0 の範囲**: role 名は `roles.json` と照合せず受け付け、`roleDescription` は常に `null`。リースは値を返すだけで期限切れを判定しない。`maxAgeMs` は受け取るが切り捨てはしない (`truncated: false`)。いずれも P2。
+- **role の検証**: `roles.json` があるとき、定義にない role は 400 `unknown_role` で拒み、Mailbox も作らない。`role` を省いた (undefined) ときと `null` は通す (`null` は role を外す)。`roles.json` がないときは role 名を照合せず受け付ける (P0 と同じ)。
+- **`roleDescription`**: 持っている role の `description`。定義がない・role がない・`roles.json` がないときは `null`。
+- **P2 で残っている範囲**: リースは値を返すだけで期限切れを判定しない。`maxAgeMs` は受け取るが切り捨てはしない (`truncated: false`)。
 
 #### stream
 
@@ -221,6 +226,7 @@
 
 - `GET /mailboxes`: `{ "mailboxes": [Mailbox + { "effectiveSubscriptions", "unread": <件数>, "attachment": Attachment | null }] }`
 - `PUT` / `DELETE /mailboxes/:name/subscriptions/:topic`: `{ "subscriptions": [...], "effectiveSubscriptions": [...] }`。Mailbox がなければ 404
+- `DELETE` で外せるのは**個別購読だけ**。role の既定購読 (`roles.json` の `subscribe`) のトピックは外れず、`effectiveSubscriptions` に残る。応答の形は変えていない。残ったかどうかは `effectiveSubscriptions` で分かる (shim の `unsubscribe` ツールは、残ったときに `note` を足す)。
 - `POST /attachments/:id/ack`: `{ "cursor": <進めた後の値> }`。`cursor` は後退せず、採番済みの `seq` を超えない
 
 #### shim 向け SSE の `event:` 名
@@ -332,10 +338,11 @@ Claude 側では次のように見える:
 
 ## 7. UI ↔ Hub のイベント種別 (SSE `event:` 名)
 
-`event` (検知イベント), `message`, `mailbox.created`, `mailbox.deleted`, `attachment.attached`, `attachment.detached`, `attachment.superseded`, `subscription.changed`
+`event` (検知イベント), `message`, `mailbox.created`, `mailbox.deleted`, `mailbox.acked`, `attachment.attached`, `attachment.detached`, `attachment.superseded`, `subscription.changed`
 
 - `event` は記録した Event (§2)。重複 (`duplicate: true`) と取り込まなかったものは流さない。
 - `mailbox.created` は作成された Mailbox (`name` `role` `createdAt` `subscriptions` `cursor` `attachment`。作成直後なので `attachment` は null)。`mailbox.deleted` は `{ "name": "<名前>" }`。UI は両方で一覧を取り直す。
+- `mailbox.acked` は `{ "name": "<名前>", "cursor": <進めた後の値> }`。`POST /attachments/:id/ack` で cursor が実際に進んだときだけ流す (同じ値・後退では流さない)。未読数が減るのはこのとき。UI は一覧を取り直す。古い UI は知らない名前として無視し、古い Hub は送らないので、どちらの組み合わせでも壊れない。
 
 ## 8. MCP Events (SEP-3415) との語彙対応
 

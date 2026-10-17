@@ -166,6 +166,26 @@ describe('再送と ack', () => {
     assert.equal((await call('POST', '/attachments/at_none/ack', { upTo: 1 })).status, 404)
     assert.equal((await call('GET', '/attachments/at_none/stream')).status, 404)
   })
+
+  it('cursor が進んだときだけ mailbox.acked を UI に流す (payload は { name, cursor })', async () => {
+    const hub = new Hub(new Store())
+    const app = createApp({ hub, token: TOKEN, uiHtml: async () => null, heartbeatMs: 50 })
+    const events: { event: string; data: unknown }[] = []
+    hub.onUi((e) => events.push(e))
+    const call = (method: string, path: string, body?: unknown) =>
+      app.request(path, { method, headers: auth, body: body === undefined ? undefined : JSON.stringify(body) })
+    const a = (await (await call('POST', '/mailboxes/x/attach', { client: 'claude-code' })).json()) as AttachResult
+    const m1 = (await (await call('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'x' }, body: 'one' })).json()) as Message
+    const acked = () => events.filter((e) => e.event === 'mailbox.acked')
+
+    await call('POST', `/attachments/${a.attachmentId}/ack`, { upTo: m1.seq })
+    assert.deepEqual(acked(), [{ event: 'mailbox.acked', data: { name: 'x', cursor: m1.seq } }])
+
+    // 進まない ack (同じ値・後退) は流さない
+    await call('POST', `/attachments/${a.attachmentId}/ack`, { upTo: m1.seq })
+    await call('POST', `/attachments/${a.attachmentId}/ack`, { upTo: 0 })
+    assert.equal(acked().length, 1)
+  })
 })
 
 describe('takeover と detach', () => {

@@ -2,6 +2,7 @@
 import { isValidName, mailboxFromFolder, type Attachment, type HubEvent, type Mailbox, type Message, type PostMessageInput, type Sender } from '../shared/types.js'
 import { fromClaudeCodeHook } from './events.js'
 import { newId } from './ids.js'
+import type { Roles } from './roles.js'
 import type { Store } from './store.js'
 
 export class HubError extends Error {
@@ -60,6 +61,8 @@ export interface HubOptions {
   now?: () => Date
   // stream が開かれていない Attachment をこの時間で detach する。shim の kill (Windows では終了処理が走らない) に備える
   disconnectGraceMs?: number
+  // roles.json の内容。null (ファイルなし) なら role 名を検証せず、説明も返さない
+  roles?: Roles | null
 }
 
 export class Hub {
@@ -72,12 +75,14 @@ export class Hub {
   private readonly sessionMailbox = new Map<string, string>()
   private readonly now: () => Date
   private readonly disconnectGraceMs: number
+  private readonly roles: Roles | null
 
   constructor(
     readonly store: Store,
     opts: HubOptions = {},
   ) {
     this.now = opts.now ?? (() => new Date())
+    this.roles = opts.roles ?? null
     this.disconnectGraceMs = opts.disconnectGraceMs ?? 15_000
   }
 
@@ -193,6 +198,10 @@ export class Hub {
 
   // 冪等。未読は Mailbox の cursor から再送されるので、attach し直しても失われない
   attach(name: string, input: AttachInput): AttachResult {
+    // 定義にない role は拒む (typo で黙って何も届かない事故を防ぐ)。role を省いた (undefined) と null は通す
+    if (this.roles && typeof input.role === 'string' && !this.roles.has(input.role)) {
+      throw new HubError(400, 'unknown_role', `role ${input.role} は roles.json にない`)
+    }
     const { mailbox, created } = this.store.ensureMailbox(name, input.role)
     if (created) this.emitUi('mailbox.created', mailbox)
 
@@ -219,7 +228,7 @@ export class Hub {
     return {
       attachmentId: at.attachmentId,
       role: mailbox.role,
-      roleDescription: null,
+      roleDescription: (mailbox.role && this.roles?.get(mailbox.role)?.description) || null,
       cursor: mailbox.cursor,
       truncated: false,
       skipped: 0,
@@ -281,8 +290,13 @@ export class Hub {
     }
   }
 
+  // cursor が実際に進んだときだけ mailbox.acked を UI に流す (未読数が変わるのはこのとき)
   ack(attachmentId: string, upTo: number): number {
-    return this.store.advanceCursor(this.mustAttachment(attachmentId).mailbox, upTo)
+    const name = this.mustAttachment(attachmentId).mailbox
+    const before = this.mustMailbox(name).cursor
+    const cursor = this.store.advanceCursor(name, upTo)
+    if (cursor > before) this.emitUi('mailbox.acked', { name, cursor })
+    return cursor
   }
 
   cursorOf(attachmentId: string): number {

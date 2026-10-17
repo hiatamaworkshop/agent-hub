@@ -15,14 +15,19 @@ const log = (msg: string) => process.stderr.write(`[agent-hub shim] ${msg}\n`)
 const cfg = loadConfig()
 if (!cfg.token) log('HUB_TOKEN が未設定。agent-hub の .env か環境変数で設定すること')
 
-const server = new Server(
-  { name: 'agent-hub', version: '0.0.1' },
-  { capabilities: { experimental: CHANNEL_CAPABILITY, tools: {} }, instructions: channelInstructions(cfg.mailbox, cfg.role) },
-)
-
 // 添付画像は配信の直前に取得し、path / error を足す (元のメッセージは書き換えない)
 const fileCtx = { hubUrl: cfg.hubUrl, token: cfg.token, baseDir: cfg.filesDir, mailbox: cfg.mailbox, log }
-const hub = new HubClient(cfg, async (m) => pushToChannel(server, await resolveFiles(m, fileCtx), cfg.mailbox), log)
+const hub = new HubClient(cfg, async (m: Message): Promise<void> => pushToChannel(server, await resolveFiles(m, fileCtx), cfg.mailbox), log)
+
+// role の説明は instructions (initialize の応答) に入るので、それより前に attach して取る。待ちは上限付きで、
+// 過ぎたら説明なしで起動する (Hub が止まっていても shim は立ち上がる)。design.md §3.7
+const PRIME_ATTACH_MS = 3000
+const primed = cfg.token ? await hub.primeAttach(PRIME_ATTACH_MS) : undefined
+
+const server = new Server(
+  { name: 'agent-hub', version: '0.0.1' },
+  { capabilities: { experimental: CHANNEL_CAPABILITY, tools: {} }, instructions: channelInstructions(cfg.mailbox, cfg.role, primed?.roleDescription ?? null) },
+)
 
 // "mailbox:rev-a" のような表記 (channel の from / to と同じ) を Address にする
 function parseAddress(s: string): Address {
@@ -57,7 +62,7 @@ const tools = [
   },
   {
     name: 'unsubscribe',
-    description: 'トピックの個別購読を解除する',
+    description: 'トピックの個別購読を解除する。role の既定購読 (roles.json) は解除されない',
     inputSchema: { type: 'object', properties: { topic: { type: 'string' } }, required: ['topic'] },
   },
   {
@@ -106,7 +111,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolRes
       case 'unsubscribe': {
         const { topic } = topicArgs.parse(args)
         const method = req.params.name === 'subscribe' ? 'PUT' : 'DELETE'
-        return text(await hub.request(method, `/mailboxes/${cfg.mailbox}/subscriptions/${encodeURIComponent(topic)}`))
+        const r = await hub.request<{ effectiveSubscriptions: string[] }>(method, `/mailboxes/${cfg.mailbox}/subscriptions/${encodeURIComponent(topic)}`)
+        // Hub は個別購読だけを外す。role の既定として残っているトピックは、残ったことを伝える
+        if (method === 'DELETE' && r.effectiveSubscriptions.includes(topic)) {
+          return text({ ...r, note: `${topic} は role の既定購読 (roles.json) なので解除されない` })
+        }
+        return text(r)
       }
       case 'whoami': {
         let mailbox: (Mailbox & { effectiveSubscriptions: string[]; unread: number }) | undefined

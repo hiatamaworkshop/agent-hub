@@ -647,13 +647,18 @@ function group(label, values) {
   return g
 }
 
+// 古い Hub は effectiveSubscriptions を返さないので、無ければ購読なしとして扱う
+function subscriptionsOf(mb) {
+  return Array.isArray(mb.effectiveSubscriptions) ? mb.effectiveSubscriptions : []
+}
+
 function buildTo(mailboxes) {
   const sel = $('to')
   const prev = sel.value
   const roles = new Set(), topics = new Set()
   for (const mb of mailboxes) {
     if (mb.role) roles.add(`role:${mb.role}`)
-    for (const t of mb.effectiveSubscriptions) topics.add(`topic:${t}`)
+    for (const t of subscriptionsOf(mb)) topics.add(`topic:${t}`)
   }
   sel.textContent = ''
   // 何も選ばれていない状態 (自動で決まる候補がない) を示す。値は空で、Send では拒否する
@@ -689,7 +694,7 @@ function initialTo(mailboxes) {
     if (!mb.attachment) continue
     live.add(`mailbox:${mb.name}`)
     if (mb.role) live.add(`role:${mb.role}`)
-    for (const t of mb.effectiveSubscriptions) live.add(`topic:${t}`)
+    for (const t of subscriptionsOf(mb)) live.add(`topic:${t}`)
   }
   const last = readLastTo()
   if (last && live.has(last)) return last
@@ -1020,9 +1025,11 @@ function renderMailboxes(mailboxes) {
     box.append(title)
     const meta = [mb.attachment ? `Connected (${mb.attachment.client})` : 'Disconnected']
     if (mb.role) meta.push(`role: ${mb.role}`)
-    meta.push(`${mb.unread} unread`)
+    // unread が無い古い Hub では未読の項目を出さない (undefined unread と出さないため)
+    if (typeof mb.unread === 'number') meta.push(`${mb.unread} unread`)
     box.append(el('div', 'meta', meta.join(' · ')))
-    if (mb.effectiveSubscriptions.length) box.append(el('div', 'meta', `Subscribed: ${mb.effectiveSubscriptions.join(', ')}`))
+    const subs = subscriptionsOf(mb)
+    if (subs.length) box.append(el('div', 'meta', `Subscribed: ${subs.join(', ')}`))
     // 直近の検知イベント。状態の推定はせず、最後に届いたものをそのまま出す
     const ev = lastEventByMailbox.get(mb.name)
     if (ev) box.append(el('div', `status${WAITING.has(ev.kind) ? ' waiting' : ''}`, `Last event: ${EVENT_LABEL[ev.kind] || ev.kind} · ${time(ev.ts)}`))
@@ -1164,7 +1171,8 @@ function connect() {
     renderEvent(JSON.parse(e.data), true)
     if (mailboxList.length) renderMailboxes(mailboxList)
   })
-  for (const ev of ['mailbox.created', 'mailbox.deleted', 'attachment.attached', 'attachment.detached', 'attachment.superseded', 'subscription.changed']) {
+  // mailbox.acked は未読数が減ったときに届く (古い Hub は送らないので、その場合は何も起きない)
+  for (const ev of ['mailbox.created', 'mailbox.deleted', 'mailbox.acked', 'attachment.attached', 'attachment.detached', 'attachment.superseded', 'subscription.changed']) {
     es.addEventListener(ev, () => refreshMailboxes())
   }
   return es

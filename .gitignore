@@ -6,6 +6,8 @@ dist/
 .env
 .env.*
 !.env.example
+# role 定義は環境ごとの設定。見本は roles.example.json (コミットする)
+/roles.json
 
 # ランタイムのログ・データ (イベントログ、未読キュー、SQLite など)
 logs/

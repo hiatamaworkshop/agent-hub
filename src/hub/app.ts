@@ -42,7 +42,7 @@ function invalid(c: Context, error: z.ZodError | string) {
 
 const attachSchema = z.object({
   client: z.string().min(1).max(64).default('other'),
-  // P0 では roles.json を読まないので role 名は検証しない (P2)
+  // 形だけ検証する。roles.json にあるかは Hub が見る (unknown_role, protocol.md §3)
   role: nameSchema.nullable().optional(),
   sessionId: z.string().min(1).max(256).optional(),
   cwd: z.string().max(4096).optional(),
