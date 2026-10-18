@@ -1,0 +1,12 @@
+node_modules
+dist
+data
+logs
+.env
+.env.*
+.git
+.claude
+roles.json
+docs
+tools
+*.log

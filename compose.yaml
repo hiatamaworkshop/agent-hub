@@ -1,0 +1,33 @@
+# Hub の常駐運用 (design.md §3.8)。shim / hooks はホストで動き、同じ .env の HUB_TOKEN を使う
+services:
+  hub:
+    build: .
+    image: agent-hub
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    # .env の HUB_HOST / HUB_DATA_DIR / HUB_ROLES_FILE は直接起動向けなので、コンテナ内の値で上書きする
+    environment:
+      HUB_HOST: 0.0.0.0
+      # コンテナ内も同じポートで listen する (ログの UI の URL がホストから開けるものになる)
+      HUB_PORT: ${HUB_PORT:-7777}
+      HUB_DATA_DIR: /data
+      HUB_ROLES_FILE: /host/roles.json
+    ports:
+      # 127.0.0.1: を外すと全インターフェースに公開される。外さないこと
+      - "127.0.0.1:${HUB_PORT:-7777}:${HUB_PORT:-7777}"
+    volumes:
+      - hub-data:/data
+      # roles.json はリポジトリ直下ごと読み取り専用で見せる。ファイル単体を bind mount (configs も同じ) すると、
+      # ファイルがないとき Docker Desktop がホストに空のディレクトリを作り、直接起動まで壊れるため。
+      # ないときは直接起動と同じく role なしで動く
+      - ./:/host:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+process.env.HUB_PORT+'/mailboxes',{headers:{authorization:'Bearer '+process.env.HUB_TOKEN}}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  hub-data:

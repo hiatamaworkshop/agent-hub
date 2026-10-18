@@ -24,7 +24,7 @@
 
 - **P0** (1 セッションで往復する) と **P1** (質問待ち・許可待ち・ターン終了の検知) は完了し、実セッションで受け入れ条件を確かめた。
 - **P2** (複数セッション・交代・メッセージパッシング) は進行中。複数 Mailbox の同時接続、role (`roles.json`)、交代 (takeover)、古い未読の流し込みの上限、無編集転送 (Forward / Relay)、`inbox` の polling 経路と、クライアントによる経路の切り替えまで実装済み。
-  残りは配送の状態の名付け、「起こすだけ」の配信アダプタ、永続化の見直し、Docker 化など ([docs/roadmap.md](docs/roadmap.md))。
+  配送の状態の名付け、保存期間、Docker (compose) での常駐も済み。残りは「起こすだけ」の配信アダプタ、永続化の見直しなど ([docs/roadmap.md](docs/roadmap.md))。
 - `inbox` 経路は Claude Code 以外の実クライアント (Codex など) ではまだ試していない (テストの MCP クライアントでのみ確認)。
 
 設計は [docs/design.md](docs/design.md) から読む。Channels・hook の仕様は公式資料と実機で確認済み (design.md §6.1〜6.1j)。MCP Events (SEP-3415, Draft) との関係は design.md §7。
@@ -49,6 +49,19 @@ npm run hub
 
 `[hub] UI: http://127.0.0.1:7777/?token=…` が表示されるので、その URL をブラウザで開く。
 トークンは cookie に移され、URL からは消える。データは `data/hub.jsonl` に追記される (渡し終えたメッセージは 24 時間で消える。下の「メッセージの保存期間と削除」)。
+
+#### Docker で常駐させる (直接起動の代わり)
+
+```powershell
+docker compose up -d --build
+docker compose logs hub      # UI の URL (トークン付き) が出る
+```
+
+- 載るのは Hub だけ。shim と hooks はホストで動き、同じ `.env` の `HUB_TOKEN` と `HUB_PORT` を使う。
+- 公開は `127.0.0.1:<HUB_PORT>` だけ (ホスト以外からは届かない)。`restart: unless-stopped` で Docker の起動とともに立ち上がる。
+- データは volume `hub-data` に置かれ、リポジトリの `data/` とは別物になる。`docker compose down -v` で消える。
+- `roles.json` はリポジトリ直下のものを読む (読み取り専用)。変えたら `docker compose restart`。
+- 直接起動の Hub と同じポートで同時には動かせない。どちらか一方にする。
 
 ### 3. Claude Code を channel 有効で起動する (ターミナル B、リポジトリ直下)
 

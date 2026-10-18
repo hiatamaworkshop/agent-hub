@@ -269,6 +269,11 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 - トークンは起動時の自動生成ではなく `HUB_TOKEN` (`.env`) で固定し、ホスト側の shim/hooks と共有する。
 - Hub はホストのファイル (hook ペイロードの `transcript_path` など) を読まない。`Stop` の入力には `last_assistant_message` が含まれるので、最終応答の表示には足りる。どちらの実行形態でも同じ挙動になる。
 - Hub のコードは bind 先・ポート・トークン・データの保存先を環境変数で受け取るだけにし、どちらの形態でも動くようにする。
+- compose (`compose.yaml`、2026-10-18):
+  - `.env` を `env_file` で読み、`HUB_HOST` / `HUB_DATA_DIR` / `HUB_ROLES_FILE` だけコンテナ内の値で上書きする。`HUB_PORT` はホストとコンテナで同じ値を使う (ログに出る UI の URL がそのまま開ける)。
+  - `roles.json` はリポジトリ直下を `/host` に読み取り専用で mount して読む。ファイル単体の bind mount (`configs` も同じ) は、ファイルがないと Docker Desktop がホストに空のディレクトリを作り、直接起動まで壊すため (§6.1l)。ないときは直接起動と同じく role なしで動く。
+  - データは名前付き volume。リポジトリの `data/` とは共有しない (直接起動との切り替えで状態は引き継がれない)。
+  - `init: true` で SIGTERM を Node に届け、停止を待たせない。healthcheck は `GET /mailboxes` をトークン付きで呼ぶ。
 
 ### 3.9 配信アダプタ (起こす / 中身を渡す)
 
@@ -627,10 +632,16 @@ AI との共同開発で効果があったのは、結局ドキュメントの�
 - `/mcp` の一覧にプローブが出なかった (ユーザーの観察)。接続はしていた (`tools/list` が届いた)。
 - **帰結**: channel 経路で「書き込めた」ことは「届いた」ことの証拠にならず、起動の仕方も検出できない。shim が書き込みの直後に ack する今のやり方では、channel なしの起動で未読が失われる (§3.7)。配送の状態を分けて扱う (roadmap P2) ことで対処する。
 
+### 6.1l Docker Desktop での Hub (2026-10-18、Docker 29.8.2 / Windows 11、`node:24-bookworm-slim`)
+
+別のプロジェクト名 (`-p agenthub-test`) とポート 7796 で compose を起動して確かめた。
+- **ループバックだけに公開される**: `127.0.0.1:7796` は 200、ホストの LAN (192.168.0.x) と WSL の vEthernet (172.31.x) のアドレスからは接続できなかった。
+- ホストの shim (`dist/shim/main.js`) が attach し、hook (`tools/hooks/post-event.mjs`) の Event が記録された。画像の添付 (sharp) も動いた。`down` → `up` で volume のメッセージが残り、`lastSeq` が続いた。
+- **ファイル単体の mount はホストに空のディレクトリを作る**: `./roles.json` がないとき、long syntax の `bind.create_host_path: false` を付けても、top-level の `configs` (`file:`) にしても、Docker Desktop はホストに `roles.json` という空のディレクトリを作って起動した。Hub は EISDIR で止まり、restart で繰り返す。そのため親ディレクトリを mount する形にした (§3.8)。
+
 ### 6.2 未検証
 
-1. **Windows 固有**: パス表記、改行コード。daemon の常駐は Docker (§3.8) で解決する見込み。
-   Docker Desktop (WSL2) で `ports: "127.0.0.1:7777:7777"` がホストのループバックだけに公開されることを確認する。
+1. **Windows 固有**: パス表記、改行コード。Docker Desktop で公開がループバックだけになることは確認した (§6.1l)。
 2. **Codex 側の MCP 対応状況**: `inbox()` polling が使えるか。
 3. **代替の配信経路: plugin の monitor**。Hookdeck の mcp-events-bridge は Channels を使わず、plugin の monitor で poll クライアントを動かし、1 行出力を通知として Claude に届けている (Claude Code 2.1.275 以降)。開発用フラグと警告ダイアログが不要になる可能性がある。アイドル中のセッションを起こせるかを含めて比較する。
 4. **Channels の `meta` 属性値のエスケープ (未検証)**: `toChannelParams` は `meta` の JSON 文字列を `"` `<` `>` `&` を変換せずに渡す (`escapeAttr` は polling 経路だけ)。公式資料 (§6.1) にも §6.1c の実機確認にも、属性値のエスケープの記載はない。確認済みなのは本文の `</channel>` だけ (§6.1c)。
