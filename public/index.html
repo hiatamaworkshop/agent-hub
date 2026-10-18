@@ -1494,7 +1494,7 @@ function connect() {
   })
   es.addEventListener('event.deleted', (e) => removeEvents(JSON.parse(e.data).ids || []))
   // mailbox.acked は未読数が減ったときに届く (古い Hub は送らないので、その場合は何も起きない)
-  for (const ev of ['mailbox.created', 'mailbox.deleted', 'mailbox.acked', 'attachment.attached', 'attachment.detached', 'attachment.superseded', 'subscription.changed']) {
+  for (const ev of ['mailbox.created', 'mailbox.deleted', 'mailbox.acked', 'attachment.attached', 'attachment.updated', 'attachment.detached', 'attachment.superseded', 'subscription.changed']) {
     es.addEventListener(ev, () => refreshMailboxes())
   }
   return es

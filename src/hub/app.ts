@@ -40,8 +40,10 @@ function invalid(c: Context, error: z.ZodError | string) {
   return c.json({ error: 'invalid_request', issues: error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) }, 400)
 }
 
+const clientSchema = z.string().min(1).max(64)
+
 const attachSchema = z.object({
-  client: z.string().min(1).max(64).default('other'),
+  client: clientSchema.default('other'),
   // 形だけ検証する。roles.json にあるかは Hub が見る (unknown_role, protocol.md §3)
   role: nameSchema.nullable().optional(),
   sessionId: z.string().min(1).max(256).optional(),
@@ -52,6 +54,9 @@ const attachSchema = z.object({
   // attach し直しのとき、失った前の Attachment ID。後継がいれば 409 successor_attached (protocol.md §3)
   previous: z.string().min(1).max(64).optional(),
 })
+
+// initialize の後に分かったクライアント名だけを更新する (protocol.md §3)
+const attachmentPatchSchema = z.object({ client: clientSchema }).strict()
 
 // received: 受け手が受け取ったと言える範囲 (inbox で返した最初と最後の seq)。省略は「渡した」だけ (protocol.md §4)
 const seqSchema = z.number().int().nonnegative()
@@ -241,6 +246,12 @@ export function createApp(opts: AppOptions) {
     const parsed = ackSchema.safeParse(await readJson(c))
     if (!parsed.success) return invalid(c, parsed.error)
     return c.json(hub.ack(c.req.param('id'), parsed.data.upTo, parsed.data.received))
+  })
+
+  app.patch('/attachments/:id', async (c) => {
+    const parsed = attachmentPatchSchema.safeParse(await readJson(c))
+    if (!parsed.success) return invalid(c, parsed.error)
+    return c.json(hub.updateAttachment(c.req.param('id'), parsed.data))
   })
 
   // リース延長。stream を開いていないクライアント向け (開いている間はリースが切れない)

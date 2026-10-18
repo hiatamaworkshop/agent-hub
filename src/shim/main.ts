@@ -48,6 +48,7 @@ const server = new Server(SERVER_INFO, { capabilities: CAPABILITIES })
 server.setRequestHandler(InitializeRequestSchema, (req) => {
   const route: Route = routeFor(req.params.clientInfo?.name)
   hub.setPush(route === 'channel')
+  if (req.params.clientInfo?.name) hub.setClient(req.params.clientInfo.name)
   log(`client=${req.params.clientInfo?.name ?? '?'} route=${route}`)
   const requested = req.params.protocolVersion
   return {

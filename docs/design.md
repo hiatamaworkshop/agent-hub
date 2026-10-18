@@ -251,6 +251,7 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 - **「本文はデータ」の守りは agent-hub 側だけで成り立たせる**: Claude Code は channel 由来の内容に注意書きを自動で付けるが (§6.1c)、他のクライアントは付けない。`<hub-message>` の包みと instructions の文面だけで足りるように書く。
 - **role の説明は MCP の instructions で渡す**: `roles.json` の `description` を shim が instructions に差し込む (§3.5、P2)。Claude の起動フラグ (`--append-system-prompt-file`。`tools/dev/` の試験用) には頼らない。instructions をどう使うかはクライアント次第。Claude Code では説明に沿って振る舞うことを確かめた (§6.2-5)。
   - **決定 (2026-10-17): initialize より前に attach して説明を取る**。`instructions` は `initialize` の応答で決まり、説明は attach の応答にあるので、attach を先に行う。shim は `HubClient.primeAttach` で上限 3 秒だけ待ち、取れた Attachment を `start` 後の `run` がそのまま使う (二重に attach しない)。時間切れや失敗なら説明なしで起動し、attach は従来どおり `run` が受け持つ (Hub が止まっていても shim は上がる)。
+    この attach では `clientInfo.name` がまだ分からないので `client: "claude-code"` で名乗り、initialize の後に `PATCH /attachments/:id` で直す (2026-10-18)。以後の attach し直しは分かった名前で名乗る。
   - 理由: 説明を後から別の経路で渡す案は、クライアントがそれを読むかが公式資料に無い。先に attach するのは Hub の既存の動きだけで足りる。代償は、initialize まで stream が開かず、その間は Hub の猶予 (15 秒) に頼ること。Claude Code の起動から initialize までの時間は未計測で、猶予内に収まる前提。実セッションで確かめる。
   - initialize の前に正常に終了したとき (stdin が閉じた、SIGINT) は、`stop` が attachment を `DELETE` で解放する。kill されたときは従来どおり猶予切れで detach する。
 - **配送の手段を変えても正本は Hub に置く**: Claude 向けの配送を公式 cross-session messaging に移す場合も (§8.3)、それは Claude 用の配信アダプタの 1 つとして扱い (§3.9)、Mailbox・role・購読・未読は Hub が持ち続ける。

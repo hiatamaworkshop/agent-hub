@@ -251,6 +251,33 @@ describe('GET /mailboxes/:name/inbox', () => {
   })
 })
 
+describe('PATCH /attachments/:id', () => {
+  it('client を更新し、変わったときだけ attachment.updated を流す。未知の id は 404、client 以外のキーは 400', async () => {
+    const { hub, app } = setup()
+    const at = (await (await app.request('/mailboxes/mb-a/attach', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...bearer },
+      body: JSON.stringify({ client: 'claude-code' }),
+    })).json()) as { attachmentId: string }
+    const events: string[] = []
+    hub.onUi((e) => events.push(e.event))
+    const patch = (id: string, body: unknown) =>
+      app.request(`/attachments/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json', ...bearer }, body: JSON.stringify(body) })
+
+    const res = await patch(at.attachmentId, { client: 'codex' })
+    assert.equal(res.status, 200)
+    assert.equal(((await res.json()) as { client: string }).client, 'codex')
+    const listed = (await (await app.request('/mailboxes', { headers: bearer })).json()) as { mailboxes: { name: string; attachment: { client: string } | null }[] }
+    assert.equal(listed.mailboxes.find((m) => m.name === 'mb-a')!.attachment!.client, 'codex')
+    assert.equal((await patch(at.attachmentId, { client: 'codex' })).status, 200)
+    assert.deepEqual(events, ['attachment.updated'])
+
+    assert.equal((await patch('at_unknown', { client: 'codex' })).status, 404)
+    assert.equal((await patch(at.attachmentId, { client: 'codex', role: 'x' })).status, 400)
+    assert.equal((await patch(at.attachmentId, { client: '' })).status, 400)
+  })
+})
+
 describe('GET /stream', () => {
   it('新着メッセージを SSE で流し、heartbeat を送る', async () => {
     const { app } = setup(20)

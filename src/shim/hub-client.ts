@@ -50,6 +50,9 @@ export class HubClient {
   private push = true
   // Attachment を失った (404) ときの ID。attach し直しで Hub に示し、後継がいれば取り返さない (design.md §3.3)
   private previousAttachment: string | undefined
+  // attach で名乗るクライアント名。initialize の clientInfo.name が分かるまでは claude-code とする
+  // (role の説明を取るため initialize より前に attach するので。setClient で直す)
+  private client = 'claude-code'
   private readonly seen = new Set<string>()
   private inflight: Promise<void> | undefined
   private stopped = false
@@ -84,6 +87,25 @@ export class HubClient {
   // initialize で経路が決まったら、start より前に呼ぶ
   setPush(on: boolean): void {
     this.push = on
+  }
+
+  // initialize で分かったクライアント名を Hub に伝える。attach 済みなら Attachment を更新し、以後の attach でも名乗る
+  setClient(name: string): void {
+    const client = name.slice(0, 64)
+    if (client.length === 0 || client === this.client) return
+    this.client = client
+    if (this.attachment) void this.sendClient()
+  }
+
+  private async sendClient(): Promise<void> {
+    const at = this.attachment
+    if (!at) return
+    try {
+      await this.request('PATCH', `/attachments/${at.attachmentId}`, { client: this.client })
+    } catch (e) {
+      // 表示だけの情報なので、失敗しても attach や配送は続ける (古い Hub はこの口を持たない)
+      this.log(`client の更新に失敗: ${e instanceof Error ? e.message : String(e)}`)
+    }
   }
 
   takeSkipped(): number {
@@ -163,8 +185,9 @@ export class HubClient {
 
   private async doAttach(): Promise<void> {
     this.attachment = undefined
+    const client = this.client
     const r = await this.request<AttachInfo & { superseded: string | null }>('POST', `/mailboxes/${this.cfg.mailbox}/attach`, {
-      client: 'claude-code',
+      client,
       ...(this.cfg.role ? { role: this.cfg.role } : {}),
       ...(this.cfg.sessionId ? { sessionId: this.cfg.sessionId } : {}),
       cwd: this.cfg.cwd,
@@ -172,6 +195,8 @@ export class HubClient {
     })
     this.attachment = r
     this.previousAttachment = undefined
+    // attach の途中で initialize が来て名前が変わっていたら直す
+    if (client !== this.client) void this.sendClient()
     // stream の after は Hub の cursor から数え直す。Hub の data/ を消して再起動すると seq が 1 から振り直されるため、
     // 前の Hub で覚えた seq を使うと attach 時の未読を黙って捨てる。ack 漏れで再送された分は id の重複除去で落ちる
     this.delivered = r.cursor

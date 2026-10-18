@@ -69,7 +69,7 @@
 {
   "attachmentId": "at_01H…",
   "mailbox": "rev-a",
-  "client": "claude-code | codex | other",
+  "client": "claude-code | codex | … (MCP の clientInfo.name。64 文字まで)",
   "sessionId": "… (環境変数 CLAUDE_CODE_SESSION_ID。なければ省略)",
   "cwd": "…",
   "attachedAt": "…",
@@ -187,6 +187,7 @@
 | POST | `/mailboxes/:name/attach` | Mailbox に attach (なければ作成)。下記参照 |
 | GET | `/attachments/:id/stream?after=<seq>` | SSE。Mailbox の未読を `seq` 順に流し、以後の新着も流す |
 | POST | `/attachments/:id/ack` | 受信確認。body: `{ "upTo": <seq>, "received"?: { "first": <seq>, "last": <seq> } }`。Mailbox の `cursor` を `upTo` まで進める。`received` は受け手が受け取ったと言える範囲 (`inbox` で返した最初と最後の `seq`) で、`received` の直後から続いている (間に確認のないこの Mailbox 宛てがない) ときだけ、Mailbox の `received` を `last` まで進める (§4) |
+| PATCH | `/attachments/:id` | body `{ "client": "<名前>" }` (1〜64 文字。ほかのキーは 400)。Attachment の `client` を更新し、更新後の Attachment を返す。値が変わったときだけ SSE `attachment.updated` を流す。shim は role の説明を取るため initialize より前に attach するので、`clientInfo.name` が分かった後にこれで直す。未知の id は 404 |
 | POST | `/attachments/:id/heartbeat` | リース延長。応答は `{ "leaseUntil": "…" }`。stream を開いていないクライアント向け (§4)。存在しない Attachment は 404 |
 | DELETE | `/attachments/:id` | detach (セッション終了時。Mailbox は残る) |
 | PUT | `/mailboxes/:name/subscriptions/:topic` | 購読 |
@@ -389,12 +390,13 @@ Claude 側では次のように見える:
 
 ## 7. UI ↔ Hub のイベント種別 (SSE `event:` 名)
 
-`event` (検知イベント), `message`, `message.deleted`, `event.deleted`, `mailbox.created`, `mailbox.deleted`, `mailbox.acked`, `attachment.attached`, `attachment.detached`, `attachment.superseded`, `subscription.changed`
+`event` (検知イベント), `message`, `message.deleted`, `event.deleted`, `mailbox.created`, `mailbox.deleted`, `mailbox.acked`, `attachment.attached`, `attachment.updated`, `attachment.detached`, `attachment.superseded`, `subscription.changed`
 
 - `message.deleted` / `event.deleted` は `{ "ids": ["…"] }`。手で消したときと、保存期間の掃除で消したときに流す (design.md §3.14)。UI はその id を表示から外す。古い UI は知らない名前として無視する (再読み込みで消える)。
 
 - `event` は記録した Event (§2)。重複 (`duplicate: true`) と取り込まなかったものは流さない。
 - `mailbox.created` は作成された Mailbox (`name` `role` `createdAt` `subscriptions` `cursor` `attachment`。作成直後なので `attachment` は null)。`mailbox.deleted` は `{ "name": "<名前>" }`。UI は両方で一覧を取り直す。
+- `attachment.updated` は更新後の Attachment (今は `client` の更新だけ)。UI は一覧を取り直す。古い UI は無視し (再読み込みで直る)、古い Hub は送らない。
 - `attachment.detached` は §3 の `detached` と同じ形 (Attachment + `detachedAt` + `reason`)。`attachment.superseded` は Attachment + `reason: "superseded"`。UI はどちらでも一覧を取り直す。
 - `mailbox.acked` は `{ "name": "<名前>", "cursor": <進めた後の値>, "received": <進めた後の値>, "unconfirmed": <件数> }`。ack・`replyTo` の返信・attach の放棄で `cursor` か `received` が実際に進んだときだけ流す (同じ値・後退では流さない)。未読数・unconfirmed の件数が変わるのはこのとき。UI は一覧を取り直す。古い UI は知らない名前として無視し、古い Hub は送らないので、どちらの組み合わせでも壊れない。
 

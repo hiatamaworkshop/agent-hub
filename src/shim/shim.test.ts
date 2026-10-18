@@ -486,6 +486,8 @@ describe('shim: Claude Code 以外のクライアント (inbox 経路)', () => {
       assert.match(instructions, /inbox ツールで取り出す/)
       assert.doesNotMatch(instructions, /<channel/)
       await until(async () => (JSON.parse((await call('whoami')).text) as { state: string }).state === 'attached')
+      // initialize より前に attach するので、clientInfo.name は後から Attachment に載る
+      await until(async () => hub.describeMailboxes().find((mb) => mb.name === 'poll-mb')?.attachment?.client === 'codex')
 
       const m = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'poll-mb' }, body: 'please review' }, { type: 'user', id: 'browser', role: null })
       // stream には流れるが、shim は渡さず ack もしない

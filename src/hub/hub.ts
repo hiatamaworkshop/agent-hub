@@ -395,6 +395,16 @@ export class Hub {
     this.endAttachment(attachmentId, 'closed')
   }
 
+  // attach の後に分かったクライアント名を記録する。shim は role の説明を取るため initialize より前に attach する (protocol.md §3)
+  updateAttachment(attachmentId: string, patch: { client: string }): Attachment {
+    const at = this.mustAttachment(attachmentId)
+    if (at.client !== patch.client) {
+      at.client = patch.client
+      this.emitUi('attachment.updated', at)
+    }
+    return at
+  }
+
   // リースを延ばす。応答は延ばした後の期限
   heartbeat(attachmentId: string): { leaseUntil: string } {
     this.mustAttachment(attachmentId)
