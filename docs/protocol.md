@@ -92,7 +92,7 @@
 }
 ```
 - `superseded` は takeover で切り離されたセッション (その後同じセッションで attach し直していない) からの Event にだけ付く。`mailbox` は解決したとおりだが、今その Mailbox にいるのは後継のセッション。切り離しの記録は Hub のメモリにだけあり、Hub の再起動後は付かない。
-- hook からは HTTP hook が入力 JSON をそのまま `POST /events` に送ってくる (design.md §6.1b)。Hub はそれを `payload` にそのまま入れ、変換で `kind` を決める。`source` は変換したクライアント (今は `claude-code` だけ) で、`payload` の形はこれで決まる。
+- hook からは HTTP hook が入力 JSON をそのまま `POST /events/<source>` に送ってくる (design.md §6.1b)。Hub はパスの `<source>` で変換を選び、入力を `payload` にそのまま入れ、変換で `kind` を決める。`source` は変換したクライアント (今は `claude-code` だけ) で、`payload` の形はこれで決まる。`<source>` のない `POST /events` は `claude-code` として扱う (パスで名乗る前に配った hook の設定のため)。
 - Claude Code の hook 用の変換 (`src/hub/events.ts`):
 
 | hook 入力 | `kind` |
@@ -110,7 +110,7 @@
   - UI は `turn.end` に `changed + untracked` の件数を出す。`changes` がなければ何も出さない。
 - `report_event` からは `kind` を明示して送る (`session.boundary` はこの経路用。`report_event` は後回し。design.md §3.4)。
 - Event は UI に出すだけで、トピックとして Mailbox には配信しない (design.md §9-2)。
-- 変換はクライアントごとに分けて持つ。他のクライアントの hook は、別の変換で同じ `kind` に揃える。Hub の保存形式は `kind` だけに依存する (design.md §3.7)。UI は表示の中身 (質問文など) を読むために `source` ごとに `payload` のキーを知る。
+- 変換はクライアントごとに分けて持つ (`src/hub/events.ts` の `CONVERTERS`)。他のクライアントの hook は、別の変換で同じ `kind` に揃え、自分の `<source>` のパスに送る。Hub の保存形式は `kind` だけに依存する (design.md §3.7)。UI は表示の中身 (質問文など) を読むために `source` ごとに `payload` のキーを知る。
 - `mailbox` は Hub が次の順で解決する: `payload.session_id` に対応する Mailbox (shim の attach の申告か、下の記録) → `X-Hub-Mailbox` ヘッダー (Mailbox 名の規則に合うときだけ) → `payload.cwd` のフォルダ名 (その名前の Mailbox があるときだけ)。解決できなければ空のまま UI に出す (design.md §3.4)。
   ヘッダーか cwd で解決できたら、その `session_id` を覚えて以後は第一手段で引く (Hub のメモリだけ。再起動したら shim の attach で戻る)。
 - `id` は上流に一意の値があるときだけ決定的に作る。今は `question` / `question.answered` だけで、`session_id` と `tool_use_id` から作る。同じ `id` が再び届いたら記録せず、`duplicate: true` を返す。
@@ -155,7 +155,7 @@
 ### 検知側 / 共通
 | メソッド | パス | 内容 |
 |---|---|---|
-| POST | `/events` | Event を登録。登録後 UI に SSE (`event`) で配信。HTTP hook の入力 JSON をそのまま受け付ける (ヘッダー `X-Hub-Mailbox` 任意)。応答は 200 で、取り込んだら `{ id, kind, mailbox, duplicate }`、取り込まなかったら `{ ignored: "<理由>" }` (`unsupported_hook` / `unsupported_tool` / `question_prompt` / `no_hook_event_name`)。hook の判断には関与しない。本文が JSON オブジェクトでなければ 400、1MB を超えると 413 `payload_too_large` |
+| POST | `/events/:source` | Event を登録。登録後 UI に SSE (`event`) で配信。HTTP hook の入力 JSON をそのまま受け付け、`:source` の変換で揃える (ヘッダー `X-Hub-Mailbox` 任意)。変換のない `:source` は 404 `unknown_source`。`POST /events` (`:source` なし) は `claude-code` と同じ。応答は 200 で、取り込んだら `{ id, kind, mailbox, duplicate }`、取り込まなかったら `{ ignored: "<理由>" }` (`unsupported_hook` / `unsupported_tool` / `question_prompt` / `no_hook_event_name`)。hook の判断には関与しない。本文が JSON オブジェクトでなければ 400、1MB を超えると 413 `payload_too_large` |
 | GET | `/events?limit=<n>` | 新しい方から `limit` 件 (既定 100、最大 1000) を古い順に返す。応答 `{ "events": [...] }` |
 | POST | `/messages` | Message を作成して配信 (宛先は `to`)。body は `kind` / `to` / `body` / `replyTo?`。応答は 201 で、作成した Message に `recipients` (配信先 Mailbox 名の配列。未接続も含む) を足したもの。`recipients` は応答にだけ付き、Message には保存しない。`user` 宛て以外で空なら誰にも届いていない (受理はする)。`replyTo` が存在しなければ 400。本文上限 1MB (超えると 413 `payload_too_large`) |
 | GET | `/messages?after=<seq>&limit=<n>` | 履歴取得 (`limit` 既定 100、最大 1000)。応答 `{ "messages": [...], "lastSeq": <seq> }` |

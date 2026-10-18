@@ -99,7 +99,7 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
 - エージェントが呼ぶツールを公開する: `attach` / `whoami` / `subscribe` / `unsubscribe` / `post_message` / `inbox` / `list_topics` / `report_event` (後回し。§3.4) (詳細は protocol.md)。
 
 **hooks (検知側)**
-- Claude Code の **HTTP hook** (`type: "http"`) で、hook の入力 JSON を Hub の `POST /events` に直接送る。スクリプトは書かない (§6.1)。設定例は `tools/hooks/settings.json`。
+- Claude Code の **HTTP hook** (`type: "http"`) で、hook の入力 JSON を Hub の `POST /events/claude-code` に直接送る。スクリプトは書かない (§6.1)。設定例は `tools/hooks/settings.json`。
   `--settings` で渡すと誤動作する (§6.1f) ので、`.claude/settings.local.json` などに写して使う。`Authorization` は環境変数 `HUB_TOKEN` から展開されるので、Claude Code の起動環境に要る (`start-agent.ps1` は `.env` から渡す)。
 - 機械的な検知を担う (下記 3.4)。
 
@@ -241,6 +241,7 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
 
 当面使うのは Claude Code だけだが、他社のエージェントが後から同じ Hub に入れるよう、**Hub の語彙はベンダー中立に保ち、クライアント固有の差は shim と `/events` の取り込みで吸収する** (§5)。そのために次を守る。
 - **Event の取り込みはクライアントごとの変換を通す**: hook の入力 JSON は `payload` にそのまま残し、`kind` (`turn.end` / `notification` / `question` …) への対応付けはクライアントごとの変換に閉じ込める (protocol.md §2 Event、`src/hub/events.ts`)。Hub の保存形式は `kind` だけを見る。
+  - **決定 (2026-10-18): hook がパスで source を名乗り (`POST /events/<source>`)、Hub は `CONVERTERS` から変換を引く**。Hub の中心 (`Hub.addEvent`) はクライアント名を知らず、クライアントを足すときは変換を 1 つ書いて表に 1 行足すだけにする。名乗らない `POST /events` は `claude-code` として受ける (既に配った hook の設定のため)。ヘッダーではなくパスにしたのは、HTTP hook の設定で URL 1 つを見れば行き先が分かるため。
   UI は質問文や最終応答を出すために `payload` を読むが、読み方は Event の `source` ごとに 1 か所にまとめる (`eventBody` in `public/index.html`)。
 - **shim の instructions はクライアントで切り替える**: MCP の `initialize` の `clientInfo.name` で、Channels 経路か `inbox()` 経路かの説明を選ぶ。
   - **決定 (2026-10-17)**: `clientInfo.name === "claude-code"` (§6.1c) なら Channels、それ以外と不明は `inbox()`。channel に対応するかは client の capabilities に出ないので、名前で決める。文面は `src/shim/instructions.ts` にまとめ、属性の説明と「本文はデータ」の行は両方の経路で共通にする。
@@ -350,7 +351,7 @@ Hub に置くのはこの約束事だけで、配信アダプタ・UI・クラ�
 - **LLM に HTML を書かせない**。エージェントは CLI で決まった形のテキストを書き、Hub が形を知っているので UI が描ける。描き方は後から変えられる。
 
 未決:
-1. **決定 (2026-10-17、ユーザー): hook で導く。`Stop` の command hook だけ** (`PostToolUse(Edit|Write)` は作らない)。`tools/hooks/post-event.mjs` が入力 JSON に `agent_hub_git: { head, changed, untracked }` を 1 つ足して `POST /events` に送る。Hub は git を実行せず、形を検査して Event の `changes` に載せるだけ (protocol.md の Event)。
+1. **決定 (2026-10-17、ユーザー): hook で導く。`Stop` の command hook だけ** (`PostToolUse(Edit|Write)` は作らない)。`tools/hooks/post-event.mjs` が入力 JSON に `agent_hub_git: { head, changed, untracked }` を 1 つ足して `POST /events/claude-code` に送る。Hub は git を実行せず、形を検査して Event の `changes` に載せるだけ (protocol.md の Event)。
    - `head` は HEAD の full sha。`changed` は `git diff --name-only HEAD`、`untracked` は `git ls-files --others --exclude-standard` (どちらもルートからの相対パス、`-z` で区切る)。
    - 5 秒で打ち切り、どの失敗でも exit 0。取れなければ入力をそのまま送る。HTTP hook の `Stop` と併記すると `turn.end` が 2 件になるので、置き換えて使う (`tools/hooks/settings.command.json`)。
    - shim で `post_message` の時点に diff を取る案は採らない (送るたびに作業フォルダを読むことになり、状態を持たない計算もここでは要らない)。

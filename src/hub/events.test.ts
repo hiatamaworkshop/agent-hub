@@ -247,6 +247,22 @@ describe('HTTP /events', () => {
     assert.equal(((await res.json()) as { error: string }).error, 'payload_too_large')
   })
 
+  it('/events/:source は source の変換で取り込み、変換のない source は 404', async () => {
+    const { app } = setup()
+    const postTo = (path: string, body: unknown) =>
+      app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', ...bearer }, body: JSON.stringify(body) })
+    const res = await postTo('/events/claude-code', stop())
+    assert.equal(res.status, 200)
+    assert.equal(((await res.json()) as { kind: string }).kind, 'turn.end')
+    const list = (await (await app.request('/events', { headers: bearer })).json()) as { events: HubEvent[] }
+    assert.equal(list.events[0]!.source, 'claude-code')
+    for (const path of ['/events/codex', '/events/constructor']) {
+      const bad = await postTo(path, stop())
+      assert.equal(bad.status, 404)
+      assert.equal(((await bad.json()) as { error: string }).error, 'unknown_source')
+    }
+  })
+
   it('limit の範囲外は 400', async () => {
     const { app } = setup()
     assert.equal((await app.request('/events?limit=0', { headers: bearer })).status, 400)

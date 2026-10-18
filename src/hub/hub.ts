@@ -1,6 +1,6 @@
 // Hub の振る舞い (配信・購読・Attachment)。HTTP から独立させ、app.ts は入出力の変換だけにする
 import { isValidName, mailboxFromFolder, normalizeProjectPath, type Address, type Attachment, type HubEvent, type InboxResult, type Mailbox, type Message, type PostMessageInput, type Sender } from '../shared/types.js'
-import { fromClaudeCodeHook } from './events.js'
+import { CONVERTERS, DEFAULT_SOURCE } from './events.js'
 import { newId } from './ids.js'
 import type { Roles } from './roles.js'
 import type { Store } from './store.js'
@@ -227,11 +227,13 @@ export class Hub {
 
   // --- Event ---
 
-  // hook の入力を変換して記録し、UI に流す。Mailbox には配信しない (design.md §9-2)
-  addEvent(input: Record<string, unknown>, headerMailbox?: string): AddEventResult {
+  // hook の入力を source の変換で揃えて記録し、UI に流す。Mailbox には配信しない (design.md §9-2)
+  addEvent(input: Record<string, unknown>, headerMailbox?: string, source: string = DEFAULT_SOURCE): AddEventResult {
+    const convert = CONVERTERS.get(source)
+    if (!convert) throw new HubError(404, 'unknown_source', `no event converter for source: ${source}`)
     const sessionId = typeof input.session_id === 'string' && input.session_id !== '' ? input.session_id : undefined
     const previous = sessionId ? this.store.lastEventOf(sessionId) : undefined
-    const converted = fromClaudeCodeHook(input, previous, this.now())
+    const converted = convert(input, previous, this.now())
     if ('ignored' in converted) return converted
     const draft = converted.event
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Stop の command hook (design.md §3.11 の未決 1)。hook の入力 JSON に作業フォルダの git の事実を 1 つの欄 (agent_hub_git) で足し、
-// Hub の POST /events に送る。Hub は git を実行しない。
+// Hub の POST /events/claude-code に送る。Hub は git を実行しない。
 // 取れなくても、失敗しても、必ず exit 0 で終わる。取れた分がなければ入力をそのまま送る。stdout / stderr には何も出さない。
 //
 //   agent_hub_git: { head: "<HEAD の full sha>", changed: [...], untracked: [...] }
@@ -58,7 +58,7 @@ async function gitFacts(cwd) {
 
 async function send(body, headers) {
   const port = process.env.HUB_PORT || '7777'
-  await fetch(`http://127.0.0.1:${port}/events`, {
+  await fetch(`http://127.0.0.1:${port}/events/claude-code`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),

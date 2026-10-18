@@ -15,6 +15,9 @@ export interface EventDraft {
 
 export type Converted = { event: EventDraft } | { ignored: string }
 
+// previous は同じ session の直前の Event
+export type EventConverter = (input: Record<string, unknown>, previous: HubEvent | undefined, now: Date) => Converted
+
 // AskUserQuestion の表示から permission_prompt の Notification が出るまでの猶予。実機では 6 秒だった (design.md §6.1c)
 export const QUESTION_PERMISSION_WINDOW_MS = 60_000
 
@@ -50,8 +53,8 @@ function stableId(...parts: string[]): string {
   return 'e_' + createHash('sha256').update(parts.join('\n')).digest('hex').slice(0, 32)
 }
 
-// Claude Code の hook 入力 (design.md §6.1b)。previous は同じ session の直前の Event
-export function fromClaudeCodeHook(input: Record<string, unknown>, previous: HubEvent | undefined, now: Date): Converted {
+// Claude Code の hook 入力 (design.md §6.1b)
+export const fromClaudeCodeHook: EventConverter = (input, previous, now) => {
   const hook = str(input.hook_event_name)
   if (!hook) return { ignored: 'no_hook_event_name' }
   const sessionId = str(input.session_id)
@@ -84,3 +87,9 @@ export function fromClaudeCodeHook(input: Record<string, unknown>, previous: Hub
       return { ignored: 'unsupported_hook' }
   }
 }
+
+// source (POST /events/:source) ごとの変換。クライアントを足すときは変換を書いてここに 1 行足す (design.md §3.7)
+export const CONVERTERS: ReadonlyMap<string, EventConverter> = new Map([['claude-code', fromClaudeCodeHook]])
+
+// source を名乗らない POST /events の扱い。名乗る前に配った hook の設定を動かし続けるため
+export const DEFAULT_SOURCE = 'claude-code'

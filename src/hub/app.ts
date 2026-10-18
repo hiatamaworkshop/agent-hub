@@ -162,12 +162,16 @@ export function createApp(opts: AppOptions) {
     return c.json({ messages: hub.store.listMessages(after, limit), lastSeq: hub.store.lastSeq })
   })
 
-  // HTTP hook の入力 JSON をそのまま受ける。取り込まない hook も 200 で返す (非 2xx は hook 側でエラー表示になるだけで意味がない)
-  app.post('/events', limited(1024 * 1024, 'payload_too_large', 'event must be 1 MB or smaller'), async (c) => {
+  // HTTP hook の入力 JSON をそのまま受ける。取り込まない hook も 200 で返す (非 2xx は hook 側でエラー表示になるだけで意味がない)。
+  // パスの :source で変換を選ぶ。source のない /events は claude-code として扱う (protocol.md §3)
+  const eventLimit = limited(1024 * 1024, 'payload_too_large', 'event must be 1 MB or smaller')
+  const postEvent = async (c: Context, source?: string) => {
     const body = await readJson(c)
     if (typeof body !== 'object' || body === null || Array.isArray(body)) return invalid(c, 'the body must be a JSON object (the hook input)')
-    return c.json(hub.addEvent(body as Record<string, unknown>, c.req.header('x-hub-mailbox')))
-  })
+    return c.json(hub.addEvent(body as Record<string, unknown>, c.req.header('x-hub-mailbox'), source))
+  }
+  app.post('/events', eventLimit, (c) => postEvent(c))
+  app.post('/events/:source', eventLimit, (c) => postEvent(c, c.req.param('source')))
 
   app.get('/events', (c) => {
     const limit = intParam(c.req.query('limit'), 100, 1, 1000)
