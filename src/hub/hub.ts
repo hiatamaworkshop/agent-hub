@@ -305,10 +305,8 @@ export class Hub {
   }
 
   private purgeBefore(cutoff: number): PurgeResult {
-    const messages = this.store.expiredMessages(cutoff).map((m) => m.id)
-    const events = this.store.expiredEvents(cutoff).map((e) => e.id)
-    for (const id of messages) this.store.deleteMessage(id)
-    for (const id of events) this.store.deleteEvent(id)
+    const messages = this.store.deleteMessages(this.store.expiredMessages(cutoff).map((m) => m.id))
+    const events = this.store.deleteEvents(this.store.expiredEvents(cutoff).map((e) => e.id))
     this.store.compact()
     if (messages.length) this.emitUi('message.deleted', { ids: messages })
     if (events.length) this.emitUi('event.deleted', { ids: events })

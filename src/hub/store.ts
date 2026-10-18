@@ -97,6 +97,14 @@ export class Store {
 
   private replay(text: string): void {
     const lines = text.split(/\r?\n/)
+    // 続いた削除の行はまとめて 1 度で外す (1 行ずつだと 消す件数 × 全件 になる。詰め直す前に落ちたときに効く)
+    const pending = { messages: new Set<string>(), events: new Set<string>() }
+    const flush = () => {
+      this.removeMessages(pending.messages)
+      this.removeEvents(pending.events)
+      pending.messages.clear()
+      pending.events.clear()
+    }
     lines.forEach((line, i) => {
       if (!line.trim()) return
       let rec: LogRecord
@@ -107,8 +115,15 @@ export class Store {
         if (i < lines.length - 2) console.warn(`[store] ${this.file}:${i + 1} を読めないため飛ばした`)
         return
       }
+      if (rec.op === 'message.delete' || rec.op === 'event.delete') {
+        ;(rec.op === 'message.delete' ? pending.messages : pending.events).add(rec.id)
+        this.deletesSinceCompact++
+        return
+      }
+      flush()
       this.apply(rec)
     })
+    flush()
   }
 
   private write(rec: LogRecord): void {
@@ -124,13 +139,9 @@ export class Store {
         this.seq = Math.max(this.seq, rec.message.seq)
         if (rec.message.replyTo) this.repliedTo.add(rec.message.replyTo)
         break
+      // 削除の行は replay がまとめて、実行中は deleteMessages / deleteEvents が扱う
       case 'message.delete':
-        this.removeMessages(new Set([rec.id]))
-        this.deletesSinceCompact++
-        break
       case 'event.delete':
-        this.removeEvents(new Set([rec.id]))
-        this.deletesSinceCompact++
         break
       case 'seq':
         this.seq = Math.max(this.seq, rec.seq)
@@ -404,15 +415,32 @@ export class Store {
   }
 
   deleteMessage(id: string): boolean {
-    if (!this.byId.has(id)) return false
-    this.write({ op: 'message.delete', id })
-    return true
+    return this.deleteMessages([id]).length > 0
   }
 
   deleteEvent(id: string): boolean {
-    if (!this.eventById.has(id)) return false
-    this.write({ op: 'event.delete', id })
-    return true
+    return this.deleteEvents([id]).length > 0
+  }
+
+  // まとめて消す。走査と追記を 1 度で済ませる (1 件ずつだと 消す件数 × 全件 になり、その間 Hub が止まる)。応答は実際に消した id
+  deleteMessages(ids: readonly string[]): string[] {
+    const found = [...new Set(ids)].filter((id) => this.byId.has(id))
+    this.removeMessages(new Set(found))
+    this.appendDeletes('message.delete', found)
+    return found
+  }
+
+  deleteEvents(ids: readonly string[]): string[] {
+    const found = [...new Set(ids)].filter((id) => this.eventById.has(id))
+    this.removeEvents(new Set(found))
+    this.appendDeletes('event.delete', found)
+    return found
+  }
+
+  private appendDeletes(op: 'message.delete' | 'event.delete', ids: readonly string[]): void {
+    if (ids.length === 0) return
+    this.deletesSinceCompact += ids.length
+    if (this.file) appendFileSync(this.file, ids.map((id) => JSON.stringify({ op, id }) + '\n').join(''))
   }
 
   // 返信待ちの request (kind: request で、それを replyTo に持つ Message がまだない)

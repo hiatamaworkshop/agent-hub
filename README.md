@@ -24,7 +24,7 @@
 
 - **P0** (1 セッションで往復する) と **P1** (質問待ち・許可待ち・ターン終了の検知) は完了し、実セッションで受け入れ条件を確かめた。
 - **P2** (複数セッション・交代・メッセージパッシング) は進行中。複数 Mailbox の同時接続、role (`roles.json`)、交代 (takeover)、古い未読の流し込みの上限、無編集転送 (Forward / Relay)、`inbox` の polling 経路と、クライアントによる経路の切り替えまで実装済み。
-  配送の状態の名付け、保存期間、Docker (compose) での常駐も済み。残りは「起こすだけ」の配信アダプタ、永続化の見直しなど ([docs/roadmap.md](docs/roadmap.md))。
+  配送の状態の名付け、保存期間、Docker (compose) での常駐も済み。残りは「起こすだけ」の配信アダプタなど ([docs/roadmap.md](docs/roadmap.md))。
 - `inbox` 経路は Claude Code 以外の実クライアント (Codex など) ではまだ試していない (テストの MCP クライアントでのみ確認)。
 
 設計は [docs/design.md](docs/design.md) から読む。Channels・hook の仕様は公式資料と実機で確認済み (design.md §6.1〜6.1j)。MCP Events (SEP-3415, Draft) との関係は design.md §7。

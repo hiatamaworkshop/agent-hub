@@ -78,6 +78,22 @@ describe('Store: 削除と詰め直し', () => {
     assert.deepEqual(ids(new Store({ file }).listMessages()), [b.id])
   })
 
+  it('まとめて消すと実際に消した id を返し、詰め直す前の再起動でも、削除の後に足した Message は残る', () => {
+    const file = tmpFile()
+    const s1 = new Store({ file })
+    const a = s1.appendMessage(msg({ type: 'topic', id: 't' }))
+    const b = s1.appendMessage(msg({ type: 'topic', id: 't' }))
+    const c = s1.appendMessage(msg({ type: 'topic', id: 't' }))
+    assert.deepEqual(s1.deleteMessages([a.id, 'm_unknown', a.id, c.id]), [a.id, c.id])
+    assert.deepEqual(s1.deleteMessages([a.id]), [])
+    const d = s1.appendMessage(msg({ type: 'topic', id: 't' }))
+    s1.deleteMessages([b.id])
+    assert.deepEqual(ids(s1.listMessages()), [d.id])
+    const s2 = new Store({ file })
+    assert.deepEqual(ids(s2.listMessages()), [d.id])
+    assert.equal(s2.compact(), true, '再起動後も削除の行があれば詰め直す')
+  })
+
   it('全部消して詰め直しても seq は巻き戻らない', () => {
     const file = tmpFile()
     const s1 = new Store({ file })
