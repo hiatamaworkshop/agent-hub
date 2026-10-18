@@ -28,7 +28,7 @@ if (!['127.0.0.1', '::1', 'localhost'].includes(host)) {
 
 // 画像の長辺の上限 (px) と、揮発ファイルの保存期間 (日、0 なら掃除しない)
 const maxEdge = Number(process.env.HUB_FILE_MAX_EDGE ?? 1568)
-const ttlDays = Number(process.env.HUB_FILE_TTL_DAYS ?? 7)
+const ttlDays = Number(process.env.HUB_FILE_TTL_DAYS ?? 1)
 if (!Number.isInteger(maxEdge) || maxEdge < 16 || maxEdge > 8192) {
   console.error('HUB_FILE_MAX_EDGE は 16〜8192 の整数で設定してください')
   process.exit(1)
@@ -50,6 +50,13 @@ if (!Number.isInteger(unreadMax) || unreadMax < 0) {
   process.exit(1)
 }
 
+// 渡し終えた Message と Event の保存期間 (時間、小数可)。0 なら自動では消さない (design.md §3.14)
+const readRetentionHours = Number(process.env.HUB_READ_RETENTION_HOURS ?? 24)
+if (!Number.isFinite(readRetentionHours) || readRetentionHours < 0) {
+  console.error('HUB_READ_RETENTION_HOURS は 0 以上の数で設定してください (0 で自動では消さない)')
+  process.exit(1)
+}
+
 // role 定義。読めない・形が違うなら黙って既定に戻さず、ファイル名と理由を出して止まる (ファイルがなければ P0 と同じ)
 const rolesFile = resolve(process.env.HUB_ROLES_FILE ?? join(ROOT, 'roles.json'))
 let roles: Roles | null
@@ -68,8 +75,14 @@ const store = new Store({
 })
 const settings = new SettingsStore(join(dataDir, 'settings.json'))
 const files = new FileStore({ dir: join(dataDir, 'files'), maxEdge, ttlDays })
+const hub = new Hub(store, {
+  roles,
+  unreadMaxAgeMs: Math.round(unreadMaxAgeDays * 24 * 60 * 60_000),
+  unreadMax,
+  readRetentionMs: Math.round(readRetentionHours * 60 * 60_000),
+})
 const app = createApp({
-  hub: new Hub(store, { roles, unreadMaxAgeMs: Math.round(unreadMaxAgeDays * 24 * 60 * 60_000), unreadMax }),
+  hub,
   token,
   settings,
   files,
@@ -90,6 +103,18 @@ const sweep = () =>
   )
 void sweep()
 setInterval(sweep, 60 * 60 * 1000).unref()
+
+// 渡し終えた Message と Event の掃除: 起動時と 1 時間ごと。消したらログを詰め直す
+const purge = () => {
+  try {
+    const r = hub.sweep()
+    if (r.messages || r.events) console.log(`[hub] expired messages removed: ${r.messages}, events: ${r.events}`)
+  } catch (e) {
+    console.error('[hub] message sweep failed:', (e as Error).message)
+  }
+}
+purge()
+setInterval(purge, 60 * 60 * 1000).unref()
 
 serve({ fetch: app.fetch, hostname: host, port }, (info) => {
   const shown = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host

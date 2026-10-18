@@ -93,10 +93,19 @@ export interface HubOptions {
   // attach 時の流し込み量の既定 (0 なら制限なし)。超えた古い未読は放棄済みとして cursor を進める (design.md §3.3)
   unreadMaxAgeMs?: number
   unreadMax?: number
+  // 渡し終えた Message と Event の保存期間。0 なら自動では消さない (design.md §3.14)
+  readRetentionMs?: number
+}
+
+// 消した件数 (POST /messages/purge の応答と掃除のログ)
+export interface PurgeResult {
+  messages: number
+  events: number
 }
 
 export const DEFAULT_UNREAD_MAX_AGE_MS = 7 * 24 * 60 * 60_000
 export const DEFAULT_UNREAD_MAX = 50
+export const DEFAULT_READ_RETENTION_MS = 24 * 60 * 60_000
 // inbox の nextPollMs (続きがないとき)。目安で、Hub は間隔を強制しない
 export const INBOX_POLL_MS = 5000
 
@@ -124,6 +133,7 @@ export class Hub {
   private readonly roles: Roles | null
   private readonly unreadMaxAgeMs: number
   private readonly unreadMax: number
+  private readonly readRetentionMs: number
 
   constructor(
     readonly store: Store,
@@ -135,6 +145,7 @@ export class Hub {
     this.leaseMs = opts.leaseMs ?? 2 * 60_000
     this.unreadMaxAgeMs = opts.unreadMaxAgeMs ?? DEFAULT_UNREAD_MAX_AGE_MS
     this.unreadMax = opts.unreadMax ?? DEFAULT_UNREAD_MAX
+    this.readRetentionMs = opts.readRetentionMs ?? DEFAULT_READ_RETENTION_MS
   }
 
   onUi(fn: (e: UiEvent) => void): () => void {
@@ -167,7 +178,8 @@ export class Hub {
   postMessage(input: PostMessageInput, from: Sender): Message {
     const original = input.replyTo === undefined ? undefined : this.store.getMessage(input.replyTo)
     if (input.replyTo !== undefined && !original) {
-      throw new HubError(400, 'reply_to_not_found', `replyTo ${input.replyTo} がない`)
+      // 保存期間で消えた Message もここに来る (design.md §3.14)。to を付ければ送れる
+      throw new HubError(400, 'reply_to_not_found', `replyTo ${input.replyTo} がない (消えた Message なら to を指定して送る)`)
     }
     // to の省略は replyTo があるときだけ許す (schema で検証済み)。元の送り手に返す
     const to = input.to ?? { type: original!.from.type, id: original!.from.id }
@@ -273,6 +285,34 @@ export class Hub {
     this.lastDetached.delete(name)
     this.projectChanges.delete(name)
     this.emitUi('mailbox.deleted', { name })
+  }
+
+  // 人の操作で 1 件消す。未読でも返信待ちでも消す (design.md §3.14)。詰め直しは次の掃除で行う
+  deleteMessage(id: string): void {
+    if (!this.store.deleteMessage(id)) throw new HubError(404, 'message_not_found', `message ${id} がない`)
+    this.emitUi('message.deleted', { ids: [id] })
+  }
+
+  // 保存期間の掃除 (起動時と 1 時間ごと)。保存期間が 0 なら何もしない
+  sweep(): PurgeResult {
+    if (this.readRetentionMs <= 0) return { messages: 0, events: 0 }
+    return this.purgeBefore(this.now().getTime() - this.readRetentionMs)
+  }
+
+  // 保存期間を待たずに今消す (UI の Purge read)。渡し終えていない・返信待ちの request は残す
+  purgeNow(): PurgeResult {
+    return this.purgeBefore(this.now().getTime())
+  }
+
+  private purgeBefore(cutoff: number): PurgeResult {
+    const messages = this.store.expiredMessages(cutoff).map((m) => m.id)
+    const events = this.store.expiredEvents(cutoff).map((e) => e.id)
+    for (const id of messages) this.store.deleteMessage(id)
+    for (const id of events) this.store.deleteEvent(id)
+    this.store.compact()
+    if (messages.length) this.emitUi('message.deleted', { ids: messages })
+    if (events.length) this.emitUi('event.deleted', { ids: events })
+    return { messages: messages.length, events: events.length }
   }
 
   // 冪等。未読は Mailbox の cursor から再送されるので、attach し直しても失われない

@@ -146,6 +146,9 @@
   人間の添え書きは転送に含めない。UI は別のメッセージ (`user:browser` からの `request` か `notice`) として転送より先に送る。Channels の属性値のエスケープが未確認 (design.md §6.2-4) で、自由文を属性に載せられないため。
 - `meta`: 任意。送り手が付ける JSON オブジェクト。直列化して 8KB まで。キーは `^[a-z][a-z0-9_]{0,31}$`。Hub が解釈するのは既知のキー `files` だけで、ほかのキーは触らずに通す。空の `{}` は保存しない。
 - `meta.files`: `[{ "id": "f_…" }]` で送る (4 件まで。重複は 1 つにまとめる)。Hub は各 id が存在するかを確かめ (なければ 400、message に id)、保存するときは記録から `{ id, mime, size, width, height }` に書き直す。送り手が付けた mime や size は捨てる。
+- **保存期間** (design.md §3.14): 今ある受け手の Mailbox すべてで `cursor ≥ seq` (受け手の Mailbox がなければ送った時点で満たす) になり、`ts` から `HUB_READ_RETENTION_HOURS` (既定 24、小数可、0 なら自動では消さない) を過ぎた Message は、起動時と 1 時間ごとの掃除で消す。
+  ただし `kind: request` で、それを `replyTo` に持つ Message がまだないもの (返信待ち) は自動では消さない。Event は保存期間だけで消す。手で消すのは `DELETE /messages/:id` と `POST /messages/purge` (§3)。
+  消した Message は `GET /messages` に出ず、`replyTo` に指定すると 400 `reply_to_not_found`、転送は 404 `message_not_found`。`seq` は消しても巻き戻らない。
 
 ## 3. Hub の HTTP API
 
@@ -158,6 +161,8 @@
 | GET | `/messages?after=<seq>&limit=<n>` | 履歴取得 (`limit` 既定 100、最大 1000)。応答 `{ "messages": [...], "lastSeq": <seq> }` |
 | GET | `/mailboxes` | Mailbox 一覧 (role・実効購読・未読数・Attachment の状態) |
 | GET | `/roles` | role 定義の一覧 (**未実装**。P2 で roles.json の読み込みは入ったが、この API はまだない。必要になったら足す) |
+| DELETE | `/messages/:id` | Message を 1 件消す (人の操作。未読・返信待ちでも消す)。応答は 200 `{}`。未知の id は 404 `message_not_found`。SSE `message.deleted` を流す (design.md §3.14) |
+| POST | `/messages/purge` | 保存期間を待たずに今消す。body は空でよい。消すのは「渡し終えた・返信待ちの request でない」Message と全 Event。応答は 200 `{ "messages": <消した件数>, "events": <消した件数> }`。消したものがあれば SSE `message.deleted` / `event.deleted` を流す |
 | DELETE | `/mailboxes/:name` | Mailbox を削除し、応答は 200 `{}`。購読・role・cursor・未読の状態を消す。Message のログは消さない。接続中 (attach 中) の Mailbox は削除せず 409 `mailbox_attached` (先に detach する)。未知の名前は 404 `mailbox_not_found`。SSE `mailbox.deleted` (`{ name }`) を流す。同名で作り直すと cursor は削除時点の `seq` から始まる (§2) |
 
 ### UI 向け
@@ -174,7 +179,7 @@
 | PATCH | `/files/:id` | body `{ "persistent": true }` または `false` で持続扱いを切り替える。未知のキーや型違いは 400 |
 
 - `id` は元の入力バイト列の sha256 の先頭 32 桁 (`f_` + 32 桁の 16 進)。不正な形式は 404。
-- 持続でない画像は `HUB_FILE_TTL_DAYS` (既定 7 日。0 なら掃除しない) を過ぎると消す。起動時と 1 時間ごとに行い、消した件数をログに出す。消えた画像を参照するメッセージは履歴に残るので、表示側は 404 を「期限切れ」として扱う。
+- 持続でない画像は `HUB_FILE_TTL_DAYS` (既定 1 日。0 なら掃除しない) を過ぎると消す。起動時と 1 時間ごとに行い、消した件数をログに出す。消えた画像を参照するメッセージは履歴に残るので、表示側は 404 を「期限切れ」として扱う。
 
 ### shim 向け
 | メソッド | パス | 内容 |
@@ -271,6 +276,7 @@
   - attach の流し込み上限で放棄した分は渡していないので、`cursor` と一緒に `received` も進める (unconfirmed に数えない)。
   - `replyTo` による確認は、その Message の `seq` まで `received` を進める。それより前の handed も受け取ったとみなす目安で、1 件ずつの証拠ではない。
   - `inbox` による確認は、返した範囲が `received` の直後から続いているときだけ進める。間に handed のまま確認のない分があれば飛び越えない (それらは `unconfirmed=true` の `inbox` で取り直すと確認になる)。
+  - handed の分も保存期間 (§2 Message) で消える。`unconfirmed=true` で取り直せるのはその間だけ。
 - **Channels は ack を返さない**ため、shim の ack は「`notifications/claude/channel` をトランスポートに書けた」時点で送る (handed)。Claude が読んだことの保証ではない。channel なしで起動した Claude Code は通知を黙って捨て、shim からは見分けられない (design.md §6.1k)。その分は handed のまま unconfirmed に残り、UI のカードに件数が出る。再送はしない (未読には戻さない)。
 - shim の経路は initialize の `clientInfo.name` で決まる (`claude-code` なら Channels、それ以外は `inbox`。design.md §3.7)。`inbox` 経路の shim は stream で受けた Message を push も ack もせず、`inbox` ツールで返したときだけ ack する。
 - 未読の流し込みには上限がある (既定 7 日 / 50 件。§3 attach)。超えた分は attach の時点で放棄し、`truncated: true` を返す。attach していない間は放棄しない (溜まるだけ)。
@@ -383,7 +389,9 @@ Claude 側では次のように見える:
 
 ## 7. UI ↔ Hub のイベント種別 (SSE `event:` 名)
 
-`event` (検知イベント), `message`, `mailbox.created`, `mailbox.deleted`, `mailbox.acked`, `attachment.attached`, `attachment.detached`, `attachment.superseded`, `subscription.changed`
+`event` (検知イベント), `message`, `message.deleted`, `event.deleted`, `mailbox.created`, `mailbox.deleted`, `mailbox.acked`, `attachment.attached`, `attachment.detached`, `attachment.superseded`, `subscription.changed`
+
+- `message.deleted` / `event.deleted` は `{ "ids": ["…"] }`。手で消したときと、保存期間の掃除で消したときに流す (design.md §3.14)。UI はその id を表示から外す。古い UI は知らない名前として無視する (再読み込みで消える)。
 
 - `event` は記録した Event (§2)。重複 (`duplicate: true`) と取り込まなかったものは流さない。
 - `mailbox.created` は作成された Mailbox (`name` `role` `createdAt` `subscriptions` `cursor` `attachment`。作成直後なので `attachment` は null)。`mailbox.deleted` は `{ "name": "<名前>" }`。UI は両方で一覧を取り直す。

@@ -69,7 +69,7 @@ export class FileStore {
   constructor(opts: FileStoreOptions) {
     this.dir = opts.dir
     this.maxEdge = opts.maxEdge ?? DEFAULT_MAX_EDGE
-    this.ttlMs = (opts.ttlDays ?? 7) * 24 * 60 * 60 * 1000
+    this.ttlMs = (opts.ttlDays ?? 1) * 24 * 60 * 60 * 1000
     this.maxPixels = opts.maxPixels ?? DEFAULT_MAX_PIXELS
     this.now = opts.now ?? (() => new Date())
   }

@@ -75,6 +75,7 @@
   .msg.picked { outline: 2px solid var(--accent); outline-offset: -1px; }
   /* 向き付きの組ごとの未送の件数 (foldbar の右側) */
   #relay { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin-left: auto; }
+  #purge { font-size: 12px; }
   #relay:empty { display: none; }
   #relay .pair { font-family: var(--mono); }
   .linkbtn { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font: inherit; }
@@ -154,6 +155,7 @@
       <button type="button" id="fold" title="Hide messages older than the latest N and show them as one row. Display only: the Hub record and unread counts are unchanged.">Compact</button>
       <label title="How many latest messages stay visible after Compact (default 10)">Keep latest <input id="keep" type="number" min="1" step="1"></label>
       <span id="relay" title="Messages from a Mailbox not yet forwarded to a Mailbox you forwarded to before"></span>
+      <button type="button" id="purge" class="linkbtn" title="Delete from the Hub now, without waiting for the retention period: messages already handed to every recipient, and all detection events. Unread messages and requests awaiting a reply are kept.">Purge read</button>
     </div>
     <div id="list"></div>
     <form id="form">
@@ -450,7 +452,11 @@ function render(m) {
   fwd.title = 'Select to forward unchanged (select several to forward them together)'
   fwd.setAttribute('aria-pressed', 'false')
   fwd.onclick = () => toggleForward(m)
-  actions.append(btn, fwd)
+  const del = el('button', 'linkbtn', 'Delete')
+  del.type = 'button'
+  del.title = 'Delete this message from the Hub (even if it is unread or awaiting a reply)'
+  del.onclick = () => deleteMessage(m)
+  actions.append(btn, fwd, del)
   head.append(actions)
   box.append(head, el('div', 'body', m.body))
   renderFiles(box, m.meta)
@@ -464,6 +470,7 @@ function render(m) {
 // 検知イベント (hook 由来。design.md §3.4)。UI は届いた Event をそのまま出し、状態は推定しない。
 // payload は Claude Code の hook 入力そのまま (source: claude-code) なので、読むキーはここに閉じ込める。値は外部由来のデータとして textContent で入れる
 const seenEvents = new Set()
+const evtBoxes = new Map() // Event の id → 描画した行 (Hub が消したときに外すため)
 const lastEventByMailbox = new Map() // Mailbox 名 → 最新の Event (カードに出す)
 const DETACH_LABEL = { closed: 'session ended', disconnected: 'connection lost', lease_expired: 'lease expired' }
 const EVENT_LABEL = { 'turn.end': 'turn end', question: 'question', 'question.answered': 'answered', permission: 'permission', notification: 'notification', 'session.boundary': 'boundary' }
@@ -563,6 +570,7 @@ function renderEvent(ev, counts) {
   }
   box.append(head, eventBody(ev))
   insertByTs(box, ev.ts)
+  evtBoxes.set(ev.id, box)
   if (atBottom) { pinned = true; list.scrollTop = list.scrollHeight }
   if (ev.mailbox && !ev.superseded) {
     const prev = lastEventByMailbox.get(ev.mailbox)
@@ -1047,6 +1055,7 @@ $('body').onkeydown = (e) => {
 
 $('keep').value = loadKeep()
 $('fold').onclick = fold
+$('purge').onclick = purgeRead
 
 // カスタムコマンド。設定は Hub の /settings にあり、ページを開いたとき・ダイアログを開いたときに読む
 // 古い Hub (/settings が 404) では使えず、送信はこれまでどおり
@@ -1289,6 +1298,72 @@ function renderMailboxes(mailboxes) {
 
 // 接続していない Mailbox を削除する。確認してから DELETE し、結果にかかわらず一覧を取り直す (消えたカードは取り直しで外れる)。
 // 失敗 (409: その間に attach された / 404: 削除に対応しない古い Hub) は #err に出し、カードは外さない
+// Message の削除 (design.md §3.14)。表示から外すのは Hub の message.deleted を受けたとき (ほかのタブにも届くため)。
+// 古い Hub はこの API を持たず、共通のエラー形式でない 404 を返す (UI は Hub を再起動しなくても差し替わる)
+const OLD_HUB_DELETE = 'This Hub cannot delete messages yet. Restart the Hub to enable it.'
+async function deleteMessage(m) {
+  if (!window.confirm(`Delete #${m.seq} from the Hub? This cannot be undone.`)) return
+  try {
+    await api(`/messages/${encodeURIComponent(m.id)}`, { method: 'DELETE' })
+  } catch (err) {
+    if (err.message === 'unauthorized') return
+    // 既に消えていた (ほかのタブや保存期間の掃除) なら、表示だけ外す
+    if (err.code === 'message_not_found') { removeMessages([m.id]); return }
+    $('err').textContent = err.status === 404 ? OLD_HUB_DELETE : `Could not delete #${m.seq}: ${err.message || err}`
+  }
+}
+
+async function purgeRead() {
+  if (!window.confirm('Delete messages already handed to every recipient, and all detection events, from the Hub now? Unread messages and requests awaiting a reply are kept.')) return
+  try {
+    const r = await api('/messages/purge', { method: 'POST' })
+    setStatus(`Purged ${r.messages} messages and ${r.events} events`)
+  } catch (err) {
+    if (err.message === 'unauthorized') return
+    $('err').textContent = err.status === 404 ? OLD_HUB_DELETE : `Could not purge: ${err.message || err}`
+  }
+}
+
+// Hub が消した Message を表示から外す。畳んだ中・転送の選択・返信先からも外す
+function removeMessages(ids) {
+  let forwardChanged = false
+  for (const id of ids) {
+    const box = msgBoxes.get(id)
+    if (box) {
+      box.remove()
+      msgBoxes.delete(id)
+      folded = folded.filter((f) => f.box !== box)
+    }
+    seen.delete(id)
+    if (forwarding.delete(id)) forwardChanged = true
+    if (replyTo && replyTo.id === id) { replyTo = null; setKind('request'); updateReplyInfo() }
+  }
+  if (forwardChanged) updateForwardUi()
+  syncStub()
+  scheduleRelay()
+}
+
+function removeEvents(ids) {
+  const gone = new Set(ids)
+  for (const id of ids) {
+    const box = evtBoxes.get(id)
+    if (box) {
+      box.remove()
+      evtBoxes.delete(id)
+      folded = folded.filter((f) => f.box !== box)
+    }
+  }
+  for (const [name, ev] of lastEventByMailbox) if (gone.has(ev.id)) lastEventByMailbox.delete(name)
+  syncStub()
+  if (mailboxList.length) renderMailboxes(mailboxList)
+}
+
+// 畳んだ中身が消えたら、行の件数を直すか行ごと外す
+function syncStub() {
+  if (!stub) return
+  if (folded.length === 0) { stub.remove(); stub = null } else updateStub()
+}
+
 async function deleteMailbox(name) {
   if (!window.confirm(`Delete Mailbox ${name}? Its unread messages will be discarded.`)) return
   try {
@@ -1412,6 +1487,12 @@ function connect() {
     renderEvent(JSON.parse(e.data), true)
     if (mailboxList.length) renderMailboxes(mailboxList)
   })
+  // 手で消したときと保存期間の掃除で届く (古い Hub は送らない)。消えた分で未読数・unconfirmed も変わりうる
+  es.addEventListener('message.deleted', (e) => {
+    removeMessages(JSON.parse(e.data).ids || [])
+    refreshMailboxes()
+  })
+  es.addEventListener('event.deleted', (e) => removeEvents(JSON.parse(e.data).ids || []))
   // mailbox.acked は未読数が減ったときに届く (古い Hub は送らないので、その場合は何も起きない)
   for (const ev of ['mailbox.created', 'mailbox.deleted', 'mailbox.acked', 'attachment.attached', 'attachment.detached', 'attachment.superseded', 'subscription.changed']) {
     es.addEventListener(ev, () => refreshMailboxes())

@@ -1,6 +1,7 @@
 // Hub の状態。変更はすべて JSONL に 1 行ずつ追記し、起動時に先頭から再生して復元する。
 // Attachment は永続化しない (Hub が再起動したら shim が attach し直す)。
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
+// 消した Message と Event は削除の行を追記し、compact() で今の状態だけのファイルに詰め直す (design.md §3.14)
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { HubEvent, Mailbox, Message } from '../shared/types.js'
 import { newId } from './ids.js'
@@ -19,6 +20,12 @@ type LogRecord =
   // 受領の確認 (protocol.md §4)。cursor も少なくともここまで進む
   | { op: 'received'; name: string; received: number }
   | { op: 'event'; event: HubEvent }
+  | { op: 'message.delete'; id: string }
+  | { op: 'event.delete'; id: string }
+  // 詰め直したファイルの先頭。Message を全部消しても seq を巻き戻さない
+  | { op: 'seq'; seq: number }
+  // 返信が消えた後も、その request が返信済みだったことを残す (詰め直しで返信の Message がなくなるため)
+  | { op: 'replied'; id: string }
 
 interface MailboxState {
   name: string
@@ -59,6 +66,10 @@ export class Store {
   private readonly eventById = new Map<string, HubEvent>()
   // sessionId → その session の最新の Event (変換が直前の Event を見るため)
   private readonly lastEventBySession = new Map<string, HubEvent>()
+  // 返信のある Message の id (返信の replyTo)。返信待ちの request を自動で消さないため (design.md §3.14)
+  private readonly repliedTo = new Set<string>()
+  // 前回の詰め直しから追記した削除の行の数
+  private deletesSinceCompact = 0
   private seq = 0
 
   constructor(opts: StoreOptions = {}) {
@@ -111,6 +122,21 @@ export class Store {
         this.messages.push(rec.message)
         this.byId.set(rec.message.id, rec.message)
         this.seq = Math.max(this.seq, rec.message.seq)
+        if (rec.message.replyTo) this.repliedTo.add(rec.message.replyTo)
+        break
+      case 'message.delete':
+        this.removeMessages(new Set([rec.id]))
+        this.deletesSinceCompact++
+        break
+      case 'event.delete':
+        this.removeEvents(new Set([rec.id]))
+        this.deletesSinceCompact++
+        break
+      case 'seq':
+        this.seq = Math.max(this.seq, rec.seq)
+        break
+      case 'replied':
+        this.repliedTo.add(rec.id)
         break
       case 'mailbox.create':
         this.mailboxes.set(rec.name, {
@@ -348,6 +374,97 @@ export class Store {
       if (this.isRecipient(name, m)) out.push(m)
     }
     return out
+  }
+
+  // --- 削除と保存期間 (design.md §3.14) ---
+
+  // 消した Message の返信先は返信済みのまま残す (request は返信がついた時点で返信待ちではなくなる)
+  private removeMessages(ids: Set<string>): void {
+    if (ids.size === 0) return
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const m = this.messages[i]!
+      if (!ids.has(m.id)) continue
+      this.messages.splice(i, 1)
+      this.byId.delete(m.id)
+      this.repliedTo.delete(m.id)
+    }
+  }
+
+  private removeEvents(ids: Set<string>): void {
+    if (ids.size === 0) return
+    for (let i = this.events.length - 1; i >= 0; i--) {
+      const e = this.events[i]!
+      if (!ids.has(e.id)) continue
+      this.events.splice(i, 1)
+      this.eventById.delete(e.id)
+    }
+    // 変換は session の直前の Event を見るので、残っている中の最新に付け替える
+    this.lastEventBySession.clear()
+    for (const e of this.events) if (e.sessionId) this.lastEventBySession.set(e.sessionId, e)
+  }
+
+  deleteMessage(id: string): boolean {
+    if (!this.byId.has(id)) return false
+    this.write({ op: 'message.delete', id })
+    return true
+  }
+
+  deleteEvent(id: string): boolean {
+    if (!this.eventById.has(id)) return false
+    this.write({ op: 'event.delete', id })
+    return true
+  }
+
+  // 返信待ちの request (kind: request で、それを replyTo に持つ Message がまだない)
+  isAwaitingReply(m: Message): boolean {
+    return m.kind === 'request' && !this.repliedTo.has(m.id)
+  }
+
+  // 渡し終えた: 今ある受け手の Mailbox すべてで cursor ≥ seq。受け手の Mailbox がなければ送った時点で渡し終えている
+  isHandedToAll(m: Message): boolean {
+    for (const mb of this.mailboxes.values()) {
+      if (m.seq > mb.cursor && this.isRecipient(mb.name, m)) return false
+    }
+    return true
+  }
+
+  // 自動で消してよい Message: cutoff (ms) 以前に送られ、渡し終えていて、返信待ちの request でない
+  expiredMessages(cutoff: number): Message[] {
+    return this.messages.filter((m) => Date.parse(m.ts) <= cutoff && !this.isAwaitingReply(m) && this.isHandedToAll(m))
+  }
+
+  expiredEvents(cutoff: number): HubEvent[] {
+    return this.events.filter((e) => Date.parse(e.ts) <= cutoff)
+  }
+
+  // 削除の行があれば、今の状態だけを書いたファイルに置き換える。一時ファイルに書いてから rename する。
+  // 失敗しても削除の行は残っているので、状態は変わらない (次の機会に詰め直す)
+  compact(): boolean {
+    if (!this.file || this.deletesSinceCompact === 0) return false
+    const recs: LogRecord[] = [{ op: 'seq', seq: this.seq }]
+    // 削除した Mailbox の削除時点の seq (作り直したときに古い直接宛てを再送しないため)。作り直した Mailbox の create より前に置く
+    for (const [name, seq] of this.deletedAt) recs.push({ op: 'mailbox.delete', name, seq })
+    for (const mb of this.mailboxes.values()) {
+      // create の seq は role を持った時点 (roleSince) として読まれる
+      recs.push({ op: 'mailbox.create', name: mb.name, role: mb.role, createdAt: mb.createdAt, cursor: mb.cursor, received: mb.received, seq: mb.roleSince })
+      if (mb.project !== null) recs.push({ op: 'mailbox.project', name: mb.name, project: mb.project })
+      for (const [topic, seq] of mb.subscriptions) recs.push({ op: 'subscribe', name: mb.name, topic, seq })
+    }
+    for (const message of this.messages) {
+      recs.push({ op: 'message', message })
+      if (this.repliedTo.has(message.id)) recs.push({ op: 'replied', id: message.id })
+    }
+    for (const event of this.events) recs.push({ op: 'event', event })
+    const tmp = `${this.file}.tmp`
+    try {
+      writeFileSync(tmp, recs.map((r) => JSON.stringify(r) + '\n').join(''))
+      renameSync(tmp, this.file)
+    } catch (e) {
+      console.warn(`[store] ${this.file} を詰め直せなかった: ${(e as Error).message}`)
+      return false
+    }
+    this.deletesSinceCompact = 0
+    return true
   }
 
   // --- Event ---

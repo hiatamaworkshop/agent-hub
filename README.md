@@ -48,7 +48,7 @@ npm run hub
 ```
 
 `[hub] UI: http://127.0.0.1:7777/?token=…` が表示されるので、その URL をブラウザで開く。
-トークンは cookie に移され、URL からは消える。データは `data/hub.jsonl` に追記される。
+トークンは cookie に移され、URL からは消える。データは `data/hub.jsonl` に追記される (渡し終えたメッセージは 24 時間で消える。下の「メッセージの保存期間と削除」)。
 
 ### 3. Claude Code を channel 有効で起動する (ターミナル B、リポジトリ直下)
 
@@ -87,8 +87,8 @@ claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels s
 本文欄に画像を貼る (Ctrl+V)、画像をコンポーザーにドラッグする、または **Attach** で選ぶ。PNG・JPEG・GIF・WebP を 1 メッセージに 4 枚まで、1 枚 20MB まで。
 
 - 送ると、Hub が長辺 1568px に縮小して `HUB_DATA_DIR/files/` に保存し、スレッドに画像を出す。agent に届くのも同じ画像で、位置情報などの metadata は落ちる。GIF / WebP は 1 フレーム目だけ。本文が空なら `[image]` を送る。
-- 持続でない画像は `HUB_FILE_TTL_DAYS` (既定 7 日) で消える。消えた画像は「Image expired or unavailable」と表示される。
-- 環境変数は `HUB_FILE_MAX_EDGE` (既定 1568) と `HUB_FILE_TTL_DAYS` (既定 7、0 で掃除しない)。`.env.example` を参照。
+- 持続でない画像は `HUB_FILE_TTL_DAYS` (既定 1 日) で消える。消えた画像は「Image expired or unavailable」と表示される。
+- 環境変数は `HUB_FILE_MAX_EDGE` (既定 1568) と `HUB_FILE_TTL_DAYS` (既定 1、0 で掃除しない)。`.env.example` を参照。
 - この機能も Hub 側の API を使うので、**既に起動している Hub は再起動が必要** (古い Hub では Attach で送らずに再起動を促す)。
 
 #### agent が画像を見る
@@ -148,6 +148,17 @@ Claude Code の HTTP hook で、`AskUserQuestion`・許可待ち・ターン終�
 - 接続中の Mailbox は消せない (Delete が出ない)。先にそのセッションを終了する。
 - 同じ名前で attach し直すと新しい Mailbox になり、削除前に届いていた分は届かない。
 - この機能も Hub 側の API を使うので、**既に起動している Hub は再起動が必要** (古い Hub ではエラーが出て、カードは残る)。
+
+### メッセージの保存期間と削除
+
+Hub は接続のための基盤で、メッセージを長く残さない。残したい知識はリポジトリの文書か engram に書く (design.md §3.14)。
+
+- 受け手全員に渡し終えたメッセージは、24 時間 (`HUB_READ_RETENTION_HOURS`、0 で自動では消さない) で消える。検知イベントも同じ期間で消える。掃除は起動時と 1 時間ごと。
+- 消えないもの: 未読と、まだ返信のない `request`。返信待ちの依頼は手で消すまで残る。
+- 手で消す: メッセージの **Delete** (1 件。未読でも返信待ちでも消す)。スレッドの上の **Purge read** は、保存期間を待たずに、渡し終えたメッセージと全イベントを今消す。
+- 消えたメッセージに `reply_to` で返信すると 400 になる。`to` を付けて送る。
+- `data/hub.jsonl` は、消したときに今の状態だけに詰め直される。
+- この機能も Hub 側の API を使うので、**既に起動している Hub は再起動が必要** (古い Hub では Delete と Purge read が再起動を促す)。
 
 ### 2 エージェントで role 間の往復を試す (leader / deployer)
 

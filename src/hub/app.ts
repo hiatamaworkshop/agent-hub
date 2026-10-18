@@ -142,6 +142,14 @@ export function createApp(opts: AppOptions) {
     return c.json({ ...m, recipients: hub.recipientsOf(m) }, 201)
   })
 
+  // 人の操作で消す (design.md §3.14)。1 件と、保存期間を待たない掃除
+  app.delete('/messages/:id', (c) => {
+    hub.deleteMessage(c.req.param('id'))
+    return c.json({})
+  })
+
+  app.post('/messages/purge', (c) => c.json(hub.purgeNow()))
+
   app.get('/messages', (c) => {
     const after = intParam(c.req.query('after'), 0, 0, Number.MAX_SAFE_INTEGER)
     const limit = intParam(c.req.query('limit'), 100, 1, 1000)
