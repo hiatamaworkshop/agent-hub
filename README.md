@@ -24,7 +24,7 @@
 
 - **P0** (1 セッションで往復する) と **P1** (質問待ち・許可待ち・ターン終了の検知) は完了し、実セッションで受け入れ条件を確かめた。
 - **P2** (複数セッション・交代・メッセージパッシング) は進行中。複数 Mailbox の同時接続、role (`roles.json`)、交代 (takeover)、古い未読の流し込みの上限、無編集転送 (Forward / Relay)、`inbox` の polling 経路と、クライアントによる経路の切り替えまで実装済み。
-  配送の状態の名付け、保存期間、Docker (compose) での常駐も済み。残りは「起こすだけ」の配信アダプタなど ([docs/roadmap.md](docs/roadmap.md))。
+  配送の状態の名付け、保存期間、Docker (compose) での常駐も済み。残りは「起こすだけ」の配信アダプタなど。開いている項目は [docs/roadmap.md](docs/roadmap.md) の「項目」に `C<n>` の番号で並べてある。
 - `inbox` 経路は Claude Code 以外の実クライアント (Codex など) ではまだ試していない (テストの MCP クライアントでのみ確認)。
 
 設計は [docs/design.md](docs/design.md) から読む。Channels・hook の仕様は公式資料と実機で確認済み (design.md §6.1〜6.1j)。MCP Events (SEP-3415, Draft) との関係は design.md §7。
@@ -282,7 +282,7 @@ npm run hub:dev   # 変更を監視して Hub を再起動する
 |---|---|
 | [docs/design.md](docs/design.md) | 背景・要件・アーキテクチャ・設計判断・未確認事項 |
 | [docs/protocol.md](docs/protocol.md) | HTTP API・メッセージスキーマ・MCP ツール・配信保証 |
-| [docs/roadmap.md](docs/roadmap.md) | フェーズ分割と受け入れ条件 (P0 → P2) |
+| [docs/roadmap.md](docs/roadmap.md) | フェーズ分割と受け入れ条件 (P0 → P2)、開いている項目 (`C<n>`。書き方は冒頭の規則) |
 | [docs/plan-p0.md](docs/plan-p0.md) | P0 の技術選定・構成・コミット単位のステップ |
 | [tools/probe/README.md](tools/probe/README.md) | 未検証事項 (design.md §6.2) を実機で確かめる手順 |
 | [CLAUDE.md](CLAUDE.md) | 実装エージェント向けの作業ルール |

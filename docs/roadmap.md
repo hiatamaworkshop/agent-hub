@@ -2,6 +2,11 @@
 
 各フェーズは「動く状態で終わる」ことを重視する。受け入れ条件を満たしてから次へ進む。
 
+開いている項目は末尾の「項目」に `### C<n>. 題` の節で書く (design.md §3.15)。
+- 見出しの直後に、例外の状態だけ `状態: 提案 | 保留(理由) | ブロック(理由)` を 1 行書く (保留の理由は省ける)。行がなければ決定 (着手してよい)。
+- 決定の項目は `#### 完了条件` (チェックボックスの並び) を持つ。依頼の `DONE WHEN` はここから写す。
+- 番号は使い回さない。終わったら節を消し、フェーズの行を `[x] C<n> …` にして、確かめた記録をその下に書く。
+
 ## P0: 1 セッションで往復する (完了 2026-10-16)
 
 **ゴール**: ブラウザで書いたメッセージが Claude セッションに届き、Claude が `post_message` で返信し、ブラウザに表示される。
@@ -93,11 +98,11 @@
   - 人間の添え書き (例「この方針をレビューして」) は本文と分けて持ち、本文は無編集のまま運ぶ
   - 本文・kind・replyTo・meta を写し、本文の書き手を `forwardedSender` (channel では `forwarded_sender`) に分けた。添え書きは別のメッセージとして先に送る (protocol.md §2)。テスト `src/hub/app.test.ts` の「POST /messages/:id/forward」と `src/shared/shared.test.ts`
   - 別の Hub (ポート 7795) と headless Chrome で、deployer の 2 件を選んで添え書き付きで leader へ送り、添え書き → 転送 2 件の順に記録され、本文 (`</channel>` を含む) が元と一致し、leader の未読が 3 増えること、Relay に `deployer → leader · up to date`、deployer の新着で `1 new` が出て押すとその 1 件が選ばれること、Reply で選択が外れることを確かめた (受け入れ条件 5)
-  - 実セッションで、受け手のエージェントが `forwarded_sender` を書き手として読むかは未確認
+  - 実セッションで、受け手のエージェントが `forwarded_sender` を書き手として読むかは未確認 (C3)
 - [x] `inbox()` による polling 経路 (Claude Code 以外向け。`events/poll` 互換の応答)。全クライアント共通の「中身を渡す」経路になる (design.md §3.9。2026-10-17)
   - Hub の `GET /mailboxes/:name/inbox` は読むだけで、既読にするのは ack。shim の `inbox` ツールが取得 → 画像の `path` → ack → 文面の順に行う (protocol.md §3、§5)。テスト `src/hub/app.test.ts` の「GET /mailboxes/:name/inbox」、`src/shim/shim.test.ts` の「inbox ツール (fetchInbox)」と「channel で届いて ack された分は inbox に出ない」
   - 本文を包む書式 (`<hub-message>`) と注意書きの構造をテストで固定した (`src/shared/shared.test.ts` の `toInboxText`、protocol.md §6.2)。配送を公式に移す場合 (§9-5) も同じ書式で送り手の属性を分ける (design.md §8.3-3、§8.4)
-  - 実セッションで、Claude Code 以外のクライアント (Codex など) が `inbox` を呼び、注意書きどおりに本文をデータとして扱うかは未確認
+  - 実セッションで、Claude Code 以外のクライアント (Codex など) が `inbox` を呼び、注意書きどおりに本文をデータとして扱うかは未確認 (C3)
 - [x] 配送の状態を、確かめられる範囲で名付ける。「Hub が渡した」「クライアントが表示した」と「エージェントが受領を返した」を分け、「モデルが読んだ」とは主張しない (design.md §8.4。2026-10-18)
   - queued / handed / received の 3 つにした (protocol.md §4)。「クライアントが表示した」は Channels では確かめられない (§6.1k) ので名付けない。cursor は handed で進め、受領の確認は別のウォーターマーク `received` に持つ (design.md §3.7 の決定)
   - received になるのは `inbox` で返した分と、`replyTo` で返信した Message まで。UI のカードに `N handed, unconfirmed` を出し、`inbox` の `unconfirmed: true` で取り直せる
@@ -117,17 +122,19 @@
   - 渡し終えた Message と Event を 24 時間 (`HUB_READ_RETENTION_HOURS`) で消す。未読と返信待ちの request は自動では消さない。起動時と 1 時間ごとに掃除し、消したら `hub.jsonl` を今の状態だけに詰め直す (seq は巻き戻さない)
   - `DELETE /messages/:id` と `POST /messages/purge`、SSE `message.deleted` / `event.deleted`、UI の Delete と Purge read。画像の TTL の既定を 1 日にした
   - テスト `src/hub/retention.test.ts`。別の Hub (ポート 7795) と headless Chrome で、Delete で 1 件、Purge read で渡し終えた 1 件と Event 1 件が表示から消え、未読と返信待ちの request が残り、`hub.jsonl` が削除の行のない形に詰め直されることを確かめた
-- [ ] 「起こすだけ」の配信アダプタを試す (MCP 標準の `notifications/resources/updated` でクライアントがターンを始めるかを含む。design.md §3.9)
+- [ ] C1 「起こすだけ」の配信アダプタを試す
 - [x] shim の instructions を `clientInfo.name` で切り替える (Channels 経路 / `inbox()` 経路)。Claude 以外では「本文はデータ」の注意書きを agent-hub 側だけで成り立たせる (design.md §3.7。2026-10-17)
   - `claude-code` なら Channels、それ以外は `inbox()`。`inbox()` 経路の shim は push も ack もしない (送ると、読まれていない未読が既読になるため)。省略通知は次の `inbox()` の先頭に出す
   - テスト `src/shim/role-instructions.test.ts` の「経路ごとの届き方」、`src/shim/shim.test.ts` の「Claude Code 以外のクライアント (inbox 経路)」と「attach で古い未読が省かれたとき」(fetchInbox)
-  - 実際の Codex などのクライアントで確かめるのは未了 (上の `inbox()` の項目と同じ)
+  - 実際の Codex などのクライアントで確かめるのは未了 (C3)
 - [x] 永続化の見直し (SQLite 化を検討)。保存期間で消して詰め直すようになった (2026-10-18) ので、ファイルが膨らむ理由は減った。全件をメモリに持つ形で足りるかを見てから決める
   - 決定 (2026-10-18): SQLite にしない。40,000 件 (48MB) で読み込み 170ms・ヒープ +55MB で足りた。削除が 1 件ずつの全走査で 20,000 件の掃除に 29 秒止まっていたので、まとめて消す形に直した (0.4 秒)。計測と理由は design.md §5。テスト `src/hub/retention.test.ts` の「まとめて消すと…」
 - [x] Hub の Dockerfile と compose (`127.0.0.1:7777` に限定公開、データは volume、`restart: unless-stopped`。design.md §3.8。2026-10-18)
   - 別のプロジェクト名とポート 7796 で、ループバック以外から届かないこと、ホストの shim の attach・hook の Event・画像の添付・volume の永続化を確かめた (design.md §6.1l)
-  - 受け入れ条件 7 のうち、Claude Code の実セッションで 1〜6 を compose の Hub に対して通すのは未了
-- [ ] engram への区切り知見の保存連携 (任意)
+  - 受け入れ条件 7 のうち、Claude Code の実セッションで 1〜6 を compose の Hub に対して通すのは未了 (C2)
+- [ ] C2 compose の Hub に対して、実セッションで受け入れ条件 1〜6 を通す
+- [ ] C3 Claude Code 以外の実クライアントと、受け手の読み方を確かめる
+- [ ] C4 engram への区切り知見の保存連携 (任意)
 
 **受け入れ条件**
 1. 2 つの Mailbox が別トピックを購読し、それぞれの購読分だけ受け取る。
@@ -143,27 +150,138 @@
 - [x] **shim の seq 巻き戻し**: Hub の `data/` を消して再起動すると seq が 1 から振り直され、shim が前の Hub で覚えた seq を stream の `after` に使うため、attach 時の未読を黙って捨てていた。attach のたびに `after` を Hub の `cursor` から数え直すようにした (ack 漏れの再送は id で除去)
 - [x] **未読の算出が全件走査**: `unread()` と `listMessages()` が毎回ログ全体を見ていた。ログは seq の昇順なので、二分探索で `cursor` (または `after`) の位置から見るようにした。長く ack しない Mailbox はその未読分だけ走査する
 - [x] **detached の旧 shim が後継から Mailbox を取り返しうる**: A の stream が切れて猶予 (15 秒) を過ぎ `disconnected` になった間に B が attach すると、戻ってきた A の shim は stream の 404 で attach し直し、「新しい方が勝つ」で B を切り離す。A は superseded ではないので attach し直しを止める仕組みがない。ループバックで 15 秒以上戻れないのは稀なので後回し。対策の候補は、後継のいる Mailbox への attach で、前の Attachment ID を示した attach し直しを拒む、など (design.md §3.3 の takeover。2026-10-17 のレビューで発見)。2026-10-18 にその案で対応した (attach の `previous` と 409 `successor_attached`。テスト `src/hub/mailbox.test.ts` の「切断中の後継 (previous)」、`src/shim/shim.test.ts` の「HubClient: 切断中に後継が attach したとき」)。Hub の再起動と重なった場合は見分けられない
-- [ ] **channel なしで起動した Claude Code の通知を ack してしまう**: `clientInfo.name` は `claude-code` のままなので Channels 経路になり、Claude Code が通知を捨てても shim は ack する (未読が既読になる)。今は起動手順で channel を付ける前提。2026-10-18 に、通知が黙って捨てられること、initialize・環境変数・要求の並びに channel の有無の違いがなく shim から見分けられないことを確かめた (design.md §6.1k)。配送の状態を分けた (2026-10-18) ので、捨てられた分は handed のまま UI に unconfirmed として出て、`inbox` の `unconfirmed: true` で取り直せる。自動では取り戻さない (design.md §3.7)
+- [ ] C5 **channel なしで起動した Claude Code の通知を ack してしまう**
 - [x] **attach の `client` が常に `claude-code`**: shim は initialize より前に attach する (role の説明を取るため) ので、`inbox` 経路のクライアントでも `client: "claude-code"` で記録される。UI と `GET /mailboxes` の表示だけの問題。直すなら initialize の後に Attachment の `client` を更新する口を足す。2026-10-18 に対応: shim が initialize の後に `PATCH /attachments/:id` で `clientInfo.name` を送り、UI は `attachment.updated` で取り直す。テスト `src/hub/app.test.ts` の「PATCH /attachments/:id」、`src/shim/shim.test.ts` の「Claude Code 以外のクライアント (inbox 経路)」
 - [x] **start-agent.ps1 が role の打ち間違いを起動時に止めない**: ValidateSet を外したので、`roles.json` にない role でも起動する。Hub は 400 `unknown_role` を返し、shim は attach を再試行し続ける。エラーは shim のログと `whoami` にしか出ない。`roles.json` に role があるかを起動前に確かめ、なければ claude を起動せず止めるようにした (2026-10-17 のレビューで発見。まとめて起動する `start-team.ps1` は 2026-10-18 に対応済み、`start-agent.ps1` は 2026-10-18 に対応)
 
-## 将来の検討 (未確定)
+## 項目
 
-- 配信ルール (人間確認なしの自動転送) の opt-in 設計
-- `report_event` ツール (skill からの区切り申告) と、`Stop` との重複除去。P1 の `Stop` の表示で足りないと分かってから (design.md §3.4)
-- 配送を公式 cross-session messaging に移す。投函の形式が公式資料に載ってから (design.md §9-5)
-- ドキュメントの作法を照らす (design.md §3.12)
-  - 層 1: 決定的な検査のスクリプト (`npm run docs:check`。地図のずれ、API と列挙の表のずれ、`CHANGED` の docs 漏れ、§9 の決定の日付)。結果は notice か Event で UI に出す
-  - 作法の表を正本にし、CLAUDE.md・leader.md・deployer.md はそこを指すだけにする
-  - 層 2 (軽量ジャッジ): 層 1 が逃したずれが材料として貯まってから、作る価値を測る
-- leader を使い捨てにできるようにする: 台帳の最小版 (未返信の request の一覧) と、捨てるきっかけを誰が持つか (design.md §3.13 の未決)
-- 溜まりのバッジ (ボールが誰にあるかで分ける) と、roadmap の項目 (C 番号) をカードで見て選び、request の下書きを作る。先に項目の書き方の規則を決める (design.md §3.15)
-- 本文が `/clear` などの組み込みコマンドで始まるとき、UI で「文字列として届き、実行されない」と警告する (design.md §6.1h。任意)
-- 依頼の台帳と整合点: メッセージの形の宣言と Hub での検査、依頼ごとの SCOPE と `git diff` の突き合わせ、受け入れの指紋と要再確認 (design.md §3.11、§9-6)
-  - 始め方: 語彙は leader / deployer の運用で毎回使っている見出しから取り、先に設計しない。新しい検査は警告だけで始め、人の判断と一致するのを見てから 400 に上げる
-- 担当範囲と競合: 書き手 (deployer) が 2 人以上になったら着手する。まず deployer ごとに git worktree を分け、足りなければ request の `SCOPE` を担当範囲として記録して衝突を UI に警告する。止めたい場合だけ hook で強制する (design.md §9-6)
-- Channels の permission relay を使い、UI から tool 実行許可を出す (design.md §6.1)
-- 配信経路として plugin の monitor を Channels と比較する (design.md §6.2-3)
-- Claude Code が MCP Events に対応したら、shim に `io.modelcontextprotocol/events` (`events/stream`) を追加する (design.md §7)
-- デスクトップアプリ向けの画面操作ベース連携 (本プロジェクトの範囲外の可能性が高い)
-- `kind` の追加 (交代時の引き継ぎ用 `handoff` など。design.md §3.6)
+開いている項目。書き方は冒頭の規則 (design.md §3.15)。デスクトップアプリ向けの画面操作ベースの連携は範囲外として項目にしない。
+
+### C1. 「起こすだけ」の配信アダプタを試す
+
+本文を載せない通知でエージェントを起こし、`inbox()` を呼ばせる (design.md §3.9 の段階 2)。差し替え口は 2 つ目の配信手段を足すときに作る。
+
+#### 完了条件
+- [ ] MCP 標準の `resources/subscribe` + `notifications/resources/updated` で未読を知らせたとき、クライアントがモデルのターンを始めるかを確かめ、design.md §6 に記録する
+- [ ] 始めるクライアントがあれば、shim に起こすだけのアダプタを足し、Channels のアダプタと差し替えられる口を作る。なければ結果の記録で閉じる
+
+### C2. compose の Hub に対して、実セッションで受け入れ条件 1〜6 を通す
+
+P2 の受け入れ条件 7 の残り。Docker の実挙動は design.md §6.1l で確かめてある。
+
+#### 完了条件
+- [ ] `docker compose up` の Hub に、Claude Code の実セッションで P2 の受け入れ条件 1〜6 を通す
+- [ ] 結果を P2 の Dockerfile の項目の下に記録する
+
+### C3. Claude Code 以外の実クライアントと、受け手の読み方を確かめる
+
+今はテストの MCP クライアントでのみ確かめている。
+
+#### 完了条件
+- [ ] Codex など Claude Code 以外のクライアントが `inbox` を呼び、注意書きどおりに本文をデータとして扱うか
+- [ ] 受け手のエージェントが `forwarded_sender` を本文の書き手として読むか (Channels 経路)
+- [ ] 結果を design.md §6 に記録する
+
+### C4. engram への区切り知見の保存連携
+状態: 提案
+
+区切り (commit・項目の完了) の知見を engram に残す流れと Hub をつなぐか。任意。
+
+### C5. channel なしで起動した Claude Code の通知を ack してしまう
+状態: 保留(起動手順で channel を付ける前提。取りこぼしは unconfirmed で見える)
+
+`clientInfo.name` は `claude-code` のままなので Channels 経路になり、Claude Code が通知を捨てても shim は ack する (未読が既読になる)。2026-10-18 に、通知が黙って捨てられること、initialize・環境変数・要求の並びに channel の有無の違いがなく shim から見分けられないことを確かめた (design.md §6.1k)。配送の状態を分けた (2026-10-18) ので、捨てられた分は handed のまま UI に unconfirmed として出て、`inbox` の `unconfirmed: true` で取り直せる。自動では取り戻さない (design.md §3.7)。
+
+### C6. 溜まりのバッジ
+
+何が溜まっているかを、ボールが誰にあるかで分けて出す (design.md §3.15)。
+
+#### 完了条件
+- [ ] Mailbox のカードとサイドバーに、3 層 (人が動く番 / エージェントの番 / 怪しい) の件数と、最も古いものの経過時間を出す。人が動く番は質問待ち・許可待ちから始める (受け入れ待ちは §3.15 の未決 4)
+- [ ] タブの favicon かタイトルに、人が動く番の件数を出す
+- [ ] 古い Hub の応答でも壊れない
+- [ ] 別の Hub (ポート 7795) と headless Chrome で表示を確かめる
+
+### C7. 項目の索引と規則の検査
+
+roadmap の C 項目を機械的に取り出し、規則の崩れを照らす。C8 のカードと、C9 の `docs:check` の最初の検査になる。
+
+#### 完了条件
+- [ ] roadmap.md から項目 (ID・題・状態・完了条件の進み具合・行) を取り出すパーサ。ブラウザでもホストでも使えるよう `src/shared` に置く
+- [ ] 規則の検査: ID の重複、状態の語彙、決定の項目に `#### 完了条件` があるか、フェーズの `[ ] C<n>` が実在する項目を指すか
+- [ ] npm script で回し、崩れていれば exit 1
+- [ ] テスト
+
+### C8. 項目のカードと依頼の下書き
+
+roadmap の項目をカードで見て選び、request の下書きを作る (design.md §3.15)。
+
+#### 完了条件
+- [ ] 索引の置き場所を決める (§3.15 の未決 2)
+- [ ] UI に項目のカードを 1 行で出す (ID・題・状態・進み具合・依頼中)
+- [ ] カードから request の下書き (`GOAL` に ID、`DONE WHEN` に完了条件) を作る。人が直して Send する
+- [ ] request に項目の ID を持たせ (§3.15 の未決 3)、カードに依頼中 / 報告済を出す
+- [ ] 送った後に完了条件が変わったら、カードに差分を出す (約束の指紋)
+
+### C9. ドキュメントの作法を照らす
+状態: 提案
+
+design.md §3.12。層 1 は決定的な検査のスクリプト (`npm run docs:check`。地図のずれ、API と列挙の表のずれ、`CHANGED` の docs 漏れ、§9 の決定の日付)。結果は notice か Event で UI に出す。
+作法の表を正本にし、CLAUDE.md・leader.md・deployer.md はそこを指すだけにする。層 2 (軽量ジャッジ) は、層 1 が逃したずれが材料として貯まってから作る価値を測る。
+
+### C10. leader を使い捨てにできるようにする
+状態: 提案
+
+台帳の最小版 (未返信の request の一覧) と、捨てるきっかけを誰が持つか (design.md §3.13 の未決)。
+
+### C11. 依頼の台帳と整合点
+状態: 提案
+
+メッセージの形の宣言と Hub での検査、依頼ごとの SCOPE と `git diff` の突き合わせ、受け入れの指紋と要再確認 (design.md §3.11、§9-6)。
+語彙は leader / deployer の運用で毎回使っている見出しから取り、先に設計しない。新しい検査は警告だけで始め、人の判断と一致するのを見てから 400 に上げる。
+
+### C12. 配信ルール (人間確認なしの自動転送) の opt-in
+状態: 提案
+
+既定は人が Send を押す (design.md §2)。入れるなら opt-in で、自律オーケストレーションとの境目は design.md §3.13。
+
+### C13. 本文が組み込みコマンドで始まるときの警告
+状態: 提案
+
+本文が `/clear` などで始まるとき、UI で「文字列として届き、実行されない」と警告する (design.md §6.1h)。任意。
+
+### C14. permission relay で UI から許可を出す
+状態: 提案
+
+Channels の permission relay を使い、UI から tool 実行の許可を出す (design.md §6.1)。
+
+### C15. plugin の monitor と Channels の比較
+状態: 提案
+
+配信経路として plugin の monitor を Channels と比べる (design.md §6.2-3)。
+
+### C16. `kind` の追加
+状態: 提案
+
+交代時の引き継ぎ用 `handoff` など (design.md §3.6)。
+
+### C17. `report_event` と `Stop` の重複除去
+状態: 保留(P1 の `Stop` の表示で足りないと分かるまで)
+
+skill から区切りを申告する `report_event` ツールと、`Stop` との重複除去 (design.md §3.4)。
+
+### C18. 担当範囲と競合
+状態: 保留(書き手の deployer が 2 人以上になるまで)
+
+まず deployer ごとに git worktree を分け、足りなければ request の `SCOPE` を担当範囲として記録して衝突を UI に警告する。止めたい場合だけ hook で強制する (design.md §9-6)。
+
+### C19. 配送を公式 cross-session messaging に移す
+状態: ブロック(投函の形式が公式資料に載るまで)
+
+design.md §9-5。移すときも Mailbox・role・未読の正本は Hub に置く。
+
+### C20. MCP Events (`events/stream`) を shim に足す
+状態: ブロック(Claude Code が MCP Events に対応するまで)
+
+shim に `io.modelcontextprotocol/events` (`events/stream`) を追加する (design.md §7)。
