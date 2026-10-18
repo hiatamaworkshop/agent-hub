@@ -124,7 +124,7 @@
   "ts": "…",
   "kind": "request | reply | notice",
   "from": { "type": "user | mailbox", "id": "browser | rev-a", "role": "reviewer | null" },
-  "to": { "type": "mailbox | role | topic | user", "id": "…" },
+  "to": { "type": "mailbox | role | topic | user", "id": "…", "project": "C:\\work\\vcp (role 宛てだけ、任意)" },
   "body": "本文 (文字列)",
   "replyTo": "m_… (kind=reply では必須)",
   "forwardedFrom": "m_… (無編集転送の場合。大元のメッセージ id)",
@@ -141,6 +141,9 @@
 - `to.type = user`: どの Mailbox にも配信せず、UI にだけ出る (ブラウザへの返信先。`from` と対称にするため)。
   `id` は Hub が付与する送り手と同じ `browser` / `cli` に限り、それ以外は 400 (`mailbox` のつもりで種類を誤選択した送信を受理しないため)。
 - `to.type = role`: その role を持つ全 Mailbox に配信する。該当する Mailbox がなければ 400 ではなく受理し、後からその role で attach した Mailbox の未読になる。
+  - `to.project` (任意、role 宛てだけ。ほかの種類に付けると 400): 作業フォルダのパス。あれば、Mailbox の `project` が同じもの (区切り・末尾・ドライブ文字の大文字小文字を揃えて比べる) にだけ配信する。`project` のない Mailbox には届かない。
+  - 送り手が Mailbox (`X-Hub-Attachment`) で `to.project` を省いたら、Hub が送り手の Mailbox の `project` を入れる (送り手に `project` がなければ入れない)。プロジェクトをまたぐなら `mailbox:` 宛てか、`to.project` を明示する。ブラウザ・curl からは入れない (design.md §9-7)。
+  - 入れた `project` は保存される Message の `to` に残り、応答・UI・`GET /messages` で見える。無編集転送の `to` も同じ扱い。
 - 無編集転送 (`POST /messages/:id/forward`): `body`・`kind`・`replyTo`・`meta` を元のメッセージのまま写す。`from` は転送した人 (上の規則で Hub が付与)、本文の書き手は `forwardedSender` に分ける。
   転送の転送では `forwardedFrom` / `forwardedSender` は大元を指す (本文の出どころを 1 段で示す)。`forwardedSender` のない転送 (この欄を足す前の記録) もありうる。
   人間の添え書きは転送に含めない。UI は別のメッセージ (`user:browser` からの `request` か `notice`) として転送より先に送る。Channels の属性値のエスケープが未確認 (design.md §6.2-4) で、自由文を属性に載せられないため。

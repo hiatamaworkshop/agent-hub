@@ -36,6 +36,12 @@
   .mb .name { font-weight: 600; font-family: var(--mono); }
   .mb .meta { font-size: 12px; color: var(--muted); }
   .mb .meta.warn { color: var(--warn); overflow-wrap: anywhere; }
+  /* プロジェクトの絞り込み (design.md §3.2)。外れたカード・Message・Event は消さずに隠す */
+  .off { display: none !important; }
+  select#project { width: 100%; margin-bottom: 10px; }
+  .projhead { font-size: 12px; font-weight: 600; color: var(--muted); margin: 10px 0 4px; overflow-wrap: anywhere; }
+  .projhead:first-child { margin-top: 0; }
+  #elsewhere { color: var(--warn); font-size: 12px; font-weight: 600; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
   .dot.on { background: var(--reply); }
   section { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -147,6 +153,7 @@
 </div>
 <main>
   <aside>
+    <select id="project" title="Show one project's Mailboxes, messages and events, and send role: messages only to that project"><option value="">All projects</option></select>
     <h2>Mailboxes</h2>
     <div id="mailboxes"><div class="meta">None yet</div></div>
   </aside>
@@ -154,6 +161,7 @@
     <div class="foldbar">
       <button type="button" id="fold" title="Hide messages older than the latest N and show them as one row. Display only: the Hub record and unread counts are unchanged.">Compact</button>
       <label title="How many latest messages stay visible after Compact (default 10)">Keep latest <input id="keep" type="number" min="1" step="1"></label>
+      <button type="button" id="elsewhere" class="linkbtn" hidden title="Sessions in other projects are waiting for a person (question or permission). Click to show all projects."></button>
       <span id="relay" title="Messages from a Mailbox not yet forwarded to a Mailbox you forwarded to before"></span>
       <button type="button" id="purge" class="linkbtn" title="Delete from the Hub now, without waiting for the retention period: messages already handed to every recipient, and all detection events. Unread messages and requests awaiting a reply are kept.">Purge read</button>
     </div>
@@ -201,6 +209,8 @@ const forwarding = new Map()
 const msgBoxes = new Map() // id → 描画したカード (Compact で DOM から外れたものも含む)
 
 const addr = (a) => `${a.type}:${a.id}`
+// 表示用。プロジェクトに絞った role 宛ては "@ フォルダ名" を添える (design.md §9-7)
+const addrLabel = (a) => addr(a) + (a.project ? ` @ ${folderName(a.project)}` : '')
 const time = (ts) => new Date(ts).toLocaleTimeString()
 
 function el(tag, cls, text) {
@@ -431,7 +441,8 @@ function render(m) {
   box.dataset.ts = m.ts
   const head = el('div', 'head')
   head.append(el('span', `chip c${ci}`, senderLabel(m.from)), el('span', '', `#${m.seq}`), el('span', '', time(m.ts)), el('span', `kind ${m.kind}`, m.kind))
-  const route = el('span', 'addr', `${m.from.type}:${m.from.id}${m.from.role ? ` (${m.from.role})` : ''} → ${addr(m.to)}`)
+  const route = el('span', 'addr', `${m.from.type}:${m.from.id}${m.from.role ? ` (${m.from.role})` : ''} → ${addrLabel(m.to)}`)
+  if (m.to.project) route.title = `Only ${m.to.id} Mailboxes in ${m.to.project}`
   head.append(route)
   if (m.replyTo) {
     const orig = seen.get(m.replyTo)
@@ -460,6 +471,7 @@ function render(m) {
   head.append(actions)
   box.append(head, el('div', 'body', m.body))
   renderFiles(box, m.meta)
+  box.classList.toggle('off', !messageInProject(m))
   list.append(box)
   msgBoxes.set(m.id, box)
   scheduleRelay()
@@ -471,6 +483,7 @@ function render(m) {
 // payload は Claude Code の hook 入力そのまま (source: claude-code) なので、読むキーはここに閉じ込める。値は外部由来のデータとして textContent で入れる
 const seenEvents = new Set()
 const evtBoxes = new Map() // Event の id → 描画した行 (Hub が消したときに外すため)
+const evtData = new Map() // Event の id → Event (プロジェクトの絞り込みを掛け直すため)
 const lastEventByMailbox = new Map() // Mailbox 名 → 最新の Event (カードに出す)
 const DETACH_LABEL = { closed: 'session ended', disconnected: 'connection lost', lease_expired: 'lease expired' }
 const EVENT_LABEL = { 'turn.end': 'turn end', question: 'question', 'question.answered': 'answered', permission: 'permission', notification: 'notification', 'session.boundary': 'boundary' }
@@ -569,8 +582,10 @@ function renderEvent(ev, counts) {
     head.append(actions)
   }
   box.append(head, eventBody(ev))
+  box.classList.toggle('off', !eventInProject(ev))
   insertByTs(box, ev.ts)
   evtBoxes.set(ev.id, box)
+  evtData.set(ev.id, ev)
   if (atBottom) { pinned = true; list.scrollTop = list.scrollHeight }
   if (ev.mailbox && !ev.superseded) {
     const prev = lastEventByMailbox.get(ev.mailbox)
@@ -634,11 +649,12 @@ function makeStub() {
   return s
 }
 
-// 畳んだ中の Message の seq の範囲を添える (Event だけなら範囲は出さない)
+// 畳んだ中の Message の seq の範囲を添える (Event だけなら範囲は出さない)。数えるのは今の絞り込みで見えるものだけ
 function updateStub() {
-  const seqs = folded.map((f) => f.seq).filter((s) => s !== null)
+  const shown = folded.filter((f) => !f.box.classList.contains('off'))
+  const seqs = shown.map((f) => f.seq).filter((s) => s !== null)
   const range = seqs.length ? ` (#${seqs[0]}–#${seqs[seqs.length - 1]})` : ''
-  stub.querySelector('.stub-text').textContent = `${folded.length} older items compacted${range}`
+  stub.querySelector('.stub-text').textContent = `${shown.length} older items compacted${range}`
 }
 
 function fold() {
@@ -646,12 +662,14 @@ function fold() {
   const keep = parseKeep($('keep').value)
   $('keep').value = keep
   saveKeep(keep)
-  // Message と検知イベントを合わせて数える
-  const visible = [...list.querySelectorAll('.msg, .evt')]
+  // Message と検知イベントを合わせて、今の絞り込みで見えるものを数える
+  const items = [...list.querySelectorAll('.msg, .evt')]
+  const visible = items.filter((b) => !b.classList.contains('off'))
   const n = visible.length - keep
   if (n <= 0) return
+  // 隠れているものも、境目より前なら一緒に畳む (絞り込みを変えたときに時刻の順が崩れないため)。
   // 今回の分は退避済みのものより新しいので、末尾に足すと古い順が保たれる
-  for (const box of visible.slice(0, n)) {
+  for (const box of items.slice(0, items.indexOf(visible[n - 1]) + 1)) {
     folded.push({ box, seq: box.dataset.seq ? Number(box.dataset.seq) : null })
     box.remove()
   }
@@ -680,10 +698,10 @@ function option(value, label) {
   return o
 }
 
-function group(label, values) {
+function group(label, values, labelOf = (v) => v) {
   const g = el('optgroup')
   g.label = label
-  for (const v of values) g.append(option(v))
+  for (const v of values) g.append(option(v, labelOf(v)))
   return g
 }
 
@@ -692,7 +710,9 @@ function subscriptionsOf(mb) {
   return Array.isArray(mb.effectiveSubscriptions) ? mb.effectiveSubscriptions : []
 }
 
-function buildTo(mailboxes) {
+// 候補は選んでいるプロジェクトの Mailbox から作る。role はそのプロジェクトに絞って送る (selectedTo が project を付ける)
+function buildTo(all) {
+  const mailboxes = all.filter(mailboxInProject)
   const sel = $('to')
   const prev = sel.value
   const roles = new Set(), topics = new Set()
@@ -704,7 +724,8 @@ function buildTo(mailboxes) {
   // 何も選ばれていない状態 (自動で決まる候補がない) を示す。値は空で、Send では拒否する
   sel.append(option('', 'Select a destination…'))
   if (mailboxes.length) sel.append(group('Mailbox', mailboxes.map((mb) => `mailbox:${mb.name}`)))
-  if (roles.size) sel.append(group('role', [...roles].sort()))
+  const scope = currentProject()
+  if (roles.size) sel.append(group(scope ? `role (only ${scope.label})` : 'role (all projects)', [...roles].sort(), (v) => (scope ? `${v} @ ${scope.label}` : v)))
   if (topics.size) sel.append(group('Subscribed topics', [...topics].sort()))
   sel.append(group('User', ['user:browser']))
   sel.append(option(MANUAL_TOPIC, 'Enter a topic…'))
@@ -754,7 +775,10 @@ function selectedTo() {
   const v = $('to').value
   if (v === MANUAL_TOPIC) return { type: 'topic', id: $('topic').value.trim() }
   const i = v.indexOf(':')
-  return { type: v.slice(0, i), id: v.slice(i + 1) }
+  const to = { type: v.slice(0, i), id: v.slice(i + 1) }
+  const scope = currentProject()
+  if (to.type === 'role' && scope) to.project = scope.path
+  return to
 }
 
 // 人が選んだ宛先。自動で選んだ値ではなくなるので、以後の Mailbox 一覧の更新では動かさない (同じ値を選んでも同じ)
@@ -834,13 +858,16 @@ function rememberTo(to) {
 // UI は Hub を再起動しなくても差し替わるので、recipients を返さない古い Hub でも送信は成功扱いにする
 // 届く先が全部未接続なら記録されるが、読む人がいない (mailbox / role / topic のどれでも)。0 件の警告が出るときはそちらを優先する。
 // 一覧にない名前は接続状態が分からないので、未接続とみなさない (警告しない側に倒す)
-function warnDelivery(m, recipients) {
+// to.project を知らない古い Hub は project を落として全プロジェクトに配る。そのときは何より先に知らせる (sent は送った to)
+function warnDelivery(m, recipients, sent) {
   const nobodyReading = Array.isArray(recipients) && recipients.length > 0 &&
     recipients.every((name) => { const mb = mailboxList.find((x) => x.name === name); return mb !== undefined && !mb.attachment })
-  if (m.to.type !== 'user' && Array.isArray(recipients) && recipients.length === 0) {
-    $('warn').textContent = `No Mailbox will receive ${addr(m.to)} (#${m.seq} was recorded)`
+  if (sent && sent.project && !m.to.project) {
+    $('warn').textContent = `This Hub ignored the project and delivered #${m.seq} to ${addr(m.to)} in every project. Restart the Hub to send to one project.`
+  } else if (m.to.type !== 'user' && Array.isArray(recipients) && recipients.length === 0) {
+    $('warn').textContent = `No Mailbox will receive ${addrLabel(m.to)} (#${m.seq} was recorded)`
   } else if (m.to.type !== 'user' && nobodyReading) {
-    $('warn').textContent = `Accepted, but nobody is reading ${addr(m.to)} now; it will stay unread until it attaches (#${m.seq} was recorded).`
+    $('warn').textContent = `Accepted, but nobody is reading ${addrLabel(m.to)} now; it will stay unread until it attaches (#${m.seq} was recorded).`
   }
 }
 
@@ -940,9 +967,9 @@ async function forwardSelected() {
       markPicked(src.id)
     }
     showOwn(last)
-    setStatus(`Forwarded ${done.length} to ${addr(to)}`)
+    setStatus(`Forwarded ${done.length} to ${addrLabel(to)}`)
     rememberTo(to)
-    warnDelivery(last, recipients)
+    warnDelivery(last, recipients, to)
   } catch (err) {
     const msg = String(err.message || err)
     $('err').textContent = done.length ? `Forwarded ${done.length} of ${picked.length}; the rest are still selected. ${msg}` : msg
@@ -1035,7 +1062,7 @@ $('form').onsubmit = async (e) => {
     showOwn(m)
     setStatus(`Sent #${m.seq}`)
     rememberTo(to)
-    warnDelivery(m, recipients)
+    warnDelivery(m, recipients, to)
     if ($('body').value === body) $('body').value = '' // 送信中に書き足されていれば残す
     dropAttachments(sentFiles)
     // プログラムからの値変更では input イベントが出ないので、ヒントを明示的に更新する
@@ -1229,8 +1256,10 @@ $('body').addEventListener('input', updateHint)
 async function loadMailboxes() {
   const { mailboxes } = await api('/mailboxes')
   mailboxList = mailboxes
+  buildProjects(mailboxes)
   renderMailboxes(mailboxes)
   buildTo(mailboxes)
+  applyProject()
   scheduleRelay() // 未送の判定に B の role を使う
 }
 
@@ -1239,12 +1268,137 @@ function folderName(p) {
   return p.split(/[\\/]+/).filter(Boolean).pop() || p
 }
 
-// カードの描画。Event が届いたときは一覧を取り直さず、手元の一覧で描き直す
-function renderMailboxes(mailboxes) {
+// --- プロジェクトの絞り込み (design.md §3.2、§9-7) ---
+// プロジェクトは Mailbox の project (作業フォルダ) から作る。比べるのは Hub と同じ規則で揃えたキー (normalizeProjectPath)
+const PROJECT_KEY = 'agent-hub.project'
+let projects = new Map() // キー → { key, path, label }
+let projectFilter = '' // 選んでいるプロジェクトのキー。'' は All projects
+// 前回の選択は、最初の一覧が届いてから効かせる (一覧を取れないうちに全部を隠さないため)
+let savedProject = readProject()
+function readProject() { try { return localStorage.getItem(PROJECT_KEY) || '' } catch { return '' } }
+function saveProject(v) { try { localStorage.setItem(PROJECT_KEY, v) } catch {} }
+function projectKey(p) {
+  const s = p.replace(/[\\/]+/g, '/').replace(/(.)\/$/, '$1')
+  return /^[a-z]:/i.test(s) ? s.toLowerCase() : s
+}
+function currentProject() { return (projectFilter && projects.get(projectFilter)) || null }
+function projectOfMailbox(name) {
+  const mb = mailboxList.find((x) => x.name === name)
+  return mb && mb.project ? projectKey(mb.project) : null
+}
+function mailboxInProject(mb) { return !projectFilter || (!!mb.project && projectKey(mb.project) === projectFilter) }
+
+// 送り手か宛先の Mailbox がそのプロジェクトのもの、to.project がそのプロジェクト、
+// project のない role / topic 宛てでそのプロジェクトの Mailbox が受け取るもの。user 宛ては送り手で決まる
+function messageInProject(m) {
+  if (!projectFilter) return true
+  if (m.from.type === 'mailbox' && projectOfMailbox(m.from.id) === projectFilter) return true
+  const to = m.to
+  if (to.type === 'mailbox') return projectOfMailbox(to.id) === projectFilter
+  const here = mailboxList.filter(mailboxInProject)
+  if (to.type === 'role') return to.project ? projectKey(to.project) === projectFilter : here.some((mb) => mb.role === to.id)
+  if (to.type === 'topic') return here.some((mb) => subscriptionsOf(mb).includes(to.id))
+  return false
+}
+// Mailbox が分からない Event は、hook の cwd で決める
+function eventInProject(ev) {
+  if (!projectFilter) return true
+  if (ev.mailbox && projectOfMailbox(ev.mailbox) !== null) return projectOfMailbox(ev.mailbox) === projectFilter
+  return typeof ev.cwd === 'string' && ev.cwd !== '' && projectKey(ev.cwd) === projectFilter
+}
+
+// 一覧の更新ごとに選択肢を作り直す。選んでいたプロジェクトの Mailbox がなくなったら All projects に戻す
+function buildProjects(mailboxes) {
+  projects = new Map()
+  for (const mb of mailboxes) {
+    if (!mb.project) continue
+    const key = projectKey(mb.project)
+    if (!projects.has(key)) projects.set(key, { key, path: mb.project, label: folderName(mb.project) })
+  }
+  // 同じフォルダ名が 2 つ以上あれば、全体のパスで見分ける
+  const names = new Map()
+  for (const p of projects.values()) names.set(p.label, (names.get(p.label) || 0) + 1)
+  for (const p of projects.values()) if (names.get(p.label) > 1) p.label = p.path
+  if (savedProject !== null) {
+    if (projects.has(savedProject)) { projectFilter = savedProject; autoTo = true }
+    savedProject = null
+  }
+  if (projectFilter && !projects.has(projectFilter)) { projectFilter = ''; saveProject('') }
+  const sel = $('project')
+  sel.textContent = ''
+  sel.append(option('', 'All projects'))
+  for (const p of [...projects.values()].sort((a, b) => a.label.localeCompare(b.label))) {
+    const o = option(p.key, p.label)
+    o.title = p.path
+    sel.append(o)
+  }
+  sel.value = projectFilter
+}
+
+// 描画済みの Message と Event に絞り込みを掛け直す (畳んだ中のものも)
+function applyProject() {
+  for (const [id, box] of msgBoxes) { const m = seen.get(id); if (m) box.classList.toggle('off', !messageInProject(m)) }
+  for (const [id, box] of evtBoxes) { const ev = evtData.get(id); if (ev) box.classList.toggle('off', !eventInProject(ev)) }
+  if (stub) updateStub()
+  renderElsewhere()
+}
+
+// ほかのプロジェクトで人の手を待っている Mailbox (最後の Event が回答前の question か permission) の数
+function renderElsewhere() {
+  const btn = $('elsewhere')
+  const n = projectFilter ? mailboxList.filter((mb) => {
+    if (mailboxInProject(mb)) return false
+    const ev = lastEventByMailbox.get(mb.name)
+    return ev && WAITING.has(ev.kind)
+  }).length : 0
+  btn.hidden = n === 0
+  btn.textContent = n ? `${n} waiting in other projects` : ''
+}
+
+function chooseProject(key) {
+  projectFilter = key
+  saveProject(key)
+  $('project').value = key
+  // 宛先の候補が変わる。前のプロジェクトで選んだ宛先を持ち越さず、このプロジェクトの初期の宛先を選び直す
+  autoTo = true
+  renderMailboxes(mailboxList)
+  buildTo(mailboxList)
+  applyProject()
+  const list = $('list')
+  list.scrollTop = list.scrollHeight
+}
+$('project').onchange = () => chooseProject($('project').value)
+$('elsewhere').onclick = () => chooseProject('')
+
+// カードの描画。Event が届いたときは一覧を取り直さず、手元の一覧で描き直す。
+// 1 つのプロジェクトを選んでいればそのカードだけ、All projects ではプロジェクトごとにまとめる (project のない Mailbox は最後)
+function renderMailboxes(all) {
   const root = $('mailboxes')
   root.textContent = ''
+  renderElsewhere()
+  const mailboxes = all.filter(mailboxInProject)
   if (mailboxes.length === 0) root.append(el('div', 'meta', 'None yet'))
+  const groupOf = (mb) => (mb.project ? projects.get(projectKey(mb.project)) : null)
+  const grouped = !projectFilter && projects.size > 0
+  if (grouped) {
+    mailboxes.sort((a, b) => {
+      const ga = groupOf(a), gb = groupOf(b)
+      if (!ga || !gb) return (ga ? 0 : 1) - (gb ? 0 : 1)
+      return ga.label.localeCompare(gb.label)
+    })
+  }
+  let lastGroup
   for (const mb of mailboxes) {
+    if (grouped) {
+      const g = groupOf(mb)
+      const label = g ? g.label : 'No project'
+      if (label !== lastGroup) {
+        const h = el('div', 'projhead', label)
+        if (g) h.title = g.path
+        root.append(h)
+        lastGroup = label
+      }
+    }
     // 送り手のキーと同じ規則 (role があれば role、なければ mailbox:名前) で色を決める
     const ci = colorIndex(mb.role ? `role:${mb.role}` : `mailbox:${mb.name}`)
     const box = el('div', `mb c${ci}`)
@@ -1352,6 +1506,7 @@ function removeEvents(ids) {
       evtBoxes.delete(id)
       folded = folded.filter((f) => f.box !== box)
     }
+    evtData.delete(id)
   }
   for (const [name, ev] of lastEventByMailbox) if (gone.has(ev.id)) lastEventByMailbox.delete(name)
   syncStub()

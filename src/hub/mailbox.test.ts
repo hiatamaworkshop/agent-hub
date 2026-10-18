@@ -613,3 +613,49 @@ describe('project (attach の cwd)', () => {
     assert.equal(mb.projectChanged, null)
   })
 })
+
+describe('role 宛てのプロジェクトの範囲 (design.md §9-7)', () => {
+  const post = async (call: ReturnType<typeof setup>['call'], to: unknown, headers: Record<string, string> = {}) => {
+    const res = await call('POST', '/messages', { kind: 'request', to, body: 'x' }, headers)
+    return { status: res.status, body: (await res.json()) as Message & { recipients: string[]; error?: string } }
+  }
+
+  async function team() {
+    const s = setup()
+    await s.attach('vcp.deployer', { client: 'claude-code', role: 'deployer', cwd: 'C:\\work\\vcp' })
+    await s.attach('cairn.deployer', { client: 'claude-code', role: 'deployer', cwd: 'C:\\work\\cairn' })
+    // 名前の規則を変える前の Mailbox (project なし)
+    await s.call('POST', '/mailboxes/deployer/attach', { role: 'deployer' })
+    const leader = await s.attach('vcp.leader', { client: 'claude-code', role: 'leader', cwd: 'c:/Work/VCP/' })
+    return { ...s, leader }
+  }
+
+  it('エージェントの role 宛ては送り手のプロジェクトに絞り、to に project を残す', async () => {
+    const { call, leader } = await team()
+    const r = await post(call, { type: 'role', id: 'deployer' }, { 'x-hub-attachment': leader.attachmentId })
+    assert.equal(r.status, 201)
+    assert.deepEqual(r.body.recipients, ['vcp.deployer'], '表記の揺れは同じプロジェクトとみなす')
+    assert.equal(r.body.to.project, 'c:/Work/VCP/')
+  })
+
+  it('明示の project はそのまま使い、ブラウザから project なしなら全体に届く', async () => {
+    const { call, leader } = await team()
+    const cross = await post(call, { type: 'role', id: 'deployer', project: 'C:\\work\\cairn' }, { 'x-hub-attachment': leader.attachmentId })
+    assert.deepEqual(cross.body.recipients, ['cairn.deployer'])
+    const all = await post(call, { type: 'role', id: 'deployer' })
+    assert.deepEqual(all.body.recipients.sort(), ['cairn.deployer', 'deployer', 'vcp.deployer'])
+    assert.equal(all.body.to.project, undefined)
+    const scoped = await post(call, { type: 'role', id: 'deployer', project: 'C:/work/vcp' })
+    assert.deepEqual(scoped.body.recipients, ['vcp.deployer'])
+  })
+
+  it('project のない送り手は絞らない。role 以外に project は付けられない', async () => {
+    const { call, attach } = await team()
+    const old = await attach('leader', { client: 'claude-code', role: 'leader' })
+    const r = await post(call, { type: 'role', id: 'deployer' }, { 'x-hub-attachment': old.attachmentId })
+    assert.equal(r.body.recipients.length, 3)
+    for (const type of ['mailbox', 'topic']) {
+      assert.equal((await post(call, { type, id: 'vcp.deployer', project: 'C:/work/vcp' })).status, 400)
+    }
+  })
+})

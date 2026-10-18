@@ -54,10 +54,16 @@ export const addressSchema = z
   .object({
     type: z.enum(ADDRESS_TYPES),
     id: nameSchema,
+    // role 宛てだけ。この作業フォルダの Mailbox の role にだけ届ける (design.md §9-7)
+    project: z.string().min(1).max(1024).optional(),
   })
   .refine((a) => a.type !== 'user' || (USER_IDS as readonly string[]).includes(a.id), {
     message: `user 宛ては ${USER_IDS.map((u) => `user:${u}`).join(' / ')} のみ`,
     path: ['id'],
+  })
+  .refine((a) => a.project === undefined || a.type === 'role', {
+    message: 'project を付けられるのは role 宛てだけ',
+    path: ['project'],
   })
 export type Address = z.infer<typeof addressSchema>
 

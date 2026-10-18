@@ -238,7 +238,7 @@ npm run hub                               # 読むのは起動時だけ。変え
 
 - スクリプトは `-Project` のフォルダに移ってから `claude` を起動する。shim は agent-hub の `dist/` を絶対パスで指す (MCP 設定は OS の一時フォルダの `agent-hub-mcp.json` に作る)。
 - Mailbox 名の既定は `<フォルダ名>.<role>`。Mailbox 名は Hub 全体で 1 つなので、プロジェクトが違えば同じ role でも別の Mailbox になる。`-Mailbox` で変えられる。
-- `role:deployer` 宛ては、どのプロジェクトの deployer にも届く。特定のプロジェクトに送るなら `mailbox:cairn.deployer` 宛てにする (design.md §9-7)。
+- エージェントが送る `role:deployer` 宛ては、送り手と同じプロジェクトの deployer にだけ届く。ほかのプロジェクトには `mailbox:cairn.deployer` 宛てにする。ブラウザからは、上のプロジェクトの選択が `All projects` なら全プロジェクトに、1 つ選んでいればそのプロジェクトにだけ届く (design.md §9-7)。
 - hook は対象のリポジトリの `.claude/settings.local.json` には無いので、`tools/hooks/settings.json` の `hooks` を `~/.claude/settings.json` に写す。どこにも無ければスクリプトが警告する (起動は止めない)。
 - ブラウザのカードに `Project: <フォルダ名>` が出る (全体のパスはマウスを載せると出る)。前回と違うフォルダから同じ Mailbox に attach すると、`Attached from a different folder (was …)` と警告が出る (拒みはしない)。
 

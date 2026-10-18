@@ -3,7 +3,7 @@
 // 消した Message と Event は削除の行を追記し、compact() で今の状態だけのファイルに詰め直す (design.md §3.14)
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import type { HubEvent, Mailbox, Message } from '../shared/types.js'
+import { normalizeProjectPath, type HubEvent, type Mailbox, type Message } from '../shared/types.js'
 import { newId } from './ids.js'
 
 type LogRecord =
@@ -351,7 +351,8 @@ export class Store {
       case 'mailbox':
         return m.to.id === name
       case 'role':
-        return mb.role === m.to.id
+        if (mb.role !== m.to.id) return false
+        return m.to.project === undefined || (mb.project !== null && normalizeProjectPath(mb.project) === normalizeProjectPath(m.to.project))
       case 'topic': {
         const since = mb.subscriptions.get(m.to.id)
         if (since !== undefined && m.seq > since) return true

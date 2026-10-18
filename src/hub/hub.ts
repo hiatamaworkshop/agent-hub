@@ -182,7 +182,7 @@ export class Hub {
       throw new HubError(400, 'reply_to_not_found', `replyTo ${input.replyTo} がない (消えた Message なら to を指定して送る)`)
     }
     // to の省略は replyTo があるときだけ許す (schema で検証済み)。元の送り手に返す
-    const to = input.to ?? { type: original!.from.type, id: original!.from.id }
+    const to = this.scopeRole(input.to ?? { type: original!.from.type, id: original!.from.id }, from)
     const m = this.deliver(this.store.appendMessage({ ...input, to, from }))
     // 自分宛てに返信したなら、その Message を受け取っている。受領の確認として received を進める (protocol.md §4)
     if (original && from.type === 'mailbox' && this.store.isRecipient(from.id, original)) this.markReceived(from.id, original.seq)
@@ -198,7 +198,7 @@ export class Hub {
       this.store.appendMessage({
         kind: src.kind,
         from,
-        to,
+        to: this.scopeRole(to, from),
         body: src.body,
         ...(src.replyTo ? { replyTo: src.replyTo } : {}),
         forwardedFrom: src.forwardedFrom ?? src.id,
@@ -206,6 +206,13 @@ export class Hub {
         ...(src.meta ? { meta: src.meta } : {}),
       }),
     )
+  }
+
+  // エージェントの role 宛ては送り手のプロジェクトに絞る。明示の project と、project のない送り手はそのまま (design.md §9-7)
+  private scopeRole(to: Address, from: Sender): Address {
+    if (to.type !== 'role' || to.project !== undefined || from.type !== 'mailbox') return to
+    const project = this.store.getMailbox(from.id)?.project
+    return project ? { ...to, project } : to
   }
 
   private deliver(m: Message): Message {

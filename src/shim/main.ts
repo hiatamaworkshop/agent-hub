@@ -79,7 +79,7 @@ const tools = [
       properties: {
         kind: { type: 'string', enum: [...MESSAGE_KINDS], description: 'request (依頼) / reply (返信) / notice (通知)' },
         body: { type: 'string', description: '本文' },
-        to: { type: 'string', description: '宛先。mailbox:<名前> / role:<名前> / topic:<名前> / user:browser。reply では省略可' },
+        to: { type: 'string', description: '宛先。mailbox:<名前> / role:<名前> / topic:<名前> / user:browser。role:<名前> は自分と同じプロジェクト (作業フォルダ) の Mailbox にだけ届く。ほかのプロジェクトには mailbox:<名前> で送る。reply では省略可' },
         reply_to: { type: 'string', description: '返信元のメッセージ id (kind=reply では必須)' },
       },
       required: ['kind', 'body'],
