@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -66,5 +66,17 @@ describe('PUT /indexes と GET /indexes (design.md §3.15)', () => {
 
     await writeFile(file, '{ broken')
     assert.deepEqual(new IndexStore(file).list(), [])
+  })
+
+  it('ファイルに書けなければ、メモリの索引も前のまま', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'hub-indexes-'))
+    const file = join(dir, 'indexes.json')
+    const store = new IndexStore(file)
+    store.put({ project: '/w/a', source: 'docs/roadmap.md', items: [] })
+    // 一時ファイルの場所をフォルダで塞ぎ、書き込みを失敗させる
+    await mkdir(`${file}.tmp`)
+    assert.throws(() => store.put({ project: '/w/a', source: 'docs/roadmap.md', items: parseRoadmap(roadmap).items }))
+    assert.throws(() => store.put({ project: '/w/b', source: 'docs/roadmap.md', items: [] }))
+    assert.deepEqual(store.list().map((i) => [i.project, i.items.length]), [['/w/a', 0]])
   })
 })

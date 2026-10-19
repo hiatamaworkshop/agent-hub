@@ -180,3 +180,51 @@ describe('Store: 受領の確認 (received)', () => {
     assert.deepEqual(new Store({ file }).unconfirmed('x').map((m) => m.seq), [2])
   })
 })
+
+describe('Store: 溜まりの材料 (summary)', () => {
+  // 全件を走査する素朴な数え方。summary は走査を絞っても同じ値を返す
+  function naive(s: Store, name: string) {
+    const mb = s.getMailbox(name)!
+    const tally = () => ({ count: 0, oldestAt: null as string | null })
+    const backlog = { unread: tally(), awaitingReply: tally(), unconfirmed: tally() }
+    for (const m of s.listMessages(0, Infinity)) {
+      const t = m.seq > mb.cursor ? backlog.unread : s.isAwaitingReply(m) ? backlog.awaitingReply : m.seq > mb.received ? backlog.unconfirmed : null
+      if (!t || !s.isRecipient(name, m)) continue
+      t.count++
+      t.oldestAt ??= m.ts
+    }
+    return { unread: s.unread(name).length, unconfirmed: s.unconfirmed(name).length, backlog }
+  }
+  const reply = (to: Address, replyTo: string): NewMessage => ({ kind: 'reply', from: { type: 'mailbox', id: 'y', role: null }, to, body: 'r', replyTo })
+
+  it('返信・受領・ack・削除・再起動をまたいでも、全件を走査した値と一致する', () => {
+    const file = tmpFile()
+    const s = new Store({ file })
+    s.ensureMailbox('x', 'reviewer')
+    s.ensureMailbox('y')
+    s.subscribe('x', 't')
+    const toX = { type: 'mailbox', id: 'x' } as const
+    const sent = [
+      s.appendMessage(msg(toX)),
+      s.appendMessage({ ...msg({ type: 'topic', id: 't' }), kind: 'notice' }),
+      s.appendMessage(msg({ type: 'role', id: 'reviewer' })),
+      s.appendMessage(msg({ type: 'mailbox', id: 'y' })),
+      s.appendMessage(msg(toX)),
+      s.appendMessage({ ...msg(toX), kind: 'notice' }),
+    ]
+    const check = (st: Store, label: string) => {
+      assert.deepEqual(st.summary('x'), naive(st, 'x'), label)
+      assert.deepEqual(st.summary('y'), naive(st, 'y'), label)
+    }
+    check(s, '全部未読')
+    s.advanceReceived('x', 1)
+    s.advanceCursor('x', 5)
+    check(s, '渡しただけの分がある')
+    s.appendMessage(reply(toX, sent[2]!.id))
+    check(s, '返信で返信待ちから外れる')
+    s.deleteMessages([sent[4]!.id])
+    check(s, '消した request は数えない')
+    assert.equal(s.summary('x').backlog.awaitingReply.count, 1, '返信のない最初の request だけが残る')
+    check(new Store({ file }), '再起動後')
+  })
+})

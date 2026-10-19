@@ -101,6 +101,18 @@ describe('checkRoadmap', () => {
     assert.equal(ps.filter((p) => p.message.startsWith('C1:')).length, 0)
   })
 
+  it('字下げした状態の行は状態として読み (決定と取り違えない)、字下げを error にする', () => {
+    const text = ['### C1. a', '  状態: 提案', '### C2. b', '\t状態: 保留(待ち)'].join('\n')
+    assert.deepEqual(parseRoadmap(text).items.map((it) => [it.id, it.status, it.statusReason]), [
+      ['C1', 'proposed', undefined],
+      ['C2', 'held', '待ち'],
+    ])
+    assert.deepEqual(messages(text), [
+      ['error', 2, '状態の行は字下げしない'],
+      ['error', 4, '状態の行は字下げしない'],
+    ])
+  })
+
   it('決定の項目に完了条件がない、またはチェックボックスがない', () => {
     const text = ['### C1. a', '本文', '### C2. b', '#### 完了条件', '文だけ'].join('\n')
     assert.deepEqual(

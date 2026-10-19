@@ -40,7 +40,8 @@ export interface RoadmapProblem {
 const ITEM_HEADING = /^### C(\d+)\. (\S.*)$/
 const LOOSE_ITEM_HEADING = /^###\s+C\d+\b/
 const HEADING = /^(#{1,6})\s/
-const STATUS_LINE = /^状態\s*[:：]/
+// 字下げしていても状態の行として読む (決定と取り違えないため)。字下げは checkRoadmap が error にする
+const STATUS_LINE = /^\s*状態\s*[:：]/
 const STATUS_VALUE = /^状態: (提案|保留|ブロック)(?:\((.+)\))?$/
 const CONDITIONS_HEADING = /^#### 完了条件\s*$/
 const CHECKBOX = /^\s*[-*] \[( |x|X)\] /
@@ -189,6 +190,7 @@ export function checkRoadmap(text: string): RoadmapProblem[] {
       badStatus.add(sec.head.no)
       err(sec.body[0]!.no, `状態の語彙は \`状態: 提案 | 保留(理由) | ブロック(理由)\`: ${sec.body[0]!.text.trim()}`)
     }
+    if (st.present && /^\s/.test(sec.body[0]!.text)) err(sec.body[0]!.no, '状態の行は字下げしない')
     for (const l of sec.body.slice(st.present ? 1 : 0)) {
       if (STATUS_LINE.test(l.text)) err(l.no, '状態の行は見出しの直後に 1 行だけ書く')
     }

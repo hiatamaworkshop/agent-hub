@@ -569,12 +569,13 @@ export class Hub {
   describeMailboxes() {
     return this.store.listMailboxes().map((mb) => {
       const attachment = mb.attachment ? (this.attachments.get(mb.attachment) ?? null) : null
+      const { unread, unconfirmed, backlog } = this.store.summary(mb.name)
       return {
         ...mb,
         effectiveSubscriptions: this.store.effectiveSubscriptions(mb.name),
-        unread: this.store.unread(mb.name).length,
-        unconfirmed: this.store.unconfirmed(mb.name).length,
-        backlog: this.store.backlog(mb.name),
+        unread,
+        unconfirmed,
+        backlog,
         attachment,
         detached: attachment ? null : (this.lastDetached.get(mb.name) ?? null),
         takeover: attachment ? (this.takeovers.get(attachment.attachmentId) ?? null) : null,

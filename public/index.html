@@ -1482,8 +1482,9 @@ async function loadIndexes() {
     indexList = (await api('/indexes')).indexes || []
   } catch (err) {
     if (err.message === 'unauthorized') return
+    // 一時的な失敗 (接続切れ・5xx) では前の索引を残す。次の index.updated か再接続で取り直す
+    if (err.status !== 404) { $('err').textContent = `Could not load items: ${err.message || err}`; return }
     indexList = [] // 404 は /indexes を持たない古い Hub。項目の欄を出さないだけ
-    if (err.status !== 404) $('err').textContent = `Could not load items: ${err.message || err}`
   }
   renderItems()
 }

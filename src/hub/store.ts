@@ -80,6 +80,8 @@ export class Store {
   private readonly lastEventBySession = new Map<string, HubEvent>()
   // 返信のある Message の id (返信の replyTo)。返信待ちの request を自動で消さないため (design.md §3.14)
   private readonly repliedTo = new Set<string>()
+  // 返信待ちの request (id → Message)。追記順 = seq の昇順。溜まりの材料をログ全体の走査なしで数えるため
+  private readonly openRequests = new Map<string, Message>()
   // 前回の詰め直しから追記した削除の行の数
   private deletesSinceCompact = 0
   private seq = 0
@@ -149,7 +151,8 @@ export class Store {
         this.messages.push(rec.message)
         this.byId.set(rec.message.id, rec.message)
         this.seq = Math.max(this.seq, rec.message.seq)
-        if (rec.message.replyTo) this.repliedTo.add(rec.message.replyTo)
+        if (rec.message.replyTo) this.markReplied(rec.message.replyTo)
+        if (rec.message.kind === 'request' && !this.repliedTo.has(rec.message.id)) this.openRequests.set(rec.message.id, rec.message)
         break
       // 削除の行は replay がまとめて、実行中は deleteMessages / deleteEvents が扱う
       case 'message.delete':
@@ -159,7 +162,7 @@ export class Store {
         this.seq = Math.max(this.seq, rec.seq)
         break
       case 'replied':
-        this.repliedTo.add(rec.id)
+        this.markReplied(rec.id)
         break
       case 'mailbox.create':
         this.mailboxes.set(rec.name, {
@@ -221,6 +224,11 @@ export class Store {
         if (rec.event.sessionId) this.lastEventBySession.set(rec.event.sessionId, rec.event)
         break
     }
+  }
+
+  private markReplied(id: string): void {
+    this.repliedTo.add(id)
+    this.openRequests.delete(id)
   }
 
   // --- Message ---
@@ -404,15 +412,33 @@ export class Store {
   // 未読 (seq > cursor)、渡したが返信のない request、それ以外で渡したが受領の確認がないもの。
   // Channels では返信まで受領の確認がないので、返信待ちの request を確認待ちから外す (作業中の request を「怪しい」に数えない)
   backlog(name: string): Backlog {
+    return this.summary(name).backlog
+  }
+
+  // GET /mailboxes 向けに、未読数・確認待ち数 (unread() / unconfirmed() の件数) と溜まりの材料を 1 度に数える。
+  // 見るのは received より後 (cursor ≥ received) と返信待ちの request だけで、ログ全体は走査しない
+  summary(name: string): { unread: number; unconfirmed: number; backlog: Backlog } {
     const mb = this.must(name)
-    const out: Backlog = { unread: { count: 0, oldestAt: null }, awaitingReply: { count: 0, oldestAt: null }, unconfirmed: { count: 0, oldestAt: null } }
-    for (const m of this.messages) {
-      const t = m.seq > mb.cursor ? out.unread : this.isAwaitingReply(m) ? out.awaitingReply : m.seq > mb.received ? out.unconfirmed : null
-      if (!t || !this.isRecipient(name, m)) continue
+    const backlog: Backlog = { unread: { count: 0, oldestAt: null }, awaitingReply: { count: 0, oldestAt: null }, unconfirmed: { count: 0, oldestAt: null } }
+    const add = (t: { count: number; oldestAt: string | null }, m: Message) => {
       t.count++
       t.oldestAt ??= m.ts
     }
-    return out
+    for (const m of this.openRequests.values()) {
+      if (m.seq > mb.cursor) break
+      if (this.isRecipient(name, m)) add(backlog.awaitingReply, m)
+    }
+    let unconfirmed = 0
+    for (let i = this.indexAfter(mb.received); i < this.messages.length; i++) {
+      const m = this.messages[i]!
+      if (!this.isRecipient(name, m)) continue
+      if (m.seq > mb.cursor) add(backlog.unread, m)
+      else {
+        unconfirmed++
+        if (!this.isAwaitingReply(m)) add(backlog.unconfirmed, m)
+      }
+    }
+    return { unread: backlog.unread.count, unconfirmed, backlog }
   }
 
   // --- 削除と保存期間 (design.md §3.14) ---
@@ -426,6 +452,7 @@ export class Store {
       this.messages.splice(i, 1)
       this.byId.delete(m.id)
       this.repliedTo.delete(m.id)
+      this.openRequests.delete(m.id)
     }
   }
 

@@ -9,14 +9,14 @@ const indexOnly = args.includes('--index')
 const path = args.find((a) => !a.startsWith('--')) ?? 'docs/roadmap.md'
 const text = readFileSync(path, 'utf8')
 
+// process.exit は使わない。パイプへの書き込みが終わる前に止まり、出力の終わりが欠けうるため (exitCode を置いて自然に終わる)
 if (indexOnly) {
   process.stdout.write(JSON.stringify(parseRoadmap(text), null, 2) + '\n')
-  process.exit(0)
+} else {
+  const problems = checkRoadmap(text)
+  for (const p of problems) console.log(`${path}:${p.line}: ${p.level}: ${p.message}`)
+  const errors = problems.filter((p) => p.level === 'error').length
+  const { items } = parseRoadmap(text)
+  console.log(`${items.length} items, ${errors} errors, ${problems.length - errors} warnings`)
+  if (errors > 0) process.exitCode = 1
 }
-
-const problems = checkRoadmap(text)
-for (const p of problems) console.log(`${path}:${p.line}: ${p.level}: ${p.message}`)
-const errors = problems.filter((p) => p.level === 'error').length
-const { items } = parseRoadmap(text)
-console.log(`${items.length} items, ${errors} errors, ${problems.length - errors} warnings`)
-process.exit(errors > 0 ? 1 : 0)

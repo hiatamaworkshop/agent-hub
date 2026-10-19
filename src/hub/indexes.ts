@@ -62,15 +62,18 @@ export class IndexStore {
     }
   }
 
+  // 書けてからメモリを更新する (書けずに 500 を返したのに、新しい索引が GET /indexes に出ないように)
   put(input: IndexInput): ProjectIndex {
     const ix: ProjectIndex = { project: input.project, source: input.source, updatedAt: this.now().toISOString(), items: input.items }
-    this.indexes.set(keyOf(ix.project, ix.source), ix)
+    const key = keyOf(ix.project, ix.source)
     if (this.file) {
+      const next = new Map(this.indexes).set(key, ix)
       mkdirSync(dirname(this.file), { recursive: true })
       const tmp = `${this.file}.tmp`
-      writeFileSync(tmp, JSON.stringify(this.list()))
+      writeFileSync(tmp, JSON.stringify([...next.values()]))
       renameSync(tmp, this.file)
     }
+    this.indexes.set(key, ix)
     return ix
   }
 
