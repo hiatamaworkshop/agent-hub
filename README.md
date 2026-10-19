@@ -150,7 +150,7 @@ Claude Code の HTTP hook で、`AskUserQuestion`・許可待ち・ターン終�
 
 同じ Mailbox 名で新しいセッションを起動すると、新しい方が引き継ぐ (`/clear` の後や、モデルを変えて起動し直したときなど)。購読と未読は Mailbox に残っているので、そのまま新しいセッションに届く。
 
-- 古いセッションが動いたままなら切り離され、`post_message` / `subscribe` / `unsubscribe` はエラーになる (`whoami` は答える)。切り離された shim は attach し直さない。
+- 古いセッションが動いたままなら切り離され、`post_message` / `subscribe` / `unsubscribe` はエラーになる (`whoami` は答える)。切り離された shim は attach し直さない (新しい方を閉じても戻らない。エラーの文面もそう伝える)。古い方で続けるなら、そのセッションを起動し直す。
 - ブラウザの Mailbox のカードに `took over <時刻>` が出る。切り離されたセッションの hook の Event には `superseded session` と添えられ、カードの最後の Event には使われない。
 - 接続していない Mailbox のカードには、切れた時刻と理由 (`session ended` / `disconnected` / `lease expired`) が出る。
 

@@ -135,13 +135,17 @@ const text = (v: unknown): CallToolResult => ({ content: [{ type: 'text', text: 
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }))
 
+// 切り離された shim は attach し直さない。「新しい方を閉じればこちらが戻る」とモデルが案内したので (2026-10-19、C21)、
+// 戻らないことと、使い続けるときの手順を書く
+const SUPERSEDED_NOTE =
+  `Mailbox ${cfg.mailbox} は別のセッションに引き継がれた (superseded)。このセッションは再接続しない (新しい方のセッションを閉じても戻らない)。` +
+  'このセッションからは送受信も購読の変更もしない。このセッションで使い続けるなら Claude Code を起動し直す (今つながっている方が切り離される)'
+
 server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolResult> => {
   const args = req.params.arguments ?? {}
   try {
     // 引き継がれた後は、送信も購読の変更もしない (購読は Mailbox に保存されるので、後継の購読を変えてしまう)
-    if (hub.terminatedReason === 'superseded' && req.params.name !== 'whoami') {
-      throw new Error(`Mailbox ${cfg.mailbox} は別のセッションに引き継がれた (superseded)。このセッションからは送受信も購読の変更もしない`)
-    }
+    if (hub.terminatedReason === 'superseded' && req.params.name !== 'whoami') throw new Error(SUPERSEDED_NOTE)
     switch (req.params.name) {
       case 'post_message': {
         if (!hub.attachment) throw new Error(`Hub に接続していない (${hub.state}${hub.lastError ? `: ${hub.lastError}` : ''})`)
@@ -189,6 +193,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolRes
           state: hub.state,
           attachmentId: hub.attachment?.attachmentId ?? null,
           terminatedReason: hub.terminatedReason ?? null,
+          ...(hub.terminatedReason === 'superseded' ? { note: SUPERSEDED_NOTE } : {}),
           lastError: hub.lastError ?? null,
           subscriptions: mailbox?.subscriptions ?? null,
           effectiveSubscriptions: mailbox?.effectiveSubscriptions ?? null,

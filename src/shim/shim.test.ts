@@ -274,9 +274,14 @@ describe('shim: takeover で引き継がれた後', () => {
         const r = await call(name, args)
         assert.equal(r.isError, true, name)
         assert.match(r.text, /superseded/)
+        // 戻ってこないことと、使い続ける手順を伝える (C21)
+        assert.match(r.text, /再接続しない/)
+        assert.match(r.text, /起動し直す/)
       }
       assert.deepEqual(hub.store.getMailbox('handover')!.subscriptions, ['keep.me'])
-      assert.equal((await call('whoami')).isError, false)
+      const who = await call('whoami')
+      assert.equal(who.isError, false)
+      assert.match((JSON.parse(who.text) as { note: string }).note, /再接続しない/)
     } finally {
       await client.close().catch(() => undefined)
       await new Promise((r) => server.close(r))

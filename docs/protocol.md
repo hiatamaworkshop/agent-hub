@@ -304,6 +304,8 @@
 | `inbox` | `after?`, `limit?` (1〜100、既定 20), `unconfirmed?` | 未読を取得 (polling 用。Claude Code 以外の縮退経路で、全クライアント共通の「中身を渡す」経路。design.md §3.9)。`GET /mailboxes/:name/inbox` で取り、添付画像に `path` / `error` を足し (§6)、応答の `cursor` まで ack し (返した範囲は `received` として)、§6.2 の文面 (テキスト 1 つ) で返す。ツールの結果としてエージェント自身が受け取るので、返した分は received とする (§4)。本文は `structuredContent` などで別に渡さない (包みを通らない経路を作らないため)。channel で届いて ack 済みの分は含まれない。`unconfirmed: true` なら、handed のまま確認のない分 (channel が捨てられたかもしれない分) も含める。返した id は shim が覚え、stream から重ねて push しない |
 | `report_event` | `kind`, `payload` | skill が意味判断した結果 (区切り申告など) を Hub に出す。後回し (design.md §3.4) |
 
+takeover で切り離された (`terminated(superseded)`) 後は、`whoami` 以外のツールはエラーを返し、`whoami` は `note` を添える。どちらの文面も、このセッションは再接続しないこと (新しい方を閉じても戻らない) と、使い続けるなら起動し直すこと (今つながっている方が切り離される) を伝える。
+
 P0 で実装するのは `post_message` / `subscribe` / `unsubscribe` / `whoami`。P2 で `inbox` を足した。いずれも `_meta["anthropic/alwaysLoad"]: true` を付ける (design.md §6.1c)。`attach` / `list_topics` / `report_event` は未実装。
 
 `GET /mailboxes/:name/inbox` の応答は MCP Events の `events/poll` に揃える:

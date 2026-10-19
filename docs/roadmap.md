@@ -179,6 +179,7 @@
 開いている項目。書き方は冒頭の規則 (design.md §3.15)。デスクトップアプリ向けの画面操作ベースの連携は範囲外として項目にしない。
 
 ### C3. Claude Code 以外の実クライアントと、受け手の読み方を確かめる
+状態: 保留(Claude Code 以外に MCP の実クライアントがないため。2026-10-19)
 
 今はテストの MCP クライアントでのみ確かめている。
 
@@ -264,6 +265,11 @@ design.md §9-5。移すときも Mailbox・role・未読の正本は Hub に置
 shim に `io.modelcontextprotocol/events` (`events/stream`) を追加する (design.md §7)。
 
 ### C21. 切り離されたセッションに、再接続しないことを伝える
-状態: 提案
 
 2026-10-19 の C2 で、takeover で切り離された reviewer は、`post_message` の superseded のエラーを受けて「新しい方のセッションを閉じれば、こちらを再接続できる」とユーザーに案内した。実際には、切り離された shim は attach し直さない (README の takeover)。エラーの文面 (`src/shim/main.ts` の superseded) に「このセッションは再接続しない。使うなら起動し直す」と足せば、誤った案内を防げる見込み。
+
+2026-10-19 に決定へ上げた。文面は `SUPERSEDED_NOTE` (`src/shim/main.ts`) の 1 か所に置き、`whoami` 以外のエラーと `whoami` の `note` に同じものを使う (protocol.md §5)。
+
+#### 完了条件
+- [x] superseded のエラーと `whoami` に、再接続しないこと (新しい方を閉じても戻らない) と、使い続けるなら起動し直すことを書き、テストで固定する (`src/shim/shim.test.ts` の takeover の項)
+- [ ] 実セッションで、切り離された側のエージェントが「新しい方を閉じれば戻る」と案内しないことを確かめる
