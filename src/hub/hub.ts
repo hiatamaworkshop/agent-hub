@@ -563,7 +563,7 @@ export class Hub {
     this.store.setProject(name, cwd)
   }
 
-  // GET /mailboxes 向け。実効購読・未読数・Attachment と、接続していなければ最後に detached になった Attachment、
+  // GET /mailboxes 向け。実効購読・未読数・溜まりの材料 (backlog)・Attachment と、接続していなければ最後に detached になった Attachment、
   // 接続中の Attachment が takeover で始まったなら切り離した旧 Attachment を添える
   describeMailboxes() {
     return this.store.listMailboxes().map((mb) => {
@@ -573,6 +573,7 @@ export class Hub {
         effectiveSubscriptions: this.store.effectiveSubscriptions(mb.name),
         unread: this.store.unread(mb.name).length,
         unconfirmed: this.store.unconfirmed(mb.name).length,
+        backlog: this.store.backlog(mb.name),
         attachment,
         detached: attachment ? null : (this.lastDetached.get(mb.name) ?? null),
         takeover: attachment ? (this.takeovers.get(attachment.attachmentId) ?? null) : null,

@@ -556,6 +556,45 @@ describe('受領の確認 (received / unconfirmed)', () => {
   })
 })
 
+describe('溜まりの材料 (backlog。design.md §3.15)', () => {
+  const user = { type: 'user', id: 'browser', role: null } as const
+  const toX = { type: 'mailbox', id: 'x' } as const
+
+  it('未読・返信待ちの request・確認待ちを重ならないように数え、最も古い ts を添える', () => {
+    const hub = new Hub(new Store())
+    const a = hub.attach('x', { client: 'claude-code' })
+    const backlog = () => hub.describeMailboxes().find((d) => d.name === 'x')!.backlog
+    const empty = { count: 0, oldestAt: null }
+    assert.deepEqual(backlog(), { unread: empty, awaitingReply: empty, unconfirmed: empty })
+
+    const req = hub.postMessage({ kind: 'request', to: toX, body: 'do it' }, user)
+    const notice = hub.postMessage({ kind: 'notice', to: toX, body: 'fyi' }, user)
+    hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'y' }, body: 'not for x' }, user)
+    assert.deepEqual(backlog(), { unread: { count: 2, oldestAt: req.ts }, awaitingReply: empty, unconfirmed: empty })
+
+    // 渡しただけ (Channels): request は返信待ち、notice は確認待ち。request を確認待ちに重ねない
+    hub.ack(a.attachmentId, notice.seq)
+    const late = hub.postMessage({ kind: 'notice', to: toX, body: 'later' }, user)
+    assert.deepEqual(backlog(), { unread: { count: 1, oldestAt: late.ts }, awaitingReply: { count: 1, oldestAt: req.ts }, unconfirmed: { count: 1, oldestAt: notice.ts } })
+    assert.equal(hub.describeMailboxes().find((d) => d.name === 'x')!.unconfirmed, 2, 'unconfirmed の件数は今までどおり request も含む')
+
+    // 返信すると返信待ちから外れ、その seq まで受領の確認になる (notice は request より後なので残る)
+    hub.postMessage({ kind: 'reply', replyTo: req.id, body: 'done' }, hub.senderOf(a.attachmentId))
+    assert.deepEqual(backlog(), { unread: { count: 1, oldestAt: late.ts }, awaitingReply: empty, unconfirmed: { count: 1, oldestAt: notice.ts } })
+  })
+
+  it('inbox で受け取っただけの request も、返信があるまで返信待ちに数える', () => {
+    const hub = new Hub(new Store())
+    const a = hub.attach('x', { client: 'codex' })
+    const req = hub.postMessage({ kind: 'request', to: toX, body: 'do it' }, user)
+    const r = hub.inbox('x', 0, 20)
+    hub.ack(a.attachmentId, r.cursor, { first: req.seq, last: req.seq })
+    const b = hub.describeMailboxes().find((d) => d.name === 'x')!.backlog
+    assert.deepEqual(b.awaitingReply, { count: 1, oldestAt: req.ts })
+    assert.equal(b.unconfirmed.count, 0)
+  })
+})
+
 describe('切断中の後継 (previous)', () => {
   it('前の Attachment ID を示した attach し直しは、後継がいれば 409 successor_attached で拒み、いなければ通す', async () => {
     const { call } = setup()

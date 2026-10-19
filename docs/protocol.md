@@ -248,7 +248,8 @@
 
 #### 応答の形
 
-- `GET /mailboxes`: `{ "mailboxes": [Mailbox + { "effectiveSubscriptions", "unread": <件数>, "unconfirmed": <件数>, "attachment": Attachment | null, "detached": DetachedAttachment | null, "takeover": { "at", "previous": Attachment } | null, "projectChanged": { "at", "from": "<前の project>" } | null }] }`
+- `GET /mailboxes`: `{ "mailboxes": [Mailbox + { "effectiveSubscriptions", "unread": <件数>, "unconfirmed": <件数>, "backlog": Backlog, "attachment": Attachment | null, "detached": DetachedAttachment | null, "takeover": { "at", "previous": Attachment } | null, "projectChanged": { "at", "from": "<前の project>" } | null }] }`
+  - `backlog` は溜まりのバッジの材料 (design.md §3.15)。`{ "unread", "awaitingReply", "unconfirmed" }` で、どれも `{ "count": <件数>, "oldestAt": "<最も古い Message の ts>" | null }`。この Mailbox 宛てを重ならないように分ける: `unread` は未読 (queued)、`awaitingReply` は渡した (`seq ≤ cursor`) が `replyTo` の返信がまだない request、`unconfirmed` はそれ以外で handed のもの (§4)。上の `unconfirmed` の件数は返信待ちの request も含むので、`backlog.unconfirmed.count` とは一致しない。層への振り分け (接続の有無で未読をどちらに数えるか) は UI が行う。古い Hub はこの項目を返さない
   - `detached` は接続していない Mailbox で最後に detach した Attachment に `detachedAt` と `reason` (`closed` / `disconnected` / `lease_expired`) を足したもの。接続中・この Hub の起動後に attach がない・takeover で切り離されただけのときは `null`。古い Hub はこの項目を返さない
   - `takeover` は今の Attachment が takeover で始まったときの時刻 (`at`) と切り離した旧 Attachment (`previous`)。今の Attachment が終わるまで出す (Hub のメモリのみ)。同じ `sessionId` どうしの attach し直しでは出さない。それ以外は `null`。古い Hub はこの項目を返さない
   - `projectChanged` は直近の attach が前の `project` と違うフォルダからだったときの時刻 (`at`) と前の `project` (`from`)。比較は区切り・末尾の区切り・ドライブ文字のパスの大文字小文字を揃えて行う。次の attach か Mailbox の削除まで出す (Hub のメモリのみ)。拒みはしない。それ以外は `null`。古い Hub はこの項目を返さない

@@ -45,6 +45,18 @@ interface MailboxState {
 
 export type NewMessage = Omit<Message, 'id' | 'seq' | 'ts'>
 
+// 件数と、そのうち最も古い Message の ts (なければ null)
+export interface Tally {
+  count: number
+  oldestAt: string | null
+}
+
+export interface Backlog {
+  unread: Tally
+  awaitingReply: Tally
+  unconfirmed: Tally
+}
+
 export interface StoreOptions {
   // 省略するとメモリのみ (テスト用)
   file?: string
@@ -384,6 +396,21 @@ export class Store {
     for (let i = this.indexAfter(mb.received); i < this.messages.length && this.messages[i]!.seq <= mb.cursor; i++) {
       const m = this.messages[i]!
       if (this.isRecipient(name, m)) out.push(m)
+    }
+    return out
+  }
+
+  // 溜まりのバッジの材料 (design.md §3.15)。この Mailbox 宛てを重ならないように分け、件数と最も古い ts を返す。
+  // 未読 (seq > cursor)、渡したが返信のない request、それ以外で渡したが受領の確認がないもの。
+  // Channels では返信まで受領の確認がないので、返信待ちの request を確認待ちから外す (作業中の request を「怪しい」に数えない)
+  backlog(name: string): Backlog {
+    const mb = this.must(name)
+    const out: Backlog = { unread: { count: 0, oldestAt: null }, awaitingReply: { count: 0, oldestAt: null }, unconfirmed: { count: 0, oldestAt: null } }
+    for (const m of this.messages) {
+      const t = m.seq > mb.cursor ? out.unread : this.isAwaitingReply(m) ? out.awaitingReply : m.seq > mb.received ? out.unconfirmed : null
+      if (!t || !this.isRecipient(name, m)) continue
+      t.count++
+      t.oldestAt ??= m.ts
     }
     return out
   }

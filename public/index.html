@@ -7,7 +7,7 @@
 <style>
   :root {
     --bg: #f7f7f5; --panel: #ffffff; --fg: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc;
-    --accent: #2f5fd0; --reply: #1f8a4c; --warn: #b3261e;
+    --accent: #2f5fd0; --reply: #1f8a4c; --warn: #b3261e; --amber: #9a5b00;
     /* 送り手の色 (c0〜c7)。チップの文字色は --pfg (全色で 4.5:1 以上) */
     --p0: #2f5fd0; --p1: #b45309; --p2: #15803d; --p3: #7e22ce; --p4: #0f766e; --p5: #be185d; --p6: #854d0e; --p7: #475569; --pfg: #ffffff;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -15,7 +15,7 @@
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #161615; --panel: #1f1f1d; --fg: #ecece8; --muted: #9a9a93; --line: #34342f;
-      --accent: #7aa2ff; --reply: #5fcf8e; --warn: #ff8a80;
+      --accent: #7aa2ff; --reply: #5fcf8e; --warn: #ff8a80; --amber: #f0b050;
       --p0: #7aa2ff; --p1: #f0a050; --p2: #5fcf8e; --p3: #c4a1ff; --p4: #5fd0c4; --p5: #f489b8; --p6: #e0c060; --p7: #aab4c4; --pfg: #161615;
     }
   }
@@ -42,6 +42,13 @@
   .projhead { font-size: 12px; font-weight: 600; color: var(--muted); margin: 10px 0 4px; overflow-wrap: anywhere; }
   .projhead:first-child { margin-top: 0; }
   #elsewhere { color: var(--warn); font-size: 12px; font-weight: 600; }
+  /* 溜まりのバッジ (design.md §3.15)。層ごとに件数と最も古いものの経過時間。古さで色を変える (age1: 気にする、age2: 遅い) */
+  .backlog { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0; }
+  .backlog:empty { display: none; }
+  #backlog { margin-bottom: 10px; }
+  .bl { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .bl.age1 { color: var(--amber); border-color: var(--amber); }
+  .bl.age2 { color: var(--warn); border-color: var(--warn); }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
   .dot.on { background: var(--reply); }
   section { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -154,6 +161,7 @@
 <main>
   <aside>
     <select id="project" title="Show one project's Mailboxes, messages and events, and send role: messages only to that project"><option value="">All projects</option></select>
+    <div id="backlog" class="backlog" title="What is piling up in the Mailboxes shown below, by whose move it is. Each badge shows the count and the age of the oldest one."></div>
     <h2>Mailboxes</h2>
     <div id="mailboxes"><div class="meta">None yet</div></div>
   </aside>
@@ -1355,6 +1363,81 @@ function renderElsewhere() {
   btn.textContent = n ? `${n} waiting in other projects` : ''
 }
 
+// --- 溜まりのバッジ (design.md §3.15) ---
+// ボールが誰にあるかで 3 層に分ける。材料は Hub の backlog (件数と最も古い ts) と、手元の最後の Event。
+// age は経過時間の色の境目 (分): [気にする, 遅い]。人が動く番は待たせた時点で気にする
+const LAYERS = [
+  { key: 'you', label: 'You', age: [0, 10], title: 'Your move: a session is waiting for an answer to a question or a permission prompt in its terminal.' },
+  { key: 'agent', label: 'Agent', age: [30, 120], title: "The agent's move: unread messages in a connected session, and requests handed to it that have no reply yet." },
+  { key: 'stuck', label: 'Stuck?', age: [10, 60], title: 'Delivery may be stuck: messages handed but not confirmed (not fetched with inbox or replied to), and unread messages in a Mailbox with no session attached.' },
+]
+const NONE = { count: 0, oldestAt: null }
+function addTally(a, b) {
+  const at = [a.oldestAt, b.oldestAt].filter(Boolean).sort((x, y) => Date.parse(x) - Date.parse(y))[0] || null
+  return { count: a.count + b.count, oldestAt: at }
+}
+// 古い Hub は backlog を返さない。未読と unconfirmed の件数だけで、経過時間は出さない
+// (古い Hub の unconfirmed は返信待ちの request も含むが、そのまま出す)
+function layersOf(mb) {
+  const ev = lastEventByMailbox.get(mb.name)
+  const b = mb.backlog
+  const unread = b ? b.unread : { count: typeof mb.unread === 'number' ? mb.unread : 0, oldestAt: null }
+  const unconfirmed = b ? b.unconfirmed : { count: typeof mb.unconfirmed === 'number' ? mb.unconfirmed : 0, oldestAt: null }
+  return {
+    you: ev && WAITING.has(ev.kind) ? { count: 1, oldestAt: ev.ts } : NONE,
+    agent: addTally(mb.attachment ? unread : NONE, b ? b.awaitingReply : NONE),
+    stuck: addTally(unconfirmed, mb.attachment ? NONE : unread),
+  }
+}
+function sumLayers(mailboxes) {
+  const out = { you: NONE, agent: NONE, stuck: NONE }
+  for (const mb of mailboxes) {
+    const l = layersOf(mb)
+    for (const k of Object.keys(out)) out[k] = addTally(out[k], l[k])
+  }
+  return out
+}
+function formatAge(ms) {
+  const m = Math.floor(ms / 60000)
+  if (m < 1) return '<1m'
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  return h < 48 ? `${h}h` : `${Math.floor(h / 24)}d`
+}
+// 経過時間の文字と色だけを塗り直す (30 秒ごと。カードは作り直さない)
+function paintChip(chip) {
+  const layer = LAYERS.find((l) => l.key === chip.dataset.layer)
+  const since = chip.dataset.since ? Date.parse(chip.dataset.since) : NaN
+  const ms = Number.isNaN(since) ? null : Math.max(0, Date.now() - since)
+  chip.textContent = `${layer.label} ${chip.dataset.count}${ms === null ? '' : ` · ${formatAge(ms)}`}`
+  const min = ms === null ? -1 : ms / 60000
+  chip.classList.toggle('age2', min >= layer.age[1])
+  chip.classList.toggle('age1', min >= layer.age[0] && min < layer.age[1])
+}
+function backlogChips(box, layers) {
+  box.textContent = ''
+  for (const layer of LAYERS) {
+    const t = layers[layer.key]
+    if (!t.count) continue
+    const chip = el('span', 'bl')
+    chip.dataset.layer = layer.key
+    chip.dataset.count = String(t.count)
+    if (t.oldestAt) chip.dataset.since = t.oldestAt
+    chip.title = layer.title + (t.oldestAt ? ` Oldest since ${new Date(t.oldestAt).toLocaleString()}.` : '')
+    paintChip(chip)
+    box.append(chip)
+  }
+  return box
+}
+// サイドバー: 表示中のプロジェクトの合計。タブ: 全プロジェクトの「人が動く番」の件数
+let tabWaiting = 0
+function renderBacklog() {
+  backlogChips($('backlog'), sumLayers(mailboxList.filter(mailboxInProject)))
+  const you = sumLayers(mailboxList).you.count
+  if (you !== tabWaiting) { tabWaiting = you; showTabUnread() }
+}
+setInterval(() => document.querySelectorAll('.bl').forEach(paintChip), 30000)
+
 function chooseProject(key) {
   projectFilter = key
   saveProject(key)
@@ -1376,6 +1459,7 @@ function renderMailboxes(all) {
   const root = $('mailboxes')
   root.textContent = ''
   renderElsewhere()
+  renderBacklog()
   const mailboxes = all.filter(mailboxInProject)
   if (mailboxes.length === 0) root.append(el('div', 'meta', 'None yet'))
   const groupOf = (mb) => (mb.project ? projects.get(projectKey(mb.project)) : null)
@@ -1405,6 +1489,7 @@ function renderMailboxes(all) {
     const title = el('div')
     title.append(el('span', `dot${mb.attachment ? ' on' : ''}`), el('span', 'name', mb.name), el('span', `chip c${ci}`, mb.role || mb.name))
     box.append(title)
+    box.append(backlogChips(el('div', 'backlog'), layersOf(mb)))
     // どのリポジトリの Mailbox か。最後に attach した作業フォルダ (古い Hub と、記録より前の Mailbox は返さない)
     if (mb.project) {
       const p = el('div', 'meta', `Project: ${folderName(mb.project)}`)
@@ -1575,11 +1660,11 @@ function setIcon(url) { // url が null のときは元の状態へ戻す
     else iconLink.setAttribute('href', iconOrig)
   } catch {}
 }
-function badgeIcon(label) {
+function badgeIcon(label, color = '#b3261e') {
   const c = document.createElement('canvas')
   c.width = c.height = 32
   const g = c.getContext('2d')
-  g.fillStyle = '#b3261e'
+  g.fillStyle = color
   g.beginPath(); g.arc(16, 16, 16, 0, Math.PI * 2); g.fill()
   g.fillStyle = '#ffffff'
   g.font = `bold ${label.length > 1 ? 14 : 20}px system-ui, sans-serif`
@@ -1587,10 +1672,12 @@ function badgeIcon(label) {
   g.fillText(label, 16, 17)
   return c.toDataURL('image/png')
 }
+// タイトルには人が動く番 (tabWaiting。全プロジェクトの質問待ち・許可待ち) も出す。favicon はタブの未読を優先し、なければ人が動く番を琥珀色で
 function showTabUnread() {
-  const label = tabUnread > 99 ? '99+' : String(tabUnread)
-  try { document.title = tabUnread > 0 ? `(${label}) agent-hub` : 'agent-hub' } catch {}
-  try { setIcon(tabUnread > 0 ? badgeIcon(label) : null) } catch {}
+  const cap = (n) => (n > 99 ? '99+' : String(n))
+  const title = `${tabUnread > 0 ? `(${cap(tabUnread)}) ` : ''}${tabWaiting > 0 ? `${tabWaiting} waiting · ` : ''}agent-hub`
+  try { document.title = title } catch {}
+  try { setIcon(tabUnread > 0 ? badgeIcon(cap(tabUnread)) : tabWaiting > 0 ? badgeIcon(cap(tabWaiting), '#c27a00') : null) } catch {}
 }
 function countTabUnread() { tabUnread++; showTabUnread() }
 function clearTabUnread() { if (tabUnread === 0) return; tabUnread = 0; showTabUnread() }
