@@ -6,6 +6,7 @@
 - 見出しの直後に、例外の状態だけ `状態: 提案 | 保留(理由) | ブロック(理由)` を 1 行書く (保留の理由は省ける)。行がなければ決定 (着手してよい)。
 - 決定の項目は `#### 完了条件` (チェックボックスの並び) を持つ。依頼の `DONE WHEN` はここから写す。
 - 番号は使い回さない。終わったら節を消し、フェーズの行を `[x] C<n> …` にして、確かめた記録をその下に書く。
+- 却下したら節を消し、フェーズか「既知の問題」に `[-] C<n> 題 (却下 YYYY-MM-DD、理由 1 行)` を残す。理由が長ければ design.md §9 に書いて指す (design.md §3.16)。
 - 規則の崩れは `npm run docs:check` で検査する (`src/shared/roadmap.ts`)。
 
 ## P0: 1 セッションで往復する (完了 2026-10-16)
@@ -267,3 +268,30 @@ design.md §9-5。移すときも Mailbox・role・未読の正本は Hub に置
 状態: ブロック(Claude Code が MCP Events に対応するまで)
 
 shim に `io.modelcontextprotocol/events` (`events/stream`) を追加する (design.md §7)。
+
+### C22. 項目への依頼の反映済を、索引の変化から導く
+状態: 提案
+
+`meta.item: C<n>` の request を送った後、`docs:index` で届いた索引で、その項目の完了条件のチェックが増えた、または節が消えて `[x] C<n>` / `[-] C<n>` になったら、カードに反映済を出す (design.md §3.16)。返信 (自己申告) より先にリポジトリの事実を見せる。索引に閉じた項目の ID と閉じ方を足す必要がある (`parseRoadmap` の `refs` が材料)。
+
+### C23. 項目のない依頼の選別を促す
+状態: 提案
+
+`meta.item` のない request に返信が来たら、人に「項目に回収する / 捨てる」を選ばせる (design.md §3.16)。どこに出すか、選んだことを Hub に知識として持たせずにどう残すかは §3.16 の未決 2。
+
+### C24. 却下の行 `[-] C<n>` を docs:check で検査する
+状態: 提案
+
+roadmap 冒頭の却下の規則 (design.md §3.16) に合わせ、`[-] C<n>` の行の形 (却下の日付と理由)、節が残ったままの `[-] C<n>`、閉じた番号の使い回しを `checkRoadmap` で検査し、索引にも出す。
+
+### C25. C6〜C8 のレビューで出た小さな誤りを直す
+状態: 提案
+
+2026-10-19 のレビュー (`eb11699~1..HEAD`) で確かめた誤り。
+- `readStatus` が字下げした `状態:` の行を読まず、決定として扱う (`src/shared/roadmap.ts`)
+- `IndexStore.put` がファイルに書く前にメモリを更新する。書き込みに失敗すると、500 を返したのに UI に新しい索引が出る (`src/hub/indexes.ts`)
+- UI の `loadIndexes` が、404 以外の一時的な失敗でも Items のカードを全部消す (`public/index.html`)
+- `docs:check --index` が JSON を書いた直後に `process.exit` し、パイプでは出力の終わりが欠けうる (`src/docs-check/main.ts`)
+- `GET /mailboxes` が Mailbox ごとに `backlog()` でログ全体を走査し、`unread` も別に数えている (`src/hub/hub.ts`、`src/hub/store.ts`)
+
+配送の細部として軽く扱うもの (design.md §3.16): トピック・role 宛ての request で 1 人の返信が全員分の返信待ちを消す、接続のない Mailbox の返信待ちを `Agent` に数える。
