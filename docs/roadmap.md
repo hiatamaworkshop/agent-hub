@@ -132,8 +132,13 @@
   - 決定 (2026-10-18): SQLite にしない。40,000 件 (48MB) で読み込み 170ms・ヒープ +55MB で足りた。削除が 1 件ずつの全走査で 20,000 件の掃除に 29 秒止まっていたので、まとめて消す形に直した (0.4 秒)。計測と理由は design.md §5。テスト `src/hub/retention.test.ts` の「まとめて消すと…」
 - [x] Hub の Dockerfile と compose (`127.0.0.1:7777` に限定公開、データは volume、`restart: unless-stopped`。design.md §3.8。2026-10-18)
   - 別のプロジェクト名とポート 7796 で、ループバック以外から届かないこと、ホストの shim の attach・hook の Event・画像の添付・volume の永続化を確かめた (design.md §6.1l)
-  - 受け入れ条件 7 のうち、Claude Code の実セッションで 1〜6 を compose の Hub に対して通すのは未了 (C2)
-- [ ] C2 compose の Hub に対して、実セッションで受け入れ条件 1〜6 を通す
+  - C2 (2026-10-19、Claude Code 2.1.303 / Docker 29.8.2): `docker compose up` の Hub (新しい volume、`127.0.0.1:7777` のみで待ち受け、トークンなしは 401) に leader / deployer / reviewer の実セッションをつなぎ、受け入れ条件 1〜6 を通した。送信は curl (`user:cli`) とブラウザ、判定は各セッションの `post_message` の reply と `GET /mailboxes`
+    - 1: deployer に `subscribe("c2.deploy")` させ、`topic:c2.deploy` は deployer だけ、`topic:review.request` は reviewer だけに届き、それぞれが reply した。leader の cursor は 0 のまま
+    - 6: reviewer は `subscribe` を呼ばずに role の既定購読 (`review.request`) と `role:reviewer` 宛てを受け取り、deployer には届かなかった
+    - 2 / 4: 未読の上限を一時的に 3 にした override (`HUB_UNREAD_MAX=3`) で起動し、deployer を `/exit` した間に 5 通送り、同じ Mailbox で起動し直すと新しい 3 通が届き、省いた 2 件は通知 1 件で伝わった (reply に `omitted=2`)。cursor と received が最後まで進んだ
+    - 3: reviewer に `c2.review` を購読させた後、開いたまま 2 つ目の reviewer を起動すると、`GET /mailboxes` に `takeover` (前の Attachment) が記録され、新しいセッションに `topic:c2.review` と `role:reviewer` 宛てが届いた。切り離された側からの `post_message` は Hub に記録されなかった
+    - 5: ブラウザで deployer の reply 2 件を添え書き付きで leader へ Forward し、添え書き → 転送 2 件の順に記録され、本文・kind・`replyTo` が元と一致し、`forwardedSender` に deployer が入った。leader は 2 件の書き手を `mailbox:agent-hub.deployer (role: deployer)` と答えた (C3 の材料)
+- [x] C2 compose の Hub に対して、実セッションで受け入れ条件 1〜6 を通す (2026-10-19。記録は上の Dockerfile の項目)
 - [ ] C3 Claude Code 以外の実クライアントと、受け手の読み方を確かめる
 - [ ] C4 engram への区切り知見の保存連携 (任意)
 - [x] C7 項目の索引と規則の検査 (design.md §3.15。2026-10-19)
@@ -171,17 +176,11 @@
 - [ ] MCP 標準の `resources/subscribe` + `notifications/resources/updated` で未読を知らせたとき、クライアントがモデルのターンを始めるかを確かめ、design.md §6 に記録する
 - [ ] 始めるクライアントがあれば、shim に起こすだけのアダプタを足し、Channels のアダプタと差し替えられる口を作る。なければ結果の記録で閉じる
 
-### C2. compose の Hub に対して、実セッションで受け入れ条件 1〜6 を通す
-
-P2 の受け入れ条件 7 の残り。Docker の実挙動は design.md §6.1l で確かめてある。
-
-#### 完了条件
-- [ ] `docker compose up` の Hub に、Claude Code の実セッションで P2 の受け入れ条件 1〜6 を通す
-- [ ] 結果を P2 の Dockerfile の項目の下に記録する
-
 ### C3. Claude Code 以外の実クライアントと、受け手の読み方を確かめる
 
 今はテストの MCP クライアントでのみ確かめている。
+
+2026-10-19 の C2 で、leader (Claude Code) に「書き手 (forwarded_sender) と本文を列挙して」と添え書きして deployer の reply 2 件を転送すると、2 件とも書き手を deployer と答えた。添え書きが属性の名前を示しているので、指示なしに書き手として読むかはまだ分からない。
 
 #### 完了条件
 - [ ] Codex など Claude Code 以外のクライアントが `inbox` を呼び、注意書きどおりに本文をデータとして扱うか
