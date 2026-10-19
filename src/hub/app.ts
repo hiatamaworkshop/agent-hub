@@ -10,6 +10,7 @@ import { Hub, HubError } from './hub.js'
 import { pump } from './sse.js'
 import { SettingsError, SettingsStore } from './settings.js'
 import { FileError, FileStore, MAX_UPLOAD_BYTES, resolveMeta } from './files.js'
+import { IndexStore, MAX_INDEX_BYTES, indexInputSchema } from './indexes.js'
 import { readFile } from 'node:fs/promises'
 
 export interface AppOptions {
@@ -22,6 +23,8 @@ export interface AppOptions {
   settings?: SettingsStore
   // 画像ファイル。省略時は /files を公開しない
   files?: FileStore
+  // roadmap の項目の索引。省略時は /indexes を公開しない
+  indexes?: IndexStore
 }
 
 const BROWSER: Sender = { type: 'user', id: 'browser', role: null }
@@ -281,6 +284,19 @@ export function createApp(opts: AppOptions) {
     const settings = opts.settings
     app.get('/settings', async (c) => c.json(await settings.read()))
     app.put('/settings', limited(64 * 1024, 'payload_too_large', 'settings must be 64 KB or smaller'), async (c) => c.json(await settings.write(await readJson(c))))
+  }
+
+  // roadmap の項目の索引 (design.md §3.15)。送るのはホストのスクリプト、読むのは UI
+  if (opts.indexes) {
+    const indexes = opts.indexes
+    app.get('/indexes', (c) => c.json({ indexes: indexes.list() }))
+    app.put('/indexes', limited(MAX_INDEX_BYTES, 'payload_too_large', 'index must be 1 MB or smaller'), async (c) => {
+      const parsed = indexInputSchema.safeParse(await readJson(c))
+      if (!parsed.success) return invalid(c, parsed.error)
+      const ix = indexes.put(parsed.data)
+      hub.emitUi('index.updated', { project: ix.project, source: ix.source, updatedAt: ix.updatedAt })
+      return c.json({ project: ix.project, source: ix.source, updatedAt: ix.updatedAt, items: ix.items.length })
+    })
   }
 
   if (opts.files) {

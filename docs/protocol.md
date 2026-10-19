@@ -148,6 +148,7 @@
   転送の転送では `forwardedFrom` / `forwardedSender` は大元を指す (本文の出どころを 1 段で示す)。`forwardedSender` のない転送 (この欄を足す前の記録) もありうる。
   人間の添え書きは転送に含めない。UI は別のメッセージ (`user:browser` からの `request` か `notice`) として転送より先に送る。Channels の属性値のエスケープが未確認 (design.md §6.2-4) で、自由文を属性に載せられないため。
 - `meta`: 任意。送り手が付ける JSON オブジェクト。直列化して 8KB まで。キーは `^[a-z][a-z0-9_]{0,31}$`。Hub が解釈するのは既知のキー `files` だけで、ほかのキーは触らずに通す。空の `{}` は保存しない。
+- `meta.item`: UI が roadmap の項目から作った request に付ける (design.md §3.15)。`{ "id": "C8", "project": "<索引の project>", "source": "docs/roadmap.md", "promise": "<送った時点の約束の指紋>" | null, "conditions"?: ["<完了条件の文言>", …] }`。Hub は解釈せずに通す。UI はこれで項目ごとの依頼中 / 報告済 (その request への返信の有無) と、送った後の約束の変更 (指紋の違いと文言の差分) を出す。`conditions` は meta の上限に収まらなければ省く
 - `meta.files`: `[{ "id": "f_…" }]` で送る (4 件まで。重複は 1 つにまとめる)。Hub は各 id が存在するかを確かめ (なければ 400、message に id)、保存するときは記録から `{ id, mime, size, width, height }` に書き直す。送り手が付けた mime や size は捨てる。
 - **保存期間** (design.md §3.14): 今ある受け手の Mailbox すべてで `cursor ≥ seq` (受け手の Mailbox がなければ送った時点で満たす) になり、`ts` から `HUB_READ_RETENTION_HOURS` (既定 24、小数可、0 なら自動では消さない) を過ぎた Message は、起動時と 1 時間ごとの掃除で消す。
   ただし `kind: request` で、それを `replyTo` に持つ Message がまだないもの (返信待ち) は自動では消さない。Event は保存期間だけで消す。手で消すのは `DELETE /messages/:id` と `POST /messages/purge` (§3)。
@@ -180,6 +181,8 @@
 | GET | `/files/:id` | 保存した画像本体。`Content-Type` は記録の mime、`X-Content-Type-Options: nosniff`、`Content-Security-Policy: sandbox; default-src 'none'`、`Cache-Control: private, max-age=3600`。なければ 404 |
 | GET | `/files/:id/meta` | 記録。`{ id, mime, size, width, height, persistent, createdAt, resized, original: { mime, size, width, height } }`。なければ 404 |
 | PATCH | `/files/:id` | body `{ "persistent": true }` または `false` で持続扱いを切り替える。未知のキーや型違いは 400 |
+| PUT | `/indexes` | roadmap の項目の索引を置き換える (design.md §3.15)。送るのはホストの `npm run docs:index`。body `{ "project": "<作業フォルダの絶対パス>", "source": "<project からの相対パス>", "items": [{ "id": "C<n>", "title", "status": "decided \| proposed \| held \| blocked", "statusReason"?, "conditions": { "done", "total" } \| null, "conditionTexts": [...], "promise": "<8 桁の 16 進>" \| null, "line" }] }` (`parseRoadmap` の結果。ほかのキーは捨てる)。同じ project (比較は §3 attach の `projectChanged` と同じ揃え方) の同じ source を置き換える。応答は 200 `{ project, source, updatedAt, items: <件数> }`。SSE `index.updated` を流す。形が違えば 400、1MB を超えると 413 `payload_too_large`。`HUB_DATA_DIR/indexes.json` に書き、壊れていれば空から始める (送り直せば戻る写し) |
+| GET | `/indexes` | 送られた索引の一覧。`{ "indexes": [{ project, source, updatedAt, items }] }` |
 
 - `id` は元の入力バイト列の sha256 の先頭 32 桁 (`f_` + 32 桁の 16 進)。不正な形式は 404。
 - 持続でない画像は `HUB_FILE_TTL_DAYS` (既定 1 日。0 なら掃除しない) を過ぎると消す。起動時と 1 時間ごとに行い、消した件数をログに出す。消えた画像を参照するメッセージは履歴に残るので、表示側は 404 を「期限切れ」として扱う。
@@ -394,8 +397,9 @@ Claude 側では次のように見える:
 
 ## 7. UI ↔ Hub のイベント種別 (SSE `event:` 名)
 
-`event` (検知イベント), `message`, `message.deleted`, `event.deleted`, `mailbox.created`, `mailbox.deleted`, `mailbox.acked`, `attachment.attached`, `attachment.updated`, `attachment.detached`, `attachment.superseded`, `subscription.changed`
+`event` (検知イベント), `message`, `message.deleted`, `event.deleted`, `mailbox.created`, `mailbox.deleted`, `mailbox.acked`, `attachment.attached`, `attachment.updated`, `attachment.detached`, `attachment.superseded`, `subscription.changed`, `index.updated`
 
+- `index.updated` は `{ "project", "source", "updatedAt" }`。`PUT /indexes` のたびに流す。UI は `GET /indexes` で取り直す。古い UI は無視し、古い Hub は送らない (UI は `GET /indexes` の 404 で項目の欄を出さない)。
 - `message.deleted` / `event.deleted` は `{ "ids": ["…"] }`。手で消したときと、保存期間の掃除で消したときに流す (design.md §3.14)。UI はその id を表示から外す。古い UI は知らない名前として無視する (再読み込みで消える)。
 
 - `event` は記録した Event (§2)。重複 (`duplicate: true`) と取り込まなかったものは流さない。

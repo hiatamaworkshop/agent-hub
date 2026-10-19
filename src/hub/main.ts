@@ -6,6 +6,7 @@ import { serve } from '@hono/node-server'
 import { createApp } from './app.js'
 import { FileStore } from './files.js'
 import { Hub } from './hub.js'
+import { IndexStore } from './indexes.js'
 import { loadRoles, RolesError, type Roles } from './roles.js'
 import { SettingsStore } from './settings.js'
 import { Store } from './store.js'
@@ -75,6 +76,7 @@ const store = new Store({
 })
 const settings = new SettingsStore(join(dataDir, 'settings.json'))
 const files = new FileStore({ dir: join(dataDir, 'files'), maxEdge, ttlDays })
+const indexes = new IndexStore(join(dataDir, 'indexes.json'))
 const hub = new Hub(store, {
   roles,
   unreadMaxAgeMs: Math.round(unreadMaxAgeDays * 24 * 60 * 60_000),
@@ -86,6 +88,7 @@ const app = createApp({
   token,
   settings,
   files,
+  indexes,
   uiHtml: async () => {
     try {
       return await readFile(join(ROOT, 'public', 'index.html'), 'utf8')

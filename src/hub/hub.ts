@@ -153,7 +153,8 @@ export class Hub {
     return () => this.uiListeners.delete(fn)
   }
 
-  private emitUi(event: string, data: unknown): void {
+  // Hub の外の状態 (roadmap の索引など) の変化も、同じ UI 向け SSE で流す
+  emitUi(event: string, data: unknown): void {
     for (const fn of this.uiListeners) fn({ event, data })
   }
 

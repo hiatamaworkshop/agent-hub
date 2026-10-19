@@ -149,6 +149,10 @@
   - Hub は `GET /mailboxes` に `backlog` (未読・返信待ちの request・確認待ちを重ならない形で、件数と最も古い ts) を足した。テスト `src/hub/mailbox.test.ts` の「溜まりの材料 (backlog)」
   - UI はカードとサイドバーに `You` / `Agent` / `Stuck?` の件数と最も古いものの経過時間を出し、経過時間で色を変える (30 秒ごとに塗り直す)。タブのタイトルに `N waiting`、favicon に人が動く番の件数を出す
   - 別の Hub (ポート 7795) と headless Chrome で、2 つのプロジェクトの 4 つの Mailbox の層の振り分けとサイドバーの合計、プロジェクトを選ぶとサイドバーが絞られタイトルは全体のままなこと、返信で `Agent`・回答で `You` とタイトルの waiting が消えること、経過時間を 15 分前 / 3 時間前にしたときの色、`backlog` (と `unread` / `unconfirmed`) を外した古い Hub の応答で件数だけが出てページのエラーがないことを確かめた
+- [x] C8 項目のカードと依頼の下書き (design.md §3.15 の未決 2・3 の決定。2026-10-19)
+  - 索引: `npm run docs:index` が `parseRoadmap` の結果を `PUT /indexes` で送り、Hub は `indexes.json` に写しとして持つ。`parseRoadmap` に完了条件の文言 (`conditionTexts`) と約束の指紋 (`promise`) を足した。テスト `src/hub/indexes.test.ts`、`src/shared/roadmap.test.ts` の「完了条件の文言と約束の指紋」
+  - UI: サイドバーの Items に 1 行のカード (ID・題・状態・進み具合・requested / reported)。押すと `GOAL` / `DONE WHEN` の下書きになり、送る request の `meta.item` に項目と送った時点の約束を付ける (Unlink で外せる)。完了条件の文言が変わると、カードに `-` / `+` の差分を出す
+  - 別の Hub (ポート 7795) と headless Chrome で、一時フォルダのプロジェクトの roadmap を送ってカードが出ること、プロジェクトの絞り込み、下書きの本文と送った `meta.item`、`requested` → 返信で `reported`、チェックを付けて送り直しても差分が出ず文言を変えると出ること、Unlink で `meta.item` なしになること、`/indexes` が 404 の古い Hub で欄が出ずエラーもないことを確かめた
 
 **受け入れ条件**
 1. 2 つの Mailbox が別トピックを購読し、それぞれの購読分だけ受け取る。
@@ -200,17 +204,6 @@
 状態: 保留(起動手順で channel を付ける前提。取りこぼしは unconfirmed で見える)
 
 `clientInfo.name` は `claude-code` のままなので Channels 経路になり、Claude Code が通知を捨てても shim は ack する (未読が既読になる)。2026-10-18 に、通知が黙って捨てられること、initialize・環境変数・要求の並びに channel の有無の違いがなく shim から見分けられないことを確かめた (design.md §6.1k)。配送の状態を分けた (2026-10-18) ので、捨てられた分は handed のまま UI に unconfirmed として出て、`inbox` の `unconfirmed: true` で取り直せる。自動では取り戻さない (design.md §3.7)。
-
-### C8. 項目のカードと依頼の下書き
-
-roadmap の項目をカードで見て選び、request の下書きを作る (design.md §3.15)。索引は C7 の `parseRoadmap` (`src/shared/roadmap.ts`) で作れる。
-
-#### 完了条件
-- [ ] 索引の置き場所を決める (§3.15 の未決 2)
-- [ ] UI に項目のカードを 1 行で出す (ID・題・状態・進み具合・依頼中)
-- [ ] カードから request の下書き (`GOAL` に ID、`DONE WHEN` に完了条件) を作る。人が直して Send する
-- [ ] request に項目の ID を持たせ (§3.15 の未決 3)、カードに依頼中 / 報告済を出す
-- [ ] 送った後に完了条件が変わったら、カードに差分を出す (約束の指紋)
 
 ### C9. ドキュメントの作法を照らす
 状態: 提案

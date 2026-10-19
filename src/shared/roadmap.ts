@@ -11,6 +11,10 @@ export interface RoadmapItem {
   statusReason?: string
   // `#### 完了条件` のチェックボックス。見出しがなければ null
   conditions: { done: number; total: number } | null
+  // 完了条件の各行の文言 (チェックボックスを除く)。request の DONE WHEN に写す
+  conditionTexts: string[]
+  // 約束の指紋: 完了条件の文言だけから取る。チェックを付けても変わらず、文言を変えると変わる。完了条件がなければ null
+  promise: string | null
   line: number // 見出しの行 (1 始まり)
   endLine: number // 節の最後の行
 }
@@ -100,11 +104,11 @@ function readStatus(sec: Section): { status: ItemStatus; reason?: string; valid:
   return { status: STATUS_WORDS[m[1]!]!, reason: m[2], valid: true, present: true }
 }
 
-function readConditions(sec: Section): { done: number; total: number } | null {
+function readConditions(sec: Section): { counts: { done: number; total: number } | null; texts: string[] } {
   let inside = false
   let found = false
   let done = 0
-  let total = 0
+  const texts: string[] = []
   for (const l of sec.body) {
     const lv = headingLevel(l.text)
     if (lv > 0) {
@@ -115,10 +119,21 @@ function readConditions(sec: Section): { done: number; total: number } | null {
     if (!inside) continue
     const m = CHECKBOX.exec(l.text)
     if (!m) continue
-    total++
+    texts.push(l.text.slice(m[0].length).trim())
     if (m[1] !== ' ') done++
   }
-  return found ? { done, total } : null
+  return { counts: found ? { done, total: texts.length } : null, texts }
+}
+
+// 約束の指紋。空白の揺れは同じとみなす。改ざん検知ではなく「変わったか」を見るだけなので FNV-1a (32 bit) で足りる
+export function promiseFingerprint(texts: readonly string[]): string {
+  const s = texts.map((t) => t.replace(/\s+/g, ' ').trim()).join('\n')
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h.toString(16).padStart(8, '0')
 }
 
 function endLine(sec: Section): number {
@@ -134,13 +149,16 @@ export function parseRoadmap(text: string): RoadmapIndex {
     const m = ITEM_HEADING.exec(sec.head.text)
     if (!m) continue
     const st = readStatus(sec)
+    const cond = readConditions(sec)
     items.push({
       id: `C${m[1]}`,
       num: Number(m[1]),
       title: m[2]!.trim(),
       status: st.status,
       ...(st.reason !== undefined ? { statusReason: st.reason } : {}),
-      conditions: readConditions(sec),
+      conditions: cond.counts,
+      conditionTexts: cond.texts,
+      promise: cond.counts ? promiseFingerprint(cond.texts) : null,
       line: sec.head.no,
       endLine: endLine(sec),
     })

@@ -274,6 +274,8 @@ Windows の curl はコマンドライン引数の日本語を UTF-8 で送ら�
 npm test          # 単体テストと、shim を実プロセスで起動する結合テスト
 npm run typecheck
 npm run docs:check   # roadmap の項目の書き方を検査する (崩れていれば exit 1)。`-- --index` で項目の索引を JSON で出す
+npm run docs:index   # roadmap の項目の索引を Hub に送り、UI の Items に出す。roadmap を変えたら送り直す
+                     # 別のプロジェクトはそのルートで npm --prefix <agent-hub> run docs:index [-- --file docs/TODO.md]
 npm run hub:dev   # 変更を監視して Hub を再起動する
 ```
 

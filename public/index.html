@@ -49,6 +49,18 @@
   .bl { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
   .bl.age1 { color: var(--amber); border-color: var(--amber); }
   .bl.age2 { color: var(--warn); border-color: var(--warn); }
+  /* roadmap の項目のカード (design.md §3.15)。1 行で、押すと request の下書きになる */
+  #itemsHead { margin-top: 16px; }
+  .item { padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 4px; cursor: pointer; font-size: 12px; }
+  .item:hover { border-color: var(--accent); }
+  .item .line { display: flex; gap: 6px; align-items: baseline; white-space: nowrap; }
+  .item .id { font-family: var(--mono); font-weight: 600; flex: none; }
+  .item .title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .item .tag { flex: none; color: var(--muted); }
+  .item .tag.req { color: var(--accent); font-weight: 600; }
+  .item .tag.rep { color: var(--reply); font-weight: 600; }
+  .item .diff { font-family: var(--mono); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--warn); margin-top: 2px; }
+  .itemhead { font-size: 12px; font-weight: 600; color: var(--muted); margin: 8px 0 4px; overflow-wrap: anywhere; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
   .dot.on { background: var(--reply); }
   section { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -164,6 +176,8 @@
     <div id="backlog" class="backlog" title="What is piling up in the Mailboxes shown below, by whose move it is. Each badge shows the count and the age of the oldest one."></div>
     <h2>Mailboxes</h2>
     <div id="mailboxes"><div class="meta">None yet</div></div>
+    <h2 id="itemsHead" hidden title="Roadmap items sent by npm run docs:index. Click one to draft a request for it.">Items</h2>
+    <div id="items"></div>
   </aside>
   <section>
     <div class="foldbar">
@@ -462,6 +476,13 @@ function render(m) {
     const who = m.forwardedSender ? ` from ${senderLabel(m.forwardedSender)}` : ''
     head.append(el('span', '', `forwarded${who} ${orig ? '#' + orig.seq : m.forwardedFrom}`))
   }
+  // roadmap の項目を指した request (meta.item)。送り手の付けた値なので文字列のときだけ出す
+  const item = m.meta && m.meta.item
+  if (item && typeof item.id === 'string') {
+    const tag = el('span', 'kind', item.id)
+    tag.title = `Roadmap item ${item.id}${typeof item.source === 'string' ? ` in ${item.source}` : ''}`
+    head.append(tag)
+  }
   const actions = el('span', 'actions')
   const btn = el('button', 'linkbtn', 'Reply')
   btn.type = 'button'
@@ -483,6 +504,7 @@ function render(m) {
   list.append(box)
   msgBoxes.set(m.id, box)
   scheduleRelay()
+  scheduleItems() // 依頼中 / 報告済が変わりうる
   if (atBottom) { pinned = true; list.scrollTop = list.scrollHeight }
   return box
 }
@@ -804,6 +826,7 @@ for (const ev of ['pointerdown', 'keydown']) $('to').addEventListener(ev, () => 
 
 function startReply(m) {
   clearForward()
+  draftItem = null
   replyTo = m
   setKind('reply')
   chooseTo(addr(m.from))
@@ -822,6 +845,15 @@ function updateReplyInfo() {
     clear.type = 'button'
     clear.onclick = clearForward
     info.append(clear)
+    return
+  }
+  if (getKind() === 'request' && draftItem) {
+    info.append(`Request for ${draftItem.id} `)
+    const unlink = el('button', 'linkbtn', 'Unlink')
+    unlink.type = 'button'
+    unlink.title = 'Send without linking the request to the roadmap item'
+    unlink.onclick = () => { draftItem = null; updateReplyInfo() }
+    info.append(unlink)
     return
   }
   if (getKind() !== 'reply' || !replyTo) return
@@ -1059,11 +1091,13 @@ $('form').onsubmit = async (e) => {
   setSendLabel(sentFiles.length ? 'Uploading…' : 'Sending…')
   try {
     // 添付は先に保存する。1 枚でも失敗したら送らず、本文と添付を残す
-    const meta = sentFiles.length ? { files: await uploadAll(sentFiles) } : undefined
+    const meta = sentFiles.length ? { files: await uploadAll(sentFiles) } : {}
+    const sentItem = kind === 'request' ? draftItem : null
+    if (sentItem) meta.item = sentItem
     setSendLabel('Sending…')
     const to = selectedTo()
     const msg = { kind, body: body.trim() ? expandBody(body) : '[image]', to }
-    if (meta) msg.meta = meta
+    if (Object.keys(meta).length) msg.meta = meta
     if (kind === 'reply') msg.replyTo = replyTo.id
     const { recipients, ...m } = await api('/messages', { method: 'POST', body: JSON.stringify(msg) })
     render(m)
@@ -1076,6 +1110,7 @@ $('form').onsubmit = async (e) => {
     // プログラムからの値変更では input イベントが出ないので、ヒントを明示的に更新する
     updateHint()
     if (kind === 'reply') { replyTo = null; setKind('request'); updateReplyInfo() }
+    if (sentItem && draftItem === sentItem) { draftItem = null; updateReplyInfo() }
   } catch (err) {
     $('err').textContent = String(err.message || err)
   } finally {
@@ -1438,6 +1473,105 @@ function renderBacklog() {
 }
 setInterval(() => document.querySelectorAll('.bl').forEach(paintChip), 30000)
 
+// --- roadmap の項目のカード (design.md §3.15) ---
+// 索引はホストのスクリプト (npm run docs:index) が Hub に送ったもの。request は meta.item で項目を指し、
+// 依頼中 / 報告済はその request への返信の有無、約束の変更は送った時点の指紋 (meta.item.promise) と今の指紋の違いで出す
+let indexList = []
+async function loadIndexes() {
+  try {
+    indexList = (await api('/indexes')).indexes || []
+  } catch (err) {
+    if (err.message === 'unauthorized') return
+    indexList = [] // 404 は /indexes を持たない古い Hub。項目の欄を出さないだけ
+    if (err.status !== 404) $('err').textContent = `Could not load items: ${err.message || err}`
+  }
+  renderItems()
+}
+let itemsTimer = null
+function scheduleItems() { clearTimeout(itemsTimer); itemsTimer = setTimeout(renderItems, 200) }
+
+const itemKey = (project, id) => `${projectKey(project)}\n${id}`
+// 項目ごとの最新の request と、返信のある Message の id
+function itemRequests() {
+  const replied = new Set()
+  const latest = new Map()
+  for (const m of seen.values()) {
+    if (m.replyTo) replied.add(m.replyTo)
+    const it = m.kind === 'request' && m.meta && m.meta.item
+    if (!it || typeof it.id !== 'string' || typeof it.project !== 'string') continue
+    const k = itemKey(it.project, it.id)
+    const prev = latest.get(k)
+    if (!prev || m.seq > prev.seq) latest.set(k, m)
+  }
+  return { latest, replied }
+}
+
+const ITEM_STATUS = { proposed: 'proposed', held: 'on hold', blocked: 'blocked' }
+function renderItems() {
+  const root = $('items')
+  root.textContent = ''
+  const shown = indexList.filter((ix) => !projectFilter || projectKey(ix.project) === projectFilter)
+  $('itemsHead').hidden = shown.length === 0
+  const { latest, replied } = itemRequests()
+  for (const ix of shown) {
+    const h = el('div', 'itemhead', projectFilter ? ix.source : `${folderName(ix.project)} · ${ix.source}`)
+    h.title = `${ix.project}\nSent ${new Date(ix.updatedAt).toLocaleString()}. Run npm run docs:index again after editing the file.`
+    root.append(h)
+    for (const item of ix.items) root.append(itemCard(ix, item, latest.get(itemKey(ix.project, item.id)), replied))
+  }
+}
+
+function itemCard(ix, item, req, replied) {
+  const box = el('div', 'item')
+  const line = el('div', 'line')
+  line.append(el('span', 'id', item.id), el('span', 'title', item.title))
+  if (item.status !== 'decided') line.append(el('span', 'tag', ITEM_STATUS[item.status] || item.status))
+  if (item.conditions) line.append(el('span', 'tag', `${item.conditions.done}/${item.conditions.total}`))
+  if (req) {
+    const done = replied.has(req.id)
+    const tag = el('span', `tag ${done ? 'rep' : 'req'}`, done ? 'reported' : 'requested')
+    tag.title = `${done ? 'Replied to' : 'Awaiting a reply to'} request #${req.seq}`
+    line.append(tag)
+  }
+  box.append(line)
+  // 送った後に完了条件の文言が変わった (約束の変更)。チェックを付けただけでは指紋は変わらない
+  const sent = req && req.meta.item
+  if (sent && typeof sent.promise === 'string' && item.promise && sent.promise !== item.promise) {
+    const was = Array.isArray(sent.conditions) ? sent.conditions.filter((t) => typeof t === 'string') : null
+    const now = item.conditionTexts || []
+    const lines = was ? [...was.filter((t) => !now.includes(t)).map((t) => `- ${t}`), ...now.filter((t) => !was.includes(t)).map((t) => `+ ${t}`)] : []
+    const d = el('div', 'diff', [`Done-when changed since #${req.seq}`, ...lines].join('\n'))
+    d.title = 'The completion conditions were edited after the request was sent. Confirm the change with whoever is working on it.'
+    box.append(d)
+  }
+  const tip = [`${item.id}. ${item.title}`, `${ix.source}:${item.line}`]
+  if (item.statusReason) tip.push(`Reason: ${item.statusReason}`)
+  if (item.conditionTexts && item.conditionTexts.length) tip.push('Done when:', ...item.conditionTexts.map((t) => `- ${t}`))
+  tip.push('', 'Click to draft a request for this item.')
+  box.title = tip.join('\n')
+  box.onclick = () => draftFromItem(ix, item)
+  return box
+}
+
+// 下書き: GOAL に ID と題、DONE WHEN に完了条件。人が直して Send する (自動では送らない。design.md §2)。
+// 送る request の meta.item に、項目の指し示しと送った時点の約束 (指紋と文言) を付ける
+let draftItem = null
+function draftFromItem(ix, item) {
+  const body = $('body')
+  if (body.value.trim() && !window.confirm(`Replace the message box with a request draft for ${item.id}?`)) return
+  clearForward()
+  replyTo = null
+  setKind('request')
+  const done = (item.conditionTexts || []).map((t) => `- ${t}`)
+  body.value = [`GOAL: ${item.id} ${item.title} (${ix.source})`, 'DONE WHEN:', ...(done.length ? done : ['-'])].join('\n')
+  draftItem = { id: item.id, project: ix.project, source: ix.source, promise: item.promise, conditions: item.conditionTexts || [] }
+  // meta の上限 (8 KB) に収める。文言を外すと差分は出せないが、変わったことは指紋で分かる
+  if (new TextEncoder().encode(JSON.stringify(draftItem)).length > 6000) delete draftItem.conditions
+  updateReplyInfo()
+  updateHint()
+  body.focus()
+}
+
 function chooseProject(key) {
   projectFilter = key
   saveProject(key)
@@ -1447,6 +1581,7 @@ function chooseProject(key) {
   renderMailboxes(mailboxList)
   buildTo(mailboxList)
   applyProject()
+  renderItems()
   const list = $('list')
   list.scrollTop = list.scrollHeight
 }
@@ -1580,6 +1715,7 @@ function removeMessages(ids) {
   if (forwardChanged) updateForwardUi()
   syncStub()
   scheduleRelay()
+  scheduleItems()
 }
 
 function removeEvents(ids) {
@@ -1718,6 +1854,7 @@ function connect() {
     else catchUp(lastSeq, true).then(() => { refreshMailboxes(0); return loadEvents(true) }).catch(() => {})
     mailboxTries = 0
     refreshMailboxes(0)
+    loadIndexes()
   }
   es.onerror = () => { $('conn').className = 'ng'; $('conn').textContent = 'Reconnecting…' }
   es.addEventListener('message', (e) => {
@@ -1735,6 +1872,8 @@ function connect() {
     refreshMailboxes()
   })
   es.addEventListener('event.deleted', (e) => removeEvents(JSON.parse(e.data).ids || []))
+  // roadmap の索引が送り直された (古い Hub は送らない)
+  es.addEventListener('index.updated', () => loadIndexes())
   // mailbox.acked は未読数が減ったときに届く (古い Hub は送らないので、その場合は何も起きない)
   for (const ev of ['mailbox.created', 'mailbox.deleted', 'mailbox.acked', 'attachment.attached', 'attachment.updated', 'attachment.detached', 'attachment.superseded', 'subscription.changed']) {
     es.addEventListener(ev, () => refreshMailboxes())

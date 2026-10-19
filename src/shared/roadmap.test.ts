@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
-import { checkRoadmap, parseRoadmap } from './roadmap.js'
+import { checkRoadmap, parseRoadmap, promiseFingerprint } from './roadmap.js'
 
 const sample = [
   '# ロードマップ',
@@ -45,6 +45,17 @@ describe('parseRoadmap', () => {
         ['C4', '保留のもの', 'held', '理由', null, 26, 27],
       ],
     )
+  })
+
+  it('完了条件の文言と約束の指紋。チェックを付けても指紋は変わらず、文言を変えると変わる', () => {
+    const c2 = parseRoadmap(sample).items[0]!
+    assert.deepEqual(c2.conditionTexts, ['一つ目', '二つ目', '入れ子も数える'])
+    assert.equal(c2.promise, promiseFingerprint(['一つ目', '二つ目', '入れ子も数える']))
+    assert.match(c2.promise!, /^[0-9a-f]{8}$/)
+    assert.equal(parseRoadmap(sample.replace('- [ ] 二つ目', '- [x] 二つ目')).items[0]!.promise, c2.promise)
+    assert.equal(parseRoadmap(sample.replace('- [ ] 二つ目', '- [ ]   二つ目  ')).items[0]!.promise, c2.promise, '空白の揺れは同じ')
+    assert.notEqual(parseRoadmap(sample.replace('- [ ] 二つ目', '- [ ] 二つ目を変えた')).items[0]!.promise, c2.promise)
+    assert.equal(parseRoadmap(sample).items[1]!.promise, null, '完了条件がなければ null')
   })
 
   it('節の外の `[ ] C<n>` / `[x] C<n>` を参照として取り出す', () => {
