@@ -299,7 +299,7 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
   3. **起こせない**: エージェントが自分で `inbox()` を呼ぶか、人間が一声かける。
 - **起こすだけの方式は「本文はデータ」の守りにも効く**: 外部由来の文章が通知としてエージェントに直接入らず、必ず `inbox()` の `<hub-message>` を通る。守る経路が 1 本になる (§3.7)。代わりに通知のたびにツール呼び出しが 1 回増えるので、Claude Code では 1 (Channels) を残し、ほかは 2 か 3 を使う。
 - 今は Channels のコードを [src/shim/channel.ts](../src/shim/channel.ts) に閉じ込めてあり、これが最初のアダプタに当たる。差し替え口 (インターフェース) は **2 つ目の配信手段を足すときに作る**。1 つしかないうちに抽象化は作らない。
-- 未確認: MCP 標準の `resources/subscribe` + `notifications/resources/updated` で未読を知らせたとき、クライアントがモデルのターンを始めるか。始めないクライアントが多いと見込まれる。
+- MCP 標準の `resources/subscribe` + `notifications/resources/updated` では、Claude Code 2.1.303 はターンを始めない (購読もしない。§6.1m)。ほかのクライアントは未確認。
 
 ### 3.10 画像の添付
 
@@ -718,6 +718,13 @@ Hub が持つのは注文票と「どの項目の注文か」の指し示しだ�
 - **ループバックだけに公開される**: `127.0.0.1:7796` は 200、ホストの LAN (192.168.0.x) と WSL の vEthernet (172.31.x) のアドレスからは接続できなかった。
 - ホストの shim (`dist/shim/main.js`) が attach し、hook (`tools/hooks/post-event.mjs`) の Event が記録された。画像の添付 (sharp) も動いた。`down` → `up` で volume のメッセージが残り、`lastSeq` が続いた。
 - **ファイル単体の mount はホストに空のディレクトリを作る**: `./roles.json` がないとき、long syntax の `bind.create_host_path: false` を付けても、top-level の `configs` (`file:`) にしても、Docker Desktop はホストに `roles.json` という空のディレクトリを作って起動した。Hub は EISDIR で止まり、restart で繰り返す。そのため親ディレクトリを mount する形にした (§3.8)。
+
+### 6.1m MCP 標準の resources 通知では起きない (2026-10-19、Claude Code 2.1.303 / Windows 11、`tools/probe/resources-probe.mjs`、C1)
+
+resource `hub://inbox` (`resources: { subscribe: true, listChanged: true }`) と、それを読むツール `read_inbox` を持つプローブを `--strict-mcp-config --mcp-config` で 1 つだけつなぎ、instructions に「変わったら `read_inbox` を呼べ」と書いた。何も入力しないセッションに `notifications/resources/updated` と `notifications/resources/list_changed` を送った。
+- **購読しない**: Claude Code は `initialize` → `tools/list` → `resources/list` まで進み、`resources/subscribe` を送らなかった。client capabilities は `elicitation` と `roots` だけ。
+- **ターンは始まらない**: `list_changed` には `resources/list` の取り直しで応じた (8ms 後)。`resources/updated` には何も応じず、`resources/read` も `read_inbox` の呼び出しもなく、端末にも何も出なかった (ユーザーの観察)。
+- **帰結**: Claude Code では resources 通知は「起こす」手段にならない (§3.9 の段階 2 に使えない)。Claude Code は Channels (段階 1) のままにする。ほかのクライアントは未確認 (C3 で実クライアントを入れたときに同じプローブで見る)。
 
 ### 6.2 未検証
 

@@ -91,3 +91,13 @@ curl.exe -H "x-probe-token: $t" http://127.0.0.1:7788/case/during_question
 | 7 | 手順 4 のメモと、`hook` (PreToolUse / Notification) の時刻と `pushed` の時刻の前後 |
 
 SessionStart hook はプローブの HTTP が listen する前に発火しうるので、記録されていなくても異常ではない。
+
+## resources/updated で起きるか (design.md §6.1m、C1)
+
+`resources-probe.mjs` は resource `hub://inbox` (subscribe と listChanged 付き) とツール `read_inbox` を公開し、クライアントからの要求を `logs/resources-probe.log` に記録する。
+
+```powershell
+claude --strict-mcp-config --mcp-config tools/probe/resources-mcp.json
+```
+
+何も入力せずに待たせ、別のターミナルで `Add-Content logs/resources-trigger.txt x` を実行すると、`notifications/resources/updated` と `list_changed` を送る。ログに `resources/subscribe` / `resources/read` / `tools/call read_inbox` が出るか、セッションがターンを始めるかを見る。

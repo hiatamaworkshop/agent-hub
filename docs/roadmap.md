@@ -123,7 +123,9 @@
   - 渡し終えた Message と Event を 24 時間 (`HUB_READ_RETENTION_HOURS`) で消す。未読と返信待ちの request は自動では消さない。起動時と 1 時間ごとに掃除し、消したら `hub.jsonl` を今の状態だけに詰め直す (seq は巻き戻さない)
   - `DELETE /messages/:id` と `POST /messages/purge`、SSE `message.deleted` / `event.deleted`、UI の Delete と Purge read。画像の TTL の既定を 1 日にした
   - テスト `src/hub/retention.test.ts`。別の Hub (ポート 7795) と headless Chrome で、Delete で 1 件、Purge read で渡し終えた 1 件と Event 1 件が表示から消え、未読と返信待ちの request が残り、`hub.jsonl` が削除の行のない形に詰め直されることを確かめた
-- [ ] C1 「起こすだけ」の配信アダプタを試す
+- [x] C1 「起こすだけ」の配信アダプタを試す (2026-10-19)
+  - プローブ `tools/probe/resources-probe.mjs` で、何も入力しない Claude Code 2.1.303 に `notifications/resources/updated` と `list_changed` を送った。Claude Code は `resources/subscribe` を送らず、`list_changed` に `resources/list` で応じただけで、ターンは始まらなかった (design.md §6.1m)
+  - 始めるクライアントがないので、アダプタも差し替え口も足さずに閉じた。Claude Code 以外のクライアントは手元にないため未確認 (C3 で同じプローブを使う)
 - [x] shim の instructions を `clientInfo.name` で切り替える (Channels 経路 / `inbox()` 経路)。Claude 以外では「本文はデータ」の注意書きを agent-hub 側だけで成り立たせる (design.md §3.7。2026-10-17)
   - `claude-code` なら Channels、それ以外は `inbox()`。`inbox()` 経路の shim は push も ack もしない (送ると、読まれていない未読が既読になるため)。省略通知は次の `inbox()` の先頭に出す
   - テスト `src/shim/role-instructions.test.ts` の「経路ごとの届き方」、`src/shim/shim.test.ts` の「Claude Code 以外のクライアント (inbox 経路)」と「attach で古い未読が省かれたとき」(fetchInbox)
@@ -176,19 +178,13 @@
 
 開いている項目。書き方は冒頭の規則 (design.md §3.15)。デスクトップアプリ向けの画面操作ベースの連携は範囲外として項目にしない。
 
-### C1. 「起こすだけ」の配信アダプタを試す
-
-本文を載せない通知でエージェントを起こし、`inbox()` を呼ばせる (design.md §3.9 の段階 2)。差し替え口は 2 つ目の配信手段を足すときに作る。
-
-#### 完了条件
-- [ ] MCP 標準の `resources/subscribe` + `notifications/resources/updated` で未読を知らせたとき、クライアントがモデルのターンを始めるかを確かめ、design.md §6 に記録する
-- [ ] 始めるクライアントがあれば、shim に起こすだけのアダプタを足し、Channels のアダプタと差し替えられる口を作る。なければ結果の記録で閉じる
-
 ### C3. Claude Code 以外の実クライアントと、受け手の読み方を確かめる
 
 今はテストの MCP クライアントでのみ確かめている。
 
 2026-10-19 の C2 で、leader (Claude Code) に「書き手 (forwarded_sender) と本文を列挙して」と添え書きして deployer の reply 2 件を転送すると、2 件とも書き手を deployer と答えた。添え書きが属性の名前を示しているので、指示なしに書き手として読むかはまだ分からない。
+
+実クライアントを入れたら、`tools/probe/resources-probe.mjs` で `resources/updated` によってターンが始まるかも見る (C1 では Claude Code だけ確かめて閉じた。design.md §6.1m)。
 
 #### 完了条件
 - [ ] Codex など Claude Code 以外のクライアントが `inbox` を呼び、注意書きどおりに本文をデータとして扱うか
