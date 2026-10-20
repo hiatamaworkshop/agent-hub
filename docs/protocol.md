@@ -165,7 +165,6 @@
 | GET | `/messages?after=<seq>&limit=<n>` | 履歴取得 (`limit` 既定 100、最大 1000)。応答 `{ "messages": [...], "lastSeq": <seq> }` |
 | GET | `/mailboxes` | Mailbox 一覧 (role・実効購読・未読数・Attachment の状態) |
 | GET | `/roles` | roles.json の role。`{ "roles": [{ "name", "description", "subscribe": [...] }] }` (未知の項目は出さない)。roles.json がなければ `{ "roles": null }`。UI が、Mailbox のまだないプロジェクトでも `role:` 宛てを選べるようにする (design.md §3.15 の「プロジェクトは値」) |
-| GET | `/roles` | role 定義の一覧 (**未実装**。P2 で roles.json の読み込みは入ったが、この API はまだない。必要になったら足す) |
 | DELETE | `/messages/:id` | Message を 1 件消す (人の操作。未読・返信待ちでも消す)。応答は 200 `{}`。未知の id は 404 `message_not_found`。SSE `message.deleted` を流す (design.md §3.14) |
 | POST | `/messages/purge` | 保存期間を待たずに今消す。body は空でよい。消すのは「渡し終えた・返信待ちの request でない」Message と全 Event。応答は 200 `{ "messages": <消した件数>, "events": <消した件数> }`。消したものがあれば SSE `message.deleted` / `event.deleted` を流す |
 | DELETE | `/mailboxes/:name` | Mailbox を削除し、応答は 200 `{}`。購読・role・cursor・未読の状態を消す。Message のログは消さない。接続中 (attach 中) の Mailbox は削除せず 409 `mailbox_attached` (先に detach する)。未知の名前は 404 `mailbox_not_found`。SSE `mailbox.deleted` (`{ name }`) を流す。同名で作り直すと cursor は削除時点の `seq` から始まる (§2) |
