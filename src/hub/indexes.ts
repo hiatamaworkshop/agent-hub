@@ -66,15 +66,29 @@ export class IndexStore {
   put(input: IndexInput): ProjectIndex {
     const ix: ProjectIndex = { project: input.project, source: input.source, updatedAt: this.now().toISOString(), items: input.items }
     const key = keyOf(ix.project, ix.source)
-    if (this.file) {
-      const next = new Map(this.indexes).set(key, ix)
-      mkdirSync(dirname(this.file), { recursive: true })
-      const tmp = `${this.file}.tmp`
-      writeFileSync(tmp, JSON.stringify([...next.values()]))
-      renameSync(tmp, this.file)
-    }
+    this.save(new Map(this.indexes).set(key, ix))
     this.indexes.set(key, ix)
     return ix
+  }
+
+  // 外した索引 (なければ null)。put と同じく書けてからメモリを更新する
+  remove(project: string, source: string): ProjectIndex | null {
+    const key = keyOf(project, source)
+    const ix = this.indexes.get(key)
+    if (!ix) return null
+    const next = new Map(this.indexes)
+    next.delete(key)
+    this.save(next)
+    this.indexes.delete(key)
+    return ix
+  }
+
+  private save(next: Map<string, ProjectIndex>): void {
+    if (!this.file) return
+    mkdirSync(dirname(this.file), { recursive: true })
+    const tmp = `${this.file}.tmp`
+    writeFileSync(tmp, JSON.stringify([...next.values()]))
+    renameSync(tmp, this.file)
   }
 
   list(): ProjectIndex[] {

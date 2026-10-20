@@ -164,6 +164,7 @@
 | POST | `/messages` | Message を作成して配信 (宛先は `to`)。body は `kind` / `to` / `body` / `replyTo?`。応答は 201 で、作成した Message に `recipients` (配信先 Mailbox 名の配列。未接続も含む) を足したもの。`recipients` は応答にだけ付き、Message には保存しない。`user` 宛て以外で空なら誰にも届いていない (受理はする)。`replyTo` が存在しなければ 400。本文上限 1MB (超えると 413 `payload_too_large`) |
 | GET | `/messages?after=<seq>&limit=<n>` | 履歴取得 (`limit` 既定 100、最大 1000)。応答 `{ "messages": [...], "lastSeq": <seq> }` |
 | GET | `/mailboxes` | Mailbox 一覧 (role・実効購読・未読数・Attachment の状態) |
+| GET | `/roles` | roles.json の role。`{ "roles": [{ "name", "description", "subscribe": [...] }] }` (未知の項目は出さない)。roles.json がなければ `{ "roles": null }`。UI が、Mailbox のまだないプロジェクトでも `role:` 宛てを選べるようにする (design.md §3.15 の「プロジェクトは値」) |
 | GET | `/roles` | role 定義の一覧 (**未実装**。P2 で roles.json の読み込みは入ったが、この API はまだない。必要になったら足す) |
 | DELETE | `/messages/:id` | Message を 1 件消す (人の操作。未読・返信待ちでも消す)。応答は 200 `{}`。未知の id は 404 `message_not_found`。SSE `message.deleted` を流す (design.md §3.14) |
 | POST | `/messages/purge` | 保存期間を待たずに今消す。body は空でよい。消すのは「渡し終えた・返信待ちの request でない」Message と全 Event。応答は 200 `{ "messages": <消した件数>, "events": <消した件数> }`。消したものがあれば SSE `message.deleted` / `event.deleted` を流す |
@@ -183,6 +184,7 @@
 | PATCH | `/files/:id` | body `{ "persistent": true }` または `false` で持続扱いを切り替える。未知のキーや型違いは 400 |
 | PUT | `/indexes` | roadmap の項目の索引を置き換える (design.md §3.15)。送るのはホストの `npm run docs:index`。body `{ "project": "<作業フォルダの絶対パス>", "source": "<project からの相対パス>", "items": [{ "id": "C<n>", "title", "status": "decided \| proposed \| held \| blocked", "statusReason"?, "conditions": { "done", "total" } \| null, "conditionTexts": [...], "promise": "<8 桁の 16 進>" \| null, "line" }] }` (`parseRoadmap` の結果。ほかのキーは捨てる)。同じ project (比較は §3 attach の `projectChanged` と同じ揃え方) の同じ source を置き換える。応答は 200 `{ project, source, updatedAt, items: <件数> }`。SSE `index.updated` を流す。形が違えば 400、1MB を超えると 413 `payload_too_large`。`HUB_DATA_DIR/indexes.json` に書き、壊れていれば空から始める (送り直せば戻る写し) |
 | GET | `/indexes` | 送られた索引の一覧。`{ "indexes": [{ project, source, updatedAt, items }] }` |
+| DELETE | `/indexes?project=<パス>&source=<相対パス>` | 索引の登録を外す。project の比較は `PUT /indexes` と同じ揃え方。応答は 200 `{ project, source }` (登録時の表記)、なければ 404 `not_found`、query が欠ければ 400。SSE `index.deleted` を流す。正本はリポジトリにあるので、`docs:index` で送り直せば戻る |
 
 - `id` は元の入力バイト列の sha256 の先頭 32 桁 (`f_` + 32 桁の 16 進)。不正な形式は 404。
 - 持続でない画像は `HUB_FILE_TTL_DAYS` (既定 1 日。0 なら掃除しない) を過ぎると消す。起動時と 1 時間ごとに行い、消した件数をログに出す。消えた画像を参照するメッセージは履歴に残るので、表示側は 404 を「期限切れ」として扱う。
@@ -399,9 +401,10 @@ Claude 側では次のように見える:
 
 ## 7. UI ↔ Hub のイベント種別 (SSE `event:` 名)
 
-`event` (検知イベント), `message`, `message.deleted`, `event.deleted`, `mailbox.created`, `mailbox.deleted`, `mailbox.acked`, `attachment.attached`, `attachment.updated`, `attachment.detached`, `attachment.superseded`, `subscription.changed`, `index.updated`
+`event` (検知イベント), `message`, `message.deleted`, `event.deleted`, `mailbox.created`, `mailbox.deleted`, `mailbox.acked`, `attachment.attached`, `attachment.updated`, `attachment.detached`, `attachment.superseded`, `subscription.changed`, `index.updated`, `index.deleted`
 
 - `index.updated` は `{ "project", "source", "updatedAt" }`。`PUT /indexes` のたびに流す。UI は `GET /indexes` で取り直す。古い UI は無視し、古い Hub は送らない (UI は `GET /indexes` の 404 で項目の欄を出さない)。
+- `index.deleted` は `{ "project", "source" }`。`DELETE /indexes` で外したときに流す。UI は `GET /indexes` で取り直す。
 - `message.deleted` / `event.deleted` は `{ "ids": ["…"] }`。手で消したときと、保存期間の掃除で消したときに流す (design.md §3.14)。UI はその id を表示から外す。古い UI は知らない名前として無視する (再読み込みで消える)。
 
 - `event` は記録した Event (§2)。重複 (`duplicate: true`) と取り込まなかったものは流さない。

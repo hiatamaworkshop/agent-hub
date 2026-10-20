@@ -697,4 +697,19 @@ describe('role 宛てのプロジェクトの範囲 (design.md §9-7)', () => {
       assert.equal((await post(call, { type, id: 'vcp.deployer', project: 'C:/work/vcp' })).status, 400)
     }
   })
+
+  it('Mailbox のまだないプロジェクトの role 宛ては、後でそのプロジェクトで attach した Mailbox に未読として届く', async () => {
+    const { call, attach } = setup()
+    const r = await post(call, { type: 'role', id: 'deployer', project: 'C:\\work\\newproj' })
+    assert.equal(r.status, 201)
+    assert.deepEqual(r.body.recipients, [], '送った時点では受け手がいない')
+    await attach('cairn.deployer', { client: 'claude-code', role: 'deployer', cwd: 'C:\\work\\cairn' })
+    await attach('newproj.deployer', { client: 'claude-code', role: 'deployer', cwd: 'c:/work/newproj/' })
+    const unread = async (name: string) => {
+      const { mailboxes } = (await (await call('GET', '/mailboxes')).json()) as { mailboxes: { name: string; unread: number }[] }
+      return mailboxes.find((mb) => mb.name === name)!.unread
+    }
+    assert.equal(await unread('newproj.deployer'), 1)
+    assert.equal(await unread('cairn.deployer'), 0, 'ほかのプロジェクトの同じ role には届かない')
+  })
 })

@@ -49,6 +49,23 @@ describe('PUT /indexes と GET /indexes (design.md §3.15)', () => {
     assert.deepEqual(indexes.map((i) => [i.project, i.source]), [['c:/work/vcp/', 'docs/roadmap.md'], ['c:/work/vcp', 'docs/TODO.md']])
   })
 
+  it('DELETE /indexes は同じプロジェクト (表記の揺れを揃える) の同じファイルを外し、index.deleted を流す', async () => {
+    const { call, ui } = setup()
+    const body = (source: string) => ({ project: 'C:\\work\\vcp', source, items: parseRoadmap(roadmap).items })
+    await call('PUT', '/indexes', body('docs/roadmap.md'))
+    await call('PUT', '/indexes', body('docs/TODO.md'))
+    ui.length = 0
+    const q = (project: string, source: string) => `/indexes?project=${encodeURIComponent(project)}&source=${encodeURIComponent(source)}`
+    const res = await call('DELETE', q('c:/work/vcp/', 'docs/roadmap.md'))
+    assert.equal(res.status, 200)
+    assert.deepEqual(await res.json(), { project: 'C:\\work\\vcp', source: 'docs/roadmap.md' })
+    assert.deepEqual(ui, [{ event: 'index.deleted', data: { project: 'C:\\work\\vcp', source: 'docs/roadmap.md' } }])
+    const { indexes } = (await (await call('GET', '/indexes')).json()) as { indexes: { source: string }[] }
+    assert.deepEqual(indexes.map((i) => i.source), ['docs/TODO.md'])
+    assert.equal((await call('DELETE', q('c:/work/vcp', 'docs/roadmap.md'))).status, 404)
+    assert.equal((await call('DELETE', '/indexes?project=x')).status, 400)
+  })
+
   it('形の違う入力は 400、トークンがなければ 401、IndexStore がなければ 404', async () => {
     const { call } = setup()
     assert.equal((await call('PUT', '/indexes', { project: 'p', source: 's', items: [{ id: 'X1' }] })).status, 400)
@@ -63,6 +80,9 @@ describe('PUT /indexes と GET /indexes (design.md §3.15)', () => {
     new IndexStore(file).put({ project: '/w/a', source: 'docs/roadmap.md', items: parseRoadmap(roadmap).items })
     assert.deepEqual(new IndexStore(file).list().map((i) => i.items.map((x) => x.id)), [['C3', 'C4']])
     assert.ok((await readFile(file, 'utf8')).startsWith('['))
+    new IndexStore(file).remove('/w/a', 'docs/roadmap.md')
+    assert.deepEqual(new IndexStore(file).list(), [], '外したことも次の起動に残る')
+    new IndexStore(file).put({ project: '/w/a', source: 'docs/roadmap.md', items: parseRoadmap(roadmap).items })
 
     await writeFile(file, '{ broken')
     assert.deepEqual(new IndexStore(file).list(), [])

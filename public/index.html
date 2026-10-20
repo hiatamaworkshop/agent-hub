@@ -750,11 +750,14 @@ function buildTo(all) {
     if (mb.role) roles.add(`role:${mb.role}`)
     for (const t of subscriptionsOf(mb)) topics.add(`topic:${t}`)
   }
+  const scope = currentProject()
+  // プロジェクトを選んでいれば、Mailbox がまだなくても roles.json の role を候補にする (attach したその role の Mailbox に未読として届く)。
+  // All projects では足さない (どのプロジェクトにもいない role へ全体宛てで送らせない)
+  if (scope) for (const r of roleList) roles.add(`role:${r}`)
   sel.textContent = ''
   // 何も選ばれていない状態 (自動で決まる候補がない) を示す。値は空で、Send では拒否する
   sel.append(option('', 'Select a destination…'))
   if (mailboxes.length) sel.append(group('Mailbox', mailboxes.map((mb) => `mailbox:${mb.name}`)))
-  const scope = currentProject()
   if (roles.size) sel.append(group(scope ? `role (only ${scope.label})` : 'role (all projects)', [...roles].sort(), (v) => (scope ? `${v} @ ${scope.label}` : v)))
   if (topics.size) sel.append(group('Subscribed topics', [...topics].sort()))
   sel.append(group('User', ['user:browser']))
@@ -1299,7 +1302,9 @@ $('body').addEventListener('input', updateHint)
 async function loadMailboxes() {
   const { mailboxes } = await api('/mailboxes')
   mailboxList = mailboxes
-  buildProjects(mailboxes)
+  mailboxesLoaded = true
+  buildProjects()
+  renderItems() // 前回の選択が戻ると Items の絞り込みも変わる
   renderMailboxes(mailboxes)
   buildTo(mailboxes)
   applyProject()
@@ -1312,7 +1317,7 @@ function folderName(p) {
 }
 
 // --- プロジェクトの絞り込み (design.md §3.2、§9-7) ---
-// プロジェクトは Mailbox の project (作業フォルダ) から作る。比べるのは Hub と同じ規則で揃えたキー (normalizeProjectPath)
+// プロジェクトは Mailbox の project (作業フォルダ) と roadmap の索引の project から作る。比べるのは Hub と同じ規則で揃えたキー (normalizeProjectPath)
 const PROJECT_KEY = 'agent-hub.project'
 let projects = new Map() // キー → { key, path, label }
 let projectFilter = '' // 選んでいるプロジェクトのキー。'' は All projects
@@ -1350,23 +1355,29 @@ function eventInProject(ev) {
   return typeof ev.cwd === 'string' && ev.cwd !== '' && projectKey(ev.cwd) === projectFilter
 }
 
-// 一覧の更新ごとに選択肢を作り直す。選んでいたプロジェクトの Mailbox がなくなったら All projects に戻す
-function buildProjects(mailboxes) {
+// Mailbox と索引の一覧の更新ごとに選択肢を作り直す。プロジェクトは両方に出てくる値の和 (design.md §3.15 の「プロジェクトは値」)。
+// roadmap を登録しただけで、エージェントがまだつながっていないプロジェクトも選べる。
+// 前回の選択を戻すのと、なくなったプロジェクトから All projects に戻すのは、両方の一覧が 1 度届いてから
+let mailboxesLoaded = false
+let indexesSettled = false // GET /indexes が 1 度終わった (失敗・404 を含む)
+function buildProjects() {
   projects = new Map()
-  for (const mb of mailboxes) {
-    if (!mb.project) continue
-    const key = projectKey(mb.project)
-    if (!projects.has(key)) projects.set(key, { key, path: mb.project, label: folderName(mb.project) })
+  const add = (path) => {
+    const key = projectKey(path)
+    if (!projects.has(key)) projects.set(key, { key, path, label: folderName(path) })
   }
+  for (const mb of mailboxList) if (mb.project) add(mb.project)
+  for (const ix of indexList) add(ix.project)
   // 同じフォルダ名が 2 つ以上あれば、全体のパスで見分ける
   const names = new Map()
   for (const p of projects.values()) names.set(p.label, (names.get(p.label) || 0) + 1)
   for (const p of projects.values()) if (names.get(p.label) > 1) p.label = p.path
-  if (savedProject !== null) {
+  const settled = mailboxesLoaded && indexesSettled
+  if (settled && savedProject !== null) {
     if (projects.has(savedProject)) { projectFilter = savedProject; autoTo = true }
     savedProject = null
   }
-  if (projectFilter && !projects.has(projectFilter)) { projectFilter = ''; saveProject('') }
+  if (settled && projectFilter && !projects.has(projectFilter)) { projectFilter = ''; saveProject('') }
   const sel = $('project')
   sel.textContent = ''
   sel.append(option('', 'All projects'))
@@ -1482,11 +1493,49 @@ async function loadIndexes() {
     indexList = (await api('/indexes')).indexes || []
   } catch (err) {
     if (err.message === 'unauthorized') return
+    indexesSettled = true
     // 一時的な失敗 (接続切れ・5xx) では前の索引を残す。次の index.updated か再接続で取り直す
-    if (err.status !== 404) { $('err').textContent = `Could not load items: ${err.message || err}`; return }
+    if (err.status !== 404) { $('err').textContent = `Could not load items: ${err.message || err}`; refreshProjects(); return }
     indexList = [] // 404 は /indexes を持たない古い Hub。項目の欄を出さないだけ
   }
+  indexesSettled = true
+  refreshProjects()
+}
+// 索引のプロジェクトはプロジェクトの一覧に入る。選択が変わったら (前回の選択が戻った・外したプロジェクトだった) 絞り込みを掛け直す
+function refreshProjects() {
+  const before = projectFilter
+  buildProjects()
+  if (projectFilter !== before) {
+    renderMailboxes(mailboxList)
+    buildTo(mailboxList)
+    applyProject()
+  }
   renderItems()
+}
+
+// 登録を外す。正本はリポジトリにあるので、npm run docs:index で送り直せば戻る
+async function removeIndex(ix) {
+  if (!window.confirm(`Remove ${ix.source} of ${folderName(ix.project)} from Items?\nRun npm run docs:index in that folder to add it again.`)) return
+  try {
+    await api(`/indexes?project=${encodeURIComponent(ix.project)}&source=${encodeURIComponent(ix.source)}`, { method: 'DELETE' })
+  } catch (err) {
+    if (err.message !== 'unauthorized') $('err').textContent = `Could not remove: ${err.message || err}`
+    return
+  }
+  loadIndexes() // index.deleted でも取り直すが、SSE が切れている間も表示に反映する
+}
+
+// roles.json の role 名。Mailbox のまだないプロジェクトでも role 宛てを選べるようにする。
+// roles.json のない Hub (null) と /roles のない古い Hub (404) では空で、今までどおり Mailbox の role だけを候補にする
+let roleList = []
+async function loadRoles() {
+  try {
+    roleList = ((await api('/roles')).roles || []).map((r) => r.name).filter((n) => typeof n === 'string')
+  } catch (err) {
+    if (err.message === 'unauthorized' || err.status !== 404) return
+    roleList = []
+  }
+  if (mailboxesLoaded) buildTo(mailboxList)
 }
 let itemsTimer = null
 function scheduleItems() { clearTimeout(itemsTimer); itemsTimer = setTimeout(renderItems, 200) }
@@ -1517,6 +1566,11 @@ function renderItems() {
   for (const ix of shown) {
     const h = el('div', 'itemhead', projectFilter ? ix.source : `${folderName(ix.project)} · ${ix.source}`)
     h.title = `${ix.project}\nSent ${new Date(ix.updatedAt).toLocaleString()}. Run npm run docs:index again after editing the file.`
+    const rm = el('button', 'linkbtn', 'Remove')
+    rm.type = 'button'
+    rm.title = 'Remove this file from Items (the file itself is not touched)'
+    rm.onclick = () => removeIndex(ix)
+    h.append(' ', rm)
     root.append(h)
     for (const item of ix.items) root.append(itemCard(ix, item, latest.get(itemKey(ix.project, item.id)), replied))
   }
@@ -1597,7 +1651,12 @@ function renderMailboxes(all) {
   renderElsewhere()
   renderBacklog()
   const mailboxes = all.filter(mailboxInProject)
-  if (mailboxes.length === 0) root.append(el('div', 'meta', 'None yet'))
+  const scope = currentProject()
+  if (mailboxes.length === 0) {
+    // roadmap を登録しただけのプロジェクト。起動の仕方を示す (Hub はセッションを起動できない。design.md §3.13)
+    const hint = scope ? `No agents in ${scope.label} yet. Start one in that folder, e.g. tools/dev/start-agent.ps1 -Role leader -Project ${scope.path}` : 'None yet'
+    root.append(el('div', 'meta', hint))
+  }
   const groupOf = (mb) => (mb.project ? projects.get(projectKey(mb.project)) : null)
   const grouped = !projectFilter && projects.size > 0
   if (grouped) {
@@ -1856,6 +1915,7 @@ function connect() {
     mailboxTries = 0
     refreshMailboxes(0)
     loadIndexes()
+    loadRoles() // roles.json は Hub の起動時に読まれるので、つなぎ直したときに取り直す
   }
   es.onerror = () => { $('conn').className = 'ng'; $('conn').textContent = 'Reconnecting…' }
   es.addEventListener('message', (e) => {
@@ -1875,6 +1935,7 @@ function connect() {
   es.addEventListener('event.deleted', (e) => removeEvents(JSON.parse(e.data).ids || []))
   // roadmap の索引が送り直された (古い Hub は送らない)
   es.addEventListener('index.updated', () => loadIndexes())
+  es.addEventListener('index.deleted', () => loadIndexes())
   // mailbox.acked は未読数が減ったときに届く (古い Hub は送らないので、その場合は何も起きない)
   for (const ev of ['mailbox.created', 'mailbox.deleted', 'mailbox.acked', 'attachment.attached', 'attachment.updated', 'attachment.detached', 'attachment.superseded', 'subscription.changed']) {
     es.addEventListener(ev, () => refreshMailboxes())

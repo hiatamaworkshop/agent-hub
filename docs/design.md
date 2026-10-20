@@ -117,11 +117,11 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
 - タブの未読: 非表示中に SSE で届いた、人間宛て (`to.type === 'user'`) の他者のメッセージ数と、`question` / `permission` の Event の数をタイトル `(n) agent-hub` と favicon のバッジで示す。agent 同士のメッセージ (`mailbox:*` / `role:*` / `topic:*` 宛て) は数えない。前面に戻るかフォーカスで消す。自分の送信と履歴読み込みは数えない。再接続後に取り直した分も同じ規則で数える。
 - 接続の回復: SSE が開き直すたびに `GET /messages?after=<開いた時点の描画済みの最大 seq>` で取り直し、描画する (最初の接続は履歴の読み込みが受け持つ)。取り直しに失敗しても表示は止めず、次に開いたとき取り直す。Mailbox 一覧が失敗したら #err に出し、少し待って数回まで試す (SSE が開き直したときも試す)。履歴と新着は一覧の成否と独立に動く。
 - 送信: 送信中に打ち足した本文と、送信後に足した画像は残す。送ったもの (送信時点の本文と画像) だけを消す。失敗したときは何も消さない。起動時の `/settings` は 1 回だけ読み、初期の宛先と Commands に使う (Commands のダイアログは開くたびに読み直す)。
-- プロジェクトの絞り込み (2026-10-18): サイドバーの上で `All projects` か 1 つのプロジェクト (Mailbox の `project` から作る) を選ぶ。タブには分けない。人間のコンソールの価値は全部を 1 画面で見られることで (§8.2)、タブだと別のプロジェクトの質問待ちを見落とすため。
+- プロジェクトの絞り込み (2026-10-18): サイドバーの上で `All projects` か 1 つのプロジェクト (Mailbox の `project` と roadmap の索引の `project` の和。§3.15 の「プロジェクトは値」、2026-10-20) を選ぶ。タブには分けない。人間のコンソールの価値は全部を 1 画面で見られることで (§8.2)、タブだと別のプロジェクトの質問待ちを見落とすため。
   - 選んだプロジェクトの Mailbox のカードと、そこに関わる Message と Event だけを出す。関わるとは、送り手か宛先の Mailbox がそのプロジェクトのもの、`to.project` がそのプロジェクト、`project` のない `role:` / `topic:` 宛てでそのプロジェクトの Mailbox が受け取るもの、のどれか。`user:` 宛ては送り手で決める。
   - 選んでいる間も、ほかのプロジェクトの人の手を待つ Event (回答前の `question`、`permission`) の数をスレッド操作バーに出す。押すと `All projects` に戻る。
-  - 宛先の候補もそのプロジェクトの Mailbox に絞り、`role:` を選んで送ると `to.project` を付ける。宛先の表示は `role:deployer @ vcp`。
-  - `All projects` ではカードをプロジェクトごとにまとめて並べる (project のない Mailbox は最後)。選択は localStorage に覚え、そのプロジェクトの Mailbox がなくなったら `All projects` に戻る。
+  - 宛先の候補もそのプロジェクトの Mailbox に絞り、`role:` を選んで送ると `to.project` を付ける。宛先の表示は `role:deployer @ vcp`。Mailbox のまだないプロジェクトでも roles.json の role (`GET /roles`) を候補にし、attach した Mailbox に未読として届く。
+  - `All projects` ではカードをプロジェクトごとにまとめて並べる (project のない Mailbox は最後)。選択は localStorage に覚え、そのプロジェクトの Mailbox も索引もなくなったら `All projects` に戻る。
   - `to.project` を知らない古い Hub は project を落として全体に配る。応答の `to` に `project` がなければ警告を出す。
 - Mailbox の削除: 接続していない Mailbox のカードにだけ Delete を出す (確認のあと `DELETE /mailboxes/:name`)。カードの選択は起こさない。409 (その間に attach された) と、削除に対応しない古い Hub の 404 は #err に出し、カードは外さずに一覧を取り直す。`mailbox.deleted` を受けた他のタブも一覧を取り直す。
 - Mailbox のカードの未読数: 新着 (`message`) と ack (`mailbox.acked`) で一覧を取り直し、ポーリングはしない。`effectiveSubscriptions` や `unread` を欠く古い Hub の応答では、購読は空、未読の項目は出さない (カード全体は描く)。
@@ -527,6 +527,12 @@ Hub が持つのは注文票と「どの項目の注文か」の指し示しだ�
    **決定 (2026-10-19、ユーザー)**: `meta.item` (protocol.md §2)。本文の `GOAL` にも ID を書くが、UI の判定は meta で行う (Hub は本文を解釈しない)。`meta.item` には送った時点の約束の指紋と完了条件の文言を持たせ、今の索引と比べて差分を出す。指紋は完了条件の文言だけから取り (`promiseFingerprint`)、チェックを付けても変わらない (進捗の追記は自由、文言の変更は約束の変更)。
    依頼中 / 報告済は、その項目を指した最新の request に返信があるかで出す。渡し終えた request は保存期間 (§3.14) で消えるので、報告済は 1 日ほどで表示から消える。受け入れ (未決 4) を足すまではそれでよい。
 4. バッジの「人が動く番」に受け入れ待ちを入れるか (§3.11 の状態が先に要る)。
+
+**プロジェクトは値 (決定 2026-10-20、ユーザー)**
+- プロジェクトは実体にせず、作業フォルダのパスという値のまま扱う。同じ値が Mailbox の `project` (attach の cwd)、role 宛ての `Address.project` (§9-7)、索引の `project`、Event の `cwd` に出る。比べるときは attach の `projectChanged` と同じ揃え方をする (protocol.md §3)。
+- roadmap の索引は Mailbox に入れない。1 つのプロジェクトに Mailbox は複数ある (leader・deployer など)、登録した時点ではまだ Mailbox がない、寿命が違う (Mailbox は attach で生まれ手で消す。索引は送り直せる写し)。Mailbox は宛先と配送の状態だけを持つ (§3.14)。
+- UI のプロジェクトの一覧は、Mailbox と索引に出てくる値の和にする。roadmap を `docs:index` で登録すれば、エージェントがつながる前からプロジェクトとして選べ、項目から `role:<r> @ <project>` 宛てに依頼を置ける (後でそのプロジェクトで attach した Mailbox に未読として届く)。
+- **実体に上げる条件**: プロジェクトごとの設定 (表示名・起動コマンド・既定の role・hook の設定の有無など) が要るようになったら、Project を親にして索引の鍵をその下に収め、`Mailbox.project` を参照にする。散らばった値を 1 つの親にまとめる向きで、並列する概念は増やさない。
 
 ### 3.16 進捗の正本は roadmap、返信は配送の信号 (構想、2026-10-19)
 

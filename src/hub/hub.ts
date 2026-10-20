@@ -148,6 +148,12 @@ export class Hub {
     this.readRetentionMs = opts.readRetentionMs ?? DEFAULT_READ_RETENTION_MS
   }
 
+  // GET /roles 向け。roles.json がなければ null (role 名を検証しないので、候補も出せない)
+  listRoles(): { name: string; description: string; subscribe: string[] }[] | null {
+    if (!this.roles) return null
+    return [...this.roles].map(([name, def]) => ({ name, description: def.description, subscribe: def.subscribe }))
+  }
+
   onUi(fn: (e: UiEvent) => void): () => void {
     this.uiListeners.add(fn)
     return () => this.uiListeners.delete(fn)

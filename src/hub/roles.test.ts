@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
+import { createApp } from './app.js'
 import { HubError, Hub } from './hub.js'
 import { loadRoles, parseRoles, RolesError } from './roles.js'
 import { Store } from './store.js'
@@ -133,5 +134,23 @@ describe('Hub: roles.json がない場合 (P0 と同じ動き)', () => {
     assert.equal(at.role, 'anything-goes')
     assert.equal(at.roleDescription, null)
     assert.deepEqual(store.effectiveSubscriptions('x'), [])
+    assert.equal(hub.listRoles(), null)
+  })
+})
+
+describe('GET /roles (design.md §3.15 の「プロジェクトは値」)', () => {
+  it('roles.json の role を名前・説明・既定購読で返す。未知の項目は出さない。ファイルがなければ null', async () => {
+    const roles = parseRoles(JSON.stringify({ reviewer: { description: 'r', subscribe: ['review.request'], accepts: ['review'] }, deployer: { description: 'd', subscribe: [] } }))
+    const get = async (hub: Hub) => {
+      const app = createApp({ hub, token: 'test-token-0123456789', uiHtml: async () => null })
+      return (await (await app.request('/roles', { headers: { authorization: 'Bearer test-token-0123456789' } })).json()) as { roles: unknown }
+    }
+    assert.deepEqual(await get(hubWith(roles).hub), {
+      roles: [
+        { name: 'reviewer', description: 'r', subscribe: ['review.request'] },
+        { name: 'deployer', description: 'd', subscribe: [] },
+      ],
+    })
+    assert.deepEqual(await get(hubWith(null).hub), { roles: null })
   })
 })

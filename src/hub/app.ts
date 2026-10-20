@@ -183,6 +183,8 @@ export function createApp(opts: AppOptions) {
   })
 
   app.get('/mailboxes', (c) => c.json({ mailboxes: hub.describeMailboxes() }))
+  // UI が、Mailbox のまだないプロジェクトでも role 宛てを選べるようにする (design.md §3.15 の「プロジェクトは値」)
+  app.get('/roles', (c) => c.json({ roles: hub.listRoles() }))
 
   // 接続中の Mailbox は 409 (mailbox_attached) で残す。未知の名前は 404
   app.delete('/mailboxes/:name', (c) => {
@@ -296,6 +298,16 @@ export function createApp(opts: AppOptions) {
       const ix = indexes.put(parsed.data)
       hub.emitUi('index.updated', { project: ix.project, source: ix.source, updatedAt: ix.updatedAt })
       return c.json({ project: ix.project, source: ix.source, updatedAt: ix.updatedAt, items: ix.items.length })
+    })
+    // 登録を外す。project の比較は PUT と同じ揃え方。正本はリポジトリにあるので、送り直せば戻る
+    app.delete('/indexes', (c) => {
+      const project = c.req.query('project')
+      const source = c.req.query('source')
+      if (!project || !source) return invalid(c, 'project と source が要る')
+      const ix = indexes.remove(project, source)
+      if (!ix) return c.json({ error: 'not_found' }, 404)
+      hub.emitUi('index.deleted', { project: ix.project, source: ix.source })
+      return c.json({ project: ix.project, source: ix.source })
     })
   }
 
