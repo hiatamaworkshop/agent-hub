@@ -762,6 +762,13 @@ resource `hub://inbox` (`resources: { subscribe: true, listChanged: true }`) と
 - **ターンは始まらない**: `list_changed` には `resources/list` の取り直しで応じた (8ms 後)。`resources/updated` には何も応じず、`resources/read` も `read_inbox` の呼び出しもなく、端末にも何も出なかった (ユーザーの観察)。
 - **帰結**: Claude Code では resources 通知は「起こす」手段にならない (§3.9 の段階 2 に使えない)。Claude Code は Channels (段階 1) のままにする。ほかのクライアントは未確認 (C3 で実クライアントを入れたときに同じプローブで見る)。
 
+### 6.1n 作業中に届いた手直しと、受領の確認 (2026-10-20、compose の Hub / vcp の leader・deployer、バージョンは記録していない)
+
+vcp の C147 を `user:cli` から vcp.leader へ依頼した (seq 39)。leader は英語の細かい指示 (#40) に組み立て直して deployer に渡し、deployer は 15 分後に報告した (#41)。leader がそれを確かめている間に、人が手直しの依頼 (#42) を送った。
+- **手直しはそのまま割り込んだ**: leader は #42 を受けて、すぐ deployer に修正を指示した (#43)。修正の報告 (#44) の後、#39 への返信 1 本 (#45) で両方の結果を報告した。#42 への返信はない。
+- **受領の確認は進まなかった**: 終わった時点で vcp.leader は `cursor` 44・`received` 39、unconfirmed は 3 (#41・#42・#44)。返信で確認になるのは `replyTo` の Message までなので (§8.4、protocol.md §4)、#45 は 39 までしか進めない。leader は 3 件とも読んで動いている。
+- **帰結**: Channels で受け取る Mailbox では、返信を受けない reply (部下の報告) と、まとめて答えた request が、確認待ちと返信待ちに残る。直し方は roadmap C28。
+
 ### 6.2 未検証
 
 1. **Windows 固有**: パス表記、改行コード。Docker Desktop で公開がループバックだけになることは確認した (§6.1l)。
