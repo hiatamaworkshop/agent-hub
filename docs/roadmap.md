@@ -307,3 +307,5 @@ C26 の通しで見つかった残り。hook の設定は手で写す (`start-ag
 - 相手の台帳を agent-hub の書式に書き換えさせるのは筋が悪い (配送の層が文書の作法を押しつけることになる)
 - 候補: 状態の行も完了条件もない項目を「決定」でなく「未分類」として扱う / 完了条件の見出し名や状態の書き方をプロジェクトごとに設定できるようにする / 完了条件がなければ本文の `- [ ]` を約束として写す
 - それまでは、索引に載せず普通の依頼として送る (項目番号は本文に書く)
+
+2026-10-20 にその形で vcp の C145 の前半を通した (`start-team.ps1 -Roles leader,deployer -Project <vcp>`、compose の Hub)。vcp の hook は `.claude/settings.local.json` に写してあった。user → leader → deployer → leader → user が手を挟まずに回り、手直しの 1 往復も同じ流れで済んだ (leader は報告の食い違いを自分で見つけて deployer に直させた)。agent-hub の不具合は出なかった。質問待ち・許可待ちの Event はこの通しでは出ていない (deployer は `auto` モード)。
