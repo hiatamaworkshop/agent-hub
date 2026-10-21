@@ -778,6 +778,7 @@ vcp の C142 を UI から vcp.leader へ依頼した (seq 69)。leader → depl
 - **カードの時刻に日付がない**: deployer のカードの `Last event: turn end · 22:17:10` は前日の Event だったが、時刻だけなので今日に見えた (roadmap C31)。
 - **Hub の外で始まったターンで返信が抜けた**: deployer (Haiku) はフルスイートをバックグラウンドで流してターンを終え、完了通知で始まったターンで結果をターミナルに書いただけで `post_message` しなかった。人が UI から催促 (#72) すると #71 への reply (#73) を送った。前 2 回の通しでは起きていない (roadmap C32)。
 - **残ったもの**: 終わった時点で vcp.leader は返信待ち 2 (前日の手直し・#70 の「このまま続ける」)、確認待ち 1 (#73。報告に返信はしない)、vcp.deployer は返信待ち 1 (催促の #72)。どれも読んで動いた分で、C28 の形が 1 回の通しで 3 件増えた。
+- **既定のモードでの許可待ち (同日、起動し直した 2.1.306)**: Shift+Tab の切り替えに `default` はなく、人が deployer を `manual` にした。UI から leader へ「commit と push を deployer に」(#75) → leader → deployer (#76) → leader (#77) → user (#78)、約 3 分で push まで。deployer の 1 ターンで `permission` が 2 回 (同じ `prompt_id`、payload は auto のときと同じく `message` だけ)、そのターンの `turn.end` の `permission_mode` は `default`。つまり UI の `manual` は payload では `default`。Hub から始まったターンなので返信は抜けなかった。deployer.md の「commit と push はしない」があっても、leader の依頼に「ユーザーが明示した」とあれば push した。
 
 ### 6.2 未検証
 
