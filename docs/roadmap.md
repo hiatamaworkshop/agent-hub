@@ -320,3 +320,25 @@ Channels では受領の確認が `replyTo` の返信でしか付かず、付く
 - **報告への返信はない**: deployer から leader への reply は、leader が読んで次の指示を出しても確認にならない。報告にさらに返信する人はいないので、leader の Mailbox では保存期間まで「怪しい」に残る。leader と deployer の往復のたびに増える。
 
 候補: 返信で `replyTo` より前に渡した分までをまとめて確認にする (同じセッションのターンで読んだはずなので) / `post_message` で複数の `replyTo` を受ける / 渡した後に同じ Mailbox が送った Message があれば、その時点までを確認にする。どれも Channels では「読んだ」の保証にはならない (§6.1k) ので、怪しいの層を何のために置くかと一緒に決める。design.md §3.16 で配送の細部として軽く扱うとした範囲に入る。
+
+2026-10-21 の vcp の C142 の通し (design.md §6.1o) でも同じ形が 3 件増えた。前日の手直しの依頼が残っていたので、leader のバッジは今日の作業と関係なく `Agent 3 · 24h` (赤) になった。人の催促 (#72) は、催促どおりに動いても催促への返信がないので返信待ちに残った。
+
+### C29. 起動スクリプトで権限モードを渡す
+状態: 提案
+
+`start-agent.ps1` / `start-team.ps1` は権限モードを渡さないので、Claude Code の既定 (この開発機では auto) で起動する (design.md §6.1o)。既定のモードの許可待ちを試すには `claude --permission-mode default` を渡す口が要る。`-PermissionMode` を足し、省略時は今までどおり渡さない、が候補。role ごとに既定を持たせるか (例: deployer だけ default) も決める。
+
+### C30. 許可した後に、許可待ちが解けたことが分からない
+状態: 提案
+
+質問待ちには `question.answered` (`PostToolUse`) があるが、許可待ち (`Notification` の `permission_prompt`) には対になる Event がない。許可して作業が再開しても、カードの `Last event` は次のターン終了まで `permission` のまま残る (design.md §6.1o)。`Notification` の payload にはツール名もない。候補: 許可待ちの後の最初の `PostToolUse` (どのツールでも) を `permission.resolved` として取る / `PostToolUse` の hook を全ツールに広げる負荷を測ってから決める。拒否されたときに何が届くかも確かめる。
+
+### C31. カードの `Last event` に日付がない
+状態: 提案
+
+UI の `time()` は `toLocaleTimeString()` だけなので、前日の Event が今日の時刻に見える (design.md §6.1o)。今日でない Event には日付を付ける。Message の時刻にも同じ `time()` が使われているので、同じ規則で揃える。
+
+### C32. Hub の外で始まったターンで、返信を忘れる
+状態: 提案
+
+deployer がバックグラウンドのテストを待ってターンを終え、完了通知で始まったターンで結果をターミナルに書いただけで、leader に `post_message` しなかった (design.md §6.1o)。人が催促するまでチームは止まっていた。候補: role の説明 (`tools/dev/roles/deployer.md`) に「依頼の結果は、どのターンで終わっても reply で返す」と書く / Hub が返信待ちの request を持つ Mailbox の `Stop` を見て、返信なしでターンが終わったら UI で目立たせる (ボールがエージェントにあるのに止まっている)。前者は安く、後者は Haiku 以外でも効く。

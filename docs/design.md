@@ -769,6 +769,16 @@ vcp の C147 を `user:cli` から vcp.leader へ依頼した (seq 39)。leader 
 - **受領の確認は進まなかった**: 終わった時点で vcp.leader は `cursor` 44・`received` 39、unconfirmed は 3 (#41・#42・#44)。返信で確認になるのは `replyTo` の Message までなので (§8.4、protocol.md §4)、#45 は 39 までしか進めない。leader は 3 件とも読んで動いている。
 - **帰結**: Channels で受け取る Mailbox では、返信を受けない reply (部下の報告) と、まとめて答えた request が、確認待ちと返信待ちに残る。直し方は roadmap C28。
 
+### 6.1o 質問待ち・許可待ちの Event と、Hub の外で始まったターン (2026-10-21、compose の Hub / vcp の leader・deployer、バージョンは記録していない)
+
+vcp の C142 を UI から vcp.leader へ依頼した (seq 69)。leader → deployer (#71) → leader (#73) → user (#74) で、コミット b7f6818 まで約 34 分。
+- **既定の権限モードは auto だった**: 両方の Event の `permission_mode` が `auto`。起動スクリプトはモードを渡さず、`~/.claude.json` に auto を既定にした記録 (`hasResetAutoModeOptInForDefaultOffer`) がある。前回 (§6.1n) の deployer の `auto` も同じ理由と見られる。既定のモードの許可待ちはまだ見ていない (roadmap C29)。
+- **質問待ち**: leader が `AskUserQuestion` で 3 問聞き、`PreToolUse` → `question`、回答で `PostToolUse` → `question.answered` (約 4 分後) が届いた。UI は質問と選択肢を Event のカードに出した。溜まりのバッジには数えない (バッジは Message の材料だけ)。
+- **許可待ち**: auto の deployer で 1 回、`Notification` (`permission_prompt`) → `permission`。payload には `message: "Claude needs your permission"` だけで、ツール名も `permission_mode` もない。許可した後に対になる Event はなく、カードの `Last event` は作業が再開しても `permission` のまま残る (roadmap C30)。
+- **カードの時刻に日付がない**: deployer のカードの `Last event: turn end · 22:17:10` は前日の Event だったが、時刻だけなので今日に見えた (roadmap C31)。
+- **Hub の外で始まったターンで返信が抜けた**: deployer (Haiku) はフルスイートをバックグラウンドで流してターンを終え、完了通知で始まったターンで結果をターミナルに書いただけで `post_message` しなかった。人が UI から催促 (#72) すると #71 への reply (#73) を送った。前 2 回の通しでは起きていない (roadmap C32)。
+- **残ったもの**: 終わった時点で vcp.leader は返信待ち 2 (前日の手直し・#70 の「このまま続ける」)、確認待ち 1 (#73。報告に返信はしない)、vcp.deployer は返信待ち 1 (催促の #72)。どれも読んで動いた分で、C28 の形が 1 回の通しで 3 件増えた。
+
 ### 6.2 未検証
 
 1. **Windows 固有**: パス表記、改行コード。Docker Desktop で公開がループバックだけになることは確認した (§6.1l)。
