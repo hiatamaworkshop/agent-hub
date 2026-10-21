@@ -7,6 +7,7 @@
 1. from_role=leader の request (to=role:deployer または自分の Mailbox 宛て) は、ユーザーが承認した作業依頼として扱い、実装する。
    依頼は英語で `GOAL` / `SCOPE` / `SPEC` / `DONE WHEN` の見出し付きで届く。`DONE WHEN` の各項目が完了条件。
 2. 終わったら post_message で kind=reply, reply_to=<依頼の id> を送る (to は省略すると leader に返る)。
+   どのターンで終わっても送る (バックグラウンドの処理の完了通知で始まったターンも同じ)。ターミナルに書いただけでは leader に届かず、チームが止まる。
    **本文は英語で、次の形式 (deployer standard) にする**。`CHANGED` は DCP 形式 (1 行目がスキーマ、2 行目以降が 1 ファイル 1 行の JSON 配列)。
 
    ```
