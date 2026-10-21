@@ -105,6 +105,7 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
 
 **ブラウザ UI**
 - Hub が配信する 1 枚の HTML (まずはフレームワークなし)。
+- Hub は `GET /` のたびに `public/index.html` を読み直すので、UI の変更はブラウザの再読み込みで効き、Hub と shim の変更は再起動 (shim は新しいセッション) まで効かない。新しい UI が古い Hub と組み合わさるのが普通なので、Hub の応答に足した項目は UI では省略可として読む (2026-10-16、`recipients` がない古い Hub の応答で UI が例外を出し、送れたのに失敗と表示して二重送信になった)。
 - 機能: イベント/メッセージのライブ表示 (SSE)、メッセージ作成・送信、受信メッセージの無編集転送ボタン、Mailbox 一覧 (接続状態・購読・未読数。切れていれば時刻と理由)。
 - 画面は固定し、スクロールはスレッド (`#list`) と Mailbox 一覧 (サイドバー) だけ。上部はスレッド操作バー (表示の見せ方: Compact・Keep latest、今後のフィルタ・検索など)、下部はコンポーザー (送る操作: kind・宛先・本文・Send、今後の添付など) に置く。
 - メッセージは送り手の role で色分けする (ラベルのチップと縁取り。role がなければ mailbox 名)。kind は枠線だけのバッジで示し、色には使わない。送信フォームの kind も同じバッジを並べたトグルにし、選んだものだけ塗る。
@@ -772,7 +773,7 @@ vcp の C147 を `user:cli` から vcp.leader へ依頼した (seq 39)。leader 
 ### 6.1o 質問待ち・許可待ちの Event と、Hub の外で始まったターン (2026-10-21、compose の Hub / vcp の leader・deployer、バージョンは記録していない)
 
 vcp の C142 を UI から vcp.leader へ依頼した (seq 69)。leader → deployer (#71) → leader (#73) → user (#74) で、コミット b7f6818 まで約 34 分。
-- **既定の権限モードは auto だった**: 両方の Event の `permission_mode` が `auto`。起動スクリプトはモードを渡さず、`~/.claude.json` に auto を既定にした記録 (`hasResetAutoModeOptInForDefaultOffer`) がある。前回 (§6.1n) の deployer の `auto` も同じ理由と見られる。既定のモードの許可待ちはまだ見ていない (roadmap C29)。
+- **既定の権限モードは auto だった**: 両方の Event の `permission_mode` が `auto`。起動スクリプトはモードを渡さず、`~/.claude.json` に auto を既定にした記録 (`hasResetAutoModeOptInForDefaultOffer`) がある。前回 (§6.1n) の deployer の `auto` も同じ理由と見られる。既定のモードの許可待ちは、起動し直して手で `manual` にした後で見た (この節の最後)。
 - **質問待ち**: leader が `AskUserQuestion` で 3 問聞き、`PreToolUse` → `question`、回答で `PostToolUse` → `question.answered` (約 4 分後) が届いた。UI は質問と選択肢を Event のカードに出した。溜まりのバッジには数えない (バッジは Message の材料だけ)。
 - **許可待ち**: auto の deployer で 1 回、`Notification` (`permission_prompt`) → `permission`。payload には `message: "Claude needs your permission"` だけで、ツール名も `permission_mode` もない。許可した後に対になる Event はなく、カードの `Last event` は作業が再開しても `permission` のまま残る (roadmap C30)。
 - **カードの時刻に日付がない**: deployer のカードの `Last event: turn end · 22:17:10` は前日の Event だったが、時刻だけなので今日に見えた (roadmap C31)。

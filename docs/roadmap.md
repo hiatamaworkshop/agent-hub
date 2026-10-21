@@ -327,6 +327,12 @@ Channels では受領の確認が `replyTo` の返信でしか付かず、付く
 状態: 提案
 
 `start-agent.ps1` / `start-team.ps1` は権限モードを渡さないので、Claude Code の既定 (この開発機では auto) で起動する (design.md §6.1o)。既定のモードの許可待ちを試すには `claude --permission-mode default` を渡す口が要る。`-PermissionMode` を足し、省略時は今までどおり渡さない、が候補。role ごとに既定を持たせるか (例: deployer だけ default) も決める。
+2026-10-21 (2.1.306): Shift+Tab の切り替えに `default` はなく `manual` がそれに当たり、hook の `permission_mode` には `default` と載った。手で `manual` にすれば許可待ちは試せる (§6.1o) ので、急ぎではない。
+
+### C33. 起動し直した直後に、start-team が前の接続を「attach した」と読む
+状態: 提案
+
+`start-team.ps1 -Force` は、起動したタブの Mailbox に Attachment があるかだけを見る。前のセッションを止めた直後は Hub に前の Attachment がリースの切れるまで残るので、新しい claude が起動に失敗しても (2026-10-21 は NVM が claude を止めた) 「attach した」と出た。候補: 起動前の Attachment の `id` (または `sessionId`) を覚え、違うものになるまで待つ / `-Force` のときは前の Attachment が外れるのを先に待つ。
 
 ### C30. 許可した後に、許可待ちが解けたことが分からない
 状態: 提案

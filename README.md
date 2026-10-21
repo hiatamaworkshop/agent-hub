@@ -27,7 +27,7 @@
   配送の状態の名付け、保存期間、Docker (compose) での常駐も済み。残りは「起こすだけ」の配信アダプタなど。開いている項目は [docs/roadmap.md](docs/roadmap.md) の「項目」に `C<n>` の番号で並べてある。
 - `inbox` 経路は Claude Code 以外の実クライアント (Codex など) ではまだ試していない (テストの MCP クライアントでのみ確認)。
 
-設計は [docs/design.md](docs/design.md) から読む。Channels・hook の仕様は公式資料と実機で確認済み (design.md §6.1〜6.1j)。MCP Events (SEP-3415, Draft) との関係は design.md §7。
+設計は [docs/design.md](docs/design.md) から読む。Channels・hook の仕様は公式資料と実機で確認済み (design.md §6.1〜6.1o)。MCP Events (SEP-3415, Draft) との関係は design.md §7。
 
 ## 使い方
 
@@ -194,6 +194,7 @@ npm run hub                                   # ターミナル A
 - どちらのスクリプトも `-Project <フォルダ>` で作業するプロジェクトを選べる (省略時は agent-hub)。下の「他のリポジトリで使う」。
 - 1 つ起動するごとに、その role の Mailbox が Hub に attach するまで待ってから次へ進む (上限 `-AttachTimeout`、既定 60 秒)。開発用 channel の警告ダイアログは、開いたタブで 1 つずつ答える。
 - 接続中の role は飛ばす (起動し直すと takeover で今のセッションが切り離されるため)。起動し直すなら `-Force`。
+  前のセッションを止めた直後は、Hub に前の Attachment がリースの切れるまで残るので、claude が起動に失敗しても「attach した」と出ることがある。タブで claude が動いているかを見て確かめる (roadmap C33)。
 - `roles.json` にない role は起動前に止める。`dist/` が `src/` より古ければ先に build する (`-NoBuild` で省く)。
 - attach の確認には `.env` の `HUB_TOKEN` を使う。タブは起動したのと同じシェル (`pwsh` / `powershell`) で開く。
 
@@ -207,6 +208,8 @@ npm run hub                                   # ターミナル A
 - leader のターミナルでの応答を簡潔にする指示も role の説明に書いている。output style (`/output-style concise`) は `.claude/settings.local.json` に保存され、同じフォルダの全セッションに効くので使わない。起動時に `--settings` で渡す方法は 2.1.301 で誤動作した (design.md §6.1f)。
 - 2 つのセッションは同じフォルダで動くので、deployer の変更は leader から `git diff` で見える。
 - deployer のファイル編集の許可は、ターミナル C で承認する。
+- 権限モードはスクリプトから渡さないので、Claude Code の既定で起動する。アカウントで auto を既定にしていると、許可待ちはほとんど出ない。
+  許可待ちを試すなら、そのタブで Shift+Tab から `manual` にする (2.1.306 の切り替えには `default` がなく、hook の `permission_mode` には `default` と載る。design.md §6.1o、roadmap C29)。
 
 ### role の定義 (roles.json)
 
@@ -268,6 +271,12 @@ curl.exe -H "Authorization: Bearer <HUB_TOKEN>" http://127.0.0.1:7777/messages
 
 Windows の curl はコマンドライン引数の日本語を UTF-8 で送らないので、本文はファイルから `--data-binary "@body.json"` で渡す。
 
+動いているチームの様子を API で追うとき (エージェントから見張るときも同じ):
+- `GET /messages` の `limit` は古い方から数えるので、新しいものは `after=<seq>` で取る。`after` はその seq を含まない。人が送った直後に `lastSeq` を読むと、その Message はもう含まれているので、`after` は送る前に読んだ値から取る。
+- `GET /events?limit=N` は Mailbox で絞れない。`mailbox` で手元で絞り、`payload.notification_type` (許可待ち・待機) と `last_assistant_message` (ターン終了の最終応答) で何が起きたかを見る。`GET /mailboxes` の `cursor` は渡し終えたところ。
+- curl から送った Message は `user:cli` と表示され、ブラウザからのもの (`browser`) と区別される。
+- compose の Hub は build したイメージで動く。Hub のコードを変えたら `docker compose up -d --build` が要る (`restart` だけでは古いイメージのまま)。作り直した後、shim は自分で attach し直す。
+
 ### 開発
 
 ```powershell
@@ -279,6 +288,13 @@ npm run docs:index   # roadmap の項目の索引を Hub に送り、UI の Item
                      # 送ると、エージェントがつながる前から UI のプロジェクトとして選べ、role 宛てに依頼を置ける。外すのは Items の Remove
 npm run hub:dev   # 変更を監視して Hub を再起動する
 ```
+
+- **UI を headless Chrome で確かめる**: UI は `/stream` (SSE) を開いたままなので、`chrome --headless=new --dump-dom` は返らない (`--virtual-time-budget` を付けても)。代わりに:
+  1. 使っている Hub とは別の Hub を `HUB_PORT=7795`、`HUB_DATA_DIR=<一時フォルダ>` で起動する。
+  2. Chrome を `--remote-debugging-port` と一時の `--user-data-dir` で起動し、CDP で `Page.navigate` (`/?token=…`) → 数秒待って `Runtime.evaluate` で DOM を読む (例 `[...document.querySelectorAll('#mailboxes .mb')].map(b=>b.innerText)`。Node の組み込みの `WebSocket` で足りる)。
+  3. 古い Hub や失敗する API への UI の振る舞いは、Hub を変えずに `Fetch.enable` (`urlPattern`) で横取りし、`Fetch.fulfillRequest` で 404 / 500 を返して確かめる。
+  4. 片付けは、一時のプロファイルを持つ chrome.exe と 7795 の node だけを止める。
+- **src/ をその場のスクリプトから使う** (計測など、リポジトリの外に置くスクリプト): 拡張子を `.mts` にし (リポジトリ外の `.ts` ではトップレベルの await が使えない)、`file:///C:/…` の URL で import して (`C:/…` のままでは `ERR_UNSUPPORTED_ESM_URL_SCHEME`)、リポジトリ直下から `node --import tsx <絶対パス>.mts` で動かす。Store / Hub は `now` を受け取るので、時計を差し替えられる。
 
 ## ドキュメント
 
