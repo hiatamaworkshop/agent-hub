@@ -372,9 +372,8 @@ Hub で回すのは、作業を切り出したリポジトリ (台帳 `### C<n>.
 今は何も足さずに回せる (`project` は値。design.md §3.15)。足すとしたら、項目のカードに「持ち主」(依頼元のプロジェクト) を出す、終わった項目を持ち主の Mailbox へ notice で知らせる、など。重く考えず、実際に回して要るものが分かってから決める。
 
 ### C38. usage limit で止まったセッションを、Working と区別して出す
-状態: 提案
 
-cite-bridge の deployer は usage limit で 2 時間 20 分止まったが、Hub には止まった瞬間の Event がなく、カードの状態 (C37) は `Working` と出ていたはず (design.md §6.1q)。公式の hook の `StopFailure` (API のエラーでターンが終わったとき) と、Notification の `quota_auto_resume_*` を使う。`StopFailure` が自動の再開を待つ場合にも発火するかは未検証 (§6.2-6) なので、登録して次の制限で確かめる。状態の行は、人が決めたら外す。
+cite-bridge の deployer は usage limit で 2 時間 20 分止まったが、Hub には止まった瞬間の Event がなく、カードの状態 (C37) は `Working` と出ていたはず (design.md §6.1q)。公式の hook の `StopFailure` (API のエラーでターンが終わったとき) と、Notification の `quota_auto_resume_*` を使う。`StopFailure` が自動の再開を待つ場合にも発火するかは未検証 (§6.2-6) なので、登録して次の制限で確かめる。2026-10-23 にユーザーが決定。
 
 #### 完了条件
 - [ ] `tools/hooks/settings.json` (と `settings.command.json`) に `StopFailure` を足し、Hub が Event に取り込む (例 `turn.failed`、`error` と `last_assistant_message` を payload のまま持つ)。`README` の hook の手順と protocol.md の Event の種類を合わせる
