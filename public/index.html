@@ -45,10 +45,28 @@
   /* 溜まりのバッジ (design.md §3.15)。層ごとに件数と最も古いものの経過時間。古さで色を変える (age1: 気にする、age2: 遅い) */
   .backlog { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0; }
   .backlog:empty { display: none; }
+  #states { margin-bottom: 4px; }
   #backlog { margin-bottom: 10px; }
   .bl { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
   .bl.age1 { color: var(--amber); border-color: var(--amber); }
   .bl.age2 { color: var(--warn); border-color: var(--warn); }
+  /* カードの状態 (design.md §3.15)。枠の強調で、誰が動いているか・誰の番かを一目で分ける。色は状態の線とそろえる */
+  .mb.st-working { box-shadow: 0 0 0 2px var(--accent); }
+  .mb.st-you { box-shadow: 0 0 0 2px var(--amber); }
+  .mb.st-stopped { box-shadow: 0 0 0 2px var(--warn); }
+  .mb.st-delegated { outline: 1px dashed var(--accent); outline-offset: 1px; }
+  .mb.st-offline { opacity: .6; }
+  .state { font-size: 12px; font-weight: 600; margin: 2px 0; color: var(--muted); }
+  .state::before { content: "● "; }
+  .state.st-working, .state.st-delegated { color: var(--accent); }
+  .state.st-you { color: var(--amber); }
+  .state.st-stopped { color: var(--warn); }
+  .state.st-offline::before { content: "○ "; }
+  .mb .doing { font-size: 12px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .state.st-working::before { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+  @media (prefers-reduced-motion: reduce) { .state.st-working::before { animation: none; } }
+  .stc { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; }
   /* roadmap の項目のカード (design.md §3.15)。1 行で、押すと request の下書きになる */
   #itemsHead { margin-top: 16px; }
   .item { padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 4px; cursor: pointer; font-size: 12px; }
@@ -173,6 +191,7 @@
 <main>
   <aside>
     <select id="project" title="Show one project's Mailboxes, messages and events, and send role: messages only to that project"><option value="">All projects</option></select>
+    <div id="states" class="backlog" title="What the sessions shown below are doing now. Idle and offline sessions are not counted here."></div>
     <div id="backlog" class="backlog" title="What is piling up in the Mailboxes shown below, by whose move it is. Each badge shows the count and the age of the oldest one."></div>
     <h2>Mailboxes</h2>
     <div id="mailboxes"><div class="meta">None yet</div></div>
@@ -515,6 +534,7 @@ const seenEvents = new Set()
 const evtBoxes = new Map() // Event の id → 描画した行 (Hub が消したときに外すため)
 const evtData = new Map() // Event の id → Event (プロジェクトの絞り込みを掛け直すため)
 const lastEventByMailbox = new Map() // Mailbox 名 → 最新の Event (カードに出す)
+const lastTurnEndByMailbox = new Map() // Mailbox 名 → 最新のターン終了 (作業中かを導く)
 const DETACH_LABEL = { closed: 'session ended', disconnected: 'connection lost', lease_expired: 'lease expired' }
 const EVENT_LABEL = { 'turn.end': 'turn end', question: 'question', 'question.answered': 'answered', permission: 'permission', notification: 'notification', 'session.boundary': 'boundary' }
 // 人の手を待っている Event。目立たせ、非表示のタブでは未読として数える
@@ -620,6 +640,10 @@ function renderEvent(ev, counts) {
   if (ev.mailbox && !ev.superseded) {
     const prev = lastEventByMailbox.get(ev.mailbox)
     if (!prev || prev.ts <= ev.ts) lastEventByMailbox.set(ev.mailbox, ev)
+    if (ev.kind === 'turn.end') {
+      const end = lastTurnEndByMailbox.get(ev.mailbox)
+      if (!end || end.ts <= ev.ts) lastTurnEndByMailbox.set(ev.mailbox, ev)
+    }
   }
   if (counts && document.hidden && WAITING.has(ev.kind)) countTabUnread()
 }
@@ -1443,6 +1467,90 @@ function sumLayers(mailboxes) {
   }
   return out
 }
+// --- カードの状態 (design.md §3.15) ---
+// 件数の層とは別に、今そのセッションが何をしているかを 1 つにまとめる。Hub は状態を持たず、材料
+// (backlog の lastHanded・outgoing・awaitingReply と、hook の Event) から UI が導く。
+// 作業中 = 最後に渡した Message が最後のターン終了より新しい (Channels は渡した時点でターンを始めるため)
+const STATES = [
+  { key: 'you', label: 'Needs you', title: 'The session is waiting for an answer to a question or a permission prompt in its terminal.' },
+  { key: 'working', label: 'Working', title: 'A message was handed to the session after its last turn ended, so it is working on it.' },
+  { key: 'stopped', label: 'Stopped, no reply', title: 'The turn ended, but a request handed to this session has no reply yet. Check the terminal, or remind it to reply.' },
+  { key: 'delegated', label: 'Waiting on others', title: 'Its turn ended while a request it sent has no reply yet.' },
+  { key: 'idle', label: 'Idle', title: 'Connected and nothing pending.' },
+  { key: 'offline', label: 'Offline', title: 'No session is attached.' },
+]
+// hook の Event が保存期間で消えると、ターン終了が分からない。それより古い受け渡しは作業中とみなさない (時間)
+const STALE_HANDED_HOURS = 12
+function stateOf(mb) {
+  if (!mb.attachment) return { key: 'offline' }
+  const ev = lastEventByMailbox.get(mb.name)
+  if (ev && WAITING.has(ev.kind)) return { key: 'you', since: ev.ts, detail: EVENT_LABEL[ev.kind] || ev.kind }
+  const b = mb.backlog
+  if (!b || !('outgoing' in b)) return null // 古い Hub (材料がない)。状態を出さない
+  const end = lastTurnEndByMailbox.get(mb.name)
+  const handed = b.lastHanded
+  const fresh = handed && Date.now() - Date.parse(handed.ts) < STALE_HANDED_HOURS * 3600000
+  // 接続中の未読は、渡す直前 (Channels) か、inbox で取りに来るのを待っている (ほかのクライアント)。どちらもエージェントの番
+  if (b.unread.count) return { key: 'working', since: b.unread.oldestAt }
+  if (handed && (end ? Date.parse(handed.ts) > Date.parse(end.ts) : fresh)) {
+    // Event が 1 つもないセッションは hook がない見込みで、ターン終了を知らない。推測であることを示す
+    return { key: 'working', since: handed.ts, guess: !ev, detail: summaryOf(bySeq(handed.seq)) }
+  }
+  if (b.outgoing.count) return { key: 'delegated', since: b.outgoing.oldestAt, detail: outgoingTargets(mb.name) }
+  if (b.awaitingReply.count) return { key: 'stopped', since: end ? end.ts : b.awaitingReply.oldestAt }
+  return { key: 'idle', since: end ? end.ts : null }
+}
+function bySeq(seq) {
+  for (const m of seen.values()) if (m.seq === seq) return m
+  return null
+}
+// 渡した Message の 1 行目。request は依頼の要旨 (GOAL の行など)、ほかは種類と送り手
+function summaryOf(m) {
+  if (!m) return ''
+  if (m.kind !== 'request') return `${m.kind} from ${m.from.id}`
+  return (m.body || '').split('\n').find((l) => l.trim()) || ''
+}
+// この Mailbox が出して返信のない request の宛先 (手元の履歴から。Hub の outgoing は件数だけ)
+function outgoingTargets(name) {
+  const replied = new Set()
+  for (const m of seen.values()) if (m.replyTo) replied.add(m.replyTo)
+  const to = new Set()
+  for (const m of seen.values()) {
+    if (m.kind === 'request' && m.from.type === 'mailbox' && m.from.id === name && !replied.has(m.id)) to.add(m.to.id)
+  }
+  return [...to].join(', ')
+}
+function paintState(line) {
+  const st = STATES.find((s) => s.key === line.dataset.state)
+  const since = line.dataset.since ? Date.parse(line.dataset.since) : NaN
+  const age = Number.isNaN(since) ? '' : ` · ${formatAge(Math.max(0, Date.now() - since))}`
+  line.textContent = `${st.label}${line.dataset.guess ? '?' : ''}${line.dataset.detail ? ` (${line.dataset.detail})` : ''}${age}`
+}
+function stateLine(st) {
+  const def = STATES.find((s) => s.key === st.key)
+  const line = el('div', `state st-${st.key}`)
+  line.dataset.state = st.key
+  if (st.since) line.dataset.since = st.since
+  if (st.guess) line.dataset.guess = '1'
+  // 作業中の要旨は別の行に出す。ほかの状態の detail (質問・委ねた先) は状態の行に括弧で添える
+  if (st.detail && st.key !== 'working') line.dataset.detail = st.detail
+  line.title = def.title + (st.guess ? ' No hook events from this session, so the end of its turn is unknown (README: hooks).' : '')
+  paintState(line)
+  return line
+}
+// サイドバーの上: 表示中のプロジェクトで、状態ごとの数 (Idle と Offline は出さない)
+function renderStates(mailboxes) {
+  const box = $('states')
+  box.textContent = ''
+  const n = new Map()
+  for (const mb of mailboxes) { const st = stateOf(mb); if (st) n.set(st.key, (n.get(st.key) || 0) + 1) }
+  for (const s of STATES) {
+    if (s.key === 'idle' || s.key === 'offline' || !n.get(s.key)) continue
+    const chip = el('span', `stc state st-${s.key}`, `${s.label} ${n.get(s.key)}`)
+    chip.title = s.title
+    box.append(chip)
+  }
+}
 function formatAge(ms) {
   const m = Math.floor(ms / 60000)
   if (m < 1) return '<1m'
@@ -1482,7 +1590,10 @@ function renderBacklog() {
   const you = sumLayers(mailboxList).you.count
   if (you !== tabWaiting) { tabWaiting = you; showTabUnread() }
 }
-setInterval(() => document.querySelectorAll('.bl').forEach(paintChip), 30000)
+setInterval(() => {
+  document.querySelectorAll('.bl').forEach(paintChip)
+  document.querySelectorAll('.mb .state').forEach(paintState)
+}, 30000)
 
 // --- roadmap の項目のカード (design.md §3.15) ---
 // 索引はホストのスクリプト (npm run docs:index) が Hub に送ったもの。request は meta.item で項目を指し、
@@ -1651,6 +1762,7 @@ function renderMailboxes(all) {
   renderElsewhere()
   renderBacklog()
   const mailboxes = all.filter(mailboxInProject)
+  renderStates(mailboxes)
   const scope = currentProject()
   if (mailboxes.length === 0) {
     // roadmap を登録しただけのプロジェクト。起動の仕方を示す (Hub はセッションを起動できない。design.md §3.13)
@@ -1684,6 +1796,16 @@ function renderMailboxes(all) {
     const title = el('div')
     title.append(el('span', `dot${mb.attachment ? ' on' : ''}`), el('span', 'name', mb.name), el('span', `chip c${ci}`, mb.role || mb.name))
     box.append(title)
+    const st = stateOf(mb)
+    if (st) {
+      box.classList.add(`st-${st.key}`)
+      box.append(stateLine(st))
+    }
+    if (st && st.key === 'working' && st.detail) {
+      const d = el('div', 'doing', st.detail)
+      d.title = st.detail
+      box.append(d)
+    }
     box.append(backlogChips(el('div', 'backlog'), layersOf(mb)))
     // どのリポジトリの Mailbox か。最後に attach した作業フォルダ (古い Hub と、記録より前の Mailbox は返さない)
     if (mb.project) {
@@ -1790,6 +1912,7 @@ function removeEvents(ids) {
     evtData.delete(id)
   }
   for (const [name, ev] of lastEventByMailbox) if (gone.has(ev.id)) lastEventByMailbox.delete(name)
+  for (const [name, ev] of lastTurnEndByMailbox) if (gone.has(ev.id)) lastTurnEndByMailbox.delete(name)
   syncStub()
   if (mailboxList.length) renderMailboxes(mailboxList)
 }

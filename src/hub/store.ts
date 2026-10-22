@@ -55,6 +55,10 @@ export interface Backlog {
   unread: Tally
   awaitingReply: Tally
   unconfirmed: Tally
+  // この Mailbox が出して、まだ返信のない request (ほかの層と重ならない。宛先の側の数ではない)
+  outgoing: Tally
+  // この Mailbox 宛てで最後に渡した (seq ≤ cursor) Message。UI が最後のターン終了と比べて作業中かを導く (design.md §3.15)
+  lastHanded: { seq: number; ts: string } | null
 }
 
 export interface StoreOptions {
@@ -372,7 +376,10 @@ export class Store {
         return m.to.id === name
       case 'role':
         if (mb.role !== m.to.id) return false
-        return m.to.project === undefined || (mb.project !== null && normalizeProjectPath(mb.project) === normalizeProjectPath(m.to.project))
+        // project のない role 宛ては、送った時点でその role を持っていた Mailbox だけ。後から作られた (別のプロジェクトの) Mailbox に古い依頼を流さない。
+        // project のある role 宛ては、Mailbox のまだないプロジェクトにも置ける (design.md §3.15「プロジェクトは値」)
+        if (m.to.project === undefined) return m.seq > mb.roleSince
+        return mb.project !== null && normalizeProjectPath(mb.project) === normalizeProjectPath(m.to.project)
       case 'topic': {
         const since = mb.subscriptions.get(m.to.id)
         if (since !== undefined && m.seq > since) return true
@@ -419,14 +426,27 @@ export class Store {
   // 見るのは received より後 (cursor ≥ received) と返信待ちの request だけで、ログ全体は走査しない
   summary(name: string): { unread: number; unconfirmed: number; backlog: Backlog } {
     const mb = this.must(name)
-    const backlog: Backlog = { unread: { count: 0, oldestAt: null }, awaitingReply: { count: 0, oldestAt: null }, unconfirmed: { count: 0, oldestAt: null } }
+    const backlog: Backlog = {
+      unread: { count: 0, oldestAt: null },
+      awaitingReply: { count: 0, oldestAt: null },
+      unconfirmed: { count: 0, oldestAt: null },
+      outgoing: { count: 0, oldestAt: null },
+      lastHanded: null,
+    }
     const add = (t: { count: number; oldestAt: string | null }, m: Message) => {
       t.count++
       t.oldestAt ??= m.ts
     }
     for (const m of this.openRequests.values()) {
-      if (m.seq > mb.cursor) break
-      if (this.isRecipient(name, m)) add(backlog.awaitingReply, m)
+      if (m.from.type === 'mailbox' && m.from.id === name) add(backlog.outgoing, m)
+      if (m.seq <= mb.cursor && this.isRecipient(name, m)) add(backlog.awaitingReply, m)
+    }
+    // 新しい方から、渡した分のうち最初に当たるこの Mailbox 宛て
+    for (let i = this.indexAfter(mb.cursor) - 1; i >= 0; i--) {
+      const m = this.messages[i]!
+      if (!this.isRecipient(name, m)) continue
+      backlog.lastHanded = { seq: m.seq, ts: m.ts }
+      break
     }
     let unconfirmed = 0
     for (let i = this.indexAfter(mb.received); i < this.messages.length; i++) {

@@ -563,7 +563,11 @@ describe('溜まりの材料 (backlog。design.md §3.15)', () => {
   it('未読・返信待ちの request・確認待ちを重ならないように数え、最も古い ts を添える', () => {
     const hub = new Hub(new Store())
     const a = hub.attach('x', { client: 'claude-code' })
-    const backlog = () => hub.describeMailboxes().find((d) => d.name === 'x')!.backlog
+    // 宛先の側の 3 層だけを見る (outgoing と lastHanded は下の試験)
+    const backlog = () => {
+      const { unread, awaitingReply, unconfirmed } = hub.describeMailboxes().find((d) => d.name === 'x')!.backlog
+      return { unread, awaitingReply, unconfirmed }
+    }
     const empty = { count: 0, oldestAt: null }
     assert.deepEqual(backlog(), { unread: empty, awaitingReply: empty, unconfirmed: empty })
 
@@ -592,6 +596,28 @@ describe('溜まりの材料 (backlog。design.md §3.15)', () => {
     const b = hub.describeMailboxes().find((d) => d.name === 'x')!.backlog
     assert.deepEqual(b.awaitingReply, { count: 1, oldestAt: req.ts })
     assert.equal(b.unconfirmed.count, 0)
+  })
+
+  it('自分が出して返信のない request を outgoing に数え、最後に渡した Message を lastHanded に出す', () => {
+    const hub = new Hub(new Store())
+    const lead = hub.attach('lead', { client: 'claude-code' })
+    const dep = hub.attach('dep', { client: 'claude-code' })
+    const of = (name: string) => hub.describeMailboxes().find((d) => d.name === name)!.backlog
+    assert.equal(of('lead').lastHanded, null)
+
+    const order = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'lead' }, body: 'C2' }, user)
+    assert.equal(of('lead').lastHanded, null, '未読のうちは渡していない')
+    hub.ack(lead.attachmentId, order.seq)
+    assert.deepEqual(of('lead').lastHanded, { seq: order.seq, ts: order.ts })
+
+    const ask = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'dep' }, body: 'do C2' }, hub.senderOf(lead.attachmentId))
+    hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'dep' }, body: 'from the user' }, user)
+    assert.deepEqual(of('lead').outgoing, { count: 1, oldestAt: ask.ts })
+    assert.equal(of('dep').outgoing.count, 0)
+    assert.deepEqual(of('lead').lastHanded, { seq: order.seq, ts: order.ts }, '自分が出したものは渡した分に入らない')
+
+    hub.postMessage({ kind: 'reply', replyTo: ask.id, body: 'done' }, hub.senderOf(dep.attachmentId))
+    assert.equal(of('lead').outgoing.count, 0, '返信で外れる')
   })
 })
 

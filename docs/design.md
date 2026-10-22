@@ -483,6 +483,12 @@ Hub が持つのは注文票と「どの項目の注文か」の指し示しだ�
 - 色の境目 (分、気にする / 遅い) は、人が動く番 0 / 10、エージェントの番 30 / 120、怪しい 10 / 60。運用で合わなければ直す。
 - サイドバーは選んでいるプロジェクトの合計、タブのタイトル (`N waiting`) と favicon は全プロジェクトの人が動く番。favicon は非表示中に届いた新着の数を優先し、なければ人が動く番を琥珀色で出す。
 
+**カードの状態 (2026-10-22、ユーザー)**。件数の層だけでは、今誰が動いているかが分からなかった (§6.1p)。カードに状態を 1 つ出し、枠の強調で示す。Hub は状態を持たず、`backlog` の `lastHanded`・`outgoing`・`awaitingReply` と hook の Event から UI が導く (protocol.md §3)。
+- 判定は上から順に: Needs you (最後の Event が回答前の質問・許可。琥珀の枠) → Working (接続中の未読、または最後に渡した Message が最後の `turn.end` より新しい。Channels は渡した時点でターンを始めるため。青の枠、依頼の 1 行目を添える) → Stopped, no reply (ターンが終わり、渡した request に返信がない。赤の枠。C34 の案) → Waiting on others (ターンが終わり、自分が出した request に返信がない。点線の枠と宛先) → Idle → Offline (薄く)。
+- Event が 1 つもないセッションは hook がない見込みで、ターン終了を知らない。Working に `?` を付けて推測と示す。hook の Event が保存期間で消えた古い受け渡し (12 時間) は作業中とみなさない。
+- サイドバーの上に状態ごとの数 (Idle と Offline は出さない) を、件数の層のバッジの上に出す。件数の層は残す (古さと配送の詰まりは状態に出ないため)。
+- 返信待ちが誤って残る間 (C28) は、Stopped が誤って出る。
+
 **roadmap の項目を選んで依頼する**
 - UI で項目のカードを選んで Send すると、request の**下書き**ができる (例: `GOAL: C95` と、項目の完了条件を `DONE WHEN` に)。人が読んで直してから押す。自動では送らない (§2)。
 - request に項目の ID を付ける。項目ごとに「依頼中 / 報告済 / 受け入れ待ち」を出せ、§3.11 の台帳の最小版、§3.13 の leader を使い捨てにする部品と同じものになる。
@@ -780,6 +786,13 @@ vcp の C142 を UI から vcp.leader へ依頼した (seq 69)。leader → depl
 - **Hub の外で始まったターンで返信が抜けた**: deployer (Haiku) はフルスイートをバックグラウンドで流してターンを終え、完了通知で始まったターンで結果をターミナルに書いただけで `post_message` しなかった。人が UI から催促 (#72) すると #71 への reply (#73) を送った。前 2 回の通しでは起きていない (roadmap C32)。
 - **残ったもの**: 終わった時点で vcp.leader は返信待ち 2 (前日の手直し・#70 の「このまま続ける」)、確認待ち 1 (#73。報告に返信はしない)、vcp.deployer は返信待ち 1 (催促の #72)。どれも読んで動いた分で、C28 の形が 1 回の通しで 3 件増えた。
 - **既定のモードでの許可待ち (同日、起動し直した 2.1.306)**: Shift+Tab の切り替えに `default` はなく、人が deployer を `manual` にした。UI から leader へ「commit と push を deployer に」(#75) → leader → deployer (#76) → leader (#77) → user (#78)、約 3 分で push まで。deployer の 1 ターンで `permission` が 2 回 (同じ `prompt_id`、payload は auto のときと同じく `message` だけ)、そのターンの `turn.end` の `permission_mode` は `default`。つまり UI の `manual` は payload では `default`。Hub から始まったターンなので返信は抜けなかった。deployer.md の「commit と push はしない」があっても、leader の依頼に「ユーザーが明示した」とあれば push した。
+
+### 6.1p 新しいプロジェクトの deployer に、別のプロジェクトの古い依頼が流れた (2026-10-22、`npm run hub` の Hub / cite-bridge の leader・deployer、Claude Code 2.1.308)
+
+- **起きたこと**: cite-bridge の deployer は最初の attach で、10-17 の P1 の受け入れ試験で leader が出した `role:deployer` 宛ての request (#122、`project` なし) を未読として受け取り、cite-bridge で `tmp/p1-a.txt` を作って消し、宛先の古い `leader` へ報告した (#171)。作業ツリーは元に戻っていた。
+- **原因**: 作成時の `cursor` が 0 で、作成前の role 宛ても未読になる規則だった (protocol.md §2)。`project` のない role 宛ては全プロジェクトの同じ role に届くので、後から別のプロジェクトで作られた Mailbox にも、返信のない古い依頼が流れた。カードでは deployer の `Agent 2 · 5d` (赤) として見えていた。
+- **直したこと**: `project` のない role 宛ては、送った時点でその role を持っていた Mailbox だけに届ける (`m.seq > roleSince`。トピックの既定購読と同じ数え方)。`project` つきの role 宛ては、Mailbox のまだないプロジェクトにも置ける (§3.15「プロジェクトは値」) ので今のまま。
+- **バッジの見直し**: 同じ画面で、leader の `Stuck? 1` は deployer の報告に受領の確認がないだけ (C28)、`Last event` が出ないのは cite-bridge に hook がないため (起動時の警告どおり。`.claude/settings.local.json` に置いた) だった。件数の層からは「誰が今動いているか」が読めないので、カードの状態を足した (§3.15)。
 
 ### 6.2 未検証
 

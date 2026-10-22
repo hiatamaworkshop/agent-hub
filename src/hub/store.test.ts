@@ -94,15 +94,18 @@ describe('Store: 未読', () => {
     assert.deepEqual(s.unread('other').map((m) => m.seq), [2])
   })
 
-  it('作成前の直接宛て・role 宛ては未読になるが、購読前のトピック宛てはならない', () => {
+  it('作成前の直接宛て・project つきの role 宛ては未読になるが、project のない role 宛てと購読前のトピック宛てはならない', () => {
     const s = new Store()
     s.appendMessage(msg({ type: 'mailbox', id: 'late' })) // 1
     s.appendMessage(msg({ type: 'role', id: 'reviewer' })) // 2
     s.appendMessage(msg({ type: 'topic', id: 'user.message' })) // 3
+    s.appendMessage(msg({ type: 'role', id: 'reviewer', project: 'C:\\work\\late' })) // 4
     s.ensureMailbox('late', 'reviewer')
+    s.setProject('late', 'C:\\work\\late')
     s.subscribe('late', 'user.message')
-    s.appendMessage(msg({ type: 'topic', id: 'user.message' })) // 4
-    assert.deepEqual(s.unread('late').map((m) => m.seq), [1, 2, 4])
+    s.appendMessage(msg({ type: 'topic', id: 'user.message' })) // 5
+    s.appendMessage(msg({ type: 'role', id: 'reviewer' })) // 6
+    assert.deepEqual(s.unread('late').map((m) => m.seq), [1, 4, 5, 6])
   })
 
   it('削除して作り直した Mailbox には削除前の直接宛てを再送しない', () => {
@@ -186,8 +189,13 @@ describe('Store: 溜まりの材料 (summary)', () => {
   function naive(s: Store, name: string) {
     const mb = s.getMailbox(name)!
     const tally = () => ({ count: 0, oldestAt: null as string | null })
-    const backlog = { unread: tally(), awaitingReply: tally(), unconfirmed: tally() }
+    const backlog = { unread: tally(), awaitingReply: tally(), unconfirmed: tally(), outgoing: tally(), lastHanded: null as { seq: number; ts: string } | null }
     for (const m of s.listMessages(0, Infinity)) {
+      if (s.isAwaitingReply(m) && m.from.type === 'mailbox' && m.from.id === name) {
+        backlog.outgoing.count++
+        backlog.outgoing.oldestAt ??= m.ts
+      }
+      if (m.seq <= mb.cursor && s.isRecipient(name, m)) backlog.lastHanded = { seq: m.seq, ts: m.ts }
       const t = m.seq > mb.cursor ? backlog.unread : s.isAwaitingReply(m) ? backlog.awaitingReply : m.seq > mb.received ? backlog.unconfirmed : null
       if (!t || !s.isRecipient(name, m)) continue
       t.count++
