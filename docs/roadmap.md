@@ -370,3 +370,15 @@ deployer がバックグラウンドのテストを待ってターンを終え�
 Hub で回すのは、作業を切り出したリポジトリ (台帳 `### C<n>.` を持つ) とし、依頼元が独自の台帳や番号の体系を持つプロジェクト (thesis の CLAUDE.md の「項目N」など) には `C<n>` を混ぜない (2026-10-22、ユーザー。グローバルの skill `roadmap-items` に書き方を置いた)。
 例は thesis と cite-bridge: 設計書と取り込み (submodule の更新) は thesis、実装と台帳は cite-bridge。チームは thesis の中ではなく cite-bridge の単独の clone で起動する (親の CLAUDE.md を読ませないため)。
 今は何も足さずに回せる (`project` は値。design.md §3.15)。足すとしたら、項目のカードに「持ち主」(依頼元のプロジェクト) を出す、終わった項目を持ち主の Mailbox へ notice で知らせる、など。重く考えず、実際に回して要るものが分かってから決める。
+
+### C38. usage limit で止まったセッションを、Working と区別して出す
+状態: 提案
+
+cite-bridge の deployer は usage limit で 2 時間 20 分止まったが、Hub には止まった瞬間の Event がなく、カードの状態 (C37) は `Working` と出ていたはず (design.md §6.1q)。公式の hook の `StopFailure` (API のエラーでターンが終わったとき) と、Notification の `quota_auto_resume_*` を使う。`StopFailure` が自動の再開を待つ場合にも発火するかは未検証 (§6.2-6) なので、登録して次の制限で確かめる。状態の行は、人が決めたら外す。
+
+#### 完了条件
+- [ ] `tools/hooks/settings.json` (と `settings.command.json`) に `StopFailure` を足し、Hub が Event に取り込む (例 `turn.failed`、`error` と `last_assistant_message` を payload のまま持つ)。`README` の hook の手順と protocol.md の Event の種類を合わせる
+- [ ] UI のカードに `Paused` の状態を足し、Working より先に判定する。最後の Event が `turn.failed` (`error: rate_limit`) なら Paused (usage limit)、その後の `quota_auto_resume_fired` か `turn.end` で解ける。`quota_auto_resume_stale` と `_disabled` は Needs you (Enter が要る、または自動では続かない) にする。Event の表示名も足す
+- [ ] 試験: Hub が `StopFailure` の payload を `turn.failed` として取り込むこと (`src/hub` の Event の変換の試験の形)
+- [ ] 実際に usage limit に当たったときの Event の並びを design.md §6 に記録し、§6.2-6 を閉じる (発火しなかったら、そう書き、Paused を `quota_auto_resume_*` だけで出せる範囲に直すことを報告で提案する)
+

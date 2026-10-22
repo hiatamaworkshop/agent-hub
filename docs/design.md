@@ -794,6 +794,15 @@ vcp の C142 を UI から vcp.leader へ依頼した (seq 69)。leader → depl
 - **直したこと**: `project` のない role 宛ては、送った時点でその role を持っていた Mailbox だけに届ける (`m.seq > roleSince`。トピックの既定購読と同じ数え方)。`project` つきの role 宛ては、Mailbox のまだないプロジェクトにも置ける (§3.15「プロジェクトは値」) ので今のまま。
 - **バッジの見直し**: 同じ画面で、leader の `Stuck? 1` は deployer の報告に受領の確認がないだけ (C28)、`Last event` が出ないのは cite-bridge に hook がないため (起動時の警告どおり。`.claude/settings.local.json` に置いた) だった。件数の層からは「誰が今動いているか」が読めないので、カードの状態を足した (§3.15)。
 
+### 6.1q usage limit で止まったチームと、自動の再開 (2026-10-22〜23、`npm run hub` の Hub / cite-bridge の leader・deployer、Claude Code 2.1.308)
+
+- **起きたこと**: 21:38:48 (JST) に leader が C3 を deployer に依頼してターンを終えた直後、deployer の最初の API 呼び出しが `usage_limit_reached` で返った (transcript の `apiError`)。画面には `Usage limit reached · continuing automatically at 12am · esc to cancel` と出て、Claude Code が自動の再開を待った。人のセッション (この作業の会話) も同じ枠で止まった。
+- **その間の Hub**: 2 時間 20 分、Message も Event も届かなかった。止まった瞬間の Event はない。登録している hook (Stop・Notification・AskUserQuestion の Pre/PostToolUse) はどれも発火せず、`Stop` もない (ターンは終わっていない)。Attachment はリースが延び続け、接続中のまま。
+- **再開**: 0:00:49 に `Notification` が `notification_type: "quota_auto_resume_fired"`、`message: "Usage limit reset — Claude is continuing your task"` で届き (Hub の Event は `notification`)、同時に Claude Code が transcript にメタの user メッセージ「Your claude.ai usage limit has reset. Continue the task you were working on…」を差し込んで C3 を続けた。止まる前の channel 通知 (C3 の依頼) も同じ API 呼び出しに入っていた。
+- **カードの状態 (§3.15) への影響**: 判定どおりなら、この間 deployer は `Working · 2h` と出る (渡した依頼が最後の `turn.end` より新しい)。実際は止まっていたので誤り。公式の hook には `StopFailure` (API のエラーでターンが終わったとき。`error` は `rate_limit` など、`last_assistant_message` はエラーの文) と、Notification の `quota_auto_resume_fired` / `_stale` (スリープ中に解除、Enter 待ち) / `_disabled` (自動では続けない) がある (公式 hooks リファレンス、2026-10-23 に確認)。`StopFailure` が自動の再開を待つ場合にも発火するかは書かれていない (§6.2-6)。roadmap C38。
+- **hook は起動し直さなくても効いた**: cite-bridge の `.claude/settings.local.json` を 21:36:49 に置くと、起動中の 2 つのセッションから 21:37:05 以降 `turn.end` が届いた。Claude Code は設定ファイルの hook を実行中に読み直す。
+- **leader の振る舞い**: 人の「筋の通り continue」(#186) を、手直し 2 点の後に次の項目 (C3) まで進める指示と読み、続けて依頼した。報告に「依頼した」と書いたので、人は気づける。
+
 ### 6.2 未検証
 
 1. **Windows 固有**: パス表記、改行コード。Docker Desktop で公開がループバックだけになることは確認した (§6.1l)。
@@ -806,6 +815,8 @@ vcp の C142 を UI から vcp.leader へ依頼した (seq 69)。leader → depl
 5. **role の説明が Claude Code の instructions として働くか (確認済み、2026-10-17)**: `HUB_ROLE=<定義済みの role>` で起動した shim の instructions に説明が入ることは、テスト (`src/shim/role-instructions.test.ts`) で確認した。
    実セッション (`roles.example.json` を `roles.json` にし、leader / deployer / reviewer を同時に接続): reviewer は instructions の説明を逐語で答え、`subscribe` を呼ばずに `topic:review.request` 宛てと `role:reviewer` 宛ての notice を受け取った。どちらも deployer・leader の cursor は動かず、届いていない。
    reviewer は notice には返信せず、「レビューには対象を書いた request を送って」と返した。説明 (review 依頼を読み、指摘を reply で返す) に沿っている。
+
+6. **`StopFailure` は usage limit の自動の再開の待ちでも発火するか**: §6.1q では登録していなかった。C38 で登録した後、次に制限に当たったときに Event (`error: "rate_limit"` など) が届くかと、`quota_auto_resume_fired` までの間隔を記録する。
 
 ## 7. MCP Events (SEP-3415) との関係
 
