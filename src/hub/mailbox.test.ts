@@ -528,24 +528,25 @@ describe('受領の確認 (received / unconfirmed)', () => {
     assert.equal((await call('POST', `/attachments/${a.attachmentId}/ack`, { upTo: 1, received: true })).status, 400)
   })
 
-  it('自分宛ての Message に reply_to で返信すると、その seq まで受領の確認になる', () => {
+  it('request か reply を送ると、そのとき渡してあった分まで受領の確認になる。notice では進まない (C39)', () => {
     const hub = new Hub(new Store())
     const a = hub.attach('x', { client: 'claude-code' })
     hub.attach('y', { client: 'claude-code' })
+    const asX = hub.senderOf(a.attachmentId)
     const other = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'y' }, body: 'for y' }, user)
-    const m0 = hub.postMessage({ kind: 'notice', to: toX, body: 'zero' }, user)
-    hub.ack(a.attachmentId, m0.seq)
-
-    // 自分宛てでない Message への返信は確認にしない (x 宛ての request がまだないので、閉じるものもない。C28)
-    hub.postMessage({ kind: 'reply', replyTo: other.id, body: 'not mine' }, hub.senderOf(a.attachmentId))
-    assert.equal(hub.store.getMailbox('x')!.received, 0)
-
-    const m1 = hub.postMessage({ kind: 'request', to: toX, body: 'one' }, user)
+    hub.postMessage({ kind: 'request', to: toX, body: 'one' }, user)
     const m2 = hub.postMessage({ kind: 'notice', to: toX, body: 'two' }, user)
     hub.ack(a.attachmentId, m2.seq)
-    hub.postMessage({ kind: 'reply', replyTo: m1.id, body: 'ok' }, hub.senderOf(a.attachmentId))
-    assert.equal(hub.store.getMailbox('x')!.received, m1.seq)
-    assert.deepEqual(hub.store.unconfirmed('x').map((m) => m.id), [m2.id])
+    const later = hub.postMessage({ kind: 'notice', to: toX, body: 'not handed yet' }, user)
+
+    hub.postMessage({ kind: 'notice', to: user, body: 'fyi' }, asX)
+    assert.equal(hub.store.getMailbox('x')!.received, 0, 'notice では進まない')
+
+    // 自分宛てでない Message への返信でも、送ったことが受け取って動いている目安になる
+    hub.postMessage({ kind: 'reply', replyTo: other.id, body: 'seen' }, asX)
+    assert.equal(hub.store.getMailbox('x')!.received, m2.seq, '渡してあった分 (cursor まで)')
+    assert.deepEqual(hub.store.unconfirmed('x'), [])
+    assert.deepEqual(hub.store.unread('x').map((m) => m.id), [later.id], '渡す前の分は未読のまま')
   })
 
   it('attach で放棄した古い未読は確認待ちに数えない', () => {
@@ -584,9 +585,9 @@ describe('溜まりの材料 (backlog。design.md §3.15)', () => {
     assert.deepEqual(backlog(), { unread: { count: 1, oldestAt: late.ts }, awaitingReply: { count: 1, oldestAt: req.ts }, unconfirmed: { count: 1, oldestAt: notice.ts } })
     assert.equal(hub.describeMailboxes().find((d) => d.name === 'x')!.unconfirmed, 2, 'unconfirmed の件数は今までどおり request も含む')
 
-    // 返信すると返信待ちから外れ、その seq まで受領の確認になる (notice は request より後なので残る)
+    // 返信すると返信待ちから外れ、渡してあった分 (notice まで) が受領の確認になる。渡す前の late は未読のまま (C39)
     hub.postMessage({ kind: 'reply', replyTo: req.id, body: 'done' }, hub.senderOf(a.attachmentId))
-    assert.deepEqual(backlog(), { unread: { count: 1, oldestAt: late.ts }, awaitingReply: empty, unconfirmed: { count: 1, oldestAt: notice.ts } })
+    assert.deepEqual(backlog(), { unread: { count: 1, oldestAt: late.ts }, awaitingReply: empty, unconfirmed: empty })
   })
 
   it('inbox で受け取っただけの request も、返信があるまで返信待ちに数える', () => {
@@ -614,7 +615,7 @@ describe('溜まりの材料 (backlog。design.md §3.15)', () => {
 
     const ask = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'dep' }, body: 'do C2' }, hub.senderOf(lead.attachmentId))
     hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'dep' }, body: 'from the user' }, user)
-    assert.deepEqual(of('lead').outgoing, { count: 1, oldestAt: ask.ts, to: [{ type: 'mailbox', id: 'dep' }] })
+    assert.deepEqual(of('lead').outgoing, { count: 1, oldestAt: ask.ts, to: [{ type: 'mailbox', id: 'dep', count: 1, oldestAt: ask.ts }] })
     assert.equal(of('dep').outgoing.count, 0)
     assert.deepEqual(of('lead').lastHanded, { seq: order.seq, ts: order.ts }, '自分が出したものは渡した分に入らない')
 
@@ -623,7 +624,7 @@ describe('溜まりの材料 (backlog。design.md §3.15)', () => {
   })
 })
 
-describe('相手からの後の Message で request を閉じる (C28、protocol.md §2)', () => {
+describe('やりとりの Message で request を閉じ、受領の確認にする (C28・C39、protocol.md §2・§4)', () => {
   const user = { type: 'user', id: 'browser', role: null } as const
   const toLead = { type: 'mailbox', id: 'lead' } as const
   const team = () => {
@@ -640,7 +641,7 @@ describe('相手からの後の Message で request を閉じる (C28、protocol
     hub.ack(lead.attachmentId, go.seq)
     const ask = hub.postMessage({ kind: 'request', to: { type: 'user', id: 'browser' }, body: 'A か B か' }, asLead)
     assert.equal(of('lead').backlog.awaitingReply.count, 0, '人への質問で、人の依頼は閉じる')
-    assert.deepEqual(of('lead').backlog.outgoing, { count: 1, oldestAt: ask.ts, to: [{ type: 'user', id: 'browser' }] })
+    assert.deepEqual(of('lead').backlog.outgoing, { count: 1, oldestAt: ask.ts, to: [{ type: 'user', id: 'browser', count: 1, oldestAt: ask.ts }] })
 
     // 返信ではなく新しい依頼で答える (cli から答えても同じ人)
     const answer = hub.postMessage({ kind: 'request', to: toLead, body: 'A' }, { type: 'user', id: 'cli', role: null })
@@ -659,13 +660,40 @@ describe('相手からの後の Message で request を閉じる (C28、protocol
     const fix = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'dep' }, body: 'C4 の手直し' }, asLead)
     hub.ack(dep.attachmentId, fix.seq)
     assert.equal(of('lead').backlog.outgoing.count, 2)
-    assert.deepEqual(of('lead').backlog.outgoing.to, [{ type: 'role', id: 'deployer' }, { type: 'mailbox', id: 'dep' }])
+    assert.deepEqual(of('lead').backlog.outgoing.to, [
+      { type: 'role', id: 'deployer', count: 1, oldestAt: first.ts },
+      { type: 'mailbox', id: 'dep', count: 1, oldestAt: fix.ts },
+    ])
 
     hub.postMessage({ kind: 'reply', replyTo: first.id, body: 'CHANGED: 両方' }, asDep)
     assert.equal(of('lead').backlog.outgoing.count, 0)
     assert.equal(of('dep').backlog.awaitingReply.count, 0)
     assert.equal(of('dep').received, fix.seq, '閉じた依頼の seq まで確認になる')
     assert.equal(of('dep').unconfirmed, 0, '閉じた依頼を確認待ちに移さない')
+  })
+
+  it('報告 (reply) を受けた leader が次の依頼を送ると、報告が受領の確認になる (C39)', () => {
+    const { hub, lead, dep, of, asLead, asDep } = team()
+    const req = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'dep' }, body: 'C4' }, asLead)
+    hub.ack(dep.attachmentId, req.seq)
+    const report = hub.postMessage({ kind: 'reply', replyTo: req.id, body: 'CHANGED: …' }, asDep)
+    hub.ack(lead.attachmentId, report.seq)
+    assert.deepEqual(of('lead').backlog.unconfirmed, { count: 1, oldestAt: report.ts }, '報告にさらに返信する人はいない')
+
+    hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'dep' }, body: 'C5' }, asLead)
+    assert.equal(of('lead').backlog.unconfirmed.count, 0)
+    assert.equal(of('lead').received, report.seq)
+  })
+
+  it('人宛ての request を宛先ごとに数える (C40 の材料)', () => {
+    const { hub, of, asLead } = team()
+    const q1 = hub.postMessage({ kind: 'request', to: { type: 'user', id: 'browser' }, body: 'A か B か' }, asLead)
+    const job = hub.postMessage({ kind: 'request', to: { type: 'role', id: 'deployer' }, body: 'C4' }, asLead)
+    hub.postMessage({ kind: 'request', to: { type: 'user', id: 'browser' }, body: 'もう 1 つ' }, asLead)
+    assert.deepEqual(of('lead').backlog.outgoing.to, [
+      { type: 'user', id: 'browser', count: 2, oldestAt: q1.ts },
+      { type: 'role', id: 'deployer', count: 1, oldestAt: job.ts },
+    ])
   })
 
   it('notice・無編集転送・同じ向きの依頼では閉じない', () => {

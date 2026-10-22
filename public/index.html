@@ -1421,14 +1421,10 @@ function applyProject() {
   renderElsewhere()
 }
 
-// ほかのプロジェクトで人の手を待っている Mailbox (最後の Event が回答前の question か permission) の数
+// ほかのプロジェクトで人の手を待っている (人が動く番のある) Mailbox の数
 function renderElsewhere() {
   const btn = $('elsewhere')
-  const n = projectFilter ? mailboxList.filter((mb) => {
-    if (mailboxInProject(mb)) return false
-    const ev = lastEventByMailbox.get(mb.name)
-    return ev && WAITING.has(ev.kind)
-  }).length : 0
+  const n = projectFilter ? mailboxList.filter((mb) => !mailboxInProject(mb) && humanTurnOf(mb).count > 0).length : 0
   btn.hidden = n === 0
   btn.textContent = n ? `${n} waiting in other projects` : ''
 }
@@ -1437,24 +1433,42 @@ function renderElsewhere() {
 // ボールが誰にあるかで 3 層に分ける。材料は Hub の backlog (件数と最も古い ts) と、手元の最後の Event。
 // age は経過時間の色の境目 (分): [気にする, 遅い]。人が動く番は待たせた時点で気にする
 const LAYERS = [
-  { key: 'you', label: 'You', age: [0, 10], title: 'Your move: a session is waiting for an answer to a question or a permission prompt in its terminal.' },
+  { key: 'you', label: 'You', age: [0, 10], title: 'Your move: a session is waiting for your answer, to a question or permission prompt in its terminal or to a request it sent you through the Hub.' },
   { key: 'agent', label: 'Agent', age: [30, 120], title: "The agent's move: unread messages in a connected session, and requests handed to it that have no reply yet." },
-  { key: 'stuck', label: 'Stuck?', age: [10, 60], title: 'Delivery may be stuck: messages handed but not confirmed (not fetched with inbox or replied to), and unread messages in a Mailbox with no session attached.' },
+  { key: 'stuck', label: 'Stuck?', age: [10, 60], title: 'Delivery may be stuck: messages handed but not confirmed (not fetched with inbox, and the session has sent no request or reply since), and unread messages in a Mailbox with no session attached.' },
 ]
 const NONE = { count: 0, oldestAt: null }
 function addTally(a, b) {
   const at = [a.oldestAt, b.oldestAt].filter(Boolean).sort((x, y) => Date.parse(x) - Date.parse(y))[0] || null
   return { count: a.count + b.count, oldestAt: at }
 }
+// 人が動く番。材料は 2 つ: hook の質問・許可待ち (最後の Event が回答前の question / permission) と、Hub で人に出した
+// 返信待ちの request (backlog.outgoing.to の人宛て。C40)。人が返信か次の依頼を送れば Hub が閉じる (C28)。
+// カードの状態 (Needs you)・溜まりのバッジ (You)・タブのタイトルと favicon・ほかのプロジェクトの待ちの数は、すべてこれを使う
+function humanTurnOf(mb) {
+  let t = NONE
+  const why = []
+  const ev = lastEventByMailbox.get(mb.name)
+  if (ev && WAITING.has(ev.kind)) {
+    t = addTally(t, { count: 1, oldestAt: ev.ts })
+    why.push(EVENT_LABEL[ev.kind] || ev.kind)
+  }
+  const out = mb.backlog && mb.backlog.outgoing
+  const asks = ((out && out.to) || []).filter((a) => a.type === 'user')
+  // 宛先ごとの件数がない Hub (C40 より前) では、人宛て 1 つを 1 件とみなす
+  for (const a of asks) t = addTally(t, { count: a.count ?? 1, oldestAt: a.oldestAt ?? out.oldestAt })
+  if (asks.length) why.push('request')
+  return { ...t, detail: why.join(', ') }
+}
 // 古い Hub は backlog を返さない。未読と unconfirmed の件数だけで、経過時間は出さない
 // (古い Hub の unconfirmed は返信待ちの request も含むが、そのまま出す)
 function layersOf(mb) {
-  const ev = lastEventByMailbox.get(mb.name)
   const b = mb.backlog
   const unread = b ? b.unread : { count: typeof mb.unread === 'number' ? mb.unread : 0, oldestAt: null }
   const unconfirmed = b ? b.unconfirmed : { count: typeof mb.unconfirmed === 'number' ? mb.unconfirmed : 0, oldestAt: null }
+  const you = humanTurnOf(mb)
   return {
-    you: ev && WAITING.has(ev.kind) ? { count: 1, oldestAt: ev.ts } : NONE,
+    you: { count: you.count, oldestAt: you.oldestAt },
     agent: addTally(mb.attachment ? unread : NONE, b ? b.awaitingReply : NONE),
     stuck: addTally(unconfirmed, mb.attachment ? NONE : unread),
   }
@@ -1472,7 +1486,7 @@ function sumLayers(mailboxes) {
 // (backlog の lastHanded・outgoing・awaitingReply と、hook の Event) から UI が導く。
 // 作業中 = 最後に渡した Message が最後のターン終了より新しい (Channels は渡した時点でターンを始めるため)
 const STATES = [
-  { key: 'you', label: 'Needs you', title: 'The session is waiting for an answer to a question or a permission prompt in its terminal.' },
+  { key: 'you', label: 'Needs you', title: 'The session is waiting for your answer, to a question or permission prompt in its terminal or to a request it sent you through the Hub (answer with Reply, or send it your next request).' },
   { key: 'working', label: 'Working', title: 'A message was handed to the session after its last turn ended, so it is working on it.' },
   { key: 'stopped', label: 'Stopped, no reply', title: 'The turn ended, but a request handed to this session has no reply yet. Check the terminal, or remind it to reply.' },
   { key: 'delegated', label: 'Waiting on others', title: 'Its turn ended while a request it sent has no reply yet.' },
@@ -1483,8 +1497,9 @@ const STATES = [
 const STALE_HANDED_HOURS = 12
 function stateOf(mb) {
   if (!mb.attachment) return { key: 'offline' }
+  const human = humanTurnOf(mb)
+  if (human.count) return { key: 'you', since: human.oldestAt, detail: human.detail }
   const ev = lastEventByMailbox.get(mb.name)
-  if (ev && WAITING.has(ev.kind)) return { key: 'you', since: ev.ts, detail: EVENT_LABEL[ev.kind] || ev.kind }
   const b = mb.backlog
   if (!b || !('outgoing' in b)) return null // 古い Hub (材料がない)。状態を出さない
   const end = lastTurnEndByMailbox.get(mb.name)
@@ -1511,9 +1526,9 @@ function summaryOf(m) {
   return (m.body || '').split('\n').find((l) => l.trim()) || ''
 }
 // この Mailbox が出して返信のない request の宛先。どれが開いているかは Hub が決める (相手からの後の Message でも閉じる。C28)。
-// 人宛ては you。to のない Hub (C28 より前) では宛先を添えない
+// 人宛ては Needs you に出すので除く (C40)。to のない Hub (C28 より前) では宛先を添えない
 function outgoingTargets(outgoing) {
-  return [...new Set((outgoing.to || []).map((a) => (a.type === 'user' ? 'you' : a.id)))].join(', ')
+  return [...new Set((outgoing.to || []).filter((a) => a.type !== 'user').map((a) => a.id))].join(', ')
 }
 function paintState(line) {
   const st = STATES.find((s) => s.key === line.dataset.state)
@@ -1822,11 +1837,11 @@ function renderMailboxes(all) {
     // unread が無い古い Hub では未読の項目を出さない (undefined unread と出さないため)
     if (typeof mb.unread === 'number') meta.push(`${mb.unread} unread`)
     box.append(el('div', 'meta', meta.join(' · ')))
-    // 渡したが受領の確認 (inbox で取り出す・reply_to で返信) がない件数。古い Hub は返さない。
+    // 渡したが受領の確認 (inbox で取り出す・その後にセッションが request か reply を送る。protocol.md §4) がない件数。古い Hub は返さない。
     // channel なしで起動した Claude Code は通知を黙って捨てるので、増え続けるならセッションに inbox を頼む (design.md §6.1k)
     if (typeof mb.unconfirmed === 'number' && mb.unconfirmed > 0) {
       const u = el('div', 'meta', `${mb.unconfirmed} handed, unconfirmed`)
-      u.title = 'Handed to the session, but it has not fetched them with inbox or replied to them yet. This is not proof they were lost. If the session seems not to receive messages, ask it to call inbox with unconfirmed: true.'
+      u.title = 'Handed to the session, but it has not fetched them with inbox, and it has sent no request or reply since. This is not proof they were lost. If the session seems not to receive messages, ask it to call inbox with unconfirmed: true.'
       box.append(u)
     }
     const subs = subscriptionsOf(mb)

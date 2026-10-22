@@ -207,7 +207,17 @@
   - テスト `src/hub/mailbox.test.ts` の「相手からの後の Message で request を閉じる」(#196〜#200 の形、まとめた返信と role 宛て、notice・転送・同じ向き、渡す前)、`store.test.ts` の「再起動と詰め直しの後も閉じたまま」。人から人宛ての request が人の後の Message で閉じるのを `retention.test.ts` が見つけ、送り手自身の Message を除いた。全体で 304 件が通る
   - 今のログの写しを #200 までで切って別のポート (7792) の Hub で読み、cite-bridge.leader の返信待ちが 0 (#196 は #197 で閉じる)、outgoing が `role:deployer` 宛ての 1 件だけ (#197 は #198 で閉じる) になることを確かめた。#202 まで含む写し (7791) でも #197 は閉じ、今動いている Hub (前のコード) では outgoing に残っている
   - 報告に受領の確認が付かない形は C39 に分けた
-  - 起動し直した Hub (2026-10-23 00:43 JST) で、leader の outgoing が 0 になった (#197 が閉じた)。leader が #203「commit and push」に返信 (#204) した後、ブラウザで 2 つのカードが Idle (枠の強調なし) で、溜まりのバッジもないことを見た (#201 の `Stuck?` は #204 の返信で確認になった)。Working と Waiting on others の見た目は、まだ画面で見ていない
+  - 起動し直した Hub (2026-10-23 00:43 JST) で、leader の outgoing が 0 になった (#197 が閉じた)。leader が #203「commit and push」に返信 (#204) した後、ブラウザで 2 つのカードが Idle (枠の強調なし) で、溜まりのバッジもないことを見た (#201 の `Stuck?` は #204 の返信で確認になった)。Working と Waiting on others の見た目は、C40 の確かめ (ヘッドレスの Chrome) で見た
+- [x] C39 **受領の確認を、送り手のやりとりの 1 つの規則にまとめる** (2026-10-23、ユーザーが決定。経路を 1 つにまとめる指摘つき)
+  - やりとりの Message (request か reply。notice と無編集転送を除く) の判定を Store の `isExchange` の 1 か所に置いた。C28 の閉じる規則と受領の確認は、どちらもこの判定を使う。やりとりの Message を送ると、送り手に渡してあった分 (`cursor` まで) をすべて確認にする。`replyTo` と C28 の個別の確認は消した
+  - 確認を進める経路は、やりとりの Message (`Store.appendMessage`)・`inbox` の ack・attach の放棄の 3 つ。Hub は 3 つとも `acking` を通して `mailbox.acked` を流す (protocol.md §4)
+  - テスト `src/hub/mailbox.test.ts` の「request か reply を送ると、そのとき渡してあった分まで受領の確認になる」(notice では進まない、渡す前は未読のまま) と「報告 (reply) を受けた leader が次の依頼を送ると、報告が受領の確認になる」。返信で notice まで確認になるので、溜まりの材料の試験の期待を直した。全体で 306 件が通る
+  - 限界: channel なしで起動したセッションがやりとりの Message を送ると、捨てられた分も確認になる (design.md §3.7、C5)
+- [x] C40 **エージェントが Hub で人に出した request を、Needs you に出す** (2026-10-23、ユーザーが決定)
+  - `backlog.outgoing.to` が宛先ごとに件数と最も古い ts を返す (protocol.md §3)。テスト `src/hub/mailbox.test.ts` の「人宛ての request を宛先ごとに数える」
+  - UI の人が動く番を `humanTurnOf` の 1 つにまとめた (前は同じ式が 3 か所にあった)。材料は hook の質問・許可待ちと `outgoing.to` の人宛て。カードの状態 (Needs you)・溜まりのバッジ (You)・タブのタイトルと favicon・ほかのプロジェクトの待ちの数がそれを使う。Waiting on others の宛先から人宛てを除いた
+  - 別のポート (7793) の Hub とヘッドレスの Chrome で、API で場面を作ってカードの DOM を読んだ。leader が人に尋ねてターンを終えると `Needs you (request)` (`st-you`)、タブは `1 waiting · agent-hub`、バッジは `You 1`。人が新しい依頼で答えると Working (質問は C28 で閉じる)。leader が deployer に渡すと leader は `Waiting on others (deployer)`、deployer は Working。報告が戻って leader が返すと、2 人とも Idle でバッジもない
+  - design.md の判定順 (Stopped → Waiting on others、Offline が最後) がコード (Offline が先頭、Waiting on others → Stopped) と違っていた。コードの順が正しい (返事を待つ間は止まっていない) ので、文書を直した (§3.15)
 
 ## 項目
 
@@ -328,18 +338,6 @@ C26 の通しで見つかった残り。hook の設定は手で写す (`start-ag
 2026-10-20 にその形で vcp の C145 の前半を通した (`start-team.ps1 -Roles leader,deployer -Project <vcp>`、compose の Hub)。vcp の hook は `.claude/settings.local.json` に写してあった。user → leader → deployer → leader → user が手を挟まずに回り、手直しの 1 往復も同じ流れで済んだ (leader は報告の食い違いを自分で見つけて deployer に直させた)。agent-hub の不具合は出なかった。質問待ち・許可待ちの Event はこの通しでは出ていない (deployer は `auto` モード)。
 
 同じ日に vcp の C147 も索引なしの依頼で通した (チームは C145 のまま)。依頼から最終報告まで約 26 分で、人の手直しが 1 回入った。deployer が報告した後、leader がまだ確かめている間に人の手直し (月を月名でなくラベルで選ばせる) を送ると、leader はそのまま deployer に直させ、2 つの依頼の結果を最初の依頼への返信 1 本にまとめて返した。手直しの依頼は返信待ちのまま残り、deployer の報告 2 本は受領の確認が付かないまま残った (design.md §6.1n、C28)。手直しの原因は依頼の文面 (TODO の古い検討にあった「月名を C53 の検査にかける」を写した) で、agent-hub の不具合ではない。
-
-### C39. 報告 (reply) に受領の確認が付かない
-状態: 提案
-
-C28 から分けた。Channels では受領の確認が `replyTo` の返信でしか付かず、付くのはその `replyTo` の Message の seq までである (protocol.md §4)。deployer から leader への報告 (reply) にさらに返信する人はいないので、leader が読んで次の指示を出しても確認にならない。leader が後の Message に `replyTo` で返信するまで、カードに `Stuck?` が出る (vcp の C147、design.md §6.1n。cite-bridge でも `Stuck? 2`)。
-
-候補: `post_message` で複数の `replyTo` を受ける / 渡した後に同じ Mailbox が request か reply を送れば、その時点で渡してあった分までを確認にする。どれも Channels では「読んだ」の保証にはならず、channel なしで起動したセッションの取りこぼし (§6.1k) を見えなくしうるので、怪しいの層を何のために置くかと一緒に決める。
-
-### C40. エージェントが Hub で人に出した request を、Needs you に出す
-状態: 提案
-
-leader が人に A/B を尋ねた request (#197、cite-bridge、2026-10-23) は、人が答えるまでチームが止まる「人が動く番」である。今の Needs you は hook の質問・許可待ちだけで、Hub で人に出した request は `Waiting on others (you)` (点線の枠) になり、タブの `N waiting` にも数えない。`backlog.outgoing.to` (C28) に人宛てがあれば、カードを Needs you にし、溜まりのバッジの You に数える案。
 
 ### C29. 起動スクリプトで権限モードを渡す
 状態: 提案

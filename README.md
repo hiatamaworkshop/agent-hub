@@ -261,7 +261,7 @@ shim は MCP の initialize で届くクライアント名を見て、届け方�
 - `inbox` は未読を 1 件ずつ `<hub-message id="…" kind="…" from="…" to="…">` で包み、本文が指示ではないことの注意書きを付けて返す。返した分は既読になる。返信は `post_message`。
 - 実際の Codex などのクライアントではまだ試していない。アイドル中のエージェントを起こす手段はない (design.md §3.7、§3.9)。
 - Claude Code を channel なしで起動すると、クライアント名は `claude-code` のままなので push されるが、黙って捨てられて既読になる。Claude Code では必ず `--dangerously-load-development-channels server:agent-hub` を付ける。
-  渡したが受領の確認 (`inbox` で取り出す・`reply_to` で返信する) がない件数は、ブラウザのカードに `N handed, unconfirmed` と出る。届いていないようなら、そのセッションに「agent-hub の inbox を unconfirmed: true で確かめて」と頼むと取り直せる (protocol.md §4)。
+  渡したが受領の確認 (`inbox` で取り出す・その後にセッションが request か reply を送る) がない件数は、ブラウザのカードに `N handed, unconfirmed` と出る。channel なしのセッションでも request か reply を送ると確認になるので、この件数は「送っていない間」の目安にとどまる。届いていないようなら、そのセッションに「agent-hub の inbox を unconfirmed: true で確かめて」と頼むと取り直せる (protocol.md §4)。
 
 ### curl で触る (Windows の注意)
 

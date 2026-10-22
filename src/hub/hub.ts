@@ -190,15 +190,9 @@ export class Hub {
     }
     // to の省略は replyTo があるときだけ許す (schema で検証済み)。元の送り手に返す
     const to = this.scopeRole(input.to ?? { type: original!.from.type, id: original!.from.id }, from)
-    const before = from.type === 'mailbox' ? this.store.getMailbox(from.id)?.received : undefined
-    // 閉じた request (C28) の分の受領の確認は、store が追記と同時に進める
-    const m = this.deliver(this.store.appendMessage({ ...input, to, from }))
-    if (from.type === 'mailbox' && before !== undefined) {
-      // 自分宛てに返信したなら、その Message を受け取っている。受領の確認として received を進める (protocol.md §4)
-      if (original && this.store.isRecipient(from.id, original)) this.store.advanceReceived(from.id, original.seq)
-      if (this.mustMailbox(from.id).received > before) this.emitAcked(from.id)
-    }
-    return m
+    // やりとりの Message なら、store が追記と同時に送り手の受領の確認を進める (C39、protocol.md §4)
+    const post = () => this.deliver(this.store.appendMessage({ ...input, to, from }))
+    return from.type === 'mailbox' ? this.acking(from.id, post) : post()
   }
 
   // 無編集転送 (protocol.md §3)。本文・kind・replyTo・meta を元のまま写し、送り手は転送した人にする。
@@ -404,8 +398,7 @@ export class Hub {
     }
     if (drop === 0) return 0
     // 放棄した分は渡していないので、受領の確認待ちにも数えない (received も進める)
-    this.store.advanceReceived(name, unread[drop - 1]!.seq)
-    this.emitAcked(name)
+    this.acking(name, () => this.store.advanceReceived(name, unread[drop - 1]!.seq))
     return drop
   }
 
@@ -506,20 +499,29 @@ export class Hub {
   }
 
   // received (inbox で返した範囲) があれば受領の確認として received も進める (protocol.md §4)。
-  // 範囲が received の直後から続いているときだけ進める。間に確認のない分 (channel で渡しただけ) があれば飛び越えない。
-  // cursor か received が実際に進んだときだけ mailbox.acked を UI に流す (未読数・確認待ちの数が変わるのはこのとき)
+  // 範囲が received の直後から続いているときだけ進める。間に確認のない分 (channel で渡しただけ) があれば飛び越えない
   ack(attachmentId: string, upTo: number, received?: { first: number; last: number }): { cursor: number; received: number } {
     const name = this.mustAttachment(attachmentId).mailbox
     this.renewLease(attachmentId)
+    this.acking(name, () => {
+      if (received) {
+        const next = this.store.addressed(name, this.mustMailbox(name).received, 1)[0]
+        if (!next || next.seq >= received.first) this.store.advanceReceived(name, received.last)
+      }
+      this.store.advanceCursor(name, upTo)
+    })
+    const after = this.mustMailbox(name)
+    return { cursor: after.cursor, received: after.received }
+  }
+
+  // cursor と received を進める経路 (やりとりの Message・inbox の ack・attach の放棄。protocol.md §4) は、すべてここを通す。
+  // 実際に進んだときだけ mailbox.acked を UI に流す (未読数・確認待ちの数が変わるのはこのとき)
+  private acking<T>(name: string, change: () => T): T {
     const before = this.mustMailbox(name)
-    if (received) {
-      const next = this.store.addressed(name, before.received, 1)[0]
-      if (!next || next.seq >= received.first) this.store.advanceReceived(name, received.last)
-    }
-    this.store.advanceCursor(name, upTo)
+    const out = change()
     const after = this.mustMailbox(name)
     if (after.cursor > before.cursor || after.received > before.received) this.emitAcked(name)
-    return { cursor: after.cursor, received: after.received }
+    return out
   }
 
   private emitAcked(name: string): void {

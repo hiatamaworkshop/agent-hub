@@ -189,13 +189,16 @@ describe('Store: 溜まりの材料 (summary)', () => {
   function naive(s: Store, name: string) {
     const mb = s.getMailbox(name)!
     const tally = () => ({ count: 0, oldestAt: null as string | null })
-    const outgoing = { ...tally(), to: [] as Array<{ type: Address['type']; id: string }> }
+    const outgoing = { ...tally(), to: [] as Array<{ type: Address['type']; id: string; count: number; oldestAt: string | null }> }
     const backlog = { unread: tally(), awaitingReply: tally(), unconfirmed: tally(), outgoing, lastHanded: null as { seq: number; ts: string } | null }
     for (const m of s.listMessages(0, Infinity)) {
       if (s.isAwaitingReply(m) && m.from.type === 'mailbox' && m.from.id === name) {
         outgoing.count++
         outgoing.oldestAt ??= m.ts
-        if (!outgoing.to.some((a) => a.type === m.to.type && a.id === m.to.id)) outgoing.to.push({ type: m.to.type, id: m.to.id })
+        let to = outgoing.to.find((a) => a.type === m.to.type && a.id === m.to.id)
+        if (!to) outgoing.to.push((to = { type: m.to.type, id: m.to.id, count: 0, oldestAt: null }))
+        to.count++
+        to.oldestAt ??= m.ts
       }
       if (m.seq <= mb.cursor && s.isRecipient(name, m)) backlog.lastHanded = { seq: m.seq, ts: m.ts }
       const t = m.seq > mb.cursor ? backlog.unread : s.isAwaitingReply(m) ? backlog.awaitingReply : m.seq > mb.received ? backlog.unconfirmed : null

@@ -46,6 +46,13 @@ interface MailboxState {
 
 export type NewMessage = Omit<Message, 'id' | 'seq' | 'ts'>
 
+// やりとりの Message: request か reply。notice (返信を求めない知らせ) と無編集転送 (他人の本文) は除く。
+// 送り手が相手に応じて動いた印として、相手の返信待ちの request を閉じ (C28)、送り手に渡してあった分を受領の確認にする (C39)。
+// 2 つの規則はこの判定だけを使う (protocol.md §2・§4)
+function isExchange(m: Message): boolean {
+  return m.kind !== 'notice' && m.forwardedFrom === undefined
+}
+
 // 件数と、そのうち最も古い Message の ts (なければ null)
 export interface Tally {
   count: number
@@ -53,8 +60,8 @@ export interface Tally {
 }
 
 export interface Outgoing extends Tally {
-  // 宛先 (種類と id。重ねず、古い順)。UI の Waiting on others に添える
-  to: Array<{ type: Address['type']; id: string }>
+  // 宛先 (種類と id) ごとの件数と最も古い ts。古い順。UI は Waiting on others の宛先と、人宛ての Needs you (C40) に使う
+  to: Array<{ type: Address['type']; id: string } & Tally>
 }
 
 export interface Backlog {
@@ -247,23 +254,21 @@ export class Store {
 
   // --- Message ---
 
-  // 送り手の Mailbox に渡してあった request をこの Message が閉じるなら、その seq まで受領の確認にする (C28、protocol.md §4)。
-  // 渡す前の request は未読のまま届くので確認にしない (received は cursor も進めるため)
+  // やりとりの Message が送り手について示すことは、閉じる request (apply が answeredBy で導く) と受領の確認の 2 つ。
+  // 受領の確認は、送り手の Mailbox に渡してあった分 (cursor まで) すべて (C39)。渡す前の分は未読のまま届くので確認にしない
   appendMessage(m: NewMessage): Message {
     const message: Message = { id: newId('m'), seq: this.seq + 1, ts: this.now().toISOString(), ...m }
-    const sender = message.from.type === 'mailbox' ? this.mailboxes.get(message.from.id) : undefined
-    let handed = 0
-    if (sender) for (const r of this.answeredBy(message)) if (r.seq <= sender.cursor) handed = Math.max(handed, r.seq)
     this.write({ op: 'message', message })
-    if (sender && handed > 0) this.advanceReceived(sender.name, handed)
+    const sender = isExchange(message) && message.from.type === 'mailbox' ? this.mailboxes.get(message.from.id) : undefined
+    if (sender) this.advanceReceived(sender.name, sender.cursor)
     return message
   }
 
-  // m が閉じる返信待ちの request (C28、protocol.md §2)。request R は、R の受け手から R の送り手への request か reply で閉じる。
-  // notice (返信を求めない知らせ) と無編集転送 (他人の本文)、R の送り手自身の Message では閉じない。人の browser と cli は同じ人として扱う。
-  // openRequests には m より前の行しかない (追記の前と、再生でその行を適用する前に呼ぶ)
+  // m が閉じる返信待ちの request (C28、protocol.md §2)。request R は、R の受け手から R の送り手へのやりとりの Message で閉じる。
+  // R の送り手自身の Message では閉じない。人の browser と cli は同じ人として扱う。
+  // openRequests には m より前の行しかない (再生でも追記でも、その行を適用する前に呼ぶ)
   private answeredBy(m: Message): Message[] {
-    if (m.kind === 'notice' || m.forwardedFrom !== undefined) return []
+    if (!isExchange(m)) return []
     const out: Message[] = []
     for (const r of this.openRequests.values()) {
       if (m.from.type === r.from.type && (m.from.type === 'user' || m.from.id === r.from.id)) continue
@@ -473,8 +478,9 @@ export class Store {
     for (const m of this.openRequests.values()) {
       if (m.from.type === 'mailbox' && m.from.id === name) {
         add(backlog.outgoing, m)
-        const to = backlog.outgoing.to
-        if (!to.some((a) => a.type === m.to.type && a.id === m.to.id)) to.push({ type: m.to.type, id: m.to.id })
+        let to = backlog.outgoing.to.find((a) => a.type === m.to.type && a.id === m.to.id)
+        if (!to) backlog.outgoing.to.push((to = { type: m.to.type, id: m.to.id, count: 0, oldestAt: null }))
+        add(to, m)
       }
       if (m.seq <= mb.cursor && this.isRecipient(name, m)) add(backlog.awaitingReply, m)
     }

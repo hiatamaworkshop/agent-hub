@@ -256,6 +256,7 @@ Channels は Claude Code 固有。Codex など他のエージェントには pus
   - `instructions` は `initialize` の応答に入り、`clientInfo` もその要求で初めて分かるので、shim は `initialize` を自前の handler で答える (SDK 1.32.1 の `Server` は `instructions` をコンストラクタでしか受けず、既定の処理は private)。版の取り決めは SDK と同じ (`SUPPORTED_PROTOCOL_VERSIONS` にあれば要求どおり、なければ `LATEST_PROTOCOL_VERSION`)。代わりに SDK の `getClientVersion` / `getClientCapabilities` は埋まらないが、shim はどちらも使わない。
   - Claude Code を channel なし (`--dangerously-load-development-channels` を付けない) で起動したときも名前は `claude-code` なので Channels 経路になり、通知が捨てられても shim は ack する。通知は黙って捨てられ、起動の仕方を shim から見分ける手がかりもないことを確かめた (§6.1k)。今は起動手順 (README、`start-agent.ps1`) で channel を付ける前提に頼る。
   - **決定 (2026-10-18): 配送の状態を handed と received に分ける** (protocol.md §4)。cursor は今どおり handed で進め、再送はしない (返信の要らない notice が交代のたびに再送されるのを避ける)。受領の確認 (`inbox` で返した・`replyTo` で返信した) は別のウォーターマーク `received` に記録し、差 (unconfirmed) を UI のカードに出す。捨てられたかに気づくのは人間で、セッションに `inbox` を `unconfirmed: true` で呼ばせて取り直す。cursor を received でしか進めない案は、取りこぼしはないが notice が未読に残り続けるので採らなかった。
+  - 2026-10-23 (C39): `replyTo` の返信による確認を、やりとりの Message (request か reply) を送ったら、そのとき渡してあった分をすべて確認にする規則に広げた。報告にさらに返信する人はおらず、leader の `Stuck?` が残り続けたため。確認を進める経路は、やりとりの Message・`inbox` の ack・attach の放棄の 3 つにまとめた (protocol.md §4)。channel なしで起動したセッションがやりとりの Message を送ると、捨てられた分も確認になる。
 - **「本文はデータ」の守りは agent-hub 側だけで成り立たせる**: Claude Code は channel 由来の内容に注意書きを自動で付けるが (§6.1c)、他のクライアントは付けない。`<hub-message>` の包みと instructions の文面だけで足りるように書く。
 - **role の説明は MCP の instructions で渡す**: `roles.json` の `description` を shim が instructions に差し込む (§3.5、P2)。Claude の起動フラグ (`--append-system-prompt-file`。`tools/dev/` の試験用) には頼らない。instructions をどう使うかはクライアント次第。Claude Code では説明に沿って振る舞うことを確かめた (§6.2-5)。
   - **決定 (2026-10-17): initialize より前に attach して説明を取る**。`instructions` は `initialize` の応答で決まり、説明は attach の応答にあるので、attach を先に行う。shim は `HubClient.primeAttach` で上限 3 秒だけ待ち、取れた Attachment を `start` 後の `run` がそのまま使う (二重に attach しない)。時間切れや失敗なら説明なしで起動し、attach は従来どおり `run` が受け持つ (Hub が止まっていても shim は上がる)。
@@ -469,7 +470,7 @@ Hub が持つのは注文票と「どの項目の注文か」の指し示しだ�
 
 | 層 | 意味 | 例 |
 |---|---|---|
-| 人が動く番 | 放っておくと止まる | 質問待ち・許可待ち、reply が来たのに受け入れていない request |
+| 人が動く番 | 放っておくと止まる | 質問待ち・許可待ち、Hub で人に出した request、reply が来たのに受け入れていない request |
 | エージェントの番 | 待てばよい | 渡したが reply がない request、未読 |
 | 怪しい | 配送が詰まっている | handed のまま受領未確認、attach のない Mailbox に溜まる未読 |
 
@@ -477,17 +478,18 @@ Hub が持つのは注文票と「どの項目の注文か」の指し示しだ�
 - どれも配送の状態なので、知識を持たない原則 (§3.14) のまま作れる。
 
 **実装 (C6、2026-10-19)**。Hub は `GET /mailboxes` の `backlog` に材料 (未読・返信待ちの request・確認待ち。件数と最も古い ts) を重ならない形で返し、層への振り分けは UI が行う (protocol.md §3)。
-- 人が動く番: 最後の Event が回答前の question / permission (カードの `Last event` と同じ判定)。受け入れ待ちはまだ入れない (下の未決 4)。
+- 人が動く番: 最後の Event が回答前の question / permission (カードの `Last event` と同じ判定) と、Hub で人に出した返信待ちの request (`outgoing.to` の人宛て。C40、2026-10-23)。UI の 1 つの関数 (`humanTurnOf`) で数え、カードの状態 (Needs you)・このバッジ・タブのタイトルと favicon・ほかのプロジェクトの待ちの数は、すべてそれを使う。受け入れ待ちはまだ入れない (下の未決 4)。
 - エージェントの番: 接続中の Mailbox の未読と、渡したが返信のない request。
-- 怪しい: 返信待ちの request を除いた handed の未確認と、接続のない Mailbox の未読。Channels では返信まで受領の確認がない (§8.4) ので、返信待ちの request を外さないと、作業中の request がエージェントの番と怪しいの両方に出る。返信の要らない notice は確認の手段がなく、次の返信 (その seq まで確認になる) か保存期間まで怪しいに残る。
+- 怪しい: 返信待ちの request を除いた handed の未確認と、接続のない Mailbox の未読。Channels では受け手が request か reply を送るまで受領の確認がない (protocol.md §4) ので、返信待ちの request を外さないと、作業中の request がエージェントの番と怪しいの両方に出る。受け手が次にやりとりの Message (request か reply) を送ると、そのとき渡してあった分は確認になる (C39)。それまで、または保存期間まで怪しいに残る。
 - 色の境目 (分、気にする / 遅い) は、人が動く番 0 / 10、エージェントの番 30 / 120、怪しい 10 / 60。運用で合わなければ直す。
 - サイドバーは選んでいるプロジェクトの合計、タブのタイトル (`N waiting`) と favicon は全プロジェクトの人が動く番。favicon は非表示中に届いた新着の数を優先し、なければ人が動く番を琥珀色で出す。
 
 **カードの状態 (2026-10-22、ユーザー)**。件数の層だけでは、今誰が動いているかが分からなかった (§6.1p)。カードに状態を 1 つ出し、枠の強調で示す。Hub は状態を持たず、`backlog` の `lastHanded`・`outgoing`・`awaitingReply` と hook の Event から UI が導く (protocol.md §3)。
-- 判定は上から順に: Needs you (最後の Event が回答前の質問・許可。琥珀の枠) → Working (接続中の未読、または最後に渡した Message が最後の `turn.end` より新しい。Channels は渡した時点でターンを始めるため。青の枠、依頼の 1 行目を添える) → Stopped, no reply (ターンが終わり、渡した request に返信がない。赤の枠。C34 の案) → Waiting on others (ターンが終わり、自分が出した request に返信がない。点線の枠と宛先) → Idle → Offline (薄く)。
+- 判定は上から順に: Offline (接続がない。薄く) → Needs you (人が動く番がある: 回答前の質問・許可か、Hub で人に出した返信待ちの request。琥珀の枠、`question`・`permission`・`request` を添える) → Working (接続中の未読、または最後に渡した Message が最後の `turn.end` より新しい。Channels は渡した時点でターンを始めるため。青の枠、依頼の 1 行目を添える) → Waiting on others (ターンが終わり、自分が出した request に返信がない。点線の枠と宛先) → Stopped, no reply (ターンが終わり、渡した request に返信がない。赤の枠。C34 の案) → Idle。
+- Waiting on others を Stopped より先に見る。自分が出した依頼の返事を待つ間は、渡された依頼に返信がなくても止まってはいない (返事が来てから返す) ため。2026-10-23 にヘッドレスの Chrome で、leader が deployer に渡した後のカードが Waiting on others (deployer) になることを確かめた (C40 の記録)。
 - Event が 1 つもないセッションは hook がない見込みで、ターン終了を知らない。Working に `?` を付けて推測と示す。hook の Event が保存期間で消えた古い受け渡し (12 時間) は作業中とみなさない。
 - サイドバーの上に状態ごとの数 (Idle と Offline は出さない) を、件数の層のバッジの上に出す。件数の層は残す (古さと配送の詰まりは状態に出ないため)。
-- 返信待ちと outgoing は、`replyTo` の返信のほか、相手からの後の request か reply でも閉じる (C28、protocol.md §2)。人が質問に新しい依頼で答えた、続けて出した依頼の後の方にだけ返信した、という形で Stopped と Waiting on others が残らないようにするため。Waiting on others の宛先は Hub の `outgoing.to` を使い、人宛ては `you` と出す。
+- 返信待ちと outgoing は、`replyTo` の返信のほか、相手からの後の request か reply でも閉じる (C28、protocol.md §2)。人が質問に新しい依頼で答えた、続けて出した依頼の後の方にだけ返信した、という形で Stopped と Waiting on others が残らないようにするため。Waiting on others の宛先は Hub の `outgoing.to` を使う。人宛ては Needs you に出すので含めない (C40)。
 - 1 つの相手に並行して出した依頼は、片方への返信で残りも閉じる。その間は、残りの依頼に返信がなくても Stopped と Waiting on others が出ない。
 
 **roadmap の項目を選んで依頼する**
