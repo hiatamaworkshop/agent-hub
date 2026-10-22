@@ -3,7 +3,7 @@ import { appendFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
-import type { Address } from '../shared/types.js'
+import type { Address, HubEvent } from '../shared/types.js'
 import { Store, type NewMessage } from './store.js'
 
 const dir = mkdtempSync(join(tmpdir(), 'agent-hub-store-'))
@@ -190,7 +190,20 @@ describe('Store: 溜まりの材料 (summary)', () => {
     const mb = s.getMailbox(name)!
     const tally = () => ({ count: 0, oldestAt: null as string | null })
     const outgoing = { ...tally(), to: [] as Array<{ type: Address['type']; id: string; count: number; oldestAt: string | null }> }
-    const backlog = { unread: tally(), awaitingReply: tally(), unconfirmed: tally(), outgoing, lastHanded: null as { seq: number; ts: string } | null }
+    const backlog = {
+      unread: tally(),
+      awaitingReply: tally(),
+      unconfirmed: tally(),
+      outgoing,
+      lastHanded: null as { seq: number; ts: string } | null,
+      lastEvent: null as { id: string; kind: string; ts: string; sessionId?: string } | null,
+      lastTurnEnd: null as { id: string; ts: string } | null,
+    }
+    for (const e of s.listEvents(Infinity)) {
+      if (e.mailbox !== name || e.superseded) continue
+      backlog.lastEvent = { id: e.id, kind: e.kind, ts: e.ts, ...(e.sessionId ? { sessionId: e.sessionId } : {}) }
+      if (e.kind === 'turn.end') backlog.lastTurnEnd = { id: e.id, ts: e.ts }
+    }
     for (const m of s.listMessages(0, Infinity)) {
       if (s.isAwaitingReply(m) && m.from.type === 'mailbox' && m.from.id === name) {
         outgoing.count++
@@ -239,6 +252,73 @@ describe('Store: 溜まりの材料 (summary)', () => {
     check(s, '消した request は数えない')
     assert.equal(s.summary('x').backlog.awaitingReply.count, 1, '返信のない最初の request だけが残る')
     check(new Store({ file }), '再起動後')
+  })
+
+  it('最後に渡した Message は、cursor が進んだ分だけ見直しても全件の走査と同じ (削除・role・購読の変化をまたぐ)', () => {
+    const s = new Store()
+    s.ensureMailbox('x', 'reviewer')
+    const toX = { type: 'mailbox', id: 'x' } as const
+    const check = (label: string) => assert.deepEqual(s.summary('x'), naive(s, 'x'), label)
+    check('何も渡していない')
+    const a = s.appendMessage(msg(toX))
+    s.appendMessage(msg({ type: 'mailbox', id: 'y' }))
+    const b = s.appendMessage(msg({ type: 'role', id: 'reviewer' }))
+    s.advanceCursor('x', a.seq)
+    check('1 件目まで')
+    s.advanceCursor('x', b.seq)
+    check('宛先でない Message をまたいで 3 件目まで')
+    s.deleteMessages([b.id])
+    check('覚えていた Message を消した')
+    s.ensureMailbox('x', 'writer')
+    check('role が変わった (role 宛ては数えない)')
+    const t = s.appendMessage(msg({ type: 'topic', id: 't' }))
+    s.subscribe('x', 't')
+    s.advanceCursor('x', t.seq)
+    check('購読より前のトピック宛ては数えない')
+    const later = s.appendMessage(msg({ type: 'topic', id: 't' }))
+    s.advanceCursor('x', later.seq)
+    check('購読した後のトピック宛て')
+    assert.equal(s.summary('x').backlog.lastHanded?.seq, later.seq)
+  })
+
+  it('Mailbox ごとの最新の Event とターン終了を返し、切り離されたセッションの分と消した分を除く', () => {
+    const s = new Store()
+    s.ensureMailbox('x')
+    let n = 0
+    const ev = (kind: HubEvent['kind'], extra: Partial<HubEvent> = {}): HubEvent => {
+      const e: HubEvent = { id: `e_${++n}`, ts: `2026-10-23T00:00:0${n}.000Z`, kind, source: 'claude-code', mailbox: 'x', payload: {}, ...extra }
+      s.addEvent(e)
+      return e
+    }
+    const check = (label: string) => assert.deepEqual(s.summary('x'), naive(s, 'x'), label)
+    check('Event がない')
+    const end = ev('turn.end')
+    const q = ev('question', { sessionId: 's1' })
+    ev('turn.end', { superseded: true })
+    ev('turn.end', { mailbox: 'y' })
+    check('質問が最新、ターン終了は前のもの')
+    assert.deepEqual(s.summary('x').backlog.lastEvent, { id: q.id, kind: 'question', ts: q.ts, sessionId: 's1' })
+    assert.deepEqual(s.summary('x').backlog.lastTurnEnd, { id: end.id, ts: end.ts })
+    s.deleteEvents([q.id, end.id])
+    check('消した後は残っている中の最新')
+    assert.equal(s.summary('x').backlog.lastEvent, null)
+  })
+
+  it('詰め直したファイルでは閉じた request を導き直さず、動いていたときの結果を保つ (C28)', () => {
+    const file = tmpFile()
+    const s = new Store({ file })
+    s.ensureMailbox('lead', 'leader')
+    // project のある role 宛て。lead に project がまだないので、lead の Message はこれを閉じない
+    const r = s.appendMessage(msg({ type: 'role', id: 'leader', project: 'C:\\work\\demo' }))
+    s.appendMessage({ kind: 'request', from: { type: 'mailbox', id: 'lead', role: 'leader' }, to: { type: 'user', id: 'browser' }, body: 'q' })
+    s.setProject('lead', 'C:\\work\\demo')
+    const isOpen = (st: Store) => st.isAwaitingReply(st.getMessage(r.id)!)
+    assert.equal(isOpen(s), true)
+    assert.equal(isOpen(new Store({ file })), true, '再起動しても同じ (前にある行が同じ)')
+    const noise = s.appendMessage(msg({ type: 'topic', id: 'none' }))
+    s.deleteMessages([noise.id])
+    assert.ok(s.compact())
+    assert.equal(isOpen(new Store({ file })), true, '詰め直しの後も、今の project で導き直さない')
   })
 
   it('相手からの後の Message で閉じた request は、再起動と詰め直しの後も閉じたまま (C28)', () => {

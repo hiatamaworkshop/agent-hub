@@ -218,6 +218,14 @@
   - UI の人が動く番を `humanTurnOf` の 1 つにまとめた (前は同じ式が 3 か所にあった)。材料は hook の質問・許可待ちと `outgoing.to` の人宛て。カードの状態 (Needs you)・溜まりのバッジ (You)・タブのタイトルと favicon・ほかのプロジェクトの待ちの数がそれを使う。Waiting on others の宛先から人宛てを除いた
   - 別のポート (7793) の Hub とヘッドレスの Chrome で、API で場面を作ってカードの DOM を読んだ。leader が人に尋ねてターンを終えると `Needs you (request)` (`st-you`)、タブは `1 waiting · agent-hub`、バッジは `You 1`。人が新しい依頼で答えると Working (質問は C28 で閉じる)。leader が deployer に渡すと leader は `Waiting on others (deployer)`、deployer は Working。報告が戻って leader が返すと、2 人とも Idle でバッジもない
   - design.md の判定順 (Stopped → Waiting on others、Offline が最後) がコード (Offline が先頭、Waiting on others → Stopped) と違っていた。コードの順が正しい (返事を待つ間は止まっていない) ので、文書を直した (§3.15)
+- [x] C41 **C36〜C40 のレビュー (2026-10-23、`7bb1a8d..3aa8c83`) で見つけた弱いところを直す** (ユーザーの依頼)
+  - `GET /mailboxes` のたびに、`lastHanded` を求めるためログを後ろから走査していた (何も受け取っていない Mailbox ではログ全体)。summary の「ログ全体は走査しない」に反していた。前に求めた cursor より後だけを見直す形にした。覚えた Message が消えたときと、宛先の判定が変わる記録 (role・project・購読) の後は求め直す。テスト `src/hub/store.test.ts` の「最後に渡した Message は、cursor が進んだ分だけ見直しても全件の走査と同じ」
+  - 詰め直したファイルを読むと、閉じる request (C28) を今の Mailbox の role や project で導き直し、動いていたときには閉じなかった request まで閉じえた。詰め直しの先頭の `seq` の行に `answered` を付け、その分は導き直さない。テスト「詰め直したファイルでは閉じた request を導き直さず…」(直しを外すとこの試験だけが落ちることを確かめた)
+  - UI の最新の Event とターン終了が、最初に読む最近の 200 件の窓に頼っていた。Hub が Mailbox ごとの最新の Event とターン終了を持ち、`backlog.lastEvent` / `lastTurnEnd` で返す (superseded を除く。消したら残りから求め直す)。UI は手元のものと新しい方を使い、Event が消えたら一覧を取り直す。テスト「Mailbox ごとの最新の Event とターン終了を返し…」
+  - 起動し直した後も、前のセッションのターミナルの質問・許可待ちが Needs you に残った (新しいセッションが最初のターンを終えるまで)。今の接続より前に別のセッションが出した分は、人が動く番に数えない。session_id の違いだけで外すと、`/clear` で session_id が変わった後の本物の質問まで落としうるので、接続の時刻と合わせて見る (`/clear` の挙動は未検証。design.md §6.2-7)
+  - Hub の `acking` が送り手の Mailbox を必ず求めていたので、Mailbox が見つからないと送信が 404 で落ちえた。見つからなければ知らせだけを省く
+  - この確かめを `npm run ui:check` (`tools/dev/ui-check.mjs`) にした。場面を作り、カードの状態とタブのタイトルを期待と照らして、外れたら exit 1。直す前の UI では下の (5)(6) が外れて exit 1 になることを確かめた。CLAUDE.md に、UI を変えたら流すことを書いた
+  - 別のポートの Hub とヘッドレスの Chrome で、C40 の 4 つの場面に 2 つを足して DOM を読んだ。(5) ほかの Mailbox の Event 250 件で leader のターン終了を窓から押し出して読み直すと、直す前の UI では 2 人とも `Working?`、直した UI では `Idle`。(6) leader がターミナルで質問すると `Needs you (question)`、別のセッションが attach すると `Idle`、その後に session_id の違う質問が出ると `Needs you (question)`。全体の試験は 309 件が通る
 
 ## 項目
 

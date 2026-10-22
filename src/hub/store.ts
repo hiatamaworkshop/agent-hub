@@ -22,8 +22,10 @@ type LogRecord =
   | { op: 'event'; event: HubEvent }
   | { op: 'message.delete'; id: string }
   | { op: 'event.delete'; id: string }
-  // 詰め直したファイルの先頭。Message を全部消しても seq を巻き戻さない
-  | { op: 'seq'; seq: number }
+  // 詰め直したファイルの先頭。Message を全部消しても seq を巻き戻さない。
+  // answered: この seq までの Message で閉じた request は replied の行に書いてある。再生で導き直さない (C28。今の Mailbox の
+  // role や project で導き直すと、動いていたときには閉じなかった request まで閉じうるため)。この印のない行は前の形式
+  | { op: 'seq'; seq: number; answered?: true }
   // 返信が消えた後も、その request が返信済みだったことを残す (詰め直しで返信の Message がなくなるため)。
   // 相手からの後の Message で閉じた request (C28) も同じ行で残す
   | { op: 'replied'; id: string }
@@ -72,6 +74,11 @@ export interface Backlog {
   outgoing: Outgoing
   // この Mailbox 宛てで最後に渡した (seq ≤ cursor) Message。UI が最後のターン終了と比べて作業中かを導く (design.md §3.15)
   lastHanded: { seq: number; ts: string } | null
+  // この Mailbox の最新の Event と最新のターン終了 (takeover で切り離されたセッションの分を除く)。UI が読むのは最近の Event だけ
+  // なので、静かな Mailbox の分も Hub から渡す。作業中と人が動く番を導く材料 (design.md §3.15)
+  // sessionId は、今つながっているのと別のセッションの質問待ちを UI が数えないため
+  lastEvent: { id: string; kind: HubEvent['kind']; ts: string; sessionId?: string } | null
+  lastTurnEnd: { id: string; ts: string } | null
 }
 
 export interface StoreOptions {
@@ -95,6 +102,14 @@ export class Store {
   private readonly eventById = new Map<string, HubEvent>()
   // sessionId → その session の最新の Event (変換が直前の Event を見るため)
   private readonly lastEventBySession = new Map<string, HubEvent>()
+  // Mailbox 名 → その Mailbox の最新の Event と最新のターン終了 (superseded を除く。Backlog の lastEvent / lastTurnEnd)
+  private readonly lastEventByMailbox = new Map<string, HubEvent>()
+  private readonly lastTurnEndByMailbox = new Map<string, HubEvent>()
+  // Mailbox 名 → 最後に渡した Message と、それを求めた時点の cursor (Backlog の lastHanded)。
+  // cursor が進んだ分だけ見直し、GET /mailboxes のたびにログ全体を走査しない
+  private readonly handedCache = new Map<string, { cursor: number; last: Message | null }>()
+  // この seq までの Message からは閉じる request を導かない (詰め直しが replied の行に書いた分。LogRecord の seq)
+  private answeredUpTo = 0
   // 返信のある Message の id (返信の replyTo) と、相手からの後の Message で閉じた request の id (C28、answeredBy)。
   // 返信待ちの request を自動で消さないため (design.md §3.14)
   private readonly repliedTo = new Set<string>()
@@ -167,8 +182,8 @@ export class Store {
     switch (rec.op) {
       case 'message':
         // 閉じる request はログの順から導く (記録しない)。追記したときと再生したときで、前にある行が同じなので結果も同じ。
-        // 詰め直した後は replied の行が残す
-        for (const r of this.answeredBy(rec.message)) this.markReplied(r.id)
+        // 詰め直したファイルの分は replied の行が残しているので、導き直さない
+        if (rec.message.seq > this.answeredUpTo) for (const r of this.answeredBy(rec.message)) this.markReplied(r.id)
         this.messages.push(rec.message)
         this.byId.set(rec.message.id, rec.message)
         this.seq = Math.max(this.seq, rec.message.seq)
@@ -181,11 +196,13 @@ export class Store {
         break
       case 'seq':
         this.seq = Math.max(this.seq, rec.seq)
+        if (rec.answered) this.answeredUpTo = Math.max(this.answeredUpTo, rec.seq)
         break
       case 'replied':
         this.markReplied(rec.id)
         break
       case 'mailbox.create':
+        this.handedCache.delete(rec.name)
         this.mailboxes.set(rec.name, {
           name: rec.name,
           role: rec.role,
@@ -200,10 +217,13 @@ export class Store {
         })
         break
       case 'mailbox.delete':
+        this.handedCache.delete(rec.name)
         this.mailboxes.delete(rec.name)
         this.deletedAt.set(rec.name, rec.seq)
         break
+      // 宛先の判定 (isRecipient) が変わるので、最後に渡した Message は求め直す
       case 'mailbox.role': {
+        this.handedCache.delete(rec.name)
         const mb = this.mailboxes.get(rec.name)
         if (mb) {
           mb.role = rec.role
@@ -212,14 +232,17 @@ export class Store {
         break
       }
       case 'mailbox.project': {
+        this.handedCache.delete(rec.name)
         const mb = this.mailboxes.get(rec.name)
         if (mb) mb.project = rec.project
         break
       }
       case 'subscribe':
+        this.handedCache.delete(rec.name)
         this.mailboxes.get(rec.name)?.subscriptions.set(rec.topic, rec.seq)
         break
       case 'unsubscribe':
+        this.handedCache.delete(rec.name)
         this.mailboxes.get(rec.name)?.subscriptions.delete(rec.topic)
         break
       case 'cursor': {
@@ -242,9 +265,17 @@ export class Store {
       case 'event':
         this.events.push(rec.event)
         this.eventById.set(rec.event.id, rec.event)
-        if (rec.event.sessionId) this.lastEventBySession.set(rec.event.sessionId, rec.event)
+        this.noteLatest(rec.event)
         break
     }
+  }
+
+  // session と Mailbox ごとの最新の Event を覚える。Event は追記順 = 時刻順
+  private noteLatest(e: HubEvent): void {
+    if (e.sessionId) this.lastEventBySession.set(e.sessionId, e)
+    if (!e.mailbox || e.superseded) return
+    this.lastEventByMailbox.set(e.mailbox, e)
+    if (e.kind === 'turn.end') this.lastTurnEndByMailbox.set(e.mailbox, e)
   }
 
   private markReplied(id: string): void {
@@ -470,6 +501,8 @@ export class Store {
       unconfirmed: { count: 0, oldestAt: null },
       outgoing: { count: 0, oldestAt: null, to: [] },
       lastHanded: null,
+      lastEvent: null,
+      lastTurnEnd: null,
     }
     const add = (t: { count: number; oldestAt: string | null }, m: Message) => {
       t.count++
@@ -484,13 +517,12 @@ export class Store {
       }
       if (m.seq <= mb.cursor && this.isRecipient(name, m)) add(backlog.awaitingReply, m)
     }
-    // 新しい方から、渡した分のうち最初に当たるこの Mailbox 宛て
-    for (let i = this.indexAfter(mb.cursor) - 1; i >= 0; i--) {
-      const m = this.messages[i]!
-      if (!this.isRecipient(name, m)) continue
-      backlog.lastHanded = { seq: m.seq, ts: m.ts }
-      break
-    }
+    const handed = this.lastHandedOf(mb)
+    if (handed) backlog.lastHanded = { seq: handed.seq, ts: handed.ts }
+    const ev = this.lastEventByMailbox.get(name)
+    if (ev) backlog.lastEvent = { id: ev.id, kind: ev.kind, ts: ev.ts, ...(ev.sessionId ? { sessionId: ev.sessionId } : {}) }
+    const end = this.lastTurnEndByMailbox.get(name)
+    if (end) backlog.lastTurnEnd = { id: end.id, ts: end.ts }
     let unconfirmed = 0
     for (let i = this.indexAfter(mb.received); i < this.messages.length; i++) {
       const m = this.messages[i]!
@@ -502,6 +534,24 @@ export class Store {
       }
     }
     return { unread: backlog.unread.count, unconfirmed, backlog }
+  }
+
+  // この Mailbox 宛てで最後に渡した (seq ≤ cursor) Message。前に求めた cursor より後だけを新しい方から見直す。
+  // 覚えた Message が消えていたら (保存期間・手で消す)、全体から求め直す。宛先の判定が変わる記録では apply が忘れる
+  private lastHandedOf(mb: MailboxState): Message | null {
+    const cached = this.handedCache.get(mb.name)
+    const usable = cached !== undefined && cached.cursor <= mb.cursor && (cached.last === null || this.byId.has(cached.last.id))
+    if (usable && cached.cursor === mb.cursor) return cached.last
+    const floor = usable ? cached.cursor : 0
+    let last = usable ? cached.last : null
+    for (let i = this.indexAfter(mb.cursor) - 1; i >= 0 && this.messages[i]!.seq > floor; i--) {
+      const m = this.messages[i]!
+      if (!this.isRecipient(mb.name, m)) continue
+      last = m
+      break
+    }
+    this.handedCache.set(mb.name, { cursor: mb.cursor, last })
+    return last
   }
 
   // --- 削除と保存期間 (design.md §3.14) ---
@@ -527,9 +577,11 @@ export class Store {
       this.events.splice(i, 1)
       this.eventById.delete(e.id)
     }
-    // 変換は session の直前の Event を見るので、残っている中の最新に付け替える
+    // 変換は session の直前の Event を、カードは Mailbox の最新の Event を見るので、残っている中の最新に付け替える
     this.lastEventBySession.clear()
-    for (const e of this.events) if (e.sessionId) this.lastEventBySession.set(e.sessionId, e)
+    this.lastEventByMailbox.clear()
+    this.lastTurnEndByMailbox.clear()
+    for (const e of this.events) this.noteLatest(e)
   }
 
   deleteMessage(id: string): boolean {
@@ -587,7 +639,8 @@ export class Store {
   // 失敗しても削除の行は残っているので、状態は変わらない (次の機会に詰め直す)
   compact(): boolean {
     if (!this.file || this.deletesSinceCompact === 0) return false
-    const recs: LogRecord[] = [{ op: 'seq', seq: this.seq }]
+    // 閉じた request は下で replied の行に書くので、再生では導き直さない (answered)
+    const recs: LogRecord[] = [{ op: 'seq', seq: this.seq, answered: true }]
     // 削除した Mailbox の削除時点の seq (作り直したときに古い直接宛てを再送しないため)。作り直した Mailbox の create より前に置く
     for (const [name, seq] of this.deletedAt) recs.push({ op: 'mailbox.delete', name, seq })
     for (const mb of this.mailboxes.values()) {

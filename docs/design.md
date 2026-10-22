@@ -457,7 +457,7 @@ AI との共同開発で効果があったのは、結局ドキュメントの�
 - Mailbox の Delete (§9-3) は今までどおり。
 
 **ログの詰め直し**: 消すと JSONL に削除の行を追記する。自動の掃除で 1 件以上消したときに、今の状態だけを書いたファイルに置き換える (一時ファイルに書いて rename)。手で消した分は次の掃除 (1 時間以内か次の起動) で詰める。
-詰め直したファイルの先頭に最後の `seq` を書き、seq を巻き戻さない (巻き戻ると shim の `after` と cursor がずれる。roadmap の既知の問題「shim の seq 巻き戻し」)。削除した Mailbox の削除時点の seq、購読した時点の seq、role を持った時点の seq も残す。
+詰め直したファイルの先頭に最後の `seq` を書き、seq を巻き戻さない (巻き戻ると shim の `after` と cursor がずれる。roadmap の既知の問題「shim の seq 巻き戻し」)。同じ行に `answered` を付け、その seq までの Message からは閉じる request を導き直さない (閉じた分は `replied` の行に書いてある。C28、protocol.md §2)。削除した Mailbox の削除時点の seq、購読した時点の seq、role を持った時点の seq も残す。
 
 ### 3.15 溜まりの見せ方と、roadmap の項目から依頼する (構想、2026-10-18)
 
@@ -487,6 +487,8 @@ Hub が持つのは注文票と「どの項目の注文か」の指し示しだ�
 **カードの状態 (2026-10-22、ユーザー)**。件数の層だけでは、今誰が動いているかが分からなかった (§6.1p)。カードに状態を 1 つ出し、枠の強調で示す。Hub は状態を持たず、`backlog` の `lastHanded`・`outgoing`・`awaitingReply` と hook の Event から UI が導く (protocol.md §3)。
 - 判定は上から順に: Offline (接続がない。薄く) → Needs you (人が動く番がある: 回答前の質問・許可か、Hub で人に出した返信待ちの request。琥珀の枠、`question`・`permission`・`request` を添える) → Working (接続中の未読、または最後に渡した Message が最後の `turn.end` より新しい。Channels は渡した時点でターンを始めるため。青の枠、依頼の 1 行目を添える) → Waiting on others (ターンが終わり、自分が出した request に返信がない。点線の枠と宛先) → Stopped, no reply (ターンが終わり、渡した request に返信がない。赤の枠。C34 の案) → Idle。
 - Waiting on others を Stopped より先に見る。自分が出した依頼の返事を待つ間は、渡された依頼に返信がなくても止まってはいない (返事が来てから返す) ため。2026-10-23 にヘッドレスの Chrome で、leader が deployer に渡した後のカードが Waiting on others (deployer) になることを確かめた (C40 の記録)。
+- 最新の Event と最新のターン終了は、手元の Event (最近の 200 件と SSE の新着) と Hub の `backlog.lastEvent` / `lastTurnEnd` の新しい方を使う。手元だけに頼ると、ほかの Mailbox の Event が多い日に静かな Mailbox のターン終了が窓から外れ、`Working?` と誤って出た (2026-10-23 のレビュー、C41)。
+- 今の接続より前に、別のセッションが出した質問・許可待ちは、人が動く番に数えない。ターミナルを起動し直した後や takeover の後は、そのターミナルでは答えられないため。今の接続の後に出たものは、`session_id` が違っても数える (`/clear` で変わりうる。§6.2-7)。接続がないときは、ターミナルが残っているかもしれないので数える。
 - Event が 1 つもないセッションは hook がない見込みで、ターン終了を知らない。Working に `?` を付けて推測と示す。hook の Event が保存期間で消えた古い受け渡し (12 時間) は作業中とみなさない。
 - サイドバーの上に状態ごとの数 (Idle と Offline は出さない) を、件数の層のバッジの上に出す。件数の層は残す (古さと配送の詰まりは状態に出ないため)。
 - 返信待ちと outgoing は、`replyTo` の返信のほか、相手からの後の request か reply でも閉じる (C28、protocol.md §2)。人が質問に新しい依頼で答えた、続けて出した依頼の後の方にだけ返信した、という形で Stopped と Waiting on others が残らないようにするため。Waiting on others の宛先は Hub の `outgoing.to` を使う。人宛ては Needs you に出すので含めない (C40)。
@@ -820,6 +822,7 @@ vcp の C142 を UI から vcp.leader へ依頼した (seq 69)。leader → depl
    reviewer は notice には返信せず、「レビューには対象を書いた request を送って」と返した。説明 (review 依頼を読み、指摘を reply で返す) に沿っている。
 
 6. **`StopFailure` は usage limit の自動の再開の待ちでも発火するか**: §6.1q では登録していなかった。C38 で登録した後、次に制限に当たったときに Event (`error: "rate_limit"` など) が届くかと、`quota_auto_resume_fired` までの間隔を記録する。
+7. **`/clear` で hook の `session_id` が変わるか**: shim は起動時の `CLAUDE_CODE_SESSION_ID` を attach で申告し続ける (§6.1c)。`/clear` で hook の `session_id` だけが変わると、Event の session と Attachment の session がずれる。UI は「今の接続より前に、別のセッションが出した質問・許可待ち」だけを人が動く番から外す (C41) ので、`/clear` の後の質問は数える。変わるかどうかと、Event の Mailbox の解決 (§3.4 の第一手段) に響くかを、`/clear` の前後の hook 入力で確かめる。
 
 ## 7. MCP Events (SEP-3415) との関係
 

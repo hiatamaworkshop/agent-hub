@@ -516,11 +516,12 @@ export class Hub {
 
   // cursor と received を進める経路 (やりとりの Message・inbox の ack・attach の放棄。protocol.md §4) は、すべてここを通す。
   // 実際に進んだときだけ mailbox.acked を UI に流す (未読数・確認待ちの数が変わるのはこのとき)
+  // Mailbox がなければ知らせずに change だけ行う (知らせのために送信や ack を失敗させない)
   private acking<T>(name: string, change: () => T): T {
-    const before = this.mustMailbox(name)
+    const before = this.store.getMailbox(name)
     const out = change()
-    const after = this.mustMailbox(name)
-    if (after.cursor > before.cursor || after.received > before.received) this.emitAcked(name)
+    const after = this.store.getMailbox(name)
+    if (before && after && (after.cursor > before.cursor || after.received > before.received)) this.emitAcked(name)
     return out
   }
 

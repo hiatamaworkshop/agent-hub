@@ -287,9 +287,10 @@ npm run docs:index   # roadmap の項目の索引を Hub に送り、UI の Item
                      # 別のプロジェクトはそのルートで npm --prefix <agent-hub> run docs:index [-- --file docs/TODO.md]
                      # 送ると、エージェントがつながる前から UI のプロジェクトとして選べ、role 宛てに依頼を置ける。外すのは Items の Remove
 npm run hub:dev   # 変更を監視して Hub を再起動する
+npm run ui:check  # 別のポートの Hub とヘッドレスの Chrome で、カードの状態を場面ごとに確かめる (Chrome が要る。場所は CHROME で変える)
 ```
 
-- **UI を headless Chrome で確かめる**: UI は `/stream` (SSE) を開いたままなので、`chrome --headless=new --dump-dom` は返らない (`--virtual-time-budget` を付けても)。代わりに:
+- **UI を headless Chrome で確かめる**: 決まった場面は `npm run ui:check` (`tools/dev/ui-check.mjs`) にまとめてある。UI を変えたら流し、新しい場面はそこに足す。手で組むときの要点: UI は `/stream` (SSE) を開いたままなので、`chrome --headless=new --dump-dom` は返らない (`--virtual-time-budget` を付けても)。代わりに:
   1. 使っている Hub とは別の Hub を `HUB_PORT=7795`、`HUB_DATA_DIR=<一時フォルダ>` で起動する。
   2. Chrome を `--remote-debugging-port` と一時の `--user-data-dir` で起動し、CDP で `Page.navigate` (`/?token=…`) → 数秒待って `Runtime.evaluate` で DOM を読む (例 `[...document.querySelectorAll('#mailboxes .mb')].map(b=>b.innerText)`。Node の組み込みの `WebSocket` で足りる)。
   3. 古い Hub や失敗する API への UI の振る舞いは、Hub を変えずに `Fetch.enable` (`urlPattern`) で横取りし、`Fetch.fulfillRequest` で 404 / 500 を返して確かめる。

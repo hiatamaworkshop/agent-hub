@@ -1442,14 +1442,27 @@ function addTally(a, b) {
   const at = [a.oldestAt, b.oldestAt].filter(Boolean).sort((x, y) => Date.parse(x) - Date.parse(y))[0] || null
   return { count: a.count + b.count, oldestAt: at }
 }
+// Mailbox の最新の Event と最新のターン終了。手元にあるのは最近の 200 件と SSE の新着だけなので、Hub が返すもの
+// (backlog.lastEvent / lastTurnEnd。静かな Mailbox の分も持つ) と比べて新しい方を使う。古い Hub は返さないので手元のものだけ
+function latestOf(a, b) {
+  if (!a) return b || null
+  if (!b) return a
+  return Date.parse(a.ts) >= Date.parse(b.ts) ? a : b
+}
+function lastEventOf(mb) { return latestOf(lastEventByMailbox.get(mb.name), mb.backlog && mb.backlog.lastEvent) }
+function lastTurnEndOf(mb) { return latestOf(lastTurnEndByMailbox.get(mb.name), mb.backlog && mb.backlog.lastTurnEnd) }
 // 人が動く番。材料は 2 つ: hook の質問・許可待ち (最後の Event が回答前の question / permission) と、Hub で人に出した
 // 返信待ちの request (backlog.outgoing.to の人宛て。C40)。人が返信か次の依頼を送れば Hub が閉じる (C28)。
 // カードの状態 (Needs you)・溜まりのバッジ (You)・タブのタイトルと favicon・ほかのプロジェクトの待ちの数は、すべてこれを使う
 function humanTurnOf(mb) {
   let t = NONE
   const why = []
-  const ev = lastEventByMailbox.get(mb.name)
-  if (ev && WAITING.has(ev.kind)) {
+  const ev = lastEventOf(mb)
+  // 今の接続より前に、別のセッションが出した質問・許可待ちは数えない (ターミナルを起動し直した・takeover の後は、そこで答えられないため)。
+  // 今の接続の後に出たものは、session_id が違っても数える (/clear で変わりうる。design.md §6.2)。接続がないときは、ターミナルが残っているかもしれないので数える
+  const at = mb.attachment
+  const stale = at && at.sessionId && ev && ev.sessionId && ev.sessionId !== at.sessionId && Date.parse(ev.ts) < Date.parse(at.attachedAt)
+  if (ev && WAITING.has(ev.kind) && !stale) {
     t = addTally(t, { count: 1, oldestAt: ev.ts })
     why.push(EVENT_LABEL[ev.kind] || ev.kind)
   }
@@ -1499,10 +1512,10 @@ function stateOf(mb) {
   if (!mb.attachment) return { key: 'offline' }
   const human = humanTurnOf(mb)
   if (human.count) return { key: 'you', since: human.oldestAt, detail: human.detail }
-  const ev = lastEventByMailbox.get(mb.name)
+  const ev = lastEventOf(mb)
   const b = mb.backlog
   if (!b || !('outgoing' in b)) return null // 古い Hub (材料がない)。状態を出さない
-  const end = lastTurnEndByMailbox.get(mb.name)
+  const end = lastTurnEndOf(mb)
   const handed = b.lastHanded
   const fresh = handed && Date.now() - Date.parse(handed.ts) < STALE_HANDED_HOURS * 3600000
   // 接続中の未読は、渡す直前 (Channels) か、inbox で取りに来るのを待っている (ほかのクライアント)。どちらもエージェントの番
@@ -1847,7 +1860,7 @@ function renderMailboxes(all) {
     const subs = subscriptionsOf(mb)
     if (subs.length) box.append(el('div', 'meta', `Subscribed: ${subs.join(', ')}`))
     // 直近の検知イベント。状態の推定はせず、最後に届いたものをそのまま出す
-    const ev = lastEventByMailbox.get(mb.name)
+    const ev = lastEventOf(mb)
     if (ev) box.append(el('div', `status${WAITING.has(ev.kind) ? ' waiting' : ''}`, `Last event: ${EVENT_LABEL[ev.kind] || ev.kind} · ${time(ev.ts)}`))
     // 接続していない Mailbox だけ削除できる。ボタンの click がカードの選択 (宛先にする) まで届かないようにする
     if (!mb.attachment) {
@@ -2065,7 +2078,11 @@ function connect() {
     removeMessages(JSON.parse(e.data).ids || [])
     refreshMailboxes()
   })
-  es.addEventListener('event.deleted', (e) => removeEvents(JSON.parse(e.data).ids || []))
+  // Hub の側の最新の Event (backlog.lastEvent) も変わるので、一覧も取り直す
+  es.addEventListener('event.deleted', (e) => {
+    removeEvents(JSON.parse(e.data).ids || [])
+    refreshMailboxes()
+  })
   // roadmap の索引が送り直された (古い Hub は送らない)
   es.addEventListener('index.updated', () => loadIndexes())
   es.addEventListener('index.deleted', () => loadIndexes())

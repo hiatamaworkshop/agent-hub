@@ -15,7 +15,8 @@
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "probe": "node tools/probe/probe.mjs",
     "docs:check": "node --import tsx src/docs-check/main.ts",
-    "docs:index": "node --import tsx src/docs-check/push-index.ts"
+    "docs:index": "node --import tsx src/docs-check/push-index.ts",
+    "ui:check": "node tools/dev/ui-check.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",

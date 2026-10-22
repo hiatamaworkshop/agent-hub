@@ -57,6 +57,7 @@
 - 開発機は Windows 11。シェルは PowerShell (Git Bash も可)。パス区切りと改行コードに注意する。
 - 実トークンや `.env` はコミットしない (`.gitignore` 済み)。`.env.example` を置く。
 - ランタイムのログ・データ (`logs/`, `data/`) もコミットしない。
+- UI (`public/index.html`) には単体テストがない。変えたら `npm test` に加えて `npm run ui:check` を流す (別のポートの Hub とヘッドレスの Chrome で、カードの状態を場面ごとに確かめる。Chrome が要る)。
 
 ## Git
 
