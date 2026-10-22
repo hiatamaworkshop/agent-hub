@@ -441,7 +441,7 @@ AI との共同開発で効果があったのは、結局ドキュメントの�
 **自動で消す Message** (起動時と 1 時間ごと)。次の 3 つをすべて満たすもの:
 1. **渡し終えた**: 今ある受け手の Mailbox のすべてで `cursor ≥ seq`。受け手の Mailbox がないもの (`user` 宛て、購読者のいないトピック宛て) は送った時点で渡し終えた扱い。
 2. **古い**: `ts` から `HUB_READ_RETENTION_HOURS` (既定 24 時間) を過ぎた。
-3. **返信待ちの request でない**: `kind: request` で、それを `replyTo` に持つ Message がまだないものは残す (§3.13 の台帳の元。§9-8 の決定 a)。
+3. **返信待ちの request でない**: `kind: request` で、それを `replyTo` に持つ Message がまだなく、相手からの後の Message でも閉じていないもの (protocol.md §2、C28) は残す (§3.13 の台帳の元。§9-8 の決定 a)。
 
 - 未読は自動では消さない。古い未読は attach の上限 (§3.3) で放棄済みになり、そこで 1 を満たす。attach のない Mailbox の未読は残る (Mailbox の掃除は §9-3)。
 - 渡したが受領の確認がない分 (unconfirmed、protocol.md §4) も 1 を満たす。`inbox` の `unconfirmed: true` で取り直せるのは保存期間の間だけ。
@@ -487,7 +487,8 @@ Hub が持つのは注文票と「どの項目の注文か」の指し示しだ�
 - 判定は上から順に: Needs you (最後の Event が回答前の質問・許可。琥珀の枠) → Working (接続中の未読、または最後に渡した Message が最後の `turn.end` より新しい。Channels は渡した時点でターンを始めるため。青の枠、依頼の 1 行目を添える) → Stopped, no reply (ターンが終わり、渡した request に返信がない。赤の枠。C34 の案) → Waiting on others (ターンが終わり、自分が出した request に返信がない。点線の枠と宛先) → Idle → Offline (薄く)。
 - Event が 1 つもないセッションは hook がない見込みで、ターン終了を知らない。Working に `?` を付けて推測と示す。hook の Event が保存期間で消えた古い受け渡し (12 時間) は作業中とみなさない。
 - サイドバーの上に状態ごとの数 (Idle と Offline は出さない) を、件数の層のバッジの上に出す。件数の層は残す (古さと配送の詰まりは状態に出ないため)。
-- 返信待ちが誤って残る間 (C28) は、Stopped が誤って出る。
+- 返信待ちと outgoing は、`replyTo` の返信のほか、相手からの後の request か reply でも閉じる (C28、protocol.md §2)。人が質問に新しい依頼で答えた、続けて出した依頼の後の方にだけ返信した、という形で Stopped と Waiting on others が残らないようにするため。Waiting on others の宛先は Hub の `outgoing.to` を使い、人宛ては `you` と出す。
+- 1 つの相手に並行して出した依頼は、片方への返信で残りも閉じる。その間は、残りの依頼に返信がなくても Stopped と Waiting on others が出ない。
 
 **roadmap の項目を選んで依頼する**
 - UI で項目のカードを選んで Send すると、request の**下書き**ができる (例: `GOAL: C95` と、項目の完了条件を `DONE WHEN` に)。人が読んで直してから押す。自動では送らない (§2)。

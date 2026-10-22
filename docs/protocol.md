@@ -151,8 +151,13 @@
 - `meta`: 任意。送り手が付ける JSON オブジェクト。直列化して 8KB まで。キーは `^[a-z][a-z0-9_]{0,31}$`。Hub が解釈するのは既知のキー `files` だけで、ほかのキーは触らずに通す。空の `{}` は保存しない。
 - `meta.item`: UI が roadmap の項目から作った request に付ける (design.md §3.15)。`{ "id": "C8", "project": "<索引の project>", "source": "docs/roadmap.md", "promise": "<送った時点の約束の指紋>" | null, "conditions"?: ["<完了条件の文言>", …] }`。Hub は解釈せずに通す。UI はこれで項目ごとの依頼中 / 報告済 (その request への返信の有無) と、送った後の約束の変更 (指紋の違いと文言の差分) を出す。`conditions` は meta の上限に収まらなければ省く
 - `meta.files`: `[{ "id": "f_…" }]` で送る (4 件まで。重複は 1 つにまとめる)。Hub は各 id が存在するかを確かめ (なければ 400、message に id)、保存するときは記録から `{ id, mime, size, width, height }` に書き直す。送り手が付けた mime や size は捨てる。
+- **返信待ち**: `kind: request` で、それを `replyTo` に持つ Message (返信) がまだなく、相手からの後の Message でも閉じていないもの (roadmap C28)。
+  - request R は、R の受け手から R の送り手への、後の `request` か `reply` で閉じる。受け手は R の宛先に当たる Mailbox (人宛てなら人)。送り手へは、Mailbox なら直接宛てか role 宛てで届くもの、人なら人宛て。人の `browser` と `cli` は同じ人として扱う。
+  - `notice` (返信を求めない知らせ)、無編集転送 (他人の本文)、R の送り手自身の Message では閉じない。
+  - 閉じたことは記録せず、ログの順から導く (再起動しても同じ)。詰め直しでは返信済みと同じ `replied` の行に書く。
+  - 1 つの相手に並行して出した依頼は、片方への返信で残りも閉じる。返信待ちは配送の信号で、進捗は roadmap で追う (design.md §3.16) ので受け入れている。
 - **保存期間** (design.md §3.14): 今ある受け手の Mailbox すべてで `cursor ≥ seq` (受け手の Mailbox がなければ送った時点で満たす) になり、`ts` から `HUB_READ_RETENTION_HOURS` (既定 24、小数可、0 なら自動では消さない) を過ぎた Message は、起動時と 1 時間ごとの掃除で消す。
-  ただし `kind: request` で、それを `replyTo` に持つ Message がまだないもの (返信待ち) は自動では消さない。Event は保存期間だけで消す。手で消すのは `DELETE /messages/:id` と `POST /messages/purge` (§3)。
+  ただし返信待ち (上) の request は自動では消さない。Event は保存期間だけで消す。手で消すのは `DELETE /messages/:id` と `POST /messages/purge` (§3)。
   消した Message は `GET /messages` に出ず、`replyTo` に指定すると 400 `reply_to_not_found`、転送は 404 `message_not_found`。`seq` は消しても巻き戻らない。
 
 ## 3. Hub の HTTP API
@@ -254,7 +259,7 @@
 #### 応答の形
 
 - `GET /mailboxes`: `{ "mailboxes": [Mailbox + { "effectiveSubscriptions", "unread": <件数>, "unconfirmed": <件数>, "backlog": Backlog, "attachment": Attachment | null, "detached": DetachedAttachment | null, "takeover": { "at", "previous": Attachment } | null, "projectChanged": { "at", "from": "<前の project>" } | null }] }`
-  - `backlog` は溜まりのバッジの材料 (design.md §3.15)。`{ "unread", "awaitingReply", "unconfirmed" }` で、どれも `{ "count": <件数>, "oldestAt": "<最も古い Message の ts>" | null }`。この Mailbox 宛てを重ならないように分ける: `unread` は未読 (queued)、`awaitingReply` は渡した (`seq ≤ cursor`) が `replyTo` の返信がまだない request、`unconfirmed` はそれ以外で handed のもの (§4)。さらに `outgoing` (同じ形。この Mailbox が出して返信のない request) と `lastHanded` (`{ "seq", "ts" } | null`。この Mailbox 宛てで最後に渡した Message) を返す。UI はこの 2 つと hook の Event からカードの状態を導く (design.md §3.15)。上の `unconfirmed` の件数は返信待ちの request も含むので、`backlog.unconfirmed.count` とは一致しない。層への振り分け (接続の有無で未読をどちらに数えるか) は UI が行う。古い Hub はこの項目を返さない
+  - `backlog` は溜まりのバッジの材料 (design.md §3.15)。`{ "unread", "awaitingReply", "unconfirmed" }` で、どれも `{ "count": <件数>, "oldestAt": "<最も古い Message の ts>" | null }`。この Mailbox 宛てを重ならないように分ける: `unread` は未読 (queued)、`awaitingReply` は渡した (`seq ≤ cursor`) 返信待ち (§2) の request、`unconfirmed` はそれ以外で handed のもの (§4)。さらに `outgoing` (同じ形に `"to": [{ "type", "id" }]` を足す。この Mailbox が出した返信待ちの request と、その宛先を重ねずに古い順で) と `lastHanded` (`{ "seq", "ts" } | null`。この Mailbox 宛てで最後に渡した Message) を返す。UI はこの 2 つと hook の Event からカードの状態を導く (design.md §3.15)。上の `unconfirmed` の件数は返信待ちの request も含むので、`backlog.unconfirmed.count` とは一致しない。層への振り分け (接続の有無で未読をどちらに数えるか) は UI が行う。古い Hub はこの項目を返さない
   - `detached` は接続していない Mailbox で最後に detach した Attachment に `detachedAt` と `reason` (`closed` / `disconnected` / `lease_expired`) を足したもの。接続中・この Hub の起動後に attach がない・takeover で切り離されただけのときは `null`。古い Hub はこの項目を返さない
   - `takeover` は今の Attachment が takeover で始まったときの時刻 (`at`) と切り離した旧 Attachment (`previous`)。今の Attachment が終わるまで出す (Hub のメモリのみ)。同じ `sessionId` どうしの attach し直しでは出さない。それ以外は `null`。古い Hub はこの項目を返さない
   - `projectChanged` は直近の attach が前の `project` と違うフォルダからだったときの時刻 (`at`) と前の `project` (`from`)。比較は区切り・末尾の区切り・ドライブ文字のパスの大文字小文字を揃えて行う。次の attach か Mailbox の削除まで出す (Hub のメモリのみ)。拒みはしない。それ以外は `null`。古い Hub はこの項目を返さない
@@ -281,10 +286,11 @@
   |---|---|---|
   | queued | Hub にあり、まだ渡していない | `seq > cursor` (未読) |
   | handed | shim がクライアントに渡した | `received < seq ≤ cursor`。channel 通知をトランスポートに書けた |
-  | received | 受け手が受け取ったと言える | `seq ≤ received`。`inbox` ツールの結果として返した (エージェント自身が呼んだ)、またはこの Mailbox からその Message に `replyTo` で返信した |
+  | received | 受け手が受け取ったと言える | `seq ≤ received`。`inbox` ツールの結果として返した (エージェント自身が呼んだ)、この Mailbox からその Message に `replyTo` で返信した、またはこの Mailbox の後の Message でその request を閉じた (§2 の返信待ち) |
 
   - attach の流し込み上限で放棄した分は渡していないので、`cursor` と一緒に `received` も進める (unconfirmed に数えない)。
   - `replyTo` による確認は、その Message の `seq` まで `received` を進める。それより前の handed も受け取ったとみなす目安で、1 件ずつの証拠ではない。
+  - 後の Message で閉じた request (§2) も、送った Mailbox に渡してあれば (`seq ≤ cursor`)、その `seq` まで `received` を進める (同じ目安)。渡す前なら進めない。閉じても未読のまま届く。
   - `inbox` による確認は、返した範囲が `received` の直後から続いているときだけ進める。間に handed のまま確認のない分があれば飛び越えない (それらは `unconfirmed=true` の `inbox` で取り直すと確認になる)。
   - handed の分も保存期間 (§2 Message) で消える。`unconfirmed=true` で取り直せるのはその間だけ。
 - **Channels は ack を返さない**ため、shim の ack は「`notifications/claude/channel` をトランスポートに書けた」時点で送る (handed)。Claude が読んだことの保証ではない。channel なしで起動した Claude Code は通知を黙って捨て、shim からは見分けられない (design.md §6.1k)。その分は handed のまま unconfirmed に残り、UI のカードに件数が出る。再送はしない (未読には戻さない)。

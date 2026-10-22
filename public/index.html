@@ -1496,7 +1496,7 @@ function stateOf(mb) {
     // Event が 1 つもないセッションは hook がない見込みで、ターン終了を知らない。推測であることを示す
     return { key: 'working', since: handed.ts, guess: !ev, detail: summaryOf(bySeq(handed.seq)) }
   }
-  if (b.outgoing.count) return { key: 'delegated', since: b.outgoing.oldestAt, detail: outgoingTargets(mb.name) }
+  if (b.outgoing.count) return { key: 'delegated', since: b.outgoing.oldestAt, detail: outgoingTargets(b.outgoing) }
   if (b.awaitingReply.count) return { key: 'stopped', since: end ? end.ts : b.awaitingReply.oldestAt }
   return { key: 'idle', since: end ? end.ts : null }
 }
@@ -1510,15 +1510,10 @@ function summaryOf(m) {
   if (m.kind !== 'request') return `${m.kind} from ${m.from.id}`
   return (m.body || '').split('\n').find((l) => l.trim()) || ''
 }
-// この Mailbox が出して返信のない request の宛先 (手元の履歴から。Hub の outgoing は件数だけ)
-function outgoingTargets(name) {
-  const replied = new Set()
-  for (const m of seen.values()) if (m.replyTo) replied.add(m.replyTo)
-  const to = new Set()
-  for (const m of seen.values()) {
-    if (m.kind === 'request' && m.from.type === 'mailbox' && m.from.id === name && !replied.has(m.id)) to.add(m.to.id)
-  }
-  return [...to].join(', ')
+// この Mailbox が出して返信のない request の宛先。どれが開いているかは Hub が決める (相手からの後の Message でも閉じる。C28)。
+// 人宛ては you。to のない Hub (C28 より前) では宛先を添えない
+function outgoingTargets(outgoing) {
+  return [...new Set((outgoing.to || []).map((a) => (a.type === 'user' ? 'you' : a.id)))].join(', ')
 }
 function paintState(line) {
   const st = STATES.find((s) => s.key === line.dataset.state)

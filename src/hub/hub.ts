@@ -190,9 +190,14 @@ export class Hub {
     }
     // to の省略は replyTo があるときだけ許す (schema で検証済み)。元の送り手に返す
     const to = this.scopeRole(input.to ?? { type: original!.from.type, id: original!.from.id }, from)
+    const before = from.type === 'mailbox' ? this.store.getMailbox(from.id)?.received : undefined
+    // 閉じた request (C28) の分の受領の確認は、store が追記と同時に進める
     const m = this.deliver(this.store.appendMessage({ ...input, to, from }))
-    // 自分宛てに返信したなら、その Message を受け取っている。受領の確認として received を進める (protocol.md §4)
-    if (original && from.type === 'mailbox' && this.store.isRecipient(from.id, original)) this.markReceived(from.id, original.seq)
+    if (from.type === 'mailbox' && before !== undefined) {
+      // 自分宛てに返信したなら、その Message を受け取っている。受領の確認として received を進める (protocol.md §4)
+      if (original && this.store.isRecipient(from.id, original)) this.store.advanceReceived(from.id, original.seq)
+      if (this.mustMailbox(from.id).received > before) this.emitAcked(from.id)
+    }
     return m
   }
 
@@ -515,11 +520,6 @@ export class Hub {
     const after = this.mustMailbox(name)
     if (after.cursor > before.cursor || after.received > before.received) this.emitAcked(name)
     return { cursor: after.cursor, received: after.received }
-  }
-
-  private markReceived(name: string, upTo: number): void {
-    const before = this.mustMailbox(name).received
-    if (this.store.advanceReceived(name, upTo) > before) this.emitAcked(name)
   }
 
   private emitAcked(name: string): void {

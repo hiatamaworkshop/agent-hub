@@ -3,7 +3,7 @@
 // 消した Message と Event は削除の行を追記し、compact() で今の状態だけのファイルに詰め直す (design.md §3.14)
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { normalizeProjectPath, type HubEvent, type Mailbox, type Message } from '../shared/types.js'
+import { normalizeProjectPath, type Address, type HubEvent, type Mailbox, type Message } from '../shared/types.js'
 import { newId } from './ids.js'
 
 type LogRecord =
@@ -24,7 +24,8 @@ type LogRecord =
   | { op: 'event.delete'; id: string }
   // 詰め直したファイルの先頭。Message を全部消しても seq を巻き戻さない
   | { op: 'seq'; seq: number }
-  // 返信が消えた後も、その request が返信済みだったことを残す (詰め直しで返信の Message がなくなるため)
+  // 返信が消えた後も、その request が返信済みだったことを残す (詰め直しで返信の Message がなくなるため)。
+  // 相手からの後の Message で閉じた request (C28) も同じ行で残す
   | { op: 'replied'; id: string }
 
 interface MailboxState {
@@ -51,12 +52,17 @@ export interface Tally {
   oldestAt: string | null
 }
 
+export interface Outgoing extends Tally {
+  // 宛先 (種類と id。重ねず、古い順)。UI の Waiting on others に添える
+  to: Array<{ type: Address['type']; id: string }>
+}
+
 export interface Backlog {
   unread: Tally
   awaitingReply: Tally
   unconfirmed: Tally
   // この Mailbox が出して、まだ返信のない request (ほかの層と重ならない。宛先の側の数ではない)
-  outgoing: Tally
+  outgoing: Outgoing
   // この Mailbox 宛てで最後に渡した (seq ≤ cursor) Message。UI が最後のターン終了と比べて作業中かを導く (design.md §3.15)
   lastHanded: { seq: number; ts: string } | null
 }
@@ -82,7 +88,8 @@ export class Store {
   private readonly eventById = new Map<string, HubEvent>()
   // sessionId → その session の最新の Event (変換が直前の Event を見るため)
   private readonly lastEventBySession = new Map<string, HubEvent>()
-  // 返信のある Message の id (返信の replyTo)。返信待ちの request を自動で消さないため (design.md §3.14)
+  // 返信のある Message の id (返信の replyTo) と、相手からの後の Message で閉じた request の id (C28、answeredBy)。
+  // 返信待ちの request を自動で消さないため (design.md §3.14)
   private readonly repliedTo = new Set<string>()
   // 返信待ちの request (id → Message)。追記順 = seq の昇順。溜まりの材料をログ全体の走査なしで数えるため
   private readonly openRequests = new Map<string, Message>()
@@ -152,6 +159,9 @@ export class Store {
   private apply(rec: LogRecord): void {
     switch (rec.op) {
       case 'message':
+        // 閉じる request はログの順から導く (記録しない)。追記したときと再生したときで、前にある行が同じなので結果も同じ。
+        // 詰め直した後は replied の行が残す
+        for (const r of this.answeredBy(rec.message)) this.markReplied(r.id)
         this.messages.push(rec.message)
         this.byId.set(rec.message.id, rec.message)
         this.seq = Math.max(this.seq, rec.message.seq)
@@ -237,10 +247,33 @@ export class Store {
 
   // --- Message ---
 
+  // 送り手の Mailbox に渡してあった request をこの Message が閉じるなら、その seq まで受領の確認にする (C28、protocol.md §4)。
+  // 渡す前の request は未読のまま届くので確認にしない (received は cursor も進めるため)
   appendMessage(m: NewMessage): Message {
     const message: Message = { id: newId('m'), seq: this.seq + 1, ts: this.now().toISOString(), ...m }
+    const sender = message.from.type === 'mailbox' ? this.mailboxes.get(message.from.id) : undefined
+    let handed = 0
+    if (sender) for (const r of this.answeredBy(message)) if (r.seq <= sender.cursor) handed = Math.max(handed, r.seq)
     this.write({ op: 'message', message })
+    if (sender && handed > 0) this.advanceReceived(sender.name, handed)
     return message
+  }
+
+  // m が閉じる返信待ちの request (C28、protocol.md §2)。request R は、R の受け手から R の送り手への request か reply で閉じる。
+  // notice (返信を求めない知らせ) と無編集転送 (他人の本文)、R の送り手自身の Message では閉じない。人の browser と cli は同じ人として扱う。
+  // openRequests には m より前の行しかない (追記の前と、再生でその行を適用する前に呼ぶ)
+  private answeredBy(m: Message): Message[] {
+    if (m.kind === 'notice' || m.forwardedFrom !== undefined) return []
+    const out: Message[] = []
+    for (const r of this.openRequests.values()) {
+      if (m.from.type === r.from.type && (m.from.type === 'user' || m.from.id === r.from.id)) continue
+      const fromRecipient = r.to.type === 'user' ? m.from.type === 'user' : m.from.type === 'mailbox' && this.isRecipient(m.from.id, r)
+      if (!fromRecipient) continue
+      const toSender =
+        r.from.type === 'user' ? m.to.type === 'user' : (m.to.type === 'mailbox' || m.to.type === 'role') && this.isRecipient(r.from.id, m)
+      if (toSender) out.push(r)
+    }
+    return out
   }
 
   getMessage(id: string): Message | undefined {
@@ -430,7 +463,7 @@ export class Store {
       unread: { count: 0, oldestAt: null },
       awaitingReply: { count: 0, oldestAt: null },
       unconfirmed: { count: 0, oldestAt: null },
-      outgoing: { count: 0, oldestAt: null },
+      outgoing: { count: 0, oldestAt: null, to: [] },
       lastHanded: null,
     }
     const add = (t: { count: number; oldestAt: string | null }, m: Message) => {
@@ -438,7 +471,11 @@ export class Store {
       t.oldestAt ??= m.ts
     }
     for (const m of this.openRequests.values()) {
-      if (m.from.type === 'mailbox' && m.from.id === name) add(backlog.outgoing, m)
+      if (m.from.type === 'mailbox' && m.from.id === name) {
+        add(backlog.outgoing, m)
+        const to = backlog.outgoing.to
+        if (!to.some((a) => a.type === m.to.type && a.id === m.to.id)) to.push({ type: m.to.type, id: m.to.id })
+      }
       if (m.seq <= mb.cursor && this.isRecipient(name, m)) add(backlog.awaitingReply, m)
     }
     // 新しい方から、渡した分のうち最初に当たるこの Mailbox 宛て
@@ -518,7 +555,7 @@ export class Store {
     if (this.file) appendFileSync(this.file, ids.map((id) => JSON.stringify({ op, id }) + '\n').join(''))
   }
 
-  // 返信待ちの request (kind: request で、それを replyTo に持つ Message がまだない)
+  // 返信待ちの request (kind: request で、それを replyTo に持つ Message がまだなく、相手からの後の Message でも閉じていない)
   isAwaitingReply(m: Message): boolean {
     return m.kind === 'request' && !this.repliedTo.has(m.id)
   }

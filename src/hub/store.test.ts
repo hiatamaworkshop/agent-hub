@@ -189,11 +189,13 @@ describe('Store: 溜まりの材料 (summary)', () => {
   function naive(s: Store, name: string) {
     const mb = s.getMailbox(name)!
     const tally = () => ({ count: 0, oldestAt: null as string | null })
-    const backlog = { unread: tally(), awaitingReply: tally(), unconfirmed: tally(), outgoing: tally(), lastHanded: null as { seq: number; ts: string } | null }
+    const outgoing = { ...tally(), to: [] as Array<{ type: Address['type']; id: string }> }
+    const backlog = { unread: tally(), awaitingReply: tally(), unconfirmed: tally(), outgoing, lastHanded: null as { seq: number; ts: string } | null }
     for (const m of s.listMessages(0, Infinity)) {
       if (s.isAwaitingReply(m) && m.from.type === 'mailbox' && m.from.id === name) {
-        backlog.outgoing.count++
-        backlog.outgoing.oldestAt ??= m.ts
+        outgoing.count++
+        outgoing.oldestAt ??= m.ts
+        if (!outgoing.to.some((a) => a.type === m.to.type && a.id === m.to.id)) outgoing.to.push({ type: m.to.type, id: m.to.id })
       }
       if (m.seq <= mb.cursor && s.isRecipient(name, m)) backlog.lastHanded = { seq: m.seq, ts: m.ts }
       const t = m.seq > mb.cursor ? backlog.unread : s.isAwaitingReply(m) ? backlog.awaitingReply : m.seq > mb.received ? backlog.unconfirmed : null
@@ -234,5 +236,30 @@ describe('Store: 溜まりの材料 (summary)', () => {
     check(s, '消した request は数えない')
     assert.equal(s.summary('x').backlog.awaitingReply.count, 1, '返信のない最初の request だけが残る')
     check(new Store({ file }), '再起動後')
+  })
+
+  it('相手からの後の Message で閉じた request は、再起動と詰め直しの後も閉じたまま (C28)', () => {
+    const file = tmpFile()
+    const s = new Store({ file })
+    s.ensureMailbox('lead', 'leader')
+    s.ensureMailbox('dep', 'deployer')
+    const asLead = { type: 'mailbox', id: 'lead', role: 'leader' } as const
+    const first = s.appendMessage({ kind: 'request', from: asLead, to: { type: 'role', id: 'deployer' }, body: 'C4' })
+    const fix = s.appendMessage({ kind: 'request', from: asLead, to: { type: 'mailbox', id: 'dep' }, body: 'fix' })
+    s.advanceCursor('dep', fix.seq)
+    const done = s.appendMessage({ kind: 'reply', from: { type: 'mailbox', id: 'dep', role: 'deployer' }, to: { type: 'mailbox', id: 'lead' }, body: 'r', replyTo: first.id })
+    const open = (st: Store) => st.listMessages(0, Infinity).filter((m) => st.isAwaitingReply(m))
+    assert.deepEqual(open(s), [])
+    assert.equal(s.getMailbox('dep')!.received, fix.seq, '渡してあった依頼の seq まで確認になる')
+
+    const again = new Store({ file })
+    assert.deepEqual(open(again), [], '再起動後')
+    for (const name of ['lead', 'dep']) assert.deepEqual(again.summary(name), naive(again, name))
+    // 閉じた Message が消えても、詰め直しの replied の行で閉じたまま残る
+    again.deleteMessages([done.id])
+    assert.ok(again.compact())
+    const compacted = new Store({ file })
+    assert.deepEqual(open(compacted).map((m) => m.id), [])
+    assert.equal(compacted.getMailbox('dep')!.received, fix.seq)
   })
 })

@@ -201,6 +201,12 @@
   - テスト `src/hub/mailbox.test.ts` の「自分が出して返信のない request を outgoing に数え…」と、`store.test.ts` の summary の全件走査との一致
   - 写しのログで、cite-bridge の leader に outgoing 1、deployer に返信待ち 1 と lastHanded が出ることを確かめた。ブラウザでの見た目は、Hub を起動し直した後に確かめる
 - [x] C34 返信なしでターンが終わった Mailbox を UI で目立たせる (2026-10-22、C37 の Stopped, no reply として入れた。C28 の誤った返信待ちが残る間は誤って出る)
+- [x] C28 **返信のない request を、相手からの後の Message で閉じる** (2026-10-23、ユーザーが決定)
+  - 返信待ちが `replyTo` の返信でしか解けず、読んで動いた request が残っていた。まとめた返信 (vcp の C147、design.md §6.1n)、前日の分 (C142、§6.1o)、人が質問に新しい依頼で答えた・続けて出した依頼の後の方にだけ返信した (cite-bridge の #196〜#200。カードが `Waiting on others (browser)` と Stopped に残る)
+  - request R は、R の受け手から R の送り手への後の request か reply で閉じる。notice・無編集転送・R の送り手自身の Message では閉じない。閉じたことはログの順から導き、詰め直しでは `replied` の行に書く。送った Mailbox に渡してあった分は、その seq まで受領の確認にする (protocol.md §2・§4)。`backlog.outgoing.to` を足し、UI の Waiting on others の宛先に使う (人宛ては `you`)。1 つの相手に並行して出した依頼は早く閉じる (design.md §3.15)
+  - テスト `src/hub/mailbox.test.ts` の「相手からの後の Message で request を閉じる」(#196〜#200 の形、まとめた返信と role 宛て、notice・転送・同じ向き、渡す前)、`store.test.ts` の「再起動と詰め直しの後も閉じたまま」。人から人宛ての request が人の後の Message で閉じるのを `retention.test.ts` が見つけ、送り手自身の Message を除いた。全体で 304 件が通る
+  - 今のログの写しを #200 までで切って別のポート (7792) の Hub で読み、cite-bridge.leader の返信待ちが 0 (#196 は #197 で閉じる)、outgoing が `role:deployer` 宛ての 1 件だけ (#197 は #198 で閉じる) になることを確かめた。#202 まで含む写し (7791) でも #197 は閉じ、今動いている Hub (前のコード) では outgoing に残っている
+  - 報告に受領の確認が付かない形は C39 に分けた。ブラウザでの見た目は、Hub を起動し直した後に確かめる
 
 ## 項目
 
@@ -322,22 +328,17 @@ C26 の通しで見つかった残り。hook の設定は手で写す (`start-ag
 
 同じ日に vcp の C147 も索引なしの依頼で通した (チームは C145 のまま)。依頼から最終報告まで約 26 分で、人の手直しが 1 回入った。deployer が報告した後、leader がまだ確かめている間に人の手直し (月を月名でなくラベルで選ばせる) を送ると、leader はそのまま deployer に直させ、2 つの依頼の結果を最初の依頼への返信 1 本にまとめて返した。手直しの依頼は返信待ちのまま残り、deployer の報告 2 本は受領の確認が付かないまま残った (design.md §6.1n、C28)。手直しの原因は依頼の文面 (TODO の古い検討にあった「月名を C53 の検査にかける」を写した) で、agent-hub の不具合ではない。
 
-### C28. 読んで動いたのに、受領の確認と返信待ちが残る
+### C39. 報告 (reply) に受領の確認が付かない
 状態: 提案
 
-Channels では受領の確認が `replyTo` の返信でしか付かず、付くのはその `replyTo` の Message までである (protocol.md §4)。vcp の C147 の通し (design.md §6.1n) で、次の 2 つが残った。
-- **まとめた返信**: 作業中に届いた手直しの依頼を、leader は最初の依頼への返信 1 本でまとめて答えた。手直しの依頼は返信がないので、ずっと返信待ち (エージェントの番) に出る。
-- **報告への返信はない**: deployer から leader への reply は、leader が読んで次の指示を出しても確認にならない。報告にさらに返信する人はいないので、leader の Mailbox では保存期間まで「怪しい」に残る。leader と deployer の往復のたびに増える。
+C28 から分けた。Channels では受領の確認が `replyTo` の返信でしか付かず、付くのはその `replyTo` の Message の seq までである (protocol.md §4)。deployer から leader への報告 (reply) にさらに返信する人はいないので、leader が読んで次の指示を出しても確認にならない。leader が後の Message に `replyTo` で返信するまで、カードに `Stuck?` が出る (vcp の C147、design.md §6.1n。cite-bridge でも `Stuck? 2`)。
 
-候補: 返信で `replyTo` より前に渡した分までをまとめて確認にする (同じセッションのターンで読んだはずなので) / `post_message` で複数の `replyTo` を受ける / 渡した後に同じ Mailbox が送った Message があれば、その時点までを確認にする。どれも Channels では「読んだ」の保証にはならない (§6.1k) ので、怪しいの層を何のために置くかと一緒に決める。design.md §3.16 で配送の細部として軽く扱うとした範囲に入る。
+候補: `post_message` で複数の `replyTo` を受ける / 渡した後に同じ Mailbox が request か reply を送れば、その時点で渡してあった分までを確認にする。どれも Channels では「読んだ」の保証にはならず、channel なしで起動したセッションの取りこぼし (§6.1k) を見えなくしうるので、怪しいの層を何のために置くかと一緒に決める。
 
-2026-10-21 の vcp の C142 の通し (design.md §6.1o) でも同じ形が 3 件増えた。前日の手直しの依頼が残っていたので、leader のバッジは今日の作業と関係なく `Agent 3 · 24h` (赤) になった。人の催促 (#72) は、催促どおりに動いても催促への返信がないので返信待ちに残った。
+### C40. エージェントが Hub で人に出した request を、Needs you に出す
+状態: 提案
 
-2026-10-23 の cite-bridge の通しで、カードの状態 (C37) にも響くと分かった。outgoing と返信待ちが状態の材料になったため。
-- **人への質問に、人が新しい依頼で答えた**: leader が人に A/B を尋ねた request (#197) に、人は返信ではなく新しい依頼 (#198「A , do commit and push」) で答えた。#197 は返信がないので outgoing に残り、leader のカードは deployer の報告が戻った後も `Waiting on others (browser)` のままになる。
-- **人の依頼を 2 本続けて、返信は後の 1 本**: #196「実装を続けてくれ」と #198 に、leader は #198 への返信 (#200) だけを出した。#196 は返信待ちに残り、ほかに材料がなければ `Stopped` に出る。
-
-候補 (上に足す): 同じ相手との間では、後の Message がそれより前の開いた request を閉じる (#198 が #197 を、#200 が #196 を閉じる)。1 対 1 で順に進む leader と人、leader と deployer の往復なら誤りにならない。並行して複数の依頼を出す使い方では早く閉じすぎる。
+leader が人に A/B を尋ねた request (#197、cite-bridge、2026-10-23) は、人が答えるまでチームが止まる「人が動く番」である。今の Needs you は hook の質問・許可待ちだけで、Hub で人に出した request は `Waiting on others (you)` (点線の枠) になり、タブの `N waiting` にも数えない。`backlog.outgoing.to` (C28) に人宛てがあれば、カードを Needs you にし、溜まりのバッジの You に数える案。
 
 ### C29. 起動スクリプトで権限モードを渡す
 状態: 提案
