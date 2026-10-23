@@ -88,6 +88,22 @@ async function scene(label, expect, title = 'agent-hub') {
   for (const p of problems) console.log(`      ${p}`)
 }
 
+// 本文が text の Message で、節ごとの行の数 (sec-decide など) と見出しの数を照らす。中身が「なし」の節は目立たせない
+async function sections(label, text, expect) {
+  const expr = `(() => {
+    const box = [...document.querySelectorAll('.msg')].find((b) => (b.querySelector('.body') || {}).innerText === ${JSON.stringify(text)})
+    if (!box) return null
+    const n = (sel) => box.querySelectorAll(sel).length
+    return { decide: n('.sec-decide'), op: n('.sec-op'), unverified: n('.sec-unverified'), hd: n('.hd') }
+  })()`
+  const r = await cdp('Runtime.evaluate', { expression: expr, returnByValue: true })
+  const got = r.result.value
+  const ok = got && Object.entries(expect).every(([k, v]) => got[k] === v)
+  if (!ok) failed++
+  console.log(`${ok ? 'ok' : 'NG'}  ${label}`)
+  if (!ok) console.log(`      ${got ? JSON.stringify(got) : '本文が見つからない (改行や見出しの行の扱いが変わった?)'} (期待は ${JSON.stringify(expect)})`)
+}
+
 try {
   await until(async () => (await fetch(`${HUB}/mailboxes`, { headers: { authorization: `Bearer ${TOKEN}` } })).ok, 'hub')
   const cwd = join(work, 'demo')
@@ -137,9 +153,11 @@ try {
   await turnEnd('demo.deployer', 's-dep')
   const order = (await api('GET', '/messages?after=0&limit=1000')).messages.findLast((m) => m.kind === 'request' && m.to.id === 'demo.leader')
   await ackAll(lead.attachmentId)
-  await api('POST', '/messages', { kind: 'reply', replyTo: order.id, body: '結果: C1 ができた' }, asLead)
+  const report = ['結果: C1 ができた', '確認: 試験が通る', '未確認: 画面で開くこと', '要判断: (1) 設計の解釈 A でよいか', '  既定: A', '要操作: なし'].join('\n')
+  await api('POST', '/messages', { kind: 'reply', replyTo: order.id, body: report }, asLead)
   await turnEnd('demo.leader', 's-lead')
   await scene('報告が戻り、leader が人に返した', { 'demo.leader': 'Idle', 'demo.deployer': 'Idle' })
+  await sections('leader の返事の見出しを節ごとに色分けする (C42)', report, { decide: 2, op: 0, unverified: 1, hd: 5 })
 
   // UI が最初に読むのは最近の Event 200 件だけ。ほかの Mailbox の Event で押し出しても、Hub の lastTurnEnd で Idle のまま (C41)
   for (let i = 0; i < 250; i++) await turnEnd('demo.noise', 's-noise')

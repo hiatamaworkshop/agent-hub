@@ -112,6 +112,13 @@
   .evt .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 12px; color: var(--muted); }
   .evt .head .actions { margin-left: auto; }
   .evt .body { white-space: pre-wrap; word-break: break-word; margin-top: 4px; }
+  /* 返事の型の見出し (leader の 結果/確認/未確認/要判断/要操作、deployer の CHANGED など。design.md §3.15)。
+     人の判断が要る節は地色と左の線で、確かめていない節と人の手が要る節は見出しの色で目立たせる */
+  .body .ln { display: block; }
+  .body .hd { font-weight: 700; }
+  .body .sec-decide { background: color-mix(in srgb, var(--amber) 13%, transparent); border-left: 3px solid var(--amber); padding-left: 6px; }
+  .body .sec-decide .hd, .body .sec-op .hd { color: var(--amber); }
+  .body .sec-unverified .hd { color: var(--warn); }
   .evt .note { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .evt .opts { margin: 2px 0 0; padding-left: 18px; }
   .evt details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
@@ -259,6 +266,43 @@ const addr = (a) => `${a.type}:${a.id}`
 const addrLabel = (a) => addr(a) + (a.project ? ` @ ${folderName(a.project)}` : '')
 const time = (ts) => new Date(ts).toLocaleTimeString()
 
+// 返事の型の見出し (tools/dev/roles の leader.md・deployer.md)。行頭の「見出し:」で節が始まり、次の見出しまで続く。
+// 節の種類で目立たせ方を変える。中身が「なし」「-」だけの節は目立たせない
+const REPORT_HEADINGS = new Map([
+  ['要判断', 'decide'], ['要対応', 'decide'], ['要操作', 'op'], ['未確認', 'unverified'], ['NOT VERIFIED', 'unverified'],
+  ['結果', ''], ['確認', ''], ['見送り', ''],
+  ['GOAL', ''], ['SCOPE', ''], ['SPEC', ''], ['DONE WHEN', ''], ['REPORT FORMAT', ''], ['CHANGED', ''], ['VERIFIED', ''], ['NOTES', ''],
+])
+const HEADING_RE = new RegExp(`^(\\s*)(${[...REPORT_HEADINGS.keys()].join('|')})([:：])(.*)$`)
+const EMPTY_SECTION = /^\s*(なし|-|—|none)?\s*[。.]?\s*$/i
+// Message などの本文の div。見出しがなければ今までどおり 1 つのテキスト。本文は textContent だけで入れる (HTML として解釈させない)
+function bodyOf(text) {
+  const box = el('div', 'body')
+  const lines = String(text).split('\n')
+  if (!lines.some((l) => HEADING_RE.test(l))) {
+    box.textContent = text
+    return box
+  }
+  // 見出しごとに節にまとめ、節の中身が空かどうかで目立たせ方を決める
+  const sections = []
+  for (const line of lines) {
+    const m = HEADING_RE.exec(line)
+    if (m || sections.length === 0) sections.push({ kind: m ? REPORT_HEADINGS.get(m[2]) : '', lines: [] })
+    sections.at(-1).lines.push(m ? { pre: m[1], hd: m[2] + m[3], rest: m[4] } : { rest: line })
+  }
+  for (const s of sections) {
+    const empty = s.lines.every((l) => (l.hd ? EMPTY_SECTION.test(l.rest) : l.rest.trim() === ''))
+    const cls = s.kind && !empty ? ` sec-${s.kind}` : ''
+    for (const l of s.lines) {
+      const ln = el('span', `ln${cls}`)
+      if (l.hd) ln.append(l.pre, el('span', 'hd', l.hd))
+      // 空の行も高さを保つ
+      ln.append(l.rest || (l.hd ? '' : ' '))
+      box.append(ln)
+    }
+  }
+  return box
+}
 function el(tag, cls, text) {
   const e = document.createElement(tag)
   if (cls) e.className = cls
@@ -522,7 +566,7 @@ function render(m) {
   del.onclick = () => deleteMessage(m)
   actions.append(btn, fwd, del)
   head.append(actions)
-  box.append(head, el('div', 'body', m.body))
+  box.append(head, bodyOf(m.body))
   renderFiles(box, m.meta)
   box.classList.toggle('off', !messageInProject(m))
   list.append(box)
@@ -573,10 +617,10 @@ function eventBody(ev) {
     if (last) {
       // 最終応答は長いことがあるので、先頭の数行だけ見せて残りは開いて読む
       const lines = last.split('\n')
-      if (lines.length <= 6 && last.length <= 600) box.append(el('div', 'body', last))
+      if (lines.length <= 6 && last.length <= 600) box.append(bodyOf(last))
       else {
         const d = el('details')
-        d.append(el('summary', '', lines[0].slice(0, 200) + ' …'), el('div', 'body', last))
+        d.append(el('summary', '', lines[0].slice(0, 200) + ' …'), bodyOf(last))
         box.append(d)
       }
     }
