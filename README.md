@@ -23,11 +23,11 @@
 ## ステータス
 
 - **P0** (1 セッションで往復する) と **P1** (質問待ち・許可待ち・ターン終了の検知) は完了し、実セッションで受け入れ条件を確かめた。
-- **P2** (複数セッション・交代・メッセージパッシング) は進行中。複数 Mailbox の同時接続、role (`roles.json`)、交代 (takeover)、古い未読の流し込みの上限、無編集転送 (Forward / Relay)、`inbox` の polling 経路と、クライアントによる経路の切り替えまで実装済み。
-  配送の状態の名付け、保存期間、Docker (compose) での常駐も済み。残りは「起こすだけ」の配信アダプタなど。開いている項目は [docs/roadmap.md](docs/roadmap.md) の「項目」に `C<n>` の番号で並べてある。
-- `inbox` 経路は Claude Code 以外の実クライアント (Codex など) ではまだ試していない (テストの MCP クライアントでのみ確認)。
+- **P2** (複数セッション・交代・メッセージパッシング) は、受け入れ条件 1〜7 を compose の Hub と実セッションで通した (2026-10-19)。複数 Mailbox の同時接続、role (`roles.json`)、交代 (takeover)、古い未読の流し込みの上限、無編集転送 (Forward / Relay)、`inbox` の polling 経路と、クライアントによる経路の切り替え、配送の状態の名付け、保存期間、Docker (compose) での常駐まで実装済み。「起こすだけ」の配信アダプタは、ターンを始めるクライアントがないので作らずに閉じた (C1)。
+- その後、実際のチーム運用 (vcp・cite-bridge) で見つかったものを足している: プロジェクトの絞り込み、roadmap の項目から依頼を書く Items、溜まりのバッジとカードの状態 (Needs you / Working / Waiting on others など)、返信のない request を相手の後の Message で閉じる規則、leader の返事の型 (`要判断` などの色分け)。
+- 開いている項目は [docs/roadmap.md](docs/roadmap.md) の「項目」に `C<n>` の番号で並べてある。`inbox` 経路は Claude Code 以外の実クライアント (Codex など) ではまだ試していない (テストの MCP クライアントでのみ確認。C3)。
 
-設計は [docs/design.md](docs/design.md) から読む。Channels・hook の仕様は公式資料と実機で確認済み (design.md §6.1〜6.1o)。MCP Events (SEP-3415, Draft) との関係は design.md §7。
+設計は [docs/design.md](docs/design.md) から読む。Channels・hook の仕様は公式資料と実機で確認済み (design.md §6.1〜6.1q)。MCP Events (SEP-3415, Draft) との関係は design.md §7。
 
 ## 使い方
 
@@ -79,7 +79,23 @@ claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels s
 1. Claude に「agent-hub の `user.message` を購読して」と頼む (`subscribe` が呼ばれる)。
 2. ブラウザのフォームで `request` と宛先 `topic:user.message` を選び、本文を書いて Send。Claude の会話に `<channel source="agent-hub" …>` として届く。
 3. Claude に返信させる (`post_message`、`kind: reply`)。ブラウザの一覧に `reply` として出る。
-4. ブラウザの左側に Mailbox `agent-hub` が「接続中」と表示される。
+4. ブラウザの左側に Mailbox `agent-hub` が「接続中」(`Connected`) と表示される。
+
+### ブラウザのカードを読む (状態と溜まり)
+
+左の Mailbox のカードには、今そのセッションの番が誰にあるかを 1 つの状態で出し、枠の色で示す。Hub は状態を持たず、配送の材料 (`GET /mailboxes` の `backlog`) と hook の Event から UI が導く (design.md §3.15)。
+
+| 状態 | 意味 |
+|---|---|
+| `Needs you` (琥珀) | 人が動く番。ターミナルの質問・許可待ちか、エージェントが Hub で人に出した request に返事がない |
+| `Working` (青) | 渡した Message が最後のターン終了より新しい。hook の Event がないセッションでは `Working?` (推測) |
+| `Waiting on others` (紫の点線) | ターンを終え、自分が出した request の返事を待っている。宛先を添える |
+| `Stopped, no reply` (赤) | ターンを終えたが、渡された request に返信していない。ターミナルを見るか、催促する |
+| `Idle` / `Offline` | 何も残っていない / セッションがつながっていない |
+
+- 返信待ちは `reply_to` の返信のほか、相手からの後の request か reply でも閉じる (人が質問に新しい依頼で答えたときなど。protocol.md §2)。
+- カードとサイドバーのバッジは、件数を `You` (人が動く番) / `Agent` (エージェントの番) / `Stuck?` (配送が詰まっているかもしれない) に分け、最も古いものの経過時間で色を変える。タブのタイトルの `N waiting` と favicon は、全プロジェクトの人が動く番の数。
+- 状態は hook の Event を材料にするので、hook を置いていないセッションでは粗くなる (下の「質問待ち・許可待ち・ターン終了をブラウザに出す」)。usage limit で止まった間も `Working` と出る (roadmap C38)。
 
 ### カスタムコマンド
 
@@ -114,7 +130,7 @@ shim は届いた画像を OS の一時フォルダの `agent-hub/<Mailbox 名>/
 
 ### 質問待ち・許可待ち・ターン終了をブラウザに出す (hook)
 
-Claude Code の HTTP hook で、`AskUserQuestion`・許可待ち・ターン終了を Hub に送る。ブラウザのスレッドに破線の枠で出て、左の Mailbox のカードに最後のものが出る。
+Claude Code の HTTP hook で、`AskUserQuestion`・許可待ち・ターン終了を Hub に送る。ブラウザのスレッドに破線の枠で出て、左の Mailbox のカードに最後のものが出る。カードの状態 (上の「ブラウザのカードを読む」) の材料にもなる。
 
 1. [tools/hooks/settings.json](tools/hooks/settings.json) の `hooks` を、このリポジトリの `.claude/settings.local.json` (コミットされない) に写す。
    ほかのリポジトリでも使うなら `~/.claude/settings.json` に写す。ポートを変えているなら `url` の `7777` も変える。
@@ -122,6 +138,7 @@ Claude Code の HTTP hook で、`AskUserQuestion`・許可待ち・ターン終�
 2. hook の `Authorization` は環境変数 `HUB_TOKEN` から作られる。`tools/dev/start-agent.ps1` は `.env` の値を渡すので何もしなくてよい。手で `claude` を起動するなら、先に `$env:HUB_TOKEN` を設定する。
    その場合、トークンはセッションの Bash などからも見える。`.env` と同じ扱い。
 3. Hub が止まっていると、hook はエラーを表示するだけで作業は止まらない (タイムアウト 5 秒)。
+   設定ファイルの hook は、起動中のセッションにも読み直されて効く (起動し直さなくてよい。design.md §6.1q)。
 4. (任意) `Stop` で変更の事実 (HEAD・変更ファイル・未追跡ファイル) を Hub に送るには、[tools/hooks/settings.command.json](tools/hooks/settings.command.json) の `Stop` を使う。`Stop` の HTTP hook (1 の `Stop`) と**両方置くと `turn.end` が 2 件になる**ので、HTTP の `Stop` は外して置き換える。
    スクリプトは `tools/hooks/post-event.mjs`。git は作業フォルダで実行し、Hub は git を実行しない。Hub のポートは `HUB_PORT` (既定 7777)。失敗しても作業は止まらず、取れた分だけ送る。ブラウザでは `turn.end` に変更ファイルの件数が出る。
 
@@ -167,7 +184,7 @@ Claude Code の HTTP hook で、`AskUserQuestion`・許可待ち・ターン終�
 Hub は接続のための基盤で、メッセージを長く残さない。残したい知識はリポジトリの文書か engram に書く (design.md §3.14)。
 
 - 受け手全員に渡し終えたメッセージは、24 時間 (`HUB_READ_RETENTION_HOURS`、0 で自動では消さない) で消える。検知イベントも同じ期間で消える。掃除は起動時と 1 時間ごと。
-- 消えないもの: 未読と、まだ返信のない `request`。返信待ちの依頼は手で消すまで残る。
+- 消えないもの: 未読と、まだ返信のない `request`。返信待ちは、`reply_to` の返信か、受け手から送り手への後の request / reply で閉じる (notice と転送では閉じない。protocol.md §2)。閉じないものは手で消すまで残る。
 - 手で消す: メッセージの **Delete** (1 件。未読でも返信待ちでも消す)。スレッドの上の **Purge read** は、保存期間を待たずに、渡し終えたメッセージと全イベントを今消す。
 - 消えたメッセージに `reply_to` で返信すると 400 になる。`to` を付けて送る。
 - `data/hub.jsonl` は、消したときに今の状態だけに詰め直される。
@@ -210,6 +227,20 @@ npm run hub                                   # ターミナル A
 - deployer のファイル編集の許可は、ターミナル C で承認する。
 - 権限モードはスクリプトから渡さないので、Claude Code の既定で起動する。アカウントで auto を既定にしていると、許可待ちはほとんど出ない。
   許可待ちを試すなら、そのタブで Shift+Tab から `manual` にする (2.1.306 の切り替えには `default` がなく、hook の `permission_mode` には `default` と載る。design.md §6.1o、roadmap C29)。
+
+### roadmap の項目から依頼する (Items)
+
+roadmap の `### C<n>. 題` の項目 (書き方は [docs/roadmap.md](docs/roadmap.md) の冒頭) を Hub に送ると、サイドバーの **Items** にカードが並ぶ。押すと `GOAL` / `DONE WHEN` の下書きになり、送る request に項目 (`meta.item`) が付く (design.md §3.15)。
+
+```powershell
+npm run docs:index                                                       # agent-hub の docs/roadmap.md
+npm --prefix <agent-hub> run docs:index -- --file docs/TODO.md            # 別のプロジェクトはそのルートで (台帳が docs/roadmap.md なら --file は要らない)
+```
+
+- 送ったプロジェクトは、エージェントがつながる前から UI のプロジェクトとして選べ、`role:deployer @ <プロジェクト>` 宛てに依頼を置ける (attach した Mailbox に未読として届く)。
+- Hub が持つのは索引の写しだけで、正本はリポジトリの roadmap。変えたら送り直す。外すのは Items の **Remove**。
+- カードには requested / reported と、送った後に完了条件の文言が変わったときの差分が出る。
+- 独自の書式の台帳を持つプロジェクトでは、送ると項目がすべて「決定」と読まれることがある。そのときは索引に載せず、普通の依頼として送る (roadmap C27)。
 
 ### role の定義 (roles.json)
 
@@ -283,9 +314,7 @@ Windows の curl はコマンドライン引数の日本語を UTF-8 で送ら�
 npm test          # 単体テストと、shim を実プロセスで起動する結合テスト
 npm run typecheck
 npm run docs:check   # roadmap の項目の書き方を検査する (崩れていれば exit 1)。`-- --index` で項目の索引を JSON で出す
-npm run docs:index   # roadmap の項目の索引を Hub に送り、UI の Items に出す。roadmap を変えたら送り直す
-                     # 別のプロジェクトはそのルートで npm --prefix <agent-hub> run docs:index [-- --file docs/TODO.md]
-                     # 送ると、エージェントがつながる前から UI のプロジェクトとして選べ、role 宛てに依頼を置ける。外すのは Items の Remove
+npm run docs:index   # roadmap の項目の索引を Hub に送り、UI の Items に出す (上の「roadmap の項目から依頼する」)
 npm run hub:dev   # 変更を監視して Hub を再起動する
 npm run ui:check  # 別のポートの Hub とヘッドレスの Chrome で、カードの状態を場面ごとに確かめる (Chrome が要る。場所は CHROME で変える)
 ```
@@ -306,6 +335,7 @@ npm run ui:check  # 別のポートの Hub とヘッドレスの Chrome で、�
 | [docs/roadmap.md](docs/roadmap.md) | フェーズ分割と受け入れ条件 (P0 → P2)、開いている項目 (`C<n>`。書き方は冒頭の規則) |
 | [docs/plan-p0.md](docs/plan-p0.md) | P0 の技術選定・構成・コミット単位のステップ |
 | [tools/probe/README.md](tools/probe/README.md) | 未検証事項 (design.md §6.2) を実機で確かめる手順 |
+| [tools/dev/roles/](tools/dev/roles/) | leader / deployer の運用の指示 (メッセージの型)。`start-agent.ps1` が system prompt に足す |
 | [CLAUDE.md](CLAUDE.md) | 実装エージェント向けの作業ルール |
 
 ## 発想の元
