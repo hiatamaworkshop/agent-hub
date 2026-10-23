@@ -8,6 +8,8 @@
   :root {
     --bg: #f7f7f5; --panel: #ffffff; --fg: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc;
     --accent: #2f5fd0; --reply: #1f8a4c; --warn: #b3261e; --amber: #9a5b00;
+    /* 返事待ち (Waiting on others)。作業中の青・人の番の琥珀・止まりの赤と見分ける */
+    --wait: #6d3fc0;
     /* 送り手の色 (c0〜c7)。チップの文字色は --pfg (全色で 4.5:1 以上) */
     --p0: #2f5fd0; --p1: #b45309; --p2: #15803d; --p3: #7e22ce; --p4: #0f766e; --p5: #be185d; --p6: #854d0e; --p7: #475569; --pfg: #ffffff;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -16,6 +18,7 @@
     :root {
       --bg: #161615; --panel: #1f1f1d; --fg: #ecece8; --muted: #9a9a93; --line: #34342f;
       --accent: #7aa2ff; --reply: #5fcf8e; --warn: #ff8a80; --amber: #f0b050;
+      --wait: #b89cff;
       --p0: #7aa2ff; --p1: #f0a050; --p2: #5fcf8e; --p3: #c4a1ff; --p4: #5fd0c4; --p5: #f489b8; --p6: #e0c060; --p7: #aab4c4; --pfg: #161615;
     }
   }
@@ -54,11 +57,13 @@
   .mb.st-working { box-shadow: 0 0 0 2px var(--accent); }
   .mb.st-you { box-shadow: 0 0 0 2px var(--amber); }
   .mb.st-stopped { box-shadow: 0 0 0 2px var(--warn); }
-  .mb.st-delegated { outline: 1px dashed var(--accent); outline-offset: 1px; }
+  .mb.st-delegated { outline: 2px dashed var(--wait); outline-offset: 1px; }
   .mb.st-offline { opacity: .6; }
   .state { font-size: 12px; font-weight: 600; margin: 2px 0; color: var(--muted); }
   .state::before { content: "● "; }
-  .state.st-working, .state.st-delegated { color: var(--accent); }
+  .state.st-working { color: var(--accent); }
+  .state.st-delegated { color: var(--wait); }
+  .state.st-delegated::before { content: "◔ "; }
   .state.st-you { color: var(--amber); }
   .state.st-stopped { color: var(--warn); }
   .state.st-offline::before { content: "○ "; }
