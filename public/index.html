@@ -264,7 +264,11 @@ const msgBoxes = new Map() // id → 描画したカード (Compact で DOM か�
 const addr = (a) => `${a.type}:${a.id}`
 // 表示用。プロジェクトに絞った role 宛ては "@ フォルダ名" を添える (design.md §9-7)
 const addrLabel = (a) => addr(a) + (a.project ? ` @ ${folderName(a.project)}` : '')
-const time = (ts) => new Date(ts).toLocaleTimeString()
+// 今日でない時刻には日付を付ける (前日の Event が今日の時刻に見えないように。C31)
+const time = (ts) => {
+  const d = new Date(ts)
+  return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString() : d.toLocaleString()
+}
 
 // 返事の型の見出し (tools/dev/roles の leader.md・deployer.md)。行頭の「見出し:」で節が始まり、次の見出しまで続く。
 // 節の種類で目立たせ方を変える。中身が「なし」「-」だけの節は目立たせない

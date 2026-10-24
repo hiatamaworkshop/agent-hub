@@ -172,6 +172,17 @@ try {
   // /clear で hook の session_id が変わっても、今の接続の後に出た質問は数える
   await hook('demo.leader', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'tu-2', session_id: 's-lead-3' })
   await scene('今の接続の後に、session_id の違う質問が出た (/clear の後を想定)', { 'demo.leader': 'Needs you (question)' }, '1 waiting')
+
+  // 時刻の表示 (C31): 今日は時刻だけ、前日は日付つき
+  const t = await cdp('Runtime.evaluate', {
+    expression: `(() => { const now = Date.now(), old = now - 26 * 3600 * 1000; return { today: time(now), todayPlain: new Date(now).toLocaleTimeString(), old: time(old), oldPlain: new Date(old).toLocaleTimeString() } })()`,
+    returnByValue: true,
+  })
+  const tv = t.result.value
+  const timeOk = tv && tv.today === tv.todayPlain && tv.old !== tv.oldPlain && tv.old.includes(tv.oldPlain)
+  if (!timeOk) failed++
+  console.log(`${timeOk ? 'ok' : 'NG'}  今日でない時刻には日付を付ける (C31)`)
+  if (!timeOk) console.log(`      ${JSON.stringify(tv)}`)
 } catch (e) {
   failed++
   console.error(`NG  ${e.message}`)
