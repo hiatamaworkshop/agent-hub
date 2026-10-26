@@ -384,10 +384,10 @@ Hub で回すのは、作業を切り出したリポジトリ (台帳 `### C<n>.
 ### C38. usage limit で止まったセッションを、Working と区別して出す
 
 cite-bridge の deployer は usage limit で 2 時間 20 分止まったが、Hub には止まった瞬間の Event がなく、カードの状態 (C37) は `Working` と出ていたはず (design.md §6.1q)。公式の hook の `StopFailure` (API のエラーでターンが終わったとき) と、Notification の `quota_auto_resume_*` を使う。`StopFailure` が自動の再開を待つ場合にも発火するかは未検証 (§6.2-6) なので、登録して次の制限で確かめる。2026-10-23 にユーザーが決定。
-2026-10-26 に実装した: `StopFailure` を `turn.failed` に変換 (`payload` は入力のまま)、`backlog.lastEvent.detail` に `error` / `notification_type` を載せ、UI に Paused と、`quota_auto_resume_stale` / `_disabled` の Needs you を足した。`ui:check` に場面を足して確かめた。`settings.command.json` は `Stop` だけを置き換える command hook の設定で、README の手順では HTTP の `Stop` と置き換えて使い、`StopFailure` は `settings.json` のものをそのまま残す。そこに `StopFailure` を足すと二重になるため足していない。完了条件の「と `settings.command.json`」は約束の変更にあたるので、報告で外すことを提案する。
+2026-10-26 に実装した: `StopFailure` を `turn.failed` に変換 (`payload` は入力のまま)、`backlog.lastEvent.detail` に `error` / `notification_type` を載せ、UI に Paused と、`quota_auto_resume_stale` / `_disabled` の Needs you を足した。`ui:check` に場面を足して確かめた。`settings.command.json` は `Stop` だけを置き換える command hook の設定で、README の手順では HTTP の `Stop` と置き換えて使い、`StopFailure` は `settings.json` のものをそのまま残す。そこに `StopFailure` を足すと二重になるため足していない。完了条件から「と `settings.command.json`」を外すことを提案し、2026-10-26 にユーザーが承認した。同じ日に、Hub の `/events` を持つ hook の設定 (agent-hub と vcp の `.claude/settings.local.json`。`~/.claude/settings.json` には agent-hub の hook がない) に `StopFailure` を足した。
 
 #### 完了条件
-- [ ] `tools/hooks/settings.json` (と `settings.command.json`) に `StopFailure` を足し、Hub が Event に取り込む (例 `turn.failed`、`error` と `last_assistant_message` を payload のまま持つ)。`README` の hook の手順と protocol.md の Event の種類を合わせる
+- [x] `tools/hooks/settings.json` に `StopFailure` を足し、Hub が Event に取り込む (例 `turn.failed`、`error` と `last_assistant_message` を payload のまま持つ)。`README` の hook の手順と protocol.md の Event の種類を合わせる
 - [x] UI のカードに `Paused` の状態を足し、Working より先に判定する。最後の Event が `turn.failed` (`error: rate_limit`) なら Paused (usage limit)、その後の `quota_auto_resume_fired` か `turn.end` で解ける。`quota_auto_resume_stale` と `_disabled` は Needs you (Enter が要る、または自動では続かない) にする。Event の表示名も足す
 - [x] 試験: Hub が `StopFailure` の payload を `turn.failed` として取り込むこと (`src/hub` の Event の変換の試験の形)
 - [ ] 実際に usage limit に当たったときの Event の並びを design.md §6 に記録し、§6.2-6 を閉じる (発火しなかったら、そう書き、Paused を `quota_auto_resume_*` だけで出せる範囲に直すことを報告で提案する)
