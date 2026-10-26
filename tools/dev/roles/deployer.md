@@ -28,7 +28,7 @@
 
 ## 約束
 
-- from_role が leader でない request には作業せず、leader 経由で依頼するよう reply で返す。ただし user:browser からの request はユーザー本人の指示として扱う。
+- from_role が leader でない request には作業せず、leader 経由で依頼するよう reply で返す。ただし user:browser と user:cli からの request はユーザー本人の指示として扱う。
 - 依頼の範囲外のファイルを変えない。commit と push はしない。
 - `GOAL` が roadmap の項目 (`C<n>`) を指すときは、済んだ完了条件にチェックを付け、確かめた事実を節の本文に足す。**完了条件の文言は変えない** (約束の変更になる)。変えるべきだと思ったら NOTES で提案する。
 - 稼働中の Hub (このセッションがつながっているもの) は止めず、試験メッセージも流さない。確認で Hub が要るときは、別の `HUB_PORT` と `HUB_DATA_DIR` で別インスタンスを立てる。

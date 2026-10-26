@@ -815,6 +815,14 @@ vcp の C142 を UI から vcp.leader へ依頼した (seq 69)。leader → depl
 - **hook は起動し直さなくても効いた**: cite-bridge の `.claude/settings.local.json` を 21:36:49 に置くと、起動中の 2 つのセッションから 21:37:05 以降 `turn.end` が届いた。Claude Code は設定ファイルの hook を実行中に読み直す。
 - **leader の振る舞い**: 人の「筋の通り continue」(#186) を、手直し 2 点の後に次の項目 (C3) まで進める指示と読み、続けて依頼した。報告に「依頼した」と書いたので、人は気づける。
 
+### 6.1r leader が自分で実装した依頼と、role の説明の直し (2026-10-26、compose の Hub / vcp の leader・deployer、Claude Code 2.1.309 か 2.1.310。作業の後に見ると 2.1.310 に自動更新されていた)
+
+- **起きたこと**: C157 (vcp) の依頼を curl から `vcp.leader` に送った。Bearer だけの送信なので送り手は `user:cli` になる (protocol.md §3)。leader は deployer に渡さず、自分で実装・試験・TODO の片付けまでして、5 項目の返事を `user:cli` に返した (依頼から約 4 分半、leader から deployer への Message は 0 件)。roles.json の説明には「自分では実装しない」とあった。
+- **推測した原因**: `tools/dev/roles/leader.md` の流れは「`user:browser` から request が届いたら deployer に渡す」と書いていて、`user:cli` を流れの外と読めた。leader のターミナルは見ていないので確定ではない。依頼が具体的で小さかったことも重なったと見ている。
+- **直し**: `leader.md` に「自分ではファイルを編集しない (依頼が小さくても、直す箇所が見えていても deployer に渡す。例外はユーザーが本文で明示したときだけ)」を足し、流れと約束の `user:browser` を `user:browser` か `user:cli` (どちらもユーザー本人) にした。`deployer.md` の同じ例外も `user:cli` を含めた。
+- **直した後**: leader と deployer を起動し直し (role の説明は起動時の system prompt なので、起動中のセッションには効かない)、C158 を同じく `user:cli` から送った。leader は 1 分ほどで英語の固定見出しの依頼を `role:deployer` に送ってターンを終え、deployer は約 5 分半で `CHANGED` / `VERIFIED` / `NOT VERIFIED` の報告を返し、leader は差分と全体の試験を自分で確かめてから返事を出した (依頼から約 9 分)。
+- **C32 の場面は起きなかった**: deployer は全体の試験 (4342 件) をターンの中で待ち、報告 (10:15:22) はそのターンの終わり (10:15:26) より前に出た。バックグラウンドの処理を待ってターンを終える場面は deployer の選び方次第で、狙って起こせない。C32 の 2 つ目の完了条件は開いたまま。
+- **Hub の版**: 走っていた compose の Hub は C40 より前のビルドで、`GET /mailboxes` が `backlog.outgoing` を返さなかった (カードの状態は粗く出る)。`docker compose up -d --build` で作り直すと、起動中の shim はそのまま attach し直した。
 ### 6.2 未検証
 
 1. **Windows 固有**: パス表記、改行コード。Docker Desktop で公開がループバックだけになることは確認した (§6.1l)。
