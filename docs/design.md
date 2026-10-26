@@ -821,7 +821,7 @@ vcp の C142 を UI から vcp.leader へ依頼した (seq 69)。leader → depl
 - **推測した原因**: `tools/dev/roles/leader.md` の流れは「`user:browser` から request が届いたら deployer に渡す」と書いていて、`user:cli` を流れの外と読めた。leader のターミナルは見ていないので確定ではない。依頼が具体的で小さかったことも重なったと見ている。
 - **直し**: `leader.md` に「自分ではファイルを編集しない (依頼が小さくても、直す箇所が見えていても deployer に渡す。例外はユーザーが本文で明示したときだけ)」を足し、流れと約束の `user:browser` を `user:browser` か `user:cli` (どちらもユーザー本人) にした。`deployer.md` の同じ例外も `user:cli` を含めた。
 - **直した後**: leader と deployer を起動し直し (role の説明は起動時の system prompt なので、起動中のセッションには効かない)、C158 を同じく `user:cli` から送った。leader は 1 分ほどで英語の固定見出しの依頼を `role:deployer` に送ってターンを終え、deployer は約 5 分半で `CHANGED` / `VERIFIED` / `NOT VERIFIED` の報告を返し、leader は差分と全体の試験を自分で確かめてから返事を出した (依頼から約 9 分)。
-- **C32 の場面は起きなかった**: deployer は全体の試験 (4342 件) をターンの中で待ち、報告 (10:15:22) はそのターンの終わり (10:15:26) より前に出た。バックグラウンドの処理を待ってターンを終える場面は deployer の選び方次第で、狙って起こせない。C32 の 2 つ目の完了条件は開いたまま。
+- **C32 の場面は起きなかった**: deployer は全体の試験 (4342 件) をターンの中で待ち、報告 (10:15:22) はそのターンの終わり (10:15:26) より前に出た。バックグラウンドの処理を待ってターンを終える場面は deployer の選び方次第で、狙って起こせない。C32 の 2 つ目の完了条件は開いたまま (同じ日の次の通しで起きた。§6.1t)。
 - **Hub の版**: 走っていた compose の Hub は C40 より前のビルドで、`GET /mailboxes` が `backlog.outgoing` を返さなかった (カードの状態は粗く出る)。`docker compose up -d --build` で作り直すと、起動中の shim はそのまま attach し直した。
 
 ### 6.1s 許可待ちの解除と、拒否の後 (2026-10-26、compose の Hub / agent-hub の reviewer を `-PermissionMode default -Model haiku` で起動、Claude Code 2.1.310)
@@ -831,6 +831,13 @@ vcp の C142 を UI から vcp.leader へ依頼した (seq 69)。leader → depl
 - **実機**: Hub から「Bash で `node -e` を 2 回、別々に実行」と依頼し、人が 1 回目を 6 秒以上待ってから許可、2 回目を拒否した。11:00:16 `permission` → 11:01:00 `permission.resolved` (`tool_name: Bash`) → 11:01:08 `permission`。拒否の後は 3 分以上、Event も reply も届かず (`turn.end` も `idle_prompt` の通知もない)、カードの最後の Event は `permission` のまま (Needs you)。拒否の後の Claude Code は人の入力を待つので、Needs you が正しい。保存された `permission.resolved` の payload は `session_id`・`transcript_path`・`cwd`・`permission_mode`・`hook_event_name`・`tool_name`・`tool_use_id`・`duration_ms` など (大きな欄なし)。
 - **負荷**: 全ツールの `PostToolUse` が Hub に届く。記録しない場合の Hub の応答時間は、20 KB の payload で 100 回、中央値 3.6 ms・p95 5.3 ms・最大 56.8 ms (ホストから compose の Hub)。長い vcp のセッション (10-21〜23) のツール呼び出しは 204 回で、合わせても 1 秒に届かない。1 MB を超える `tool_response` (大きなファイルの Read) は Hub が 413 を返し、hook のエラーとして扱われるだけで作業は止まらない (README の hook の 3)。
 - **残る穴**: 許可待ちの間に、同じ session の別のツール (並列の呼び出しや subagent) が先に終わると、許可される前に `permission.resolved` と読む。ツール名は `Notification` にないので突き合わせられない。
+
+### 6.1t バックグラウンドの処理を待って終えたターンの後の返信 (2026-10-26、compose の Hub / vcp の leader・deployer (haiku、auto)、Claude Code 2.1.310)
+
+- **起きたこと**: vcp の C150〜C154 を 1 つの request (#88、`user:cli` → `vcp.leader`) で順に頼んだ。C150 で leader → deployer (#89、11:19:39 UTC)。deployer は全体の試験をバックグラウンドで流し、「The full suite is running in the background. I'll report to the leader once it finishes.」でターンを終えた (`turn.end` 11:23:36)。完了通知で始まったターンで、催促なしに #89 への reply (#90、11:27:28) を送り、そのターンを終えた (11:27:32)。間に deployer 宛ての Message はない。§6.1o で抜けた場面で、roles の `deployer.md` に足した一文 (roadmap C32) の後は抜けなかった。1 回の観察なので、抜けないと言い切れるわけではない。
+- **`Stop` の `background_tasks`**: 11:23:36 の `turn.end` の payload の `background_tasks` に、走っている処理が `[{ id, type: "shell", status: "running", description, command }]` で載っていた。11:27:32 の分は `[]`。Hub は payload をそのまま持つので、ターンの終わりに「まだ処理が走っている」ことが分かる。
+- **カードの状態への影響 (判定から導いたもの。ブラウザでは見ていない)**: 11:23:36〜11:27:28 の約 4 分、deployer は「ターンが終わり、渡した request に返信がない」ので Stopped, no reply (赤) と出る判定だった。実際は試験を待っていた。`background_tasks` が空でない `turn.end` を Working に数えれば区別できる (roadmap C43)。
+- **1 つの request に複数の報告**: leader は C150 の結果を #88 への reply (#91) で返し、14 秒後に返事を待たずに C156 を deployer に渡した (#92)。依頼どおりの進め方。
 
 ### 6.2 未検証
 

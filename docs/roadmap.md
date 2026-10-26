@@ -240,6 +240,9 @@
 - [x] C30 許可した後に、許可待ちが解けたことが分からない (2026-10-26、ユーザーが決定)
   - `PostToolUse` / `PostToolUseFailure` を全ツールで登録し、同じ session の直前の Event が `permission` のときだけ `permission.resolved` として記録する (payload から `tool_response` と `tool_input` を落とす)。ほかは記録しない。UI は `approved` と出し、Needs you を解く。`npm run ui:check` に、許可を求める → 許可してツールが動く (Working) → もう一度求めて拒否する (Needs you のまま) の場面を足した (全場面が合格。全体の試験は 312 件が通る)
   - 実機 (compose の Hub、`-PermissionMode default` の reviewer、2.1.310): 1 回目を許可すると `permission` → 44 秒後に `permission.resolved` (`tool_name: Bash`)、2 回目を拒否すると 3 分以上何も届かず Needs you のまま (`idle_prompt` も来ない)。負荷は記録しない場合で中央値 3.6 ms・p95 5.3 ms (20 KB の payload)。1 MB を超える入力は 413 で hook のエラーになるだけ。許可待ちの間に並列の別のツールが先に終わると誤って解く穴が残る (design.md §6.1s)
+- [x] C32 Hub の外で始まったターンで、返信を忘れる (2026-10-26)
+  - deployer がバックグラウンドの試験を待ってターンを終え、完了通知で始まったターンで結果をターミナルに書くだけで leader に返さなかった (design.md §6.1o)。2026-10-21 に安い方の案で決め、`tools/dev/roles/deployer.md` に、どのターンで終わっても reply で返すこと (ターミナルに書くだけでは届かない) を書いた。Hub の側で止まりを目立たせる案は C34 に分けた
+  - vcp の C150 の通し (compose の Hub、deployer は haiku・auto、2.1.310) で、deployer が全体の試験をバックグラウンドで流してターンを終え、約 4 分後の完了通知のターンで催促なしに reply を送った (design.md §6.1t)。そのとき `Stop` の `background_tasks` に走っている処理が載っていたので、カードの判定に使う案を C43 に分けた
 
 ## 項目
 
@@ -361,17 +364,6 @@ C26 の通しで見つかった残り。hook の設定は手で写す (`start-ag
 
 同じ日に vcp の C147 も索引なしの依頼で通した (チームは C145 のまま)。依頼から最終報告まで約 26 分で、人の手直しが 1 回入った。deployer が報告した後、leader がまだ確かめている間に人の手直し (月を月名でなくラベルで選ばせる) を送ると、leader はそのまま deployer に直させ、2 つの依頼の結果を最初の依頼への返信 1 本にまとめて返した。手直しの依頼は返信待ちのまま残り、deployer の報告 2 本は受領の確認が付かないまま残った (design.md §6.1n、C28)。手直しの原因は依頼の文面 (TODO の古い検討にあった「月名を C53 の検査にかける」を写した) で、agent-hub の不具合ではない。
 
-### C32. Hub の外で始まったターンで、返信を忘れる
-
-deployer がバックグラウンドのテストを待ってターンを終え、完了通知で始まったターンで結果をターミナルに書いただけで、leader に `post_message` しなかった (design.md §6.1o)。人が催促するまでチームは止まっていた。
-
-2026-10-21 に、安い方の案 (role の説明に書く) で決定した。Hub の側で止まりを目立たせる案は、返信待ちの判定 (C28) が正しくなってから意味を持つので C34 に分けた。
-2026-10-26 の vcp の通し (C158) では、deployer が全体の試験をターンの中で待ったので、この場面は起きなかった (design.md §6.1r)。次に deployer がバックグラウンドの処理を待ってターンを終えたときに確かめる。
-
-#### 完了条件
-- [x] `tools/dev/roles/deployer.md` に、依頼の結果は、どのターンで終わっても (バックグラウンドの処理の完了通知で始まったターンも) reply で leader に返すことを、ターミナルに書くだけでは届かないという理由とともに書く
-- [ ] 実チームの通しで、deployer がバックグラウンドの処理を待ってターンを終えた後も、催促なしに reply を送ることを確かめ、design.md §6 に記録する
-
 ### C35. 独自の台帳を持つプロジェクトから依頼を中継する
 状態: 提案
 
@@ -389,4 +381,10 @@ cite-bridge の deployer は usage limit で 2 時間 20 分止まったが、Hu
 - [x] UI のカードに `Paused` の状態を足し、Working より先に判定する。最後の Event が `turn.failed` (`error: rate_limit`) なら Paused (usage limit)、その後の `quota_auto_resume_fired` か `turn.end` で解ける。`quota_auto_resume_stale` と `_disabled` は Needs you (Enter が要る、または自動では続かない) にする。Event の表示名も足す
 - [x] 試験: Hub が `StopFailure` の payload を `turn.failed` として取り込むこと (`src/hub` の Event の変換の試験の形)
 - [ ] 実際に usage limit に当たったときの Event の並びを design.md §6 に記録し、§6.2-6 を閉じる (発火しなかったら、そう書き、Paused を `quota_auto_resume_*` だけで出せる範囲に直すことを報告で提案する)
+
+### C43. バックグラウンドの処理を待つターンの終わりを、Stopped と出さない
+状態: 提案
+
+`Stop` の hook の `background_tasks` に、ターンを終えた時点で走っている処理 (`status: "running"`) が載る (design.md §6.1t)。deployer が試験をバックグラウンドで流して終えたターンは、今の判定では、完了通知で次のターンが始まるまで Stopped, no reply (赤) と出る。2026-10-26 の vcp の C150 で約 4 分。
+案: 最新の `turn.end` の `background_tasks` に `running` があれば、Stopped の代わりに Working (添え書きは処理の `description`) にする。Hub は `backlog.lastTurnEnd` に件数か有無を足す (UI の手元の窓に頼らないため。C41)。処理が終わってもターンが始まらない場合 (完了通知を受けない作り) に Working のまま残らないよう、上限の時間を置くかは決めること。
 
