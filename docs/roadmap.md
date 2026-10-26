@@ -400,3 +400,19 @@ cite-bridge の deployer は usage limit で 2 時間 20 分止まったが、Hu
 - [ ] `npm run ui:check` に、5 日前の返信待ちの request を持つカードの `Agent` バッジを押すと、その Message が表示されて強調される場面を足して合格する
 - [ ] `npm test` が通る
 
+### C45. reviewer の作法を決め、レビューを対象と問いで依頼できるようにする
+
+2026-10-26、kanary の /relay (design.md §8.1) と比べ、評価の依頼は会話の区間でなく対象 (コミットの範囲か `C<n>`) と問いで送り、何を照らすかは reviewer の側の決まりに持たせることにした (design.md §3.12「レビューの依頼は、会話の区間でなく対象で送る」)。今は §3.12 の作法の表に reviewer の行がなく、`tools/dev/roles/` にも reviewer.md がない (reviewer は `roles.json` の 1 行の説明だけで動く)。2026-10-26 にユーザーが起票を決めた。
+
+#### 完了条件
+- [ ] design.md §3.12 の作法の表に reviewer の行を足す。読むのは依頼の対象、項目なら完了条件と本文、変更に関係する節、§2 の非目標、§9 の決定、却下の `[-] C<n>`。返すのは、指摘ごとに照らした正本の場所 (ファイルと節) を付けたもの
+- [ ] `tools/dev/roles/reviewer.md` を作り、依頼の型 (対象と問い。会話の区間は受け取らない前提) と返事の型を書く。`start-agent.ps1 -Role reviewer` で system prompt に足されることを確かめ、`start-agent.ps1` 冒頭の説明と README の「ほかの role は roles.json の説明だけで動く」を合わせる
+- [ ] leader.md に、reviewer へ回す依頼の書き方 (対象と問いだけを送り、読むものは reviewer.md に任せる) を足す
+- [ ] 実チームで確かめる: `start-team.ps1 -Roles leader,deployer,reviewer` で、項目 1 件の実装を reviewer にレビューさせ、依頼に書いていない正本 (完了条件・関係する節) を reviewer が自分で読んで照らしたかを design.md §6 に記録する
+
+### C46. 文書の更新を信号として、購読した Mailbox に流す
+状態: 提案
+
+design.md §3.12 の「信号」の層。`docs:index` で届く索引の差分 (完了条件の増減、節の追加と削除、閉じた `C<n>`) を、場所を指す notice としてトピックに流し、文脈を長く持つセッション (leader) が自分の理解が古くなったと知れるようにする。知見そのものは流さない (§3.14)。
+C45 の後、reviewer が依頼のたびに正本を読む形で足りないと分かってから決める (§1.1 の基準 2)。§9 の決定の追加は roadmap の索引に載らないので、拾うなら索引の範囲を広げることになる。
+
