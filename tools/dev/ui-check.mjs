@@ -173,6 +173,30 @@ try {
   await hook('demo.leader', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'tu-2', session_id: 's-lead-3' })
   await scene('今の接続の後に、session_id の違う質問が出た (/clear の後を想定)', { 'demo.leader': 'Needs you (question)' }, '1 waiting')
 
+  // usage limit (C38): StopFailure は turn.failed になり、渡された Message があっても Working でなく Paused と出る
+  const failure = (mailbox, session) => hook(mailbox, { hook_event_name: 'StopFailure', session_id: session, error: 'rate_limit', last_assistant_message: "You've hit your limit" })
+  const quota = (mailbox, session, type) => hook(mailbox, { hook_event_name: 'Notification', session_id: session, notification_type: type, message: type })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'role', id: 'deployer' }, body: 'GOAL: C2 を実装する' })
+  await scene('deployer に依頼が渡った (未読があり、作業中)', { 'demo.deployer': 'Working' }, '1 waiting')
+  await failure('demo.deployer', 's-dep')
+  await scene('usage limit で止まった (Working より先に Paused)', { 'demo.deployer': 'Paused (usage limit)' }, '1 waiting')
+  await quota('demo.deployer', 's-dep', 'quota_auto_resume_fired')
+  await scene('自動の再開が動いた (Paused が解けて Working に戻る)', { 'demo.deployer': 'Working' }, '1 waiting')
+  await failure('demo.deployer', 's-dep')
+  await quota('demo.deployer', 's-dep', 'quota_auto_resume_stale')
+  await scene('自動の再開が続かない (Needs you)', { 'demo.deployer': 'Needs you (usage limit, press Enter)' }, '2 waiting')
+  await quota('demo.deployer', 's-dep', 'quota_auto_resume_disabled')
+  await scene('自動の再開が無効 (Needs you)', { 'demo.deployer': 'Needs you (usage limit, auto-resume off)' }, '2 waiting')
+  // 止まった Event が最近の窓から押し出されても、Hub の lastEvent.detail で Paused のまま
+  await failure('demo.deployer', 's-dep')
+  for (let i = 0; i < 250; i++) await turnEnd('demo.noise', 's-noise')
+  await cdp('Page.navigate', { url: `${HUB}/` })
+  await sleep(1000)
+  await scene('止まった Event を窓から押し出して読み直した', { 'demo.deployer': 'Paused (usage limit)' }, '1 waiting')
+  await turnEnd('demo.deployer', 's-dep')
+  await ackAll(dep.attachmentId)
+  await scene('ターンが終わった (Paused が解け、返信のない依頼があるので Stopped)', { 'demo.deployer': 'Stopped, no reply' }, '1 waiting')
+
   // 時刻の表示 (C31): 今日は時刻だけ、前日は日付つき
   const t = await cdp('Runtime.evaluate', {
     expression: `(() => { const now = Date.now(), old = now - 26 * 3600 * 1000; return { today: time(now), todayPlain: new Date(now).toLocaleTimeString(), old: time(old), oldPlain: new Date(old).toLocaleTimeString() } })()`,

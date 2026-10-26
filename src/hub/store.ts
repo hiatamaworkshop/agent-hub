@@ -48,6 +48,15 @@ interface MailboxState {
 
 export type NewMessage = Omit<Message, 'id' | 'seq' | 'ts'>
 
+// Backlog.lastEvent の detail: UI が payload を持たない静かな Mailbox でも、止まった理由 (turn.failed の error)
+// と通知の種類 (notification_type。quota_auto_resume_* など) を読めるようにする (C38)
+function eventDetail(e: HubEvent): string | undefined {
+  if (typeof e.payload !== 'object' || e.payload === null) return undefined
+  const p = e.payload as Record<string, unknown>
+  const v = e.kind === 'turn.failed' ? p.error : e.kind === 'notification' ? p.notification_type : undefined
+  return typeof v === 'string' && v ? v : undefined
+}
+
 // やりとりの Message: request か reply。notice (返信を求めない知らせ) と無編集転送 (他人の本文) は除く。
 // 送り手が相手に応じて動いた印として、相手の返信待ちの request を閉じ (C28)、送り手に渡してあった分を受領の確認にする (C39)。
 // 2 つの規則はこの判定だけを使う (protocol.md §2・§4)
@@ -77,7 +86,7 @@ export interface Backlog {
   // この Mailbox の最新の Event と最新のターン終了 (takeover で切り離されたセッションの分を除く)。UI が読むのは最近の Event だけ
   // なので、静かな Mailbox の分も Hub から渡す。作業中と人が動く番を導く材料 (design.md §3.15)
   // sessionId は、今つながっているのと別のセッションの質問待ちを UI が数えないため
-  lastEvent: { id: string; kind: HubEvent['kind']; ts: string; sessionId?: string } | null
+  lastEvent: { id: string; kind: HubEvent['kind']; ts: string; sessionId?: string; detail?: string } | null
   lastTurnEnd: { id: string; ts: string } | null
 }
 
@@ -520,7 +529,10 @@ export class Store {
     const handed = this.lastHandedOf(mb)
     if (handed) backlog.lastHanded = { seq: handed.seq, ts: handed.ts }
     const ev = this.lastEventByMailbox.get(name)
-    if (ev) backlog.lastEvent = { id: ev.id, kind: ev.kind, ts: ev.ts, ...(ev.sessionId ? { sessionId: ev.sessionId } : {}) }
+    if (ev) {
+      const detail = eventDetail(ev)
+      backlog.lastEvent = { id: ev.id, kind: ev.kind, ts: ev.ts, ...(ev.sessionId ? { sessionId: ev.sessionId } : {}), ...(detail ? { detail } : {}) }
+    }
     const end = this.lastTurnEndByMailbox.get(name)
     if (end) backlog.lastTurnEnd = { id: end.id, ts: end.ts }
     let unconfirmed = 0

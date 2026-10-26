@@ -65,6 +65,9 @@ export const fromClaudeCodeHook: EventConverter = (input, previous, now) => {
   switch (hook) {
     case 'Stop':
       return { event: { ...base, kind: 'turn.end' } }
+    // API のエラーでターンが終わった (usage limit など)。error と last_assistant_message は payload のまま持つ (design.md §6.1q)
+    case 'StopFailure':
+      return { event: { ...base, kind: 'turn.failed' } }
     case 'PreToolUse':
     case 'PostToolUse': {
       if (input.tool_name !== 'AskUserQuestion') return { ignored: 'unsupported_tool' }

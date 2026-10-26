@@ -196,12 +196,14 @@ describe('Store: 溜まりの材料 (summary)', () => {
       unconfirmed: tally(),
       outgoing,
       lastHanded: null as { seq: number; ts: string } | null,
-      lastEvent: null as { id: string; kind: string; ts: string; sessionId?: string } | null,
+      lastEvent: null as { id: string; kind: string; ts: string; sessionId?: string; detail?: string } | null,
       lastTurnEnd: null as { id: string; ts: string } | null,
     }
     for (const e of s.listEvents(Infinity)) {
       if (e.mailbox !== name || e.superseded) continue
-      backlog.lastEvent = { id: e.id, kind: e.kind, ts: e.ts, ...(e.sessionId ? { sessionId: e.sessionId } : {}) }
+      const p = e.payload as Record<string, unknown>
+      const d = e.kind === 'turn.failed' ? p.error : e.kind === 'notification' ? p.notification_type : undefined
+      backlog.lastEvent = { id: e.id, kind: e.kind, ts: e.ts, ...(e.sessionId ? { sessionId: e.sessionId } : {}), ...(typeof d === 'string' && d ? { detail: d } : {}) }
       if (e.kind === 'turn.end') backlog.lastTurnEnd = { id: e.id, ts: e.ts }
     }
     for (const m of s.listMessages(0, Infinity)) {
@@ -299,7 +301,16 @@ describe('Store: 溜まりの材料 (summary)', () => {
     check('質問が最新、ターン終了は前のもの')
     assert.deepEqual(s.summary('x').backlog.lastEvent, { id: q.id, kind: 'question', ts: q.ts, sessionId: 's1' })
     assert.deepEqual(s.summary('x').backlog.lastTurnEnd, { id: end.id, ts: end.ts })
-    s.deleteEvents([q.id, end.id])
+    // 止まった理由と通知の種類は detail に載る (payload を持たない UI が Paused を導く材料。C38)
+    const failed = ev('turn.failed', { payload: { error: 'rate_limit' } })
+    check('turn.failed が最新')
+    assert.equal(s.summary('x').backlog.lastEvent?.detail, 'rate_limit')
+    const resumed = ev('notification', { payload: { notification_type: 'quota_auto_resume_fired' } })
+    check('通知が最新')
+    assert.equal(s.summary('x').backlog.lastEvent?.detail, 'quota_auto_resume_fired')
+    const later = ev('turn.end', { payload: { error: 'x' } })
+    assert.equal(s.summary('x').backlog.lastEvent?.detail, undefined, 'turn.end には detail を付けない')
+    s.deleteEvents([q.id, end.id, failed.id, resumed.id, later.id])
     check('消した後は残っている中の最新')
     assert.equal(s.summary('x').backlog.lastEvent, null)
   })

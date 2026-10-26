@@ -10,6 +10,8 @@
     --accent: #2f5fd0; --reply: #1f8a4c; --warn: #b3261e; --amber: #9a5b00;
     /* 返事待ち (Waiting on others)。作業中の青・人の番の琥珀・止まりの赤と見分ける */
     --wait: #6d3fc0;
+    /* 止まっている (Paused: usage limit)。待つだけで自然に再開する。ほかの 4 色と見分ける */
+    --pause: #0b7a75;
     /* 送り手の色 (c0〜c7)。チップの文字色は --pfg (全色で 4.5:1 以上) */
     --p0: #2f5fd0; --p1: #b45309; --p2: #15803d; --p3: #7e22ce; --p4: #0f766e; --p5: #be185d; --p6: #854d0e; --p7: #475569; --pfg: #ffffff;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -19,6 +21,7 @@
       --bg: #161615; --panel: #1f1f1d; --fg: #ecece8; --muted: #9a9a93; --line: #34342f;
       --accent: #7aa2ff; --reply: #5fcf8e; --warn: #ff8a80; --amber: #f0b050;
       --wait: #b89cff;
+      --pause: #5fd0c8;
       --p0: #7aa2ff; --p1: #f0a050; --p2: #5fcf8e; --p3: #c4a1ff; --p4: #5fd0c4; --p5: #f489b8; --p6: #e0c060; --p7: #aab4c4; --pfg: #161615;
     }
   }
@@ -58,12 +61,15 @@
   .mb.st-you { box-shadow: 0 0 0 2px var(--amber); }
   .mb.st-stopped { box-shadow: 0 0 0 2px var(--warn); }
   .mb.st-delegated { outline: 2px dashed var(--wait); outline-offset: 1px; }
+  .mb.st-paused { box-shadow: 0 0 0 2px var(--pause); }
   .mb.st-offline { opacity: .6; }
   .state { font-size: 12px; font-weight: 600; margin: 2px 0; color: var(--muted); }
   .state::before { content: "● "; }
   .state.st-working { color: var(--accent); }
   .state.st-delegated { color: var(--wait); }
   .state.st-delegated::before { content: "◔ "; }
+  .state.st-paused { color: var(--pause); }
+  .state.st-paused::before { content: "⏸ "; }
   .state.st-you { color: var(--amber); }
   .state.st-stopped { color: var(--warn); }
   .state.st-offline::before { content: "○ "; }
@@ -589,7 +595,7 @@ const evtData = new Map() // Event の id → Event (プロジェクトの絞り
 const lastEventByMailbox = new Map() // Mailbox 名 → 最新の Event (カードに出す)
 const lastTurnEndByMailbox = new Map() // Mailbox 名 → 最新のターン終了 (作業中かを導く)
 const DETACH_LABEL = { closed: 'session ended', disconnected: 'connection lost', lease_expired: 'lease expired' }
-const EVENT_LABEL = { 'turn.end': 'turn end', question: 'question', 'question.answered': 'answered', permission: 'permission', notification: 'notification', 'session.boundary': 'boundary' }
+const EVENT_LABEL = { 'turn.end': 'turn end', 'turn.failed': 'turn failed', question: 'question', 'question.answered': 'answered', permission: 'permission', notification: 'notification', 'session.boundary': 'boundary' }
 // 人の手を待っている Event。目立たせ、非表示のタブでは未読として数える
 const WAITING = new Set(['question', 'permission'])
 const str = (v) => (typeof v === 'string' ? v : '')
@@ -616,6 +622,11 @@ function eventBody(ev) {
     if (text) box.append(el('div', 'body', text))
     if (ev.kind === 'notification' && p.notification_type) box.append(el('div', 'note', str(p.notification_type)))
     if (ev.kind === 'permission') box.append(el('div', 'note', 'Approve or deny in the terminal.'))
+  } else if (ev.kind === 'turn.failed') {
+    // API のエラーでターンが終わった (usage limit など)。error は hook の入力のまま、本文は最後の応答
+    if (p.error) box.append(el('div', 'note', str(p.error)))
+    const last = str(p.last_assistant_message)
+    if (last) box.append(bodyOf(last))
   } else if (ev.kind === 'turn.end') {
     const last = str(p.last_assistant_message)
     if (last) {
@@ -1507,17 +1518,36 @@ function lastTurnEndOf(mb) { return latestOf(lastTurnEndByMailbox.get(mb.name), 
 // 人が動く番。材料は 2 つ: hook の質問・許可待ち (最後の Event が回答前の question / permission) と、Hub で人に出した
 // 返信待ちの request (backlog.outgoing.to の人宛て。C40)。人が返信か次の依頼を送れば Hub が閉じる (C28)。
 // カードの状態 (Needs you)・溜まりのバッジ (You)・タブのタイトルと favicon・ほかのプロジェクトの待ちの数は、すべてこれを使う
+// 今の接続より前に、別のセッションが出した Event は今の状態に数えない (ターミナルを起動し直した・takeover の後は、そこで答えられないため)。
+// 今の接続の後に出たものは、session_id が違っても数える (/clear で変わりうる。design.md §6.2)。接続がないときは、ターミナルが残っているかもしれないので数える
+function staleEvent(mb, ev) {
+  const at = mb.attachment
+  return !!(at && at.sessionId && ev && ev.sessionId && ev.sessionId !== at.sessionId && Date.parse(ev.ts) < Date.parse(at.attachedAt))
+}
+// usage limit で止まった理由 (turn.failed の error) と通知の種類 (notification_type)。Hub は backlog.lastEvent.detail で渡し、
+// SSE で届いた Event は payload から読む
+function eventDetailOf(ev) {
+  if (ev.detail) return ev.detail
+  const p = ev.payload && typeof ev.payload === 'object' ? ev.payload : {}
+  const v = ev.kind === 'turn.failed' ? p.error : ev.kind === 'notification' ? p.notification_type : ''
+  return typeof v === 'string' ? v : ''
+}
+// 自動の再開が続かない通知 → 人が動く番 (Needs you)。値は括弧に添える理由
+const QUOTA_NEEDS_YOU = new Map([
+  ['quota_auto_resume_stale', 'usage limit, press Enter'],
+  ['quota_auto_resume_disabled', 'usage limit, auto-resume off'],
+])
 function humanTurnOf(mb) {
   let t = NONE
   const why = []
   const ev = lastEventOf(mb)
-  // 今の接続より前に、別のセッションが出した質問・許可待ちは数えない (ターミナルを起動し直した・takeover の後は、そこで答えられないため)。
-  // 今の接続の後に出たものは、session_id が違っても数える (/clear で変わりうる。design.md §6.2)。接続がないときは、ターミナルが残っているかもしれないので数える
-  const at = mb.attachment
-  const stale = at && at.sessionId && ev && ev.sessionId && ev.sessionId !== at.sessionId && Date.parse(ev.ts) < Date.parse(at.attachedAt)
-  if (ev && WAITING.has(ev.kind) && !stale) {
+  if (ev && WAITING.has(ev.kind) && !staleEvent(mb, ev)) {
     t = addTally(t, { count: 1, oldestAt: ev.ts })
     why.push(EVENT_LABEL[ev.kind] || ev.kind)
+  } else if (ev && ev.kind === 'notification' && QUOTA_NEEDS_YOU.has(eventDetailOf(ev)) && !staleEvent(mb, ev)) {
+    // usage limit の自動の再開が続かない (stale) か、そもそも無効 (disabled)。人が Enter を押すか、設定を直す番 (C38)
+    t = addTally(t, { count: 1, oldestAt: ev.ts })
+    why.push(QUOTA_NEEDS_YOU.get(eventDetailOf(ev)))
   }
   const out = mb.backlog && mb.backlog.outgoing
   const asks = ((out && out.to) || []).filter((a) => a.type === 'user')
@@ -1553,6 +1583,7 @@ function sumLayers(mailboxes) {
 // 作業中 = 最後に渡した Message が最後のターン終了より新しい (Channels は渡した時点でターンを始めるため)
 const STATES = [
   { key: 'you', label: 'Needs you', title: 'The session is waiting for your answer, to a question or permission prompt in its terminal or to a request it sent you through the Hub (answer with Reply, or send it your next request).' },
+  { key: 'paused', label: 'Paused', title: 'The turn stopped on a usage limit. It continues by itself when the limit resets (if auto-resume is on), so there is nothing to do but wait.' },
   { key: 'working', label: 'Working', title: 'A message was handed to the session after its last turn ended, so it is working on it.' },
   { key: 'stopped', label: 'Stopped, no reply', title: 'The turn ended, but a request handed to this session has no reply yet. Check the terminal, or remind it to reply.' },
   { key: 'delegated', label: 'Waiting on others', title: 'Its turn ended while a request it sent has no reply yet.' },
@@ -1566,6 +1597,9 @@ function stateOf(mb) {
   const human = humanTurnOf(mb)
   if (human.count) return { key: 'you', since: human.oldestAt, detail: human.detail }
   const ev = lastEventOf(mb)
+  // usage limit で止まった間。Working より先に判定する (Hub には止まった瞬間の Event がなく、渡した Message だけが残って Working と読まれるため)。
+  // 次の Event (quota_auto_resume_fired の通知、turn.end など) で解ける。fired の後は下の判定に戻り、渡した Message があれば Working になる
+  if (ev && ev.kind === 'turn.failed' && eventDetailOf(ev) === 'rate_limit' && !staleEvent(mb, ev)) return { key: 'paused', since: ev.ts, detail: 'usage limit' }
   const b = mb.backlog
   if (!b || !('outgoing' in b)) return null // 古い Hub (材料がない)。状態を出さない
   const end = lastTurnEndOf(mb)

@@ -41,8 +41,8 @@ export type MessageKind = (typeof MESSAGE_KINDS)[number]
 export const ADDRESS_TYPES = ['mailbox', 'role', 'topic', 'user'] as const
 export type AddressType = (typeof ADDRESS_TYPES)[number]
 
-// question.answered は回答の記録 (UI で質問待ちを解く)。session.boundary は report_event 用 (後回し。design.md §3.4)
-export const EVENT_KINDS = ['turn.end', 'question', 'question.answered', 'permission', 'notification', 'session.boundary'] as const
+// turn.failed は API のエラーでターンが終わった印 (StopFailure。usage limit など。payload.error に種類)。question.answered は回答の記録 (UI で質問待ちを解く)。session.boundary は report_event 用 (後回し。design.md §3.4)
+export const EVENT_KINDS = ['turn.end', 'turn.failed', 'question', 'question.answered', 'permission', 'notification', 'session.boundary'] as const
 export type EventKind = (typeof EVENT_KINDS)[number]
 
 export const nameSchema = z.string().regex(NAME_RE)

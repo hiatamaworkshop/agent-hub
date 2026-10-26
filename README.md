@@ -6,7 +6,7 @@
 ```
 [ブラウザ UI] ⇄ SSE ⇄ [Hub (常駐 daemon)] ⇄ [shim = MCP サーバー × セッション数] ─ channel で push → [Claude Code]
                            ▲                                                    └ inbox ツールで取り出す ← [ほかのエージェント]
-         hooks (Stop / Notification / PreToolUse / PostToolUse) からの POST
+         hooks (Stop / StopFailure / Notification / PreToolUse / PostToolUse) からの POST
 ```
 
 ## 何ができるか (目標)
@@ -87,7 +87,8 @@ claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels s
 
 | 状態 | 意味 |
 |---|---|
-| `Needs you` (琥珀) | 人が動く番。ターミナルの質問・許可待ちか、エージェントが Hub で人に出した request に返事がない |
+| `Needs you` (琥珀) | 人が動く番。ターミナルの質問・許可待ちか、エージェントが Hub で人に出した request に返事がない。usage limit の自動の再開が続かない・無効のときもここ |
+| `Paused` (青緑、⏸) | usage limit で止まっている (`StopFailure` の `error: rate_limit`)。自動の再開が動けば、待つだけで続く。`Working` より先に判定する |
 | `Working` (青) | 渡した Message が最後のターン終了より新しい。hook の Event がないセッションでは `Working?` (推測) |
 | `Waiting on others` (紫の点線) | ターンを終え、自分が出した request の返事を待っている。宛先を添える |
 | `Stopped, no reply` (赤) | ターンを終えたが、渡された request に返信していない。ターミナルを見るか、催促する |
@@ -95,7 +96,7 @@ claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels s
 
 - 返信待ちは `reply_to` の返信のほか、相手からの後の request か reply でも閉じる (人が質問に新しい依頼で答えたときなど。protocol.md §2)。
 - カードとサイドバーのバッジは、件数を `You` (人が動く番) / `Agent` (エージェントの番) / `Stuck?` (配送が詰まっているかもしれない) に分け、最も古いものの経過時間で色を変える。タブのタイトルの `N waiting` と favicon は、全プロジェクトの人が動く番の数。
-- 状態は hook の Event を材料にするので、hook を置いていないセッションでは粗くなる (下の「質問待ち・許可待ち・ターン終了をブラウザに出す」)。usage limit で止まった間も `Working` と出る (roadmap C38)。
+- 状態は hook の Event を材料にするので、hook を置いていないセッションでは粗くなる (下の「質問待ち・許可待ち・ターン終了をブラウザに出す」)。usage limit で止まった間は `Paused` と出る (`StopFailure` の hook が要る)。自動の再開が続かない・無効のときは、`Needs you` に `usage limit, press Enter` / `usage limit, auto-resume off` と出る (roadmap C38)。
 
 ### カスタムコマンド
 

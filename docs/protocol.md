@@ -83,7 +83,7 @@
 {
   "id": "e_…",
   "ts": "2026-10-16T12:00:00Z",
-  "kind": "turn.end | question | question.answered | permission | notification | session.boundary",
+  "kind": "turn.end | turn.failed | question | question.answered | permission | notification | session.boundary",
   "source": "claude-code",
   "sessionId": "…",
   "mailbox": "reviewer (解決できた場合だけ)",
@@ -99,6 +99,7 @@
 | hook 入力 | `kind` |
 |---|---|
 | `Stop` | `turn.end`。入力に `agent_hub_git` があれば `changes` に載せる (下の「変更の事実」) |
+| `StopFailure` | `turn.failed`。API のエラーでターンが終わったとき (usage limit など)。`payload.error` に種類 (`rate_limit` など)、`payload.last_assistant_message` にエラーの文が入る。UI は `error: rate_limit` を Paused として出す (design.md §3.15) |
 | `PreToolUse` + `tool_name: AskUserQuestion` | `question` |
 | `PostToolUse` + `tool_name: AskUserQuestion` | `question.answered` |
 | `Notification` + `notification_type: permission_prompt` | `permission`。ただし、同じ session の直前の Event が 60 秒以内の `question` なら取り込まない (質問の表示でも出るため。design.md §6.1c) |
@@ -261,7 +262,7 @@
 #### 応答の形
 
 - `GET /mailboxes`: `{ "mailboxes": [Mailbox + { "effectiveSubscriptions", "unread": <件数>, "unconfirmed": <件数>, "backlog": Backlog, "attachment": Attachment | null, "detached": DetachedAttachment | null, "takeover": { "at", "previous": Attachment } | null, "projectChanged": { "at", "from": "<前の project>" } | null }] }`
-  - `backlog` は溜まりのバッジの材料 (design.md §3.15)。`{ "unread", "awaitingReply", "unconfirmed" }` で、どれも `{ "count": <件数>, "oldestAt": "<最も古い Message の ts>" | null }`。この Mailbox 宛てを重ならないように分ける: `unread` は未読 (queued)、`awaitingReply` は渡した (`seq ≤ cursor`) 返信待ち (§2) の request、`unconfirmed` はそれ以外で handed のもの (§4)。さらに `outgoing` (同じ形に `"to": [{ "type", "id", "count", "oldestAt" }]` を足す。この Mailbox が出した返信待ちの request と、宛先ごとの件数と最も古い ts を古い順で。UI は Waiting on others の宛先と、人宛ての Needs you に使う) と `lastHanded` (`{ "seq", "ts" } | null`。この Mailbox 宛てで最後に渡した Message)、`lastEvent` (`{ "id", "kind", "ts", "sessionId"? } | null`。この Mailbox の最新の Event)、`lastTurnEnd` (`{ "id", "ts" } | null`。最新の `turn.end`) を返す。Event の 2 つは、takeover で切り離されたセッションの分 (`superseded`) を除く。UI はこれらからカードの状態を導く (design.md §3.15)。UI が読む Event は最近の分だけなので、静かな Mailbox の最新の Event もここで渡す。上の `unconfirmed` の件数は返信待ちの request も含むので、`backlog.unconfirmed.count` とは一致しない。層への振り分け (接続の有無で未読をどちらに数えるか) は UI が行う。古い Hub はこの項目を返さない
+  - `backlog` は溜まりのバッジの材料 (design.md §3.15)。`{ "unread", "awaitingReply", "unconfirmed" }` で、どれも `{ "count": <件数>, "oldestAt": "<最も古い Message の ts>" | null }`。この Mailbox 宛てを重ならないように分ける: `unread` は未読 (queued)、`awaitingReply` は渡した (`seq ≤ cursor`) 返信待ち (§2) の request、`unconfirmed` はそれ以外で handed のもの (§4)。さらに `outgoing` (同じ形に `"to": [{ "type", "id", "count", "oldestAt" }]` を足す。この Mailbox が出した返信待ちの request と、宛先ごとの件数と最も古い ts を古い順で。UI は Waiting on others の宛先と、人宛ての Needs you に使う) と `lastHanded` (`{ "seq", "ts" } | null`。この Mailbox 宛てで最後に渡した Message)、`lastEvent` (`{ "id", "kind", "ts", "sessionId"?, "detail"? } | null`。`detail` は `turn.failed` の `payload.error` か、`notification` の `payload.notification_type` (どちらも文字列のときだけ。UI が payload を持たない静かな Mailbox でも Paused と、自動の再開が続かない通知を導くため)。この Mailbox の最新の Event)、`lastTurnEnd` (`{ "id", "ts" } | null`。最新の `turn.end`) を返す。Event の 2 つは、takeover で切り離されたセッションの分 (`superseded`) を除く。UI はこれらからカードの状態を導く (design.md §3.15)。UI が読む Event は最近の分だけなので、静かな Mailbox の最新の Event もここで渡す。上の `unconfirmed` の件数は返信待ちの request も含むので、`backlog.unconfirmed.count` とは一致しない。層への振り分け (接続の有無で未読をどちらに数えるか) は UI が行う。古い Hub はこの項目を返さない
   - `detached` は接続していない Mailbox で最後に detach した Attachment に `detachedAt` と `reason` (`closed` / `disconnected` / `lease_expired`) を足したもの。接続中・この Hub の起動後に attach がない・takeover で切り離されただけのときは `null`。古い Hub はこの項目を返さない
   - `takeover` は今の Attachment が takeover で始まったときの時刻 (`at`) と切り離した旧 Attachment (`previous`)。今の Attachment が終わるまで出す (Hub のメモリのみ)。同じ `sessionId` どうしの attach し直しでは出さない。それ以外は `null`。古い Hub はこの項目を返さない
   - `projectChanged` は直近の attach が前の `project` と違うフォルダからだったときの時刻 (`at`) と前の `project` (`from`)。比較は区切り・末尾の区切り・ドライブ文字のパスの大文字小文字を揃えて行う。次の attach か Mailbox の削除まで出す (Hub のメモリのみ)。拒みはしない。それ以外は `null`。古い Hub はこの項目を返さない

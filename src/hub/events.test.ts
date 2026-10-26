@@ -44,6 +44,11 @@ describe('fromClaudeCodeHook', () => {
     assert.notEqual(q.event.id, a.event.id)
   })
 
+  it('StopFailure → turn.failed。error と last_assistant_message は変換せず payload に残る', () => {
+    const input = { session_id: 's1', cwd: 'C:\work\agent-hub', hook_event_name: 'StopFailure', error: 'rate_limit', last_assistant_message: "You've hit your limit" }
+    assert.deepEqual(fromClaudeCodeHook(input, undefined, now), { event: { source: 'claude-code', sessionId: 's1', cwd: 'C:\work\agent-hub', kind: 'turn.failed' } })
+  })
+
   it('AskUserQuestion 以外のツールと、知らない hook は取り込まない', () => {
     assert.deepEqual(fromClaudeCodeHook({ ...ask('PreToolUse'), tool_name: 'Bash' }, undefined, now), { ignored: 'unsupported_tool' })
     assert.deepEqual(fromClaudeCodeHook({ hook_event_name: 'SessionStart', session_id: 's1' }, undefined, now), { ignored: 'unsupported_hook' })
