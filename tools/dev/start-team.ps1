@@ -13,7 +13,9 @@ param(
   # 接続中の role も起動し直す (takeover で今のセッションを切り離す)
   [switch]$Force,
   # dist/ が古くても build しない
-  [switch]$NoBuild
+  [switch]$NoBuild,
+  # 各 role の claude に --permission-mode <値> を渡す。省略時は渡さない (start-agent.ps1)
+  [string]$PermissionMode
 )
 
 $ErrorActionPreference = 'Stop'
@@ -72,9 +74,14 @@ function Get-Mailboxes {
   } catch { return $null }
 }
 
-function Test-Attached([string]$Name) {
+function Get-AttachmentId([string]$Name) {
   $mb = Get-Mailboxes | Where-Object { $_.name -eq $Name }
-  return [bool]($mb -and $mb.attachment)
+  if ($mb -and $mb.attachment) { return $mb.attachment.attachmentId }
+  return $null
+}
+
+function Test-Attached([string]$Name) {
+  return [bool](Get-AttachmentId $Name)
 }
 
 # --- role を決める ---
@@ -141,6 +148,7 @@ if (Test-HubPort) {
 if (-not $token) { Write-Warning 'HUB_TOKEN がないので attach を確かめられない。待たずに起動だけする' }
 
 # --- role を 1 つずつ ---
+$failed = @()
 # Mailbox 名は start-agent.ps1 と同じく <プロジェクトのフォルダ名>.<role>
 foreach ($role in $Roles) {
   $mailbox = Get-DefaultMailbox $projectDir $role
@@ -148,17 +156,31 @@ foreach ($role in $Roles) {
     Write-Host "$mailbox は接続中なので飛ばす (起動し直すなら -Force)"
     continue
   }
+  # -Force では前の Attachment がリースの切れるまで残る。起動前の id を覚え、別の id が現れたときだけ attach したと読む (roadmap C33)
+  $before = if ($token) { Get-AttachmentId $mailbox } else { $null }
   Write-Host "$mailbox を起動する ($projectDir)"
-  Start-Tab $mailbox @('-NoExit', '-File', $agentScript, '-Role', $role, '-Project', $projectDir)
+  $tabArgs = @('-NoExit', '-File', $agentScript, '-Role', $role, '-Project', $projectDir)
+  if ($PermissionMode) { $tabArgs += @('-PermissionMode', $PermissionMode) }
+  Start-Tab $mailbox $tabArgs
   if (-not $token) { Start-Sleep -Seconds 3; continue }
   $deadline = (Get-Date).AddSeconds($AttachTimeout)
-  while (-not (Test-Attached $mailbox)) {
-    if ((Get-Date) -gt $deadline) {
-      Write-Warning "$mailbox が $AttachTimeout 秒以内に attach しなかった。タブを確認する (初回の警告ダイアログ、claude の起動エラーなど)。次へ進む"
-      break
-    }
+  $attached = $false
+  while (-not $attached) {
+    $now = Get-AttachmentId $mailbox
+    if ($now -and $now -ne $before) { $attached = $true; break }
+    if ((Get-Date) -gt $deadline) { break }
     Start-Sleep -Seconds 1
   }
-  if (Test-Attached $mailbox) { Write-Host "$mailbox が attach した" }
+  if ($attached) {
+    Write-Host "$mailbox が attach した"
+  } else {
+    # 前の接続が残っているだけかもしれないので、成功とは読まない
+    Write-Warning "$mailbox は $AttachTimeout 秒以内に新しく attach しなかった (失敗)。タブを確認する (初回の警告ダイアログ、claude の起動エラーなど)。次へ進む"
+    $failed += $mailbox
+  }
+}
+if ($failed.Count -gt 0) {
+  Write-Host "attach しなかった: $($failed -join ', ')"
+  exit 1
 }
 Write-Host '完了'

@@ -233,6 +233,10 @@
   - leader.md は起動時に `--append-system-prompt-file` で読むので、動いているセッションには次の起動から効く
 - [x] C31 カードの `Last event` に日付がない (2026-10-24、ユーザーが決定)
   - `public/index.html` の `time()` を、今日なら時刻だけ・今日でなければ日付つきにした。カードの Last event・Message・Detached などが同じ関数を通る。`npm run ui:check` に前日 (26 時間前) の時刻に日付が付く場面を足した (11 場面すべて合格)
+- [x] C29 起動スクリプトで権限モードを渡す (2026-10-26、ユーザーが決定。role ごとの既定は持たせない)
+  - `start-agent.ps1` / `start-team.ps1` に `-PermissionMode` を足した。指定したときだけ `claude --permission-mode <値>` を渡し、省略時は何も渡さない (`start-team.ps1` は各タブの `start-agent.ps1` へ引き継ぐ)。`claude` を引数を表示する代役に差し替えて、指定あり (`--permission-mode default` が入る) と省略 (入らない) の両方を確かめ、`--add-dir` が最後のままなことも見た。README に使い方と、手で `manual` にする方法との関係を書いた
+- [x] C33 起動し直した直後に、start-team が前の接続を「attach した」と読む (2026-10-26、ユーザーが決定)
+  - `start-team.ps1` が起動前の Attachment の `attachmentId` を覚え、別の id が現れてから「attach した」と出す。上限までに現れなければ失敗の警告を出し、最後に終了コード 1 で終わる。実機で確かめた: 前のセッションを模した Attachment (heartbeat でリースを保った) を残して `-Force -AttachTimeout 20` で起動すると、このとき NVM4306 で claude が起動しなかった本物の失敗と重なり、21 秒待って「失敗」と出て終了コード 1 になった (旧実装なら残った Attachment を見て即座に「attach した」と出る場面)。NVM を直した後の起動では、7 秒で新しい `attachmentId` (client `claude-code`) が現れ「attach した」と出て終了コード 0 になった。README の起動の手順も直した
 
 ## 項目
 
@@ -353,25 +357,6 @@ C26 の通しで見つかった残り。hook の設定は手で写す (`start-ag
 2026-10-20 にその形で vcp の C145 の前半を通した (`start-team.ps1 -Roles leader,deployer -Project <vcp>`、compose の Hub)。vcp の hook は `.claude/settings.local.json` に写してあった。user → leader → deployer → leader → user が手を挟まずに回り、手直しの 1 往復も同じ流れで済んだ (leader は報告の食い違いを自分で見つけて deployer に直させた)。agent-hub の不具合は出なかった。質問待ち・許可待ちの Event はこの通しでは出ていない (deployer は `auto` モード)。
 
 同じ日に vcp の C147 も索引なしの依頼で通した (チームは C145 のまま)。依頼から最終報告まで約 26 分で、人の手直しが 1 回入った。deployer が報告した後、leader がまだ確かめている間に人の手直し (月を月名でなくラベルで選ばせる) を送ると、leader はそのまま deployer に直させ、2 つの依頼の結果を最初の依頼への返信 1 本にまとめて返した。手直しの依頼は返信待ちのまま残り、deployer の報告 2 本は受領の確認が付かないまま残った (design.md §6.1n、C28)。手直しの原因は依頼の文面 (TODO の古い検討にあった「月名を C53 の検査にかける」を写した) で、agent-hub の不具合ではない。
-
-### C29. 起動スクリプトで権限モードを渡す
-
-`start-agent.ps1` / `start-team.ps1` は権限モードを渡さないので、Claude Code の既定 (この開発機では auto) で起動する (design.md §6.1o)。既定のモードの許可待ちを試すには `claude --permission-mode default` を渡す口が要る。`-PermissionMode` を足し、省略時は今までどおり渡さない、が候補。role ごとに既定を持たせるか (例: deployer だけ default) も決める。
-2026-10-21 (2.1.306): Shift+Tab の切り替えに `default` はなく `manual` がそれに当たり、hook の `permission_mode` には `default` と載った。手で `manual` にすれば許可待ちは試せる (§6.1o) ので、急ぎではない。
-2026-10-24 にユーザーが決定。role ごとの既定は持たせない (要る場面が出てから)。
-
-#### 完了条件
-- [ ] `start-agent.ps1` / `start-team.ps1` に `-PermissionMode` を足し、指定したときだけ `claude --permission-mode <値>` を渡す。省略時は今までどおり何も渡さない
-- [ ] README の起動の手順に使い方を書き、手で `manual` にする方法との関係 (§6.1o) を添える
-
-### C33. 起動し直した直後に、start-team が前の接続を「attach した」と読む
-
-`start-team.ps1 -Force` は、起動したタブの Mailbox に Attachment があるかだけを見る。前のセッションを止めた直後は Hub に前の Attachment がリースの切れるまで残るので、新しい claude が起動に失敗しても (2026-10-21 は NVM が claude を止めた) 「attach した」と出た。候補: 起動前の Attachment の `id` (または `sessionId`) を覚え、違うものになるまで待つ / `-Force` のときは前の Attachment が外れるのを先に待つ。
-2026-10-24 にユーザーが決定。前者 (起動前の `id` を覚える) で進める。
-
-#### 完了条件
-- [ ] `start-team.ps1` が、起動前の Attachment の `id` を覚え、別の `id` の Attachment が現れてから「attach した」と出す
-- [ ] 待ちが時間切れになったら、attach していないものとして失敗を出す (前の接続を成功と読まない)
 
 ### C30. 許可した後に、許可待ちが解けたことが分からない
 状態: 提案

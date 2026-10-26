@@ -211,7 +211,7 @@ npm run hub                                   # ターミナル A
 - どちらのスクリプトも `-Project <フォルダ>` で作業するプロジェクトを選べる (省略時は agent-hub)。下の「他のリポジトリで使う」。
 - 1 つ起動するごとに、その role の Mailbox が Hub に attach するまで待ってから次へ進む (上限 `-AttachTimeout`、既定 60 秒)。開発用 channel の警告ダイアログは、開いたタブで 1 つずつ答える。
 - 接続中の role は飛ばす (起動し直すと takeover で今のセッションが切り離されるため)。起動し直すなら `-Force`。
-  前のセッションを止めた直後は、Hub に前の Attachment がリースの切れるまで残るので、claude が起動に失敗しても「attach した」と出ることがある。タブで claude が動いているかを見て確かめる (roadmap C33)。
+  起動前の Attachment の `attachmentId` を覚え、別の id の Attachment が現れてから「attach した」と出す。前のセッションの Attachment がリースの切れるまで残っていても、成功とは読まない。上限までに現れなければ失敗として警告し、最後に終了コード 1 で終わる (roadmap C33)。
 - `roles.json` にない role は起動前に止める。`dist/` が `src/` より古ければ先に build する (`-NoBuild` で省く)。
 - attach の確認には `.env` の `HUB_TOKEN` を使う。タブは起動したのと同じシェル (`pwsh` / `powershell`) で開く。
 
@@ -225,8 +225,8 @@ npm run hub                                   # ターミナル A
 - leader のターミナルでの応答を簡潔にする指示も role の説明に書いている。output style (`/output-style concise`) は `.claude/settings.local.json` に保存され、同じフォルダの全セッションに効くので使わない。起動時に `--settings` で渡す方法は 2.1.301 で誤動作した (design.md §6.1f)。
 - 2 つのセッションは同じフォルダで動くので、deployer の変更は leader から `git diff` で見える。
 - deployer のファイル編集の許可は、ターミナル C で承認する。
-- 権限モードはスクリプトから渡さないので、Claude Code の既定で起動する。アカウントで auto を既定にしていると、許可待ちはほとんど出ない。
-  許可待ちを試すなら、そのタブで Shift+Tab から `manual` にする (2.1.306 の切り替えには `default` がなく、hook の `permission_mode` には `default` と載る。design.md §6.1o、roadmap C29)。
+- 権限モードは、`-PermissionMode <値>` を付けたときだけ `claude --permission-mode <値>` として渡す。省略すると何も渡さず、Claude Code の既定で起動する。アカウントで auto を既定にしていると、許可待ちはほとんど出ない。
+  許可待ちを試すなら `-PermissionMode default` を付ける (例 `./tools/dev/start-agent.ps1 -Role deployer -PermissionMode default`。`start-team.ps1` に付ければ全 role に渡る)。起動後に手で変えるなら、そのタブで Shift+Tab から `manual` にする (2.1.306 の切り替えには `default` がなく、`manual` がそれに当たる。hook の `permission_mode` には `default` と載る。design.md §6.1o、roadmap C29)。
 
 ### roadmap の項目から依頼する (Items)
 

@@ -9,7 +9,9 @@ param(
   # 省略時は deployer だけ haiku、leader は既定のモデル
   [string]$Model,
   # 省略時は <プロジェクトのフォルダ名>.<role> (shim の既定と同じ規則)
-  [string]$Mailbox
+  [string]$Mailbox,
+  # 指定したときだけ claude --permission-mode <値> を渡す。省略時は渡さず、Claude Code の既定で起動する (design.md §6.1o)
+  [string]$PermissionMode
 )
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -51,6 +53,7 @@ $claudeArgs = @(
 $roleFile = Join-Path $root "tools/dev/roles/$Role.md"
 if (Test-Path $roleFile) { $claudeArgs += @('--append-system-prompt-file', $roleFile) }
 if ($Model) { $claudeArgs += @('--model', $Model) }
+if ($PermissionMode) { $claudeArgs += @('--permission-mode', $PermissionMode) }
 # --settings は渡さない。2.1.301 で --settings <file> を付けると、モデル名が "--settings" と読まれた (design.md §6.1f)。
 # leader の応答を簡潔にする指示は roles/leader.md に書く
 # 添付画像の保存先 (shim の既定は OS の一時フォルダの agent-hub。HUB_FILES_DIR で変えていればそれ) を読めるようにする。
