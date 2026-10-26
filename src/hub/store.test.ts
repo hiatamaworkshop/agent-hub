@@ -202,7 +202,7 @@ describe('Store: 溜まりの材料 (summary)', () => {
     for (const e of s.listEvents(Infinity)) {
       if (e.mailbox !== name || e.superseded) continue
       const p = e.payload as Record<string, unknown>
-      const d = e.kind === 'turn.failed' ? p.error : e.kind === 'notification' ? p.notification_type : undefined
+      const d = e.kind === 'turn.failed' ? p.error : e.kind === 'notification' ? p.notification_type : e.kind === 'permission.resolved' ? p.tool_name : undefined
       backlog.lastEvent = { id: e.id, kind: e.kind, ts: e.ts, ...(e.sessionId ? { sessionId: e.sessionId } : {}), ...(typeof d === 'string' && d ? { detail: d } : {}) }
       if (e.kind === 'turn.end') backlog.lastTurnEnd = { id: e.id, ts: e.ts }
     }
@@ -308,9 +308,12 @@ describe('Store: 溜まりの材料 (summary)', () => {
     const resumed = ev('notification', { payload: { notification_type: 'quota_auto_resume_fired' } })
     check('通知が最新')
     assert.equal(s.summary('x').backlog.lastEvent?.detail, 'quota_auto_resume_fired')
+    const approved = ev('permission.resolved', { payload: { tool_name: 'Bash' } })
+    check('許可の解除が最新')
+    assert.equal(s.summary('x').backlog.lastEvent?.detail, 'Bash')
     const later = ev('turn.end', { payload: { error: 'x' } })
     assert.equal(s.summary('x').backlog.lastEvent?.detail, undefined, 'turn.end には detail を付けない')
-    s.deleteEvents([q.id, end.id, failed.id, resumed.id, later.id])
+    s.deleteEvents([q.id, end.id, failed.id, resumed.id, approved.id, later.id])
     check('消した後は残っている中の最新')
     assert.equal(s.summary('x').backlog.lastEvent, null)
   })

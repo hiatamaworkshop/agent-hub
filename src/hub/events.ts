@@ -11,6 +11,8 @@ export interface EventDraft {
   changes?: EventChanges
   // 上流に一意の値があるときだけ決める (重複の除去に使う)。なければ Hub が採番する
   id?: string
+  // 入力のまま持たないときだけ決める (大きな欄を落とす)。なければ入力をそのまま持つ
+  payload?: Record<string, unknown>
 }
 
 export type Converted = { event: EventDraft } | { ignored: string }
@@ -69,8 +71,17 @@ export const fromClaudeCodeHook: EventConverter = (input, previous, now) => {
     case 'StopFailure':
       return { event: { ...base, kind: 'turn.failed' } }
     case 'PreToolUse':
-    case 'PostToolUse': {
-      if (input.tool_name !== 'AskUserQuestion') return { ignored: 'unsupported_tool' }
+    case 'PostToolUse':
+    case 'PostToolUseFailure': {
+      if (input.tool_name !== 'AskUserQuestion') {
+        // 許可待ちの後に最初にツールが動いたら、許可されたと見る。手で拒否したときは hook が届かない (C30、design.md §6.1s)。
+        // PostToolUse は全ツールで届くので、それ以外は記録しない
+        if (hook === 'PreToolUse' || previous?.kind !== 'permission') return { ignored: 'unsupported_tool' }
+        const { tool_response: _response, tool_input: _input, ...payload } = input
+        const kind = 'permission.resolved'
+        return { event: { ...base, kind, payload, ...(sessionId && toolUseId ? { id: stableId(sessionId, kind, toolUseId) } : {}) } }
+      }
+      if (hook === 'PostToolUseFailure') return { ignored: 'unsupported_tool' }
       const kind = hook === 'PreToolUse' ? 'question' : 'question.answered'
       // tool_use_id は呼び出しごとに一意なので、hook が重ねて届いても 1 件にまとまる
       return { event: { ...base, kind, ...(sessionId && toolUseId ? { id: stableId(sessionId, kind, toolUseId) } : {}) } }

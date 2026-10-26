@@ -49,11 +49,17 @@ interface MailboxState {
 export type NewMessage = Omit<Message, 'id' | 'seq' | 'ts'>
 
 // Backlog.lastEvent の detail: UI が payload を持たない静かな Mailbox でも、止まった理由 (turn.failed の error)
-// と通知の種類 (notification_type。quota_auto_resume_* など) を読めるようにする (C38)
+// と通知の種類 (notification_type。quota_auto_resume_* など)、許可されたツール (C30) を読めるようにする (C38)
+const DETAIL_FIELD: Partial<Record<HubEvent['kind'], string>> = {
+  'turn.failed': 'error',
+  notification: 'notification_type',
+  'permission.resolved': 'tool_name',
+}
+
 function eventDetail(e: HubEvent): string | undefined {
   if (typeof e.payload !== 'object' || e.payload === null) return undefined
-  const p = e.payload as Record<string, unknown>
-  const v = e.kind === 'turn.failed' ? p.error : e.kind === 'notification' ? p.notification_type : undefined
+  const field = DETAIL_FIELD[e.kind]
+  const v = field ? (e.payload as Record<string, unknown>)[field] : undefined
   return typeof v === 'string' && v ? v : undefined
 }
 

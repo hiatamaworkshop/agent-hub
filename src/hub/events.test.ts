@@ -64,6 +64,26 @@ describe('fromClaudeCodeHook', () => {
     assert.equal(p.event.id, undefined)
   })
 
+  it('許可待ちの直後のツールの完了 (成功も失敗も) → permission.resolved。大きな欄は payload から落とす (C30)', () => {
+    const perm: HubEvent = { id: 'e_p', ts: '2026-10-16T11:59:00Z', kind: 'permission', source: 'claude-code', sessionId: 's1', payload: {} }
+    const post = (hook: string) => ({ session_id: 's1', cwd: 'C:\\work\\agent-hub', hook_event_name: hook, tool_name: 'Bash', tool_use_id: 'tu9', tool_input: { command: 'rm -rf x' }, tool_response: { stdout: 'big' }, duration_ms: 12 })
+    for (const hook of ['PostToolUse', 'PostToolUseFailure']) {
+      const r = fromClaudeCodeHook(post(hook), perm, now)
+      assert.ok('event' in r)
+      assert.equal(r.event.kind, 'permission.resolved')
+      assert.match(r.event.id!, /^e_[0-9a-f]{32}$/)
+      assert.deepEqual(r.event.payload, { session_id: 's1', cwd: 'C:\\work\\agent-hub', hook_event_name: hook, tool_name: 'Bash', tool_use_id: 'tu9', duration_ms: 12 })
+    }
+    // 許可待ちの後でなければ、全ツールの PostToolUse は記録しない
+    const end: HubEvent = { ...perm, kind: 'turn.end' }
+    assert.deepEqual(fromClaudeCodeHook(post('PostToolUse'), end, now), { ignored: 'unsupported_tool' })
+    assert.deepEqual(fromClaudeCodeHook(post('PostToolUse'), undefined, now), { ignored: 'unsupported_tool' })
+    // PreToolUse は許可待ちの後でも取らない (許可を出す前に届く)
+    assert.deepEqual(fromClaudeCodeHook({ ...post('PreToolUse') }, perm, now), { ignored: 'unsupported_tool' })
+    // AskUserQuestion の失敗は記録しない
+    assert.deepEqual(fromClaudeCodeHook({ ...ask('PostToolUse'), hook_event_name: 'PostToolUseFailure' }, undefined, now), { ignored: 'unsupported_tool' })
+  })
+
   it('回答前の質問の直後の permission_prompt は、質問の表示による重複として捨てる', () => {
     const q: HubEvent = { id: 'e_q', ts: '2026-10-16T11:59:54Z', kind: 'question', source: 'claude-code', sessionId: 's1', payload: {} }
     assert.deepEqual(fromClaudeCodeHook(notif('permission_prompt'), q, now), { ignored: 'question_prompt' })
@@ -118,6 +138,20 @@ describe('Hub.addEvent: 記録と Mailbox の解決', () => {
     const r = hub.addEvent(notif('permission_prompt'))
     assert.ok('kind' in r)
     assert.equal(r.kind, 'permission')
+  })
+
+  it('許可待ちの後の最初のツールだけ permission.resolved として記録し、payload から tool_response を落とす (C30)', () => {
+    const { hub } = setup()
+    const post = (id: string) => ({ session_id: 's1', cwd: 'C:\\work\\agent-hub', hook_event_name: 'PostToolUse', tool_name: 'Write', tool_use_id: id, tool_input: { content: 'x' }, tool_response: { ok: true } })
+    assert.deepEqual(hub.addEvent(post('tu1')), { ignored: 'unsupported_tool' })
+    hub.addEvent(notif('permission_prompt'))
+    const r = hub.addEvent(post('tu2'))
+    assert.ok('kind' in r)
+    assert.equal(r.kind, 'permission.resolved')
+    assert.deepEqual(hub.addEvent(post('tu3')), { ignored: 'unsupported_tool' }, '次のツールは記録しない')
+    const e = hub.store.listEvents().at(-1)!
+    assert.equal((e.payload as Record<string, unknown>).tool_response, undefined)
+    assert.equal((e.payload as Record<string, unknown>).tool_name, 'Write')
   })
 
   it('sessionId は shim の attach の申告から解決し、Mailbox を切り替えたら追従する', () => {

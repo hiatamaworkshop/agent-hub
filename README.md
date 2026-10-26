@@ -6,7 +6,7 @@
 ```
 [ブラウザ UI] ⇄ SSE ⇄ [Hub (常駐 daemon)] ⇄ [shim = MCP サーバー × セッション数] ─ channel で push → [Claude Code]
                            ▲                                                    └ inbox ツールで取り出す ← [ほかのエージェント]
-         hooks (Stop / StopFailure / Notification / PreToolUse / PostToolUse) からの POST
+         hooks (Stop / StopFailure / Notification / PreToolUse / PostToolUse / PostToolUseFailure) からの POST
 ```
 
 ## 何ができるか (目標)
@@ -97,6 +97,7 @@ claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels s
 - 返信待ちは `reply_to` の返信のほか、相手からの後の request か reply でも閉じる (人が質問に新しい依頼で答えたときなど。protocol.md §2)。
 - カードとサイドバーのバッジは、件数を `You` (人が動く番) / `Agent` (エージェントの番) / `Stuck?` (配送が詰まっているかもしれない) に分け、最も古いものの経過時間で色を変える。タブのタイトルの `N waiting` と favicon は、全プロジェクトの人が動く番の数。
 - 状態は hook の Event を材料にするので、hook を置いていないセッションでは粗くなる (下の「質問待ち・許可待ち・ターン終了をブラウザに出す」)。usage limit で止まった間は `Paused` と出る (`StopFailure` の hook が要る)。自動の再開が続かない・無効のときは、`Needs you` に `usage limit, press Enter` / `usage limit, auto-resume off` と出る (roadmap C38)。
+- 許可待ち (`Needs you (permission)`) は、許可してツールが動くと解ける (`Last event: approved`)。ターミナルで拒否したときは何も届かないので、`Needs you` のまま残る (拒否の後は Claude Code が人の入力を待つ。roadmap C30)。
 
 ### カスタムコマンド
 
@@ -138,7 +139,8 @@ Claude Code の HTTP hook で、`AskUserQuestion`・許可待ち・ターン終�
    `--settings` で渡す方法は 2.1.301 で誤動作した (design.md §6.1f) ので使わない。
 2. hook の `Authorization` は環境変数 `HUB_TOKEN` から作られる。`tools/dev/start-agent.ps1` は `.env` の値を渡すので何もしなくてよい。手で `claude` を起動するなら、先に `$env:HUB_TOKEN` を設定する。
    その場合、トークンはセッションの Bash などからも見える。`.env` と同じ扱い。
-3. Hub が止まっていると、hook はエラーを表示するだけで作業は止まらない (タイムアウト 5 秒)。
+   `PostToolUse` / `PostToolUseFailure` は、許可待ちが解けたことを知るため全ツールで送る (Hub は許可待ちの直後の 1 件だけ記録し、ほかは捨てる。1 回あたり数 ms。design.md §6.1s)。前の設定 (`matcher: AskUserQuestion`) を写してあるなら、`matcher` を外し `PostToolUseFailure` を足す。
+3. Hub が止まっていると、hook はエラーを表示するだけで作業は止まらない (タイムアウト 5 秒)。1 MB を超える入力 (大きなファイルの `Read` の結果など) も、Hub が 413 を返して hook のエラーになるだけ。
    設定ファイルの hook は、起動中のセッションにも読み直されて効く (起動し直さなくてよい。design.md §6.1q)。
 4. (任意) `Stop` で変更の事実 (HEAD・変更ファイル・未追跡ファイル) を Hub に送るには、[tools/hooks/settings.command.json](tools/hooks/settings.command.json) の `Stop` を使う。`Stop` の HTTP hook (1 の `Stop`) と**両方置くと `turn.end` が 2 件になる**ので、HTTP の `Stop` は外して置き換える。
    スクリプトは `tools/hooks/post-event.mjs`。git は作業フォルダで実行し、Hub は git を実行しない。Hub のポートは `HUB_PORT` (既定 7777)。失敗しても作業は止まらず、取れた分だけ送る。ブラウザでは `turn.end` に変更ファイルの件数が出る。

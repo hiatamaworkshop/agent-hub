@@ -793,7 +793,7 @@ vcp の C147 を `user:cli` から vcp.leader へ依頼した (seq 39)。leader 
 vcp の C142 を UI から vcp.leader へ依頼した (seq 69)。leader → deployer (#71) → leader (#73) → user (#74) で、コミット b7f6818 まで約 34 分。
 - **既定の権限モードは auto だった**: 両方の Event の `permission_mode` が `auto`。起動スクリプトはモードを渡さず、`~/.claude.json` に auto を既定にした記録 (`hasResetAutoModeOptInForDefaultOffer`) がある。前回 (§6.1n) の deployer の `auto` も同じ理由と見られる。既定のモードの許可待ちは、起動し直して手で `manual` にした後で見た (この節の最後)。
 - **質問待ち**: leader が `AskUserQuestion` で 3 問聞き、`PreToolUse` → `question`、回答で `PostToolUse` → `question.answered` (約 4 分後) が届いた。UI は質問と選択肢を Event のカードに出した。溜まりのバッジには数えない (バッジは Message の材料だけ)。
-- **許可待ち**: auto の deployer で 1 回、`Notification` (`permission_prompt`) → `permission`。payload には `message: "Claude needs your permission"` だけで、ツール名も `permission_mode` もない。許可した後に対になる Event はなく、カードの `Last event` は作業が再開しても `permission` のまま残る (roadmap C30)。
+- **許可待ち**: auto の deployer で 1 回、`Notification` (`permission_prompt`) → `permission`。payload には `message: "Claude needs your permission"` だけで、ツール名も `permission_mode` もない。許可した後に対になる Event はなく、カードの `Last event` は作業が再開しても `permission` のまま残る (roadmap C30。2026-10-26 に `permission.resolved` で解いた。§6.1s)。
 - **カードの時刻に日付がない**: deployer のカードの `Last event: turn end · 22:17:10` は前日の Event だったが、時刻だけなので今日に見えた (roadmap C31)。
 - **Hub の外で始まったターンで返信が抜けた**: deployer (Haiku) はフルスイートをバックグラウンドで流してターンを終え、完了通知で始まったターンで結果をターミナルに書いただけで `post_message` しなかった。人が UI から催促 (#72) すると #71 への reply (#73) を送った。前 2 回の通しでは起きていない (roadmap C32)。
 - **残ったもの**: 終わった時点で vcp.leader は返信待ち 2 (前日の手直し・#70 の「このまま続ける」)、確認待ち 1 (#73。報告に返信はしない)、vcp.deployer は返信待ち 1 (催促の #72)。どれも読んで動いた分で、C28 の形が 1 回の通しで 3 件増えた。
@@ -823,6 +823,15 @@ vcp の C142 を UI から vcp.leader へ依頼した (seq 69)。leader → depl
 - **直した後**: leader と deployer を起動し直し (role の説明は起動時の system prompt なので、起動中のセッションには効かない)、C158 を同じく `user:cli` から送った。leader は 1 分ほどで英語の固定見出しの依頼を `role:deployer` に送ってターンを終え、deployer は約 5 分半で `CHANGED` / `VERIFIED` / `NOT VERIFIED` の報告を返し、leader は差分と全体の試験を自分で確かめてから返事を出した (依頼から約 9 分)。
 - **C32 の場面は起きなかった**: deployer は全体の試験 (4342 件) をターンの中で待ち、報告 (10:15:22) はそのターンの終わり (10:15:26) より前に出た。バックグラウンドの処理を待ってターンを終える場面は deployer の選び方次第で、狙って起こせない。C32 の 2 つ目の完了条件は開いたまま。
 - **Hub の版**: 走っていた compose の Hub は C40 より前のビルドで、`GET /mailboxes` が `backlog.outgoing` を返さなかった (カードの状態は粗く出る)。`docker compose up -d --build` で作り直すと、起動中の shim はそのまま attach し直した。
+
+### 6.1s 許可待ちの解除と、拒否の後 (2026-10-26、compose の Hub / agent-hub の reviewer を `-PermissionMode default -Model haiku` で起動、Claude Code 2.1.310)
+
+- **公式資料 (hooks リファレンス、同日に確認)**: `PermissionRequest` はダイアログを出す直前に届き、`tool_name` と `tool_input` を持つ (`tool_use_id` はない)。許可したツールが動くと `PostToolUse` (成功) か `PostToolUseFailure` (失敗。`error`、`is_interrupt`) が届く。ターミナルで手で拒否したときは、どの hook も届かない (`PermissionDenied` は auto モードの拒否だけ。`PostToolUseFailure` も許可の拒否では出ない)。`Notification` の `permission_prompt` は待ちが約 6 秒続いてから出る。
+- **採った形 (roadmap C30)**: `PostToolUse` / `PostToolUseFailure` を全ツールで登録し、同じ session の直前の Event が `permission` のときだけ `permission.resolved` として記録する。ほかは記録しない (`ignored`)。payload からは `tool_response` と `tool_input` を落とす (Read の中身などを溜めないため)。`PermissionRequest` は使っていない (6 秒より早く許可した分まで許可待ちとして出てしまうため)。
+- **実機**: Hub から「Bash で `node -e` を 2 回、別々に実行」と依頼し、人が 1 回目を 6 秒以上待ってから許可、2 回目を拒否した。11:00:16 `permission` → 11:01:00 `permission.resolved` (`tool_name: Bash`) → 11:01:08 `permission`。拒否の後は 3 分以上、Event も reply も届かず (`turn.end` も `idle_prompt` の通知もない)、カードの最後の Event は `permission` のまま (Needs you)。拒否の後の Claude Code は人の入力を待つので、Needs you が正しい。保存された `permission.resolved` の payload は `session_id`・`transcript_path`・`cwd`・`permission_mode`・`hook_event_name`・`tool_name`・`tool_use_id`・`duration_ms` など (大きな欄なし)。
+- **負荷**: 全ツールの `PostToolUse` が Hub に届く。記録しない場合の Hub の応答時間は、20 KB の payload で 100 回、中央値 3.6 ms・p95 5.3 ms・最大 56.8 ms (ホストから compose の Hub)。長い vcp のセッション (10-21〜23) のツール呼び出しは 204 回で、合わせても 1 秒に届かない。1 MB を超える `tool_response` (大きなファイルの Read) は Hub が 413 を返し、hook のエラーとして扱われるだけで作業は止まらない (README の hook の 3)。
+- **残る穴**: 許可待ちの間に、同じ session の別のツール (並列の呼び出しや subagent) が先に終わると、許可される前に `permission.resolved` と読む。ツール名は `Notification` にないので突き合わせられない。
+
 ### 6.2 未検証
 
 1. **Windows 固有**: パス表記、改行コード。Docker Desktop で公開がループバックだけになることは確認した (§6.1l)。

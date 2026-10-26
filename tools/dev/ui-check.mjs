@@ -197,6 +197,20 @@ try {
   await ackAll(dep.attachmentId)
   await scene('ターンが終わった (Paused が解け、返信のない依頼があるので Stopped)', { 'demo.deployer': 'Stopped, no reply' }, '1 waiting')
 
+  // 許可待ちの解除 (C30): 許可待ちの後に最初にツールが動いたら permission.resolved。拒否したときは何も届かない
+  const permission = (mailbox, session) => hook(mailbox, { hook_event_name: 'Notification', session_id: session, notification_type: 'permission_prompt', message: 'Claude needs your permission' })
+  const toolDone = (mailbox, session, id) => hook(mailbox, { hook_event_name: 'PostToolUse', session_id: session, tool_name: 'Bash', tool_use_id: id, tool_input: { command: 'npm test' }, tool_response: { stdout: 'ok' } })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'role', id: 'deployer' }, body: 'GOAL: C3 を実装する' })
+  await ackAll(dep.attachmentId)
+  await scene('deployer に次の依頼が渡った', { 'demo.deployer': 'Working' }, '1 waiting')
+  await permission('demo.deployer', 's-dep')
+  await scene('deployer が許可を求めた', { 'demo.deployer': 'Needs you (permission)' }, '2 waiting')
+  await toolDone('demo.deployer', 's-dep', 'tu-b1')
+  await scene('許可してツールが動いた (Needs you が解けて Working)', { 'demo.deployer': 'Working' }, '1 waiting')
+  await toolDone('demo.deployer', 's-dep', 'tu-b2')
+  await permission('demo.deployer', 's-dep')
+  await scene('もう一度許可を求め、拒否した (何も届かず Needs you のまま)', { 'demo.deployer': 'Needs you (permission)' }, '2 waiting')
+
   // 時刻の表示 (C31): 今日は時刻だけ、前日は日付つき
   const t = await cdp('Runtime.evaluate', {
     expression: `(() => { const now = Date.now(), old = now - 26 * 3600 * 1000; return { today: time(now), todayPlain: new Date(now).toLocaleTimeString(), old: time(old), oldPlain: new Date(old).toLocaleTimeString() } })()`,

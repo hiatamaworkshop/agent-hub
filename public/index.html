@@ -595,7 +595,7 @@ const evtData = new Map() // Event の id → Event (プロジェクトの絞り
 const lastEventByMailbox = new Map() // Mailbox 名 → 最新の Event (カードに出す)
 const lastTurnEndByMailbox = new Map() // Mailbox 名 → 最新のターン終了 (作業中かを導く)
 const DETACH_LABEL = { closed: 'session ended', disconnected: 'connection lost', lease_expired: 'lease expired' }
-const EVENT_LABEL = { 'turn.end': 'turn end', 'turn.failed': 'turn failed', question: 'question', 'question.answered': 'answered', permission: 'permission', notification: 'notification', 'session.boundary': 'boundary' }
+const EVENT_LABEL = { 'turn.end': 'turn end', 'turn.failed': 'turn failed', question: 'question', 'question.answered': 'answered', permission: 'permission', 'permission.resolved': 'approved', notification: 'notification', 'session.boundary': 'boundary' }
 // 人の手を待っている Event。目立たせ、非表示のタブでは未読として数える
 const WAITING = new Set(['question', 'permission'])
 const str = (v) => (typeof v === 'string' ? v : '')
@@ -622,6 +622,9 @@ function eventBody(ev) {
     if (text) box.append(el('div', 'body', text))
     if (ev.kind === 'notification' && p.notification_type) box.append(el('div', 'note', str(p.notification_type)))
     if (ev.kind === 'permission') box.append(el('div', 'note', 'Approve or deny in the terminal.'))
+  } else if (ev.kind === 'permission.resolved') {
+    // 許可待ちの後に最初にツールが動いた (C30)。拒否したときは hook が届かず、permission のまま残る
+    box.append(el('div', 'note', `${str(p.tool_name) || 'A tool'} ran after the permission prompt, so it was approved.`))
   } else if (ev.kind === 'turn.failed') {
     // API のエラーでターンが終わった (usage limit など)。error は hook の入力のまま、本文は最後の応答
     if (p.error) box.append(el('div', 'note', str(p.error)))
@@ -1524,12 +1527,13 @@ function staleEvent(mb, ev) {
   const at = mb.attachment
   return !!(at && at.sessionId && ev && ev.sessionId && ev.sessionId !== at.sessionId && Date.parse(ev.ts) < Date.parse(at.attachedAt))
 }
-// usage limit で止まった理由 (turn.failed の error) と通知の種類 (notification_type)。Hub は backlog.lastEvent.detail で渡し、
-// SSE で届いた Event は payload から読む
+// usage limit で止まった理由 (turn.failed の error)、通知の種類 (notification_type)、許可されたツール (tool_name)。
+// Hub は backlog.lastEvent.detail で渡し、SSE で届いた Event は payload から読む
+const DETAIL_FIELD = { 'turn.failed': 'error', notification: 'notification_type', 'permission.resolved': 'tool_name' }
 function eventDetailOf(ev) {
   if (ev.detail) return ev.detail
   const p = ev.payload && typeof ev.payload === 'object' ? ev.payload : {}
-  const v = ev.kind === 'turn.failed' ? p.error : ev.kind === 'notification' ? p.notification_type : ''
+  const v = DETAIL_FIELD[ev.kind] ? p[DETAIL_FIELD[ev.kind]] : ''
   return typeof v === 'string' ? v : ''
 }
 // 自動の再開が続かない通知 → 人が動く番 (Needs you)。値は括弧に添える理由

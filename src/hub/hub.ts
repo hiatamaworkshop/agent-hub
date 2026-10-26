@@ -263,7 +263,7 @@ export class Hub {
       ...(mailbox ? { mailbox } : {}),
       ...(draft.changes ? { changes: draft.changes } : {}),
       ...(draft.sessionId && this.supersededSessions.has(draft.sessionId) ? { superseded: true as const } : {}),
-      payload: input,
+      payload: draft.payload ?? input,
     }
     this.store.addEvent(event)
     this.emitUi('event', event)

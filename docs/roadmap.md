@@ -237,6 +237,9 @@
   - `start-agent.ps1` / `start-team.ps1` に `-PermissionMode` を足した。指定したときだけ `claude --permission-mode <値>` を渡し、省略時は何も渡さない (`start-team.ps1` は各タブの `start-agent.ps1` へ引き継ぐ)。`claude` を引数を表示する代役に差し替えて、指定あり (`--permission-mode default` が入る) と省略 (入らない) の両方を確かめ、`--add-dir` が最後のままなことも見た。README に使い方と、手で `manual` にする方法との関係を書いた
 - [x] C33 起動し直した直後に、start-team が前の接続を「attach した」と読む (2026-10-26、ユーザーが決定)
   - `start-team.ps1` が起動前の Attachment の `attachmentId` を覚え、別の id が現れてから「attach した」と出す。上限までに現れなければ失敗の警告を出し、最後に終了コード 1 で終わる。実機で確かめた: 前のセッションを模した Attachment (heartbeat でリースを保った) を残して `-Force -AttachTimeout 20` で起動すると、このとき NVM4306 で claude が起動しなかった本物の失敗と重なり、21 秒待って「失敗」と出て終了コード 1 になった (旧実装なら残った Attachment を見て即座に「attach した」と出る場面)。NVM を直した後の起動では、7 秒で新しい `attachmentId` (client `claude-code`) が現れ「attach した」と出て終了コード 0 になった。README の起動の手順も直した
+- [x] C30 許可した後に、許可待ちが解けたことが分からない (2026-10-26、ユーザーが決定)
+  - `PostToolUse` / `PostToolUseFailure` を全ツールで登録し、同じ session の直前の Event が `permission` のときだけ `permission.resolved` として記録する (payload から `tool_response` と `tool_input` を落とす)。ほかは記録しない。UI は `approved` と出し、Needs you を解く。`npm run ui:check` に、許可を求める → 許可してツールが動く (Working) → もう一度求めて拒否する (Needs you のまま) の場面を足した (全場面が合格。全体の試験は 312 件が通る)
+  - 実機 (compose の Hub、`-PermissionMode default` の reviewer、2.1.310): 1 回目を許可すると `permission` → 44 秒後に `permission.resolved` (`tool_name: Bash`)、2 回目を拒否すると 3 分以上何も届かず Needs you のまま (`idle_prompt` も来ない)。負荷は記録しない場合で中央値 3.6 ms・p95 5.3 ms (20 KB の payload)。1 MB を超える入力は 413 で hook のエラーになるだけ。許可待ちの間に並列の別のツールが先に終わると誤って解く穴が残る (design.md §6.1s)
 
 ## 項目
 
@@ -357,11 +360,6 @@ C26 の通しで見つかった残り。hook の設定は手で写す (`start-ag
 2026-10-20 にその形で vcp の C145 の前半を通した (`start-team.ps1 -Roles leader,deployer -Project <vcp>`、compose の Hub)。vcp の hook は `.claude/settings.local.json` に写してあった。user → leader → deployer → leader → user が手を挟まずに回り、手直しの 1 往復も同じ流れで済んだ (leader は報告の食い違いを自分で見つけて deployer に直させた)。agent-hub の不具合は出なかった。質問待ち・許可待ちの Event はこの通しでは出ていない (deployer は `auto` モード)。
 
 同じ日に vcp の C147 も索引なしの依頼で通した (チームは C145 のまま)。依頼から最終報告まで約 26 分で、人の手直しが 1 回入った。deployer が報告した後、leader がまだ確かめている間に人の手直し (月を月名でなくラベルで選ばせる) を送ると、leader はそのまま deployer に直させ、2 つの依頼の結果を最初の依頼への返信 1 本にまとめて返した。手直しの依頼は返信待ちのまま残り、deployer の報告 2 本は受領の確認が付かないまま残った (design.md §6.1n、C28)。手直しの原因は依頼の文面 (TODO の古い検討にあった「月名を C53 の検査にかける」を写した) で、agent-hub の不具合ではない。
-
-### C30. 許可した後に、許可待ちが解けたことが分からない
-状態: 提案
-
-質問待ちには `question.answered` (`PostToolUse`) があるが、許可待ち (`Notification` の `permission_prompt`) には対になる Event がない。許可して作業が再開しても、カードの `Last event` は次のターン終了まで `permission` のまま残る (design.md §6.1o)。`Notification` の payload にはツール名もない。候補: 許可待ちの後の最初の `PostToolUse` (どのツールでも) を `permission.resolved` として取る / `PostToolUse` の hook を全ツールに広げる負荷を測ってから決める。拒否されたときに何が届くかも確かめる。
 
 ### C32. Hub の外で始まったターンで、返信を忘れる
 
