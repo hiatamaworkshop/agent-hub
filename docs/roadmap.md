@@ -165,8 +165,9 @@
   - 別の Hub (ポート 7795) と headless Chrome で、2 つの一時フォルダの roadmap を送るだけで一覧に出ること、選ぶと Items と宛先が絞られ `role:deployer @ newproj` などを選べること、項目のカードから送った request の `to.project` と `meta.item`、読み込み直しても Mailbox のないプロジェクトの選択が戻ること、後で attach した `newproj.deployer` の未読が 1 になること、`/roles` を 404 にすると role の候補が出ないこと、Remove で Mailbox のない other が一覧から消えて All projects に戻り、Mailbox のある newproj は残ることを確かめた
 - [x] C44 溜まりのバッジから、その Message へ飛べるようにする (2026-10-27、ユーザーの依頼)
   - `GET /mailboxes` の `backlog` の溜まり (`unread`・`awaitingReply`・`unconfirmed`・`outgoing`、`outgoing.to` の宛先ごとも) に `oldestSeq` を足した (protocol.md §3)。カードの `You` / `Agent` / `Stuck?` を押すと、数えた中で最も古い Message (質問・許可待ちは Event) へ飛び、しばらく強調する (design.md §3.15)
-  - テスト `src/hub/store.test.ts` の「oldestSeq は溜まりの最も古い Message の seq で…」、`src/hub/mailbox.test.ts` の「返信待ちが 2 件あるとき oldestSeq は…」、既存の backlog の試験を `oldestSeq` 込みに直した。`npm test` は 314 件すべて通る
+  - テスト `src/hub/store.test.ts` の「oldestSeq は溜まりの最も古い Message の seq で…」、`src/hub/mailbox.test.ts` の「返信待ちが 2 件あるとき oldestSeq は…」と「古い方の依頼だけが閉じるとき (C44)」(返信で閉じる場合と、後の依頼で閉じる場合の両方)、既存の backlog の試験を `oldestSeq` 込みに直した。`npm test` は 316 件すべて通る
   - 別の Hub (ポート 7793) と headless Chrome の `npm run ui:check` に、5 日前の返信待ちの依頼を持つ `demo.old` の `Agent 1 · 5d` を押すと、その依頼が見えて強調される場面を足し、通した
+  - 回答なしで既定を採った: (1) `oldestSeq` を `outgoing.to` の宛先ごとにも残す (2) 完了条件の「種類の絞り込み」は、UI に種類の絞り込みがないのでプロジェクトの絞り込みとして扱った
 
 **受け入れ条件**
 1. 2 つの Mailbox が別トピックを購読し、それぞれの購読分だけ受け取る。
