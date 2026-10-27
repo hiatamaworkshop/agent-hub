@@ -248,6 +248,7 @@
 - [x] C32 Hub の外で始まったターンで、返信を忘れる (2026-10-26)
   - deployer がバックグラウンドの試験を待ってターンを終え、完了通知で始まったターンで結果をターミナルに書くだけで leader に返さなかった (design.md §6.1o)。2026-10-21 に安い方の案で決め、`tools/dev/roles/deployer.md` に、どのターンで終わっても reply で返すこと (ターミナルに書くだけでは届かない) を書いた。Hub の側で止まりを目立たせる案は C34 に分けた
   - vcp の C150 の通し (compose の Hub、deployer は haiku・auto、2.1.310) で、deployer が全体の試験をバックグラウンドで流してターンを終え、約 4 分後の完了通知のターンで催促なしに reply を送った (design.md §6.1t)。そのとき `Stop` の `background_tasks` に走っている処理が載っていたので、カードの判定に使う案を C43 に分けた
+- [ ] C49 **誰も接続していない宛先への依頼に、送ったエージェントも人も気づかない**
 
 ## 項目
 
@@ -433,3 +434,17 @@ C44 の完了条件のうち、ui:check は 5 日前の返信待ちの Agent バ
 - [ ] 上の 3 場面が `npm run ui:check` の場面として入り、通る
 - [ ] `npm test` が通る
 
+
+### C49. 誰も接続していない宛先への依頼を、送ったエージェントと人に知らせる
+
+2026-10-27、C45 の完了条件 4・5 の依頼で、leader が `role:reviewer` に 2 件 (#157・#160) の request を送った。reviewer のセッションは起動しておらず、Mailbox `agent-hub.reviewer` に未読で溜まった。leader は返事を待ってターンを終え、人は「止まっている」ことに気づくまで理由が分からなかった。ユーザーが、こういう場合は知らせる措置をとるべきと決めた。
+今の作り: `POST /messages` は配信先の `recipients` (未接続も含む) を返す。UI からの送信は、配信先が全部未接続なら `Accepted, but nobody is reading …` と警告する。shim の `post_message` は `recipients` が 0 件のときだけ `warning` を返し、配信先があって全部未接続のときは何も言わない。カードは送り手を `Waiting on others` (`delegated`) と出すが、待っている相手が未接続かは出さない。
+
+#### 完了条件
+- [ ] `POST /messages` (と forward) の応答が、`recipients` のうち今接続していない Mailbox を区別して示す。protocol.md §3 を合わせる
+- [ ] shim の `post_message` が、配信先が全部未接続のとき `warning` を返す (受理はされ、相手が attach したら未読として届く、と分かる文)。0 件のときの警告はそのまま
+- [ ] leader.md に、その `warning` が返ったら返事を待ってターンを終えず、ユーザーへの返事の `要操作` で相手の role の起動を頼むことを書く
+- [ ] UI のカードで、送り手が待っている相手 (`outgoing` の宛先) が全部未接続なら、`Waiting on others` と区別して出す (人の手が要る側の見た目にする)。相手が attach したら元に戻る
+- [ ] 試験: Hub の試験で、未接続の Mailbox だけが配信先の送信の応答に未接続が示される。shim の試験で、そのとき `warning` が付く
+- [ ] `npm run ui:check` に、leader が未接続の reviewer に送った request を待っているカードの場面を足して合格する
+- [ ] `npm test` と `npm run docs:check` が通る
