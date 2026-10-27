@@ -439,7 +439,7 @@ C44 の完了条件のうち、ui:check は 5 日前の返信待ちの Agent バ
 - [ ] `POST /messages` (と forward) の応答が、`recipients` のうち今接続していない Mailbox を区別して示す。protocol.md §3 を合わせる
 - [ ] shim の `post_message` が、配信先が全部未接続のとき `warning` を返す (受理はされ、相手が attach したら未読として届く、と分かる文)。0 件のときの警告はそのまま
 - [ ] leader.md に、その `warning` が返ったら返事を待ってターンを終えず、ユーザーへの返事の `要操作` で相手の role の起動を頼むことを書く
-- [ ] UI のカードで、送り手が待っている相手 (`outgoing` の宛先) が全部未接続なら、`Waiting on others` と区別して出す (人の手が要る側の見た目にする)。相手が attach したら元に戻る
+- [ ] UI のカードで、送り手が待っている相手 (`outgoing` の宛先) が全部未接続なら、`Waiting on others` でなく `Needs you` にし、未接続の相手の名前を出す (2026-10-27、ユーザーが決定)。相手が attach したら `Waiting on others` に戻る
 - [ ] 試験: Hub の試験で、未接続の Mailbox だけが配信先の送信の応答に未接続が示される。shim の試験で、そのとき `warning` が付く
 - [ ] `npm run ui:check` に、leader が未接続の reviewer に送った request を待っているカードの場面を足して合格する
 - [ ] `npm test` と `npm run docs:check` が通る
