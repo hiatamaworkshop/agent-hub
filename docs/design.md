@@ -122,7 +122,7 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
 - 送信: 送信中に打ち足した本文と、送信後に足した画像は残す。送ったもの (送信時点の本文と画像) だけを消す。失敗したときは何も消さない。起動時の `/settings` は 1 回だけ読み、初期の宛先と Commands に使う (Commands のダイアログは開くたびに読み直す)。
 - プロジェクトの絞り込み (2026-10-18): サイドバーの上で `All projects` か 1 つのプロジェクト (Mailbox の `project` と roadmap の索引の `project` の和。§3.15 の「プロジェクトは値」、2026-10-20) を選ぶ。タブには分けない。人間のコンソールの価値は全部を 1 画面で見られることで (§8.2)、タブだと別のプロジェクトの質問待ちを見落とすため。
   - 選んだプロジェクトの Mailbox のカードと、そこに関わる Message と Event だけを出す。関わるとは、送り手か宛先の Mailbox がそのプロジェクトのもの、`to.project` がそのプロジェクト、`project` のない `role:` / `topic:` 宛てでそのプロジェクトの Mailbox が受け取るもの、のどれか。`user:` 宛ては送り手で決める。
-  - 選んでいる間も、ほかのプロジェクトの人の手を待つ Event (回答前の `question`、`permission`) の数をスレッド操作バーに出す。押すと `All projects` に戻る。
+  - 選んでいる間も、ほかのプロジェクトの人の手を待つ件数 (タブと同じ `tabWaitingOf` の合計。回答前の `question`・`permission`、人宛ての request、未接続の相手を待つカードの 1 件) をスレッド操作バーに出す。押すと `All projects` に戻る。
   - 宛先の候補もそのプロジェクトの Mailbox に絞り、`role:` を選んで送ると `to.project` を付ける。宛先の表示は `role:deployer @ vcp`。Mailbox のまだないプロジェクトでも roles.json の role (`GET /roles`) を候補にし、attach した Mailbox に未読として届く。
   - `All projects` ではカードをプロジェクトごとにまとめて並べる (project のない Mailbox は最後)。選択は localStorage に覚え、そのプロジェクトの Mailbox も索引もなくなったら `All projects` に戻る。
   - `to.project` を知らない古い Hub は project を落として全体に配る。応答の `to` に `project` がなければ警告を出す。
@@ -178,7 +178,9 @@ MCP Events (SEP-3415) が購読 ID をクライアント生成にせず、購読
 | ターン終了 (区切り候補) | `Stop` hook | 確定的・機械的 |
 | 許可待ち・入力待ち | `Notification` hook | 確定的 |
 | エージェントからの質問 | `PreToolUse` hook (matcher: `AskUserQuestion`) | 確定的 |
-| 質問への回答 | `PostToolUse` hook (matcher: `AskUserQuestion`) | 確定的。UI で質問待ちが終わったことを示し、質問の表示による `permission_prompt` を見分けるのに使う |
+| 質問への回答 | `PostToolUse` hook (matcher なし。変換が `tool_name: AskUserQuestion` を選ぶ) | 確定的。UI で質問待ちが終わったことを示し、質問の表示による `permission_prompt` を見分けるのに使う |
+| API のエラーでターンが終わった (usage limit など) | `StopFailure` hook | 確定的。`turn.failed`。`error` に種類 (`rate_limit` など)。UI は Paused と出す (C38) |
+| 許可された (許可待ちの後、ツールが動いた) | `PostToolUse` / `PostToolUseFailure` hook (matcher なし。直前の Event が `permission` のときだけ) | 確定的。`permission.resolved`。UI は Needs you を解く (C30)。拒否は hook が届かないので見えない (§6.1s) |
 | 「ここでセッションを区切るべきか」の意味判断 | clear-timing skill のような skill | 意味的 (エージェント側の判断) |
 
 機械的な検知は hook、意味的な判断は skill、と役割を分ける。
@@ -503,15 +505,15 @@ Hub が持つのは注文票と「どの項目の注文か」の指し示しだ�
 - どれも配送の状態なので、知識を持たない原則 (§3.14) のまま作れる。
 
 **実装 (C6、2026-10-19)**。Hub は `GET /mailboxes` の `backlog` に材料 (未読・返信待ちの request・確認待ち。件数と最も古い ts) を重ならない形で返し、層への振り分けは UI が行う (protocol.md §3)。
-- 人が動く番: 最後の Event が回答前の question / permission (カードの `Last event` と同じ判定) と、Hub で人に出した返信待ちの request (`outgoing.to` の人宛て。C40、2026-10-23)。UI の 1 つの関数 (`humanTurnOf`) で数え、カードの状態 (Needs you)・このバッジ・タブのタイトルと favicon・ほかのプロジェクトの待ちの数は、すべてそれを使う。受け入れ待ちはまだ入れない (下の未決 4)。
+- 人が動く番: 最後の Event が回答前の question / permission (カードの `Last event` と同じ判定) と、Hub で人に出した返信待ちの request (`outgoing.to` の人宛て。C40、2026-10-23)。UI の 1 つの関数 (`humanTurnOf`) で数え、カードの状態 (Needs you) と このバッジ (You) は、それを使う。タブのタイトル・favicon と、ほかのプロジェクトの待ちの数は、`tabWaitingOf` (これに未接続の相手を待つカードの 1 件を足す。下の C49 の段落)。受け入れ待ちはまだ入れない (下の未決 4)。
 - エージェントの番: 接続中の Mailbox の未読と、渡したが返信のない request。
 - 怪しい: 返信待ちの request を除いた handed の未確認と、接続のない Mailbox の未読。Channels では受け手が request か reply を送るまで受領の確認がない (protocol.md §4) ので、返信待ちの request を外さないと、作業中の request がエージェントの番と怪しいの両方に出る。受け手が次にやりとりの Message (request か reply) を送ると、そのとき渡してあった分は確認になる (C39)。それまで、または保存期間まで怪しいに残る。
 - 色の境目 (分、気にする / 遅い) は、人が動く番 0 / 10、エージェントの番 30 / 120、怪しい 10 / 60。運用で合わなければ直す。
-- サイドバーは選んでいるプロジェクトの合計、タブのタイトル (`N waiting`) と favicon は全プロジェクトの人が動く番。favicon は非表示中に届いた新着の数を優先し、なければ人が動く番を琥珀色で出す。
+- サイドバーは選んでいるプロジェクトの合計、タブのタイトル (`N waiting`) と favicon は全プロジェクトの「Needs you」の人の番 (`tabWaitingOf`。未接続の相手を待つカードの 1 件を含む。C49)。ほかのプロジェクトの待ちの数 (`N waiting in other projects`) も `tabWaitingOf` の合計で、タブと同じ数え方。favicon は非表示中に届いた新着の数を優先し、なければその数を琥珀色で出す。
 
 **カードの状態 (2026-10-22、ユーザー)**。件数の層だけでは、今誰が動いているかが分からなかった (§6.1p)。カードに状態を 1 つ出し、枠の強調で示す。Hub は状態を持たず、`backlog` の `lastHanded`・`outgoing`・`awaitingReply` と hook の Event から UI が導く (protocol.md §3)。
-- 判定は上から順に: Offline (接続がない。薄く) → Needs you (人が動く番がある: 回答前の質問・許可か、Hub で人に出した返信待ちの request、usage limit の自動の再開が続かない通知 (`quota_auto_resume_stale` / `_disabled`)。琥珀の枠、`question`・`permission`・`request`・`usage limit, press Enter`・`usage limit, auto-resume off` を添える) → Paused (最後の Event が `turn.failed` で `error: rate_limit`。usage limit で止まっている間。青緑の枠、⏸ の印。Working より先に見る。Hub には止まった瞬間の Event がなく、渡した Message だけが残って Working と読まれるため。次の Event で解ける: `quota_auto_resume_fired` の通知の後は下の判定に戻り、`turn.end` でも解ける。C38) → Working (接続中の未読、または最後に渡した Message が最後の `turn.end` より新しい。Channels は渡した時点でターンを始めるため。青の枠、依頼の 1 行目を添える) → Waiting on others (ターンが終わり、自分が出した request に返信がない。紫の点線の枠、◔ の印と宛先。作業中の青と見分けるため 2026-10-23 に色を分けた) → Stopped, no reply (ターンが終わり、渡した request に返信がない。赤の枠。C34 の案) → Idle。
-- Waiting on others のうち、待っている相手 (人宛てを除く `outgoing.to` の `recipients`) がどれも接続していなければ Needs you にし、`(<Mailbox> not connected)` を添える。相手が attach すると Waiting on others に戻る。起動していない reviewer に依頼した leader が返事を待ってターンを終え、人は止まった理由が分からなかったため (C49、2026-10-27、ユーザー)。判定の位置は Waiting on others のところで、Working の後。`humanTurnOf` には入れないので、このバッジ・タブのタイトルには数えない (未読は相手のカードの Stuck? に出るため、二重に数えない)。
+- 判定は上から順に: Offline (接続がない。薄く) → Needs you (人が動く番がある: 回答前の質問・許可か、Hub で人に出した返信待ちの request、usage limit の自動の再開が続かない通知 (`quota_auto_resume_stale` / `_disabled`)。琥珀の枠、`question`・`permission`・`request`・`usage limit, press Enter`・`usage limit, auto-resume off` を添える。待っている相手が全部未接続なら `<Mailbox> not connected` を添える (C49)) → Paused (最後の Event が `turn.failed` で `error: rate_limit`。usage limit で止まっている間。青緑の枠、⏸ の印。Working より先に見る。Hub には止まった瞬間の Event がなく、渡した Message だけが残って Working と読まれるため。次の Event で解ける: `quota_auto_resume_fired` の通知の後は下の判定に戻り、`turn.end` でも解ける。C38) → Working (接続中の未読、または最後に渡した Message が最後の `turn.end` より新しい。Channels は渡した時点でターンを始めるため。青の枠、依頼の 1 行目を添える) → Waiting on others (ターンが終わり、自分が出した request に返信がない。紫の点線の枠、◔ の印と宛先。作業中の青と見分けるため 2026-10-23 に色を分けた) → Stopped, no reply (ターンが終わり、渡した request に返信がない。赤の枠。C34 の案) → Idle。
+- Waiting on others のうち、待っている相手 (人宛てを除く `outgoing.to` の `recipients`) がどれも接続していなければ Needs you にし、`(<Mailbox> not connected)` を添える。相手が attach すると Waiting on others に戻る。起動していない reviewer に依頼した leader が返事を待ってターンを終え、人は止まった理由が分からなかったため (C49、2026-10-27、ユーザー)。判定の位置は Waiting on others のところで、Working の後。`humanTurnOf` には入れないので、You バッジには数えない (未読は相手のカードの Stuck? に出るため、同じ Message を二重に数えない)。タブのタイトルと favicon には 1 件として数える。2026-10-27 に「カードだけに出す」と決めた点を、タブと favicon には数える形に変えた (ユーザーの決定、2026-10-27)。同じ日に、ほかのプロジェクトの待ちの数もタブと同じ数え方にした (ユーザーの決定、2026-10-27)。
 - Waiting on others を Stopped より先に見る。自分が出した依頼の返事を待つ間は、渡された依頼に返信がなくても止まってはいない (返事が来てから返す) ため。2026-10-23 にヘッドレスの Chrome で、leader が deployer に渡した後のカードが Waiting on others (deployer) になることを確かめた (C40 の記録)。
 - 最新の Event と最新のターン終了は、手元の Event (最近の 200 件と SSE の新着) と Hub の `backlog.lastEvent` / `lastTurnEnd` の新しい方を使う。手元だけに頼ると、ほかの Mailbox の Event が多い日に静かな Mailbox のターン終了が窓から外れ、`Working?` と誤って出た (2026-10-23 のレビュー、C41)。
 - 今の接続より前に、別のセッションが出した質問・許可待ちは、人が動く番に数えない。ターミナルを起動し直した後や takeover の後は、そのターミナルでは答えられないため。今の接続の後に出たものは、`session_id` が違っても数える (`/clear` で変わりうる。§6.2-7)。接続がないときは、ターミナルが残っているかもしれないので数える。
@@ -855,6 +857,7 @@ vcp の C142 を UI から vcp.leader へ依頼した (seq 69)。leader → depl
 - **実機**: Hub から「Bash で `node -e` を 2 回、別々に実行」と依頼し、人が 1 回目を 6 秒以上待ってから許可、2 回目を拒否した。11:00:16 `permission` → 11:01:00 `permission.resolved` (`tool_name: Bash`) → 11:01:08 `permission`。拒否の後は 3 分以上、Event も reply も届かず (`turn.end` も `idle_prompt` の通知もない)、カードの最後の Event は `permission` のまま (Needs you)。拒否の後の Claude Code は人の入力を待つので、Needs you が正しい。保存された `permission.resolved` の payload は `session_id`・`transcript_path`・`cwd`・`permission_mode`・`hook_event_name`・`tool_name`・`tool_use_id`・`duration_ms` など (大きな欄なし)。
 - **負荷**: 全ツールの `PostToolUse` が Hub に届く。記録しない場合の Hub の応答時間は、20 KB の payload で 100 回、中央値 3.6 ms・p95 5.3 ms・最大 56.8 ms (ホストから compose の Hub)。長い vcp のセッション (10-21〜23) のツール呼び出しは 204 回で、合わせても 1 秒に届かない。1 MB を超える `tool_response` (大きなファイルの Read) は Hub が 413 を返し、hook のエラーとして扱われるだけで作業は止まらない (README の hook の 3)。
 - **残る穴**: 許可待ちの間に、同じ session の別のツール (並列の呼び出しや subagent) が先に終わると、許可される前に `permission.resolved` と読む。ツール名は `Notification` にないので突き合わせられない。
+- **413 で記録されない穴 (未検証。コードから推測)**: 許可されたツールの `PostToolUse` の入力が 1 MB を超えると、`/events` は変換の前に 413 (`payload_too_large`) で断る (`src/hub/app.ts` の `eventLimit`、1 MB)。そのため `permission.resolved` は記録されず、カードは Needs you のまま残りうる。`tool_response` を落とすのは変換の後なので、この上限には効かない。実際に送って確かめてはいない。
 
 ### 6.1t バックグラウンドの処理を待って終えたターンの後の返信 (2026-10-26、compose の Hub / vcp の leader・deployer (haiku、auto)、Claude Code 2.1.310)
 

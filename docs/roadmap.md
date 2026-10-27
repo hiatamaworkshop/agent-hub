@@ -255,8 +255,8 @@
   - vcp の C150 の通し (compose の Hub、deployer は haiku・auto、2.1.310) で、deployer が全体の試験をバックグラウンドで流してターンを終え、約 4 分後の完了通知のターンで催促なしに reply を送った (design.md §6.1t)。そのとき `Stop` の `background_tasks` に走っている処理が載っていたので、カードの判定に使う案を C43 に分けた
 - [x] C49 誰も接続していない宛先への依頼に、送ったエージェントも人も気づかない (2026-10-27、ユーザーが決定)
   - leader が起動していない reviewer に request を 2 件送り、返事を待ってターンを終え、人は止まった理由が分からなかった (#157・#160)。`POST /messages` と forward の応答に `unattached` (配信先のうち今接続していない Mailbox) を足し、shim の `post_message` は配信先が全部未接続なら `unattached` と `warning` を返す。leader.md に、その `warning` が返ったら待ってターンを終えず、`要操作` で相手の role の起動を頼むことを書いた
-  - Hub は `backlog.outgoing.to` の宛先ごとに `recipients` を返し、UI は待っている相手がどれも接続していなければ `Waiting on others` の代わりに `Needs you (<Mailbox> not connected)` を出す。`humanTurnOf` には入れないので、You バッジとタブのタイトルには数えない (未読は相手のカードの Stuck? に出るため)
-  - Hub の試験 (未接続の配信先が `unattached` に出る。forward も)、shim の試験 (全部未接続なら `warning`) を足し、全体の 318 件が通る。`npm run ui:check` に、leader が未接続の reviewer を待つ (`Needs you (demo.reviewer not connected)`) → reviewer が attach する (`Waiting on others (reviewer)`) → 返す (`Idle`) の場面を足し、全場面が合格
+  - Hub は `backlog.outgoing.to` の宛先ごとに `recipients` を返し、UI は待っている相手がどれも接続していなければ `Waiting on others` の代わりに `Needs you (<Mailbox> not connected)` を出す。`humanTurnOf` には入れないので、You バッジには数えない (未読は相手のカードの Stuck? に出るため)。タブのタイトルと favicon には 1 件として数える (2026-10-27 に「カードだけに出す」と決めた点を、タブと favicon には数える形に変えた。ユーザーの決定、2026-10-27)。ほかのプロジェクトの待ちの数 (`N waiting in other projects`) も、タブと同じ `tabWaitingOf` で数える (同じくユーザーの決定、2026-10-27)
+  - Hub の試験 (未接続の配信先が `unattached` に出る。forward も)、shim の試験 (全部未接続なら `warning`) を足し、全体の 318 件が通る。`npm run ui:check` に、leader が未接続の reviewer を待つ (`Needs you (demo.reviewer not connected)`) → reviewer が attach する (`Waiting on others (reviewer)`) → 返す (`Idle`) の場面を足し、全場面が合格。待っている間はタブのタイトルが `1 waiting` で始まることも確かめる。別のプロジェクトの leader が未接続の reviewer を待つ場面も足し、demo を選ぶと `1 waiting in other projects` が出ることを確かめる
 
 ## 項目
 

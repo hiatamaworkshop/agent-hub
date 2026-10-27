@@ -179,7 +179,7 @@ try {
     console.log(`NG  送信の応答が未接続の配信先を示す (C49): ${JSON.stringify({ recipients: review.recipients, unattached: review.unattached })}`)
   }
   await turnEnd('demo.leader', 's-lead')
-  await scene('leader が未接続の reviewer に送った依頼を待っている (C49)', { 'demo.leader': 'Needs you (demo.reviewer not connected)' })
+  await scene('leader が未接続の reviewer に送った依頼を待っている (C49)', { 'demo.leader': 'Needs you (demo.reviewer not connected)' }, '1 waiting')
   const rev2 = await api('POST', '/mailboxes/demo.reviewer/attach', { client: 'claude-code', role: 'reviewer', cwd, sessionId: 's-rev-2' })
   await scene('reviewer が attach した (Waiting on others に戻る)', { 'demo.leader': 'Waiting on others (reviewer)', 'demo.reviewer': 'Working' })
   await ackAll(rev2.attachmentId)
@@ -188,6 +188,25 @@ try {
   await ackAll(lead.attachmentId)
   await turnEnd('demo.leader', 's-lead')
   await scene('reviewer が返した', { 'demo.leader': 'Idle', 'demo.reviewer': 'Idle' })
+
+  // ほかのプロジェクトの leader が、未接続の reviewer だけを待つ (C49)。All projects ではタブに数え、demo を選ぶとほかのプロジェクトの件数にも出る
+  const othCwd = join(work, 'other')
+  const othLead = await api('POST', '/mailboxes/oth.leader/attach', { client: 'claude-code', role: 'leader', cwd: othCwd, sessionId: 's-oth' })
+  const othRev = await api('POST', '/mailboxes/oth.reviewer/attach', { client: 'claude-code', role: 'reviewer', cwd: othCwd, sessionId: 's-oth-rev' })
+  await api('DELETE', `/attachments/${othRev.attachmentId}`)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'oth.reviewer' }, body: 'TARGET: C2' }, { 'x-hub-attachment': othLead.attachmentId })
+  await api('POST', '/events/claude-code', { cwd: othCwd, hook_event_name: 'Stop', session_id: 's-oth' }, { 'x-hub-mailbox': 'oth.leader' })
+  await scene('ほかのプロジェクトの leader が未接続の reviewer を待っている (C49)', { 'oth.leader': 'Needs you (oth.reviewer not connected)' }, '1 waiting')
+  // demo を選ぶと、ほかのプロジェクトの件数 (#elsewhere) に出る。タブの件数は All projects と同じ 1
+  await cdp('Runtime.evaluate', { expression: "chooseProject([...projects.values()].find((p) => p.label === 'demo').key)", returnByValue: true })
+  await sleep(1500)
+  const filtered = JSON.parse((await cdp('Runtime.evaluate', { expression: "JSON.stringify({ hidden: $('elsewhere').hidden, text: $('elsewhere').textContent, title: document.title })", returnByValue: true })).result.value)
+  const elsewhereOk = !filtered.hidden && filtered.text === '1 waiting in other projects' && filtered.title.startsWith('1 waiting')
+  if (!elsewhereOk) failed++
+  console.log(`${elsewhereOk ? 'ok' : 'NG'}  demo を選ぶと、ほかのプロジェクトの件数に未接続の 1 件が出る (C49)`)
+  if (!elsewhereOk) console.log(`      ${JSON.stringify(filtered)} (期待は hidden: false、text: '1 waiting in other projects'、title: '1 waiting' で始まる)`)
+  await cdp('Runtime.evaluate', { expression: "chooseProject('')", returnByValue: true })
+  await api('DELETE', `/attachments/${othLead.attachmentId}`)
 
   // UI が最初に読むのは最近の Event 200 件だけ。ほかの Mailbox の Event で押し出しても、Hub の lastTurnEnd で Idle のまま (C41)
   for (let i = 0; i < 250; i++) await turnEnd('demo.noise', 's-noise')

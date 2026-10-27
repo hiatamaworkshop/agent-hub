@@ -1491,10 +1491,10 @@ function applyProject() {
   renderElsewhere()
 }
 
-// ほかのプロジェクトで人の手を待っている (人が動く番のある) Mailbox の数
+// ほかのプロジェクトで人の手を待っている件数。タブのタイトルと同じ数え方 (tabWaitingOf の合計)
 function renderElsewhere() {
   const btn = $('elsewhere')
-  const n = projectFilter ? mailboxList.filter((mb) => !mailboxInProject(mb) && humanTurnOf(mb).count > 0).length : 0
+  const n = projectFilter ? mailboxList.filter((mb) => !mailboxInProject(mb)).reduce((sum, mb) => sum + tabWaitingOf(mb), 0) : 0
   btn.hidden = n === 0
   btn.textContent = n ? `${n} waiting in other projects` : ''
 }
@@ -1530,7 +1530,7 @@ function lastEventOf(mb) { return latestOf(lastEventByMailbox.get(mb.name), mb.b
 function lastTurnEndOf(mb) { return latestOf(lastTurnEndByMailbox.get(mb.name), mb.backlog && mb.backlog.lastTurnEnd) }
 // 人が動く番。材料は 2 つ: hook の質問・許可待ち (最後の Event が回答前の question / permission) と、Hub で人に出した
 // 返信待ちの request (backlog.outgoing.to の人宛て。C40)。人が返信か次の依頼を送れば Hub が閉じる (C28)。
-// カードの状態 (Needs you)・溜まりのバッジ (You)・タブのタイトルと favicon・ほかのプロジェクトの待ちの数は、すべてこれを使う
+// カードの状態 (Needs you)・溜まりのバッジ (You) は、これを使う。タブのタイトル・favicon と、ほかのプロジェクトの待ちの数は tabWaitingOf (これに未接続の 1 件を足す)
 // 今の接続より前に、別のセッションが出した Event は今の状態に数えない (ターミナルを起動し直した・takeover の後は、そこで答えられないため)。
 // 今の接続の後に出たものは、session_id が違っても数える (/clear で変わりうる。design.md §6.2)。接続がないときは、ターミナルが残っているかもしれないので数える
 function staleEvent(mb, ev) {
@@ -1752,11 +1752,18 @@ function jumpTo(t) {
   box.classList.add('hit')
   setTimeout(() => box.classList.remove('hit'), 3000)
 }
-// サイドバー: 表示中のプロジェクトの合計。タブ: 全プロジェクトの「人が動く番」の件数
+// タブの件数 (Needs you の人の番) と、ほかのプロジェクトの待ちの件数。humanTurnOf に、未接続の相手を待つカードの 1 件を足す (C49)。You バッジには足さない
+function tabWaitingOf(mb) {
+  const n = humanTurnOf(mb).count
+  if (n) return n
+  const st = stateOf(mb)
+  return st && st.key === 'you' ? 1 : 0
+}
+// サイドバー: 表示中のプロジェクトの合計。タブ: 全プロジェクトの Needs you の件数 (tabWaitingOf)
 let tabWaiting = 0
 function renderBacklog() {
   backlogChips($('backlog'), sumLayers(mailboxList.filter(mailboxInProject)))
-  const you = sumLayers(mailboxList).you.count
+  const you = mailboxList.reduce((sum, mb) => sum + tabWaitingOf(mb), 0)
   if (you !== tabWaiting) { tabWaiting = you; showTabUnread() }
 }
 setInterval(() => {
@@ -2160,7 +2167,7 @@ function badgeIcon(label, color = '#b3261e') {
   g.fillText(label, 16, 17)
   return c.toDataURL('image/png')
 }
-// タイトルには人が動く番 (tabWaiting。全プロジェクトの質問待ち・許可待ち) も出す。favicon はタブの未読を優先し、なければ人が動く番を琥珀色で
+// タイトルには Needs you の件数 (tabWaiting。全プロジェクトの質問待ち・許可待ち・未接続の相手を待つカード) も出す。favicon はタブの未読を優先し、なければその数を琥珀色で
 function showTabUnread() {
   const cap = (n) => (n > 99 ? '99+' : String(n))
   const title = `${tabUnread > 0 ? `(${cap(tabUnread)}) ` : ''}${tabWaiting > 0 ? `${tabWaiting} waiting · ` : ''}agent-hub`

@@ -95,7 +95,7 @@ claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels s
 | `Idle` / `Offline` | 何も残っていない / セッションがつながっていない |
 
 - 返信待ちは `reply_to` の返信のほか、相手からの後の request か reply でも閉じる (人が質問に新しい依頼で答えたときなど。protocol.md §2)。
-- カードとサイドバーのバッジは、件数を `You` (人が動く番) / `Agent` (エージェントの番) / `Stuck?` (配送が詰まっているかもしれない) に分け、最も古いものの経過時間で色を変える。タブのタイトルの `N waiting` と favicon は、全プロジェクトの人が動く番の数。
+- カードとサイドバーのバッジは、件数を `You` (人が動く番) / `Agent` (エージェントの番) / `Stuck?` (配送が詰まっているかもしれない) に分け、最も古いものの経過時間で色を変える。タブのタイトルの `N waiting` と favicon は、全プロジェクトの `Needs you` の数 (人が動く番。未接続の相手を待つカードは 1 件として数える)。`You` のバッジには、未接続の相手を待つカードは数えない (未読は相手のカードの `Stuck?` に出るため)。
 - 状態は hook の Event を材料にするので、hook を置いていないセッションでは粗くなる (下の「質問待ち・許可待ち・ターン終了をブラウザに出す」)。usage limit で止まった間は `Paused` と出る (`StopFailure` の hook が要る)。自動の再開が続かない・無効のときは、`Needs you` に `usage limit, press Enter` / `usage limit, auto-resume off` と出る (roadmap C38)。
 - 許可待ち (`Needs you (permission)`) は、許可してツールが動くと解ける (`Last event: approved`)。ターミナルで拒否したときは何も届かないので、`Needs you` のまま残る (拒否の後は Claude Code が人の入力を待つ。roadmap C30)。
 
