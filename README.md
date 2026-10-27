@@ -196,7 +196,7 @@ Hub は接続のための基盤で、メッセージを長く残さない。残�
 ### 2 エージェントで role 間の往復を試す (leader / deployer)
 
 ユーザー → leader → deployer → leader → ユーザーの順に、role 宛てで依頼と報告を回す試験。
-role の説明は `roles.json` の `description` が shim の instructions に入る (下の「role の定義 (roles.json)」)。leader / deployer は、運用の細かい指示 (メッセージの見出しなど) を [tools/dev/roles/](tools/dev/roles/) に置き、`start-agent.ps1` が system prompt にも足す。ほかの role (reviewer など) は `roles.json` の説明だけで動く。
+role の説明は `roles.json` の `description` が shim の instructions に入る (下の「role の定義 (roles.json)」)。leader / deployer / reviewer は、運用の細かい指示 (メッセージの見出しなど) を [tools/dev/roles/](tools/dev/roles/) に置き、`start-agent.ps1` が system prompt にも足す。`roles.json` にだけあって roles/ にない role は、説明だけで動く。
 
 ```powershell
 npm run hub                                   # ターミナル A

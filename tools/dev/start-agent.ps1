@@ -1,6 +1,6 @@
 ﻿# role を指定して Claude Code を channel 有効で起動する。
 # role の説明は roles.json の description が shim の instructions に入る。tools/dev/roles/<role>.md があれば
-# 運用の細かい指示として system prompt にも足す (leader / deployer だけ。reviewer などは roles.json の説明だけで動く)
+# 運用の細かい指示として system prompt にも足す (leader / deployer / reviewer。ほかの role は roles.json の説明だけで動く)
 # 例: ./tools/dev/start-agent.ps1 -Role deployer -Project C:\work\cairn
 param(
   [Parameter(Mandatory)][string]$Role,

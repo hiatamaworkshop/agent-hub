@@ -382,6 +382,7 @@ AI との共同開発で効果があったのは、結局ドキュメントの�
 | deployer が実装する前 | §6 の検証の記録 | 未検証なら公式資料で確かめ、§6 に足す | CLAUDE.md |
 | deployer の報告 | — | NOTES の行 (下の行き先に振り分ける) | deployer standard の形式 |
 | leader が確かめる | 変更に関係する節 | — (`git diff --name-only` に docs があるか、内容が実装と合うかを見る) | leader.md |
+| reviewer が指摘を返す | 依頼の対象 (commit 範囲か項目)、項目なら完了条件と本文、変更に関係する節、§2 の非目標、§9 の決定、却下の `[-] C<n>` | — (指摘ごとに、照らした正本の場所 (ファイルと節) を付ける) | reviewer.md |
 | 決定した | — | §9 の該当項目に「決定 (日付)」と理由 | 慣習 |
 | 区切り (commit・項目の完了) | — | roadmap の完了条件のチェック (全部埋まったら節を消し、フェーズの行を `[x] C<n>` に)、engram、MEMORY | roadmap.md 冒頭の規則、clear-timing skill、全体の CLAUDE.md |
 
