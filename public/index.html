@@ -54,6 +54,7 @@
   #states { margin-bottom: 4px; }
   #backlog { margin-bottom: 10px; }
   .bl { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .bl.jump { cursor: pointer; }
   .bl.age1 { color: var(--amber); border-color: var(--amber); }
   .bl.age2 { color: var(--warn); border-color: var(--warn); }
   /* カードの状態 (design.md §3.15)。枠の強調で、誰が動いているか・誰の番かを一目で分ける。色は状態の線とそろえる */
@@ -164,6 +165,8 @@
   /* 自分が送ったメッセージを一瞬目立たせる (動きを減らす設定では動かず、枠だけ出す) */
   @keyframes just-sent { from { box-shadow: 0 0 0 3px var(--accent); } to { box-shadow: 0 0 0 3px transparent; } }
   .msg.flash { animation: just-sent 1.5s ease-out; }
+  .msg.hit, .evt.hit { animation: just-sent 3s ease-out; }
+  @media (prefers-reduced-motion: reduce) { .msg.hit, .evt.hit { animation: none; box-shadow: 0 0 0 2px var(--accent); } }
   @media (prefers-reduced-motion: reduce) { .msg.flash { animation: none; box-shadow: 0 0 0 2px var(--accent); } }
   button:disabled { opacity: .5; cursor: not-allowed; }
   #hint { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: min(460px, 100%); }
@@ -1504,10 +1507,17 @@ const LAYERS = [
   { key: 'agent', label: 'Agent', age: [30, 120], title: "The agent's move: unread messages in a connected session, and requests handed to it that have no reply yet." },
   { key: 'stuck', label: 'Stuck?', age: [10, 60], title: 'Delivery may be stuck: messages handed but not confirmed (not fetched with inbox, and the session has sent no request or reply since), and unread messages in a Mailbox with no session attached.' },
 ]
-const NONE = { count: 0, oldestAt: null }
+// oldestSeq と eventId は、バッジを押したときに飛ぶ先 (C44)。古い Hub は持たないので null
+const NONE = { count: 0, oldestAt: null, oldestSeq: null, eventId: null }
 function addTally(a, b) {
-  const at = [a.oldestAt, b.oldestAt].filter(Boolean).sort((x, y) => Date.parse(x) - Date.parse(y))[0] || null
-  return { count: a.count + b.count, oldestAt: at }
+  // 最も古いほうの飛び先を取る (古い Hub の oldestSeq がなければ null のまま)
+  const first = [a, b].filter((t) => t.oldestAt).sort((x, y) => Date.parse(x.oldestAt) - Date.parse(y.oldestAt))[0]
+  return {
+    count: a.count + b.count,
+    oldestAt: first ? first.oldestAt : null,
+    oldestSeq: first ? first.oldestSeq ?? null : null,
+    eventId: first ? first.eventId ?? null : null,
+  }
 }
 // Mailbox の最新の Event と最新のターン終了。手元にあるのは最近の 200 件と SSE の新着だけなので、Hub が返すもの
 // (backlog.lastEvent / lastTurnEnd。静かな Mailbox の分も持つ) と比べて新しい方を使う。古い Hub は返さないので手元のものだけ
@@ -1546,17 +1556,17 @@ function humanTurnOf(mb) {
   const why = []
   const ev = lastEventOf(mb)
   if (ev && WAITING.has(ev.kind) && !staleEvent(mb, ev)) {
-    t = addTally(t, { count: 1, oldestAt: ev.ts })
+    t = addTally(t, { count: 1, oldestAt: ev.ts, eventId: ev.id })
     why.push(EVENT_LABEL[ev.kind] || ev.kind)
   } else if (ev && ev.kind === 'notification' && QUOTA_NEEDS_YOU.has(eventDetailOf(ev)) && !staleEvent(mb, ev)) {
     // usage limit の自動の再開が続かない (stale) か、そもそも無効 (disabled)。人が Enter を押すか、設定を直す番 (C38)
-    t = addTally(t, { count: 1, oldestAt: ev.ts })
+    t = addTally(t, { count: 1, oldestAt: ev.ts, eventId: ev.id })
     why.push(QUOTA_NEEDS_YOU.get(eventDetailOf(ev)))
   }
   const out = mb.backlog && mb.backlog.outgoing
   const asks = ((out && out.to) || []).filter((a) => a.type === 'user')
   // 宛先ごとの件数がない Hub (C40 より前) では、人宛て 1 つを 1 件とみなす
-  for (const a of asks) t = addTally(t, { count: a.count ?? 1, oldestAt: a.oldestAt ?? out.oldestAt })
+  for (const a of asks) t = addTally(t, { count: a.count ?? 1, oldestAt: a.oldestAt ?? out.oldestAt, oldestSeq: a.oldestSeq ?? null })
   if (asks.length) why.push('request')
   return { ...t, detail: why.join(', ') }
 }
@@ -1568,7 +1578,7 @@ function layersOf(mb) {
   const unconfirmed = b ? b.unconfirmed : { count: typeof mb.unconfirmed === 'number' ? mb.unconfirmed : 0, oldestAt: null }
   const you = humanTurnOf(mb)
   return {
-    you: { count: you.count, oldestAt: you.oldestAt },
+    you: addTally(you, NONE),
     agent: addTally(mb.attachment ? unread : NONE, b ? b.awaitingReply : NONE),
     stuck: addTally(unconfirmed, mb.attachment ? NONE : unread),
   }
@@ -1682,7 +1692,8 @@ function paintChip(chip) {
   chip.classList.toggle('age2', min >= layer.age[1])
   chip.classList.toggle('age1', min >= layer.age[0] && min < layer.age[1])
 }
-function backlogChips(box, layers) {
+// jump: カードのバッジだけ、押すと最も古いものへ飛べる (C44)。飛び先のない古い Hub のバッジは押しても何もしない
+function backlogChips(box, layers, jump = false) {
   box.textContent = ''
   for (const layer of LAYERS) {
     const t = layers[layer.key]
@@ -1692,10 +1703,33 @@ function backlogChips(box, layers) {
     chip.dataset.count = String(t.count)
     if (t.oldestAt) chip.dataset.since = t.oldestAt
     chip.title = layer.title + (t.oldestAt ? ` Oldest since ${new Date(t.oldestAt).toLocaleString()}.` : '')
+    if (jump && (t.eventId || t.oldestSeq !== null)) {
+      chip.classList.add('jump')
+      chip.title += ' Click to find the oldest one in the thread.'
+      chip.onclick = (e) => { e.stopPropagation(); jumpTo(t) }
+    }
     paintChip(chip)
     box.append(chip)
   }
   return box
+}
+// バッジから、そのバッジに数えた中で最も古いもの (Event か Message) へ飛ぶ (C44)。畳んだ分は開き、
+// 今のプロジェクトの絞り込みで隠れているものと、手元にないもの (Event は最近の 200 件まで) は、その旨を出す
+function jumpTo(t) {
+  let box = null
+  if (t.eventId) box = evtBoxes.get(t.eventId) || null
+  else {
+    const m = [...seen.values()].find((x) => x.seq === t.oldestSeq)
+    box = m ? msgBoxes.get(m.id) || null : null
+  }
+  if (!box) { setStatus(t.eventId ? 'That event is not loaded. The thread shows only the latest 200 events.' : `#${t.oldestSeq} is not loaded in this page.`); return }
+  if (folded.some((f) => f.box === box)) unfold()
+  if (box.classList.contains('off')) { setStatus(`${t.eventId ? 'This event' : `#${t.oldestSeq}`} is hidden by the project filter. Choose All projects to show it.`); return }
+  box.scrollIntoView({ block: 'center' })
+  box.classList.remove('hit')
+  void box.offsetWidth
+  box.classList.add('hit')
+  setTimeout(() => box.classList.remove('hit'), 3000)
 }
 // サイドバー: 表示中のプロジェクトの合計。タブ: 全プロジェクトの「人が動く番」の件数
 let tabWaiting = 0
@@ -1920,7 +1954,7 @@ function renderMailboxes(all) {
       d.title = st.detail
       box.append(d)
     }
-    box.append(backlogChips(el('div', 'backlog'), layersOf(mb)))
+    box.append(backlogChips(el('div', 'backlog'), layersOf(mb), true))
     // どのリポジトリの Mailbox か。最後に attach した作業フォルダ (古い Hub と、記録より前の Mailbox は返さない)
     if (mb.project) {
       const p = el('div', 'meta', `Project: ${folderName(mb.project)}`)

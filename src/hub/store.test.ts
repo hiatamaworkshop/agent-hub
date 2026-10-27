@@ -188,8 +188,8 @@ describe('Store: 溜まりの材料 (summary)', () => {
   // 全件を走査する素朴な数え方。summary は走査を絞っても同じ値を返す
   function naive(s: Store, name: string) {
     const mb = s.getMailbox(name)!
-    const tally = () => ({ count: 0, oldestAt: null as string | null })
-    const outgoing = { ...tally(), to: [] as Array<{ type: Address['type']; id: string; count: number; oldestAt: string | null }> }
+    const tally = () => ({ count: 0, oldestAt: null as string | null, oldestSeq: null as number | null })
+    const outgoing = { ...tally(), to: [] as Array<{ type: Address['type']; id: string } & ReturnType<typeof tally>> }
     const backlog = {
       unread: tally(),
       awaitingReply: tally(),
@@ -210,16 +210,19 @@ describe('Store: 溜まりの材料 (summary)', () => {
       if (s.isAwaitingReply(m) && m.from.type === 'mailbox' && m.from.id === name) {
         outgoing.count++
         outgoing.oldestAt ??= m.ts
+        outgoing.oldestSeq ??= m.seq
         let to = outgoing.to.find((a) => a.type === m.to.type && a.id === m.to.id)
-        if (!to) outgoing.to.push((to = { type: m.to.type, id: m.to.id, count: 0, oldestAt: null }))
+        if (!to) outgoing.to.push((to = { type: m.to.type, id: m.to.id, count: 0, oldestAt: null, oldestSeq: null }))
         to.count++
         to.oldestAt ??= m.ts
+        to.oldestSeq ??= m.seq
       }
       if (m.seq <= mb.cursor && s.isRecipient(name, m)) backlog.lastHanded = { seq: m.seq, ts: m.ts }
       const t = m.seq > mb.cursor ? backlog.unread : s.isAwaitingReply(m) ? backlog.awaitingReply : m.seq > mb.received ? backlog.unconfirmed : null
       if (!t || !s.isRecipient(name, m)) continue
       t.count++
       t.oldestAt ??= m.ts
+      t.oldestSeq ??= m.seq
     }
     return { unread: s.unread(name).length, unconfirmed: s.unconfirmed(name).length, backlog }
   }
@@ -254,6 +257,22 @@ describe('Store: 溜まりの材料 (summary)', () => {
     check(s, '消した request は数えない')
     assert.equal(s.summary('x').backlog.awaitingReply.count, 1, '返信のない最初の request だけが残る')
     check(new Store({ file }), '再起動後')
+  })
+
+  it('oldestSeq は溜まりの最も古い Message の seq で、閉じた・消した後は次に古いもの', () => {
+    const s = new Store()
+    s.ensureMailbox('x')
+    const toX = { type: 'mailbox', id: 'x' } as const
+    const a = s.appendMessage(msg(toX))
+    const b = s.appendMessage(msg(toX))
+    s.advanceCursor('x', b.seq)
+    assert.equal(s.summary('x').backlog.awaitingReply.oldestSeq, a.seq)
+    s.deleteMessages([a.id])
+    assert.equal(s.summary('x').backlog.awaitingReply.oldestSeq, b.seq, '消した後は次に古いもの')
+    s.deleteMessages([b.id])
+    assert.equal(s.summary('x').backlog.awaitingReply.oldestSeq, null, '溜まりがなければ null')
+    const c = s.appendMessage(msg(toX))
+    assert.equal(s.summary('x').backlog.unread.oldestSeq, c.seq, '未読も seq を返す')
   })
 
   it('最後に渡した Message は、cursor が進んだ分だけ見直しても全件の走査と同じ (削除・role・購読の変化をまたぐ)', () => {

@@ -163,6 +163,10 @@
   - Hub に `GET /roles` (roles.json の role) を足し、プロジェクトを選んでいれば Mailbox がなくても `role:<r> @ <project>` を候補にする (All projects では足さない。`/roles` が 404 の古い Hub では今までどおり)。`DELETE /indexes` と SSE `index.deleted`、Items の Remove を足した (protocol.md §3、§7)
   - テスト `src/hub/roles.test.ts` の「GET /roles」、`src/hub/indexes.test.ts` の「DELETE /indexes」、`src/hub/mailbox.test.ts` の「Mailbox のまだないプロジェクトの role 宛て」
   - 別の Hub (ポート 7795) と headless Chrome で、2 つの一時フォルダの roadmap を送るだけで一覧に出ること、選ぶと Items と宛先が絞られ `role:deployer @ newproj` などを選べること、項目のカードから送った request の `to.project` と `meta.item`、読み込み直しても Mailbox のないプロジェクトの選択が戻ること、後で attach した `newproj.deployer` の未読が 1 になること、`/roles` を 404 にすると role の候補が出ないこと、Remove で Mailbox のない other が一覧から消えて All projects に戻り、Mailbox のある newproj は残ることを確かめた
+- [x] C44 溜まりのバッジから、その Message へ飛べるようにする (2026-10-27、ユーザーの依頼)
+  - `GET /mailboxes` の `backlog` の溜まり (`unread`・`awaitingReply`・`unconfirmed`・`outgoing`、`outgoing.to` の宛先ごとも) に `oldestSeq` を足した (protocol.md §3)。カードの `You` / `Agent` / `Stuck?` を押すと、数えた中で最も古い Message (質問・許可待ちは Event) へ飛び、しばらく強調する (design.md §3.15)
+  - テスト `src/hub/store.test.ts` の「oldestSeq は溜まりの最も古い Message の seq で…」、`src/hub/mailbox.test.ts` の「返信待ちが 2 件あるとき oldestSeq は…」、既存の backlog の試験を `oldestSeq` 込みに直した。`npm test` は 314 件すべて通る
+  - 別の Hub (ポート 7793) と headless Chrome の `npm run ui:check` に、5 日前の返信待ちの依頼を持つ `demo.old` の `Agent 1 · 5d` を押すと、その依頼が見えて強調される場面を足し、通した
 
 **受け入れ条件**
 1. 2 つの Mailbox が別トピックを購読し、それぞれの購読分だけ受け取る。
@@ -387,18 +391,6 @@ cite-bridge の deployer は usage limit で 2 時間 20 分止まったが、Hu
 
 `Stop` の hook の `background_tasks` に、ターンを終えた時点で走っている処理 (`status: "running"`) が載る (design.md §6.1t)。deployer が試験をバックグラウンドで流して終えたターンは、今の判定では、完了通知で次のターンが始まるまで Stopped, no reply (赤) と出る。2026-10-26 の vcp の C150 で約 4 分。
 案: 最新の `turn.end` の `background_tasks` に `running` があれば、Stopped の代わりに Working (添え書きは処理の `description`) にする。Hub は `backlog.lastTurnEnd` に件数か有無を足す (UI の手元の窓に頼らないため。C41)。処理が終わってもターンが始まらない場合 (完了通知を受けない作り) に Working のまま残らないよう、上限の時間を置くかは決めること。
-
-### C44. 溜まりのバッジから、その Message へ飛べるようにする
-
-2026-10-26、vcp.deployer のカードが `Stopped, no reply` と `Agent 1 · 5d` を出し続けた。原因は 10-21 に人が出した催促 (#72) で、deployer は leader に返したが人には返していないので閉じない (C28 の規則どおり)。消すには Delete を押せばよいが、5 日前の Message をスレッドから探す手段がなく、人は「どうやって消すのか」で止まった。
-`GET /mailboxes` の `backlog` は溜まりごとに件数と最も古い時刻 (`oldestAt`) だけを返し、どの Message かは分からない。
-
-#### 完了条件
-- [ ] `GET /mailboxes` の `backlog` の溜まり (`unread`・`awaitingReply`・`unconfirmed`・`outgoing`) が、最も古い Message の `seq` (`oldestSeq`) も返す。protocol.md §3 を合わせる
-- [ ] UI のカードの溜まりのバッジ (`You` / `Agent` / `Stuck?`) を押すと、そのバッジに数えた中で最も古い Message (hook の質問・許可待ちなら、その Event) へスレッドをスクロールし、しばらく強調する。プロジェクトや種類の絞り込みで隠れているときは、隠れていることを示す
-- [ ] 試験: Hub の試験で、返信待ちが 2 件ある Mailbox の `oldestSeq` が古い方の seq になる。閉じた・消した後は次に古いものになる
-- [ ] `npm run ui:check` に、5 日前の返信待ちの request を持つカードの `Agent` バッジを押すと、その Message が表示されて強調される場面を足して合格する
-- [ ] `npm test` が通る
 
 ### C45. reviewer の作法を決め、レビューを対象と問いで依頼できるようにする
 

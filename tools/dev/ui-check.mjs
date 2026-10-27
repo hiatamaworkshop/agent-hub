@@ -2,7 +2,7 @@
 // API で場面を作り、CDP で DOM を読んで、期待する状態と照らす。UI には単体テストがないので、UI を変えたら流す。
 // 使い方: npm run ui:check  (Chrome の場所は CHROME、ポートは UI_CHECK_PORT / UI_CHECK_CDP_PORT で変えられる)
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,6 +15,14 @@ const TOKEN = 'ui-check-token-0123456789'
 const HUB = `http://127.0.0.1:${PORT}`
 const work = mkdtempSync(join(tmpdir(), 'agent-hub-ui-check-'))
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// 5 日前に出され、まだ返信のない依頼 (C44)。Hub は ts を今の時刻で付けるので、起動の前にログへ直接書いておく
+mkdirSync(join(work, 'hub'), { recursive: true })
+const OLD_BODY = 'GOAL: 5 日前に出した依頼 (返信待ち)'
+writeFileSync(
+  join(work, 'hub', 'hub.jsonl'),
+  JSON.stringify({ op: 'message', message: { id: 'm_ui_check_old', seq: 1, ts: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(), kind: 'request', from: { type: 'user', id: 'browser', role: null }, to: { type: 'mailbox', id: 'demo.old' }, body: OLD_BODY } }) + '\n',
+)
 
 const hub = spawn(process.execPath, ['--import', 'tsx', 'src/hub/main.ts'], {
   cwd: ROOT,
@@ -109,6 +117,9 @@ try {
   const cwd = join(work, 'demo')
   const lead = await api('POST', '/mailboxes/demo.leader/attach', { client: 'claude-code', role: 'leader', cwd, sessionId: 's-lead' })
   const dep = await api('POST', '/mailboxes/demo.deployer/attach', { client: 'claude-code', role: 'deployer', cwd, sessionId: 's-dep' })
+  // 5 日前の依頼を渡してあるが、返信がない (C44)。ほかの場面の状態に響かないよう、別の Mailbox に置く
+  const old = await api('POST', '/mailboxes/demo.old/attach', { client: 'claude-code', cwd, sessionId: 's-old' })
+  await api('POST', `/attachments/${old.attachmentId}/ack`, { upTo: 1 })
   const asLead = { 'x-hub-attachment': lead.attachmentId }
   const asDep = { 'x-hub-attachment': dep.attachmentId }
   const hook = (mailbox, body) => api('POST', '/events/claude-code', { cwd, ...body }, { 'x-hub-mailbox': mailbox })
@@ -210,6 +221,31 @@ try {
   await toolDone('demo.deployer', 's-dep', 'tu-b2')
   await permission('demo.deployer', 's-dep')
   await scene('もう一度許可を求め、拒否した (何も届かず Needs you のまま)', { 'demo.deployer': 'Needs you (permission)' }, '2 waiting')
+
+  // 溜まりのバッジから最も古いものへ飛ぶ (C44)。古い依頼は止まった Event と違って、畳んだ分の中にあることもある
+  await scene('5 日前の返信待ちの依頼が残っている', { 'demo.old': 'Stopped, no reply' }, '2 waiting')
+  const jump = await cdp('Runtime.evaluate', {
+    expression: `(async () => {
+      const card = [...document.querySelectorAll('#mailboxes .mb')].find((b) => (b.querySelector('.name') || {}).textContent === 'demo.old')
+      const chip = card && card.querySelector('.bl.jump[data-layer="agent"]')
+      if (!chip) return null
+      const text = chip.textContent
+      chip.click()
+      await new Promise((r) => setTimeout(r, 400))
+      const box = document.querySelector('#list .msg[data-seq="1"]')
+      if (!box) return { text, found: false }
+      const list = document.getElementById('list').getBoundingClientRect()
+      const r = box.getBoundingClientRect()
+      return { text, found: true, hit: box.classList.contains('hit'), shown: r.top >= list.top && r.bottom <= list.bottom, body: box.textContent.includes(${JSON.stringify(OLD_BODY)}) }
+    })()`,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  const jv = jump.result.value
+  const jumpOk = jv && jv.found && jv.hit && jv.shown && jv.body && jv.text.includes('Agent 1 · 5d')
+  if (!jumpOk) failed++
+  console.log(`${jumpOk ? 'ok' : 'NG'}  5 日前の返信待ちの Agent バッジを押すと、その依頼が見えて強調される (C44)`)
+  if (!jumpOk) console.log(`      ${JSON.stringify(jv)} (期待は Agent 1 · 5d と、表示され強調された依頼)`)
 
   // 時刻の表示 (C31): 今日は時刻だけ、前日は日付つき
   const t = await cdp('Runtime.evaluate', {

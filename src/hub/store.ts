@@ -70,10 +70,11 @@ function isExchange(m: Message): boolean {
   return m.kind !== 'notice' && m.forwardedFrom === undefined
 }
 
-// 件数と、そのうち最も古い Message の ts (なければ null)
+// 件数と、そのうち最も古い Message の ts と seq (なければ null)。seq はカードのバッジから Message へ飛ぶために使う (C44)
 export interface Tally {
   count: number
   oldestAt: string | null
+  oldestSeq: number | null
 }
 
 export interface Outgoing extends Tally {
@@ -511,23 +512,27 @@ export class Store {
   summary(name: string): { unread: number; unconfirmed: number; backlog: Backlog } {
     const mb = this.must(name)
     const backlog: Backlog = {
-      unread: { count: 0, oldestAt: null },
-      awaitingReply: { count: 0, oldestAt: null },
-      unconfirmed: { count: 0, oldestAt: null },
-      outgoing: { count: 0, oldestAt: null, to: [] },
+      unread: { count: 0, oldestAt: null, oldestSeq: null },
+      awaitingReply: { count: 0, oldestAt: null, oldestSeq: null },
+      unconfirmed: { count: 0, oldestAt: null, oldestSeq: null },
+      outgoing: { count: 0, oldestAt: null, oldestSeq: null, to: [] },
       lastHanded: null,
       lastEvent: null,
       lastTurnEnd: null,
     }
-    const add = (t: { count: number; oldestAt: string | null }, m: Message) => {
+    // 走査は seq の昇順なので、最初に数えたものが最も古い (C44)
+    const add = (t: Tally, m: Message) => {
       t.count++
-      t.oldestAt ??= m.ts
+      if (t.oldestAt === null) {
+        t.oldestAt = m.ts
+        t.oldestSeq = m.seq
+      }
     }
     for (const m of this.openRequests.values()) {
       if (m.from.type === 'mailbox' && m.from.id === name) {
         add(backlog.outgoing, m)
         let to = backlog.outgoing.to.find((a) => a.type === m.to.type && a.id === m.to.id)
-        if (!to) backlog.outgoing.to.push((to = { type: m.to.type, id: m.to.id, count: 0, oldestAt: null }))
+        if (!to) backlog.outgoing.to.push((to = { type: m.to.type, id: m.to.id, count: 0, oldestAt: null, oldestSeq: null }))
         add(to, m)
       }
       if (m.seq <= mb.cursor && this.isRecipient(name, m)) add(backlog.awaitingReply, m)
