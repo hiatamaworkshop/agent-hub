@@ -295,7 +295,7 @@ npm run hub                               # 読むのは起動時だけ。変え
 スクリプトを使わないなら、shim をユーザースコープに絶対パスで登録し、プロジェクトのルートで同じフラグで起動する。
 
 ```powershell
-claude mcp add --scope user agent-hub -- node C:/Users/kazuh/Desktop/Various/programming/DockerFiles/agent-hub/dist/shim/main.js
+claude mcp add --scope user agent-hub -- node <agent-hub>/dist/shim/main.js
 claude --dangerously-load-development-channels server:agent-hub
 ```
 
