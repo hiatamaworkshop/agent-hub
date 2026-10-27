@@ -167,7 +167,12 @@
   - `GET /mailboxes` の `backlog` の溜まり (`unread`・`awaitingReply`・`unconfirmed`・`outgoing`、`outgoing.to` の宛先ごとも) に `oldestSeq` を足した (protocol.md §3)。カードの `You` / `Agent` / `Stuck?` を押すと、数えた中で最も古い Message (質問・許可待ちは Event) へ飛び、しばらく強調する (design.md §3.15)
   - テスト `src/hub/store.test.ts` の「oldestSeq は溜まりの最も古い Message の seq で…」、`src/hub/mailbox.test.ts` の「返信待ちが 2 件あるとき oldestSeq は…」と「古い方の依頼だけが閉じるとき (C44)」(返信で閉じる場合と、後の依頼で閉じる場合の両方)、既存の backlog の試験を `oldestSeq` 込みに直した。`npm test` は 316 件すべて通る
   - 別の Hub (ポート 7793) と headless Chrome の `npm run ui:check` に、5 日前の返信待ちの依頼を持つ `demo.old` の `Agent 1 · 5d` を押すと、その依頼が見えて強調される場面を足し、通した
-  - 回答なしで既定を採った: (1) `oldestSeq` を `outgoing.to` の宛先ごとにも残す (2) 完了条件の「種類の絞り込み」は、UI に種類の絞り込みがないのでプロジェクトの絞り込みとして扱った
+  - 2026-10-27 にユーザーが承認した (leader に届いていなかっただけ): (1) `oldestSeq` を `outgoing.to` の宛先ごとにも残す (2) 完了条件の「種類の絞り込み」は、UI に種類の絞り込みがないのでプロジェクトの絞り込みとして扱う
+  - 未確認: 絞り込みで隠れた場合・畳んだ範囲の中・You バッジ (質問・許可待ちの Event、人宛ての request)・Stuck? バッジは ui:check で流していない (C48)
+- [x] C45 reviewer の作法を決め、レビューを対象と問いで依頼できるようにする (2026-10-27、ユーザーの依頼)
+  - `tools/dev/roles/reviewer.md` (依頼は対象と問い、何を読むかは reviewer が決める、返事は FINDINGS と PROPOSED CONDITIONS)、`leader.md` (reviewer への依頼、完了条件の提案は人が承認するまで変えない)、design.md §3.12 の表の reviewer 行
+  - `start-agent.ps1 -Role reviewer` の dry run で、reviewer.md が system prompt に入ることを確かめた
+  - 実チームで確かめた (design.md §6.1u): TARGET と QUESTION だけで依頼した reviewer が、依頼に書かれていない正本を自分で読んで照らした。起票したばかりの C48 の完了条件を、訂正案 → 人の承認 → 直す、の一周で通した
 
 **受け入れ条件**
 1. 2 つの Mailbox が別トピックを購読し、それぞれの購読分だけ受け取る。
@@ -394,19 +399,6 @@ cite-bridge の deployer は usage limit で 2 時間 20 分止まったが、Hu
 `Stop` の hook の `background_tasks` に、ターンを終えた時点で走っている処理 (`status: "running"`) が載る (design.md §6.1t)。deployer が試験をバックグラウンドで流して終えたターンは、今の判定では、完了通知で次のターンが始まるまで Stopped, no reply (赤) と出る。2026-10-26 の vcp の C150 で約 4 分。
 案: 最新の `turn.end` の `background_tasks` に `running` があれば、Stopped の代わりに Working (添え書きは処理の `description`) にする。Hub は `backlog.lastTurnEnd` に件数か有無を足す (UI の手元の窓に頼らないため。C41)。処理が終わってもターンが始まらない場合 (完了通知を受けない作り) に Working のまま残らないよう、上限の時間を置くかは決めること。
 
-### C45. reviewer の作法を決め、レビューを対象と問いで依頼できるようにする
-
-2026-10-26、kanary の /relay (design.md §8.1) と比べ、評価の依頼は会話の区間でなく対象 (コミットの範囲か `C<n>`) と問いで送り、何を照らすかは reviewer の側の決まりに持たせることにした (design.md §3.12「レビューの依頼は、会話の区間でなく対象で送る」)。今は §3.12 の作法の表に reviewer の行がなく、`tools/dev/roles/` にも reviewer.md がない (reviewer は `roles.json` の 1 行の説明だけで動く)。2026-10-26 にユーザーが起票を決めた。
-
-進捗 (2026-10-27): 完了条件の 1〜3 を済ませた。`tools/dev/roles/reviewer.md` を追加し、`start-agent.ps1 -Role reviewer` の dry run (`claude` の代わりに引数を出すだけの偽物を PATH の先頭に置いた) で、reviewer.md が `--append-system-prompt-file` に入ることを確かめた。reviewer.md / leader.md に、未実装の項目の文面を見る場合と、完了条件の訂正案を人の承認を経て直す扱いを足した。4・5 は実チームで確かめるまで未済 (節は残す)。
-
-#### 完了条件
-- [x] design.md §3.12 の作法の表に reviewer の行を足す。読むのは依頼の対象、項目なら完了条件と本文、変更に関係する節、§2 の非目標、§9 の決定、却下の `[-] C<n>`。返すのは、指摘ごとに照らした正本の場所 (ファイルと節) を付けたもの
-- [x] `tools/dev/roles/reviewer.md` を作り、依頼の型 (対象と問い。会話の区間は受け取らない前提) と返事の型を書く。`start-agent.ps1 -Role reviewer` で system prompt に足されることを確かめ、`start-agent.ps1` 冒頭の説明と README の「ほかの role は roles.json の説明だけで動く」を合わせる
-- [x] leader.md に、reviewer へ回す依頼の書き方 (対象と問いだけを送り、読むものは reviewer.md に任せる) を足す
-- [ ] 実チームで確かめる: `start-team.ps1 -Roles leader,deployer,reviewer` で、項目 1 件の実装を reviewer にレビューさせ、依頼に書いていない正本 (完了条件・関係する節) を reviewer が自分で読んで照らしたかを design.md §6 に記録する
-- [ ] 同じチームで、起票したばかりの項目 (`C<n>` の節) を reviewer に見せ、完了条件の訂正案が返り、人が承認してから項目が直るまでの一周を通し、design.md §6 に記録する
-
 ### C46. 文書の更新を信号として、購読した Mailbox に流す
 状態: 提案
 
@@ -426,12 +418,15 @@ C45 の後、reviewer が依頼のたびに正本を読む形で足りないと�
 ### C48. C44 で未確認だった溜まりのバッジの 3 場面を ui:check に足す
 
 C44 の完了条件のうち、ui:check は 5 日前の返信待ちの Agent バッジだけを確かめた。絞り込みで隠れた場面、畳んだ範囲の中の場面、質問・許可待ちの You バッジは、コードを書いただけで確かめていない (P2 の `[x] C44` の記録)。
+完了条件は 2026-10-27 に reviewer の案をユーザーが承認して直した。
+実装の側も直す必要がある: `jumpTo` (public/index.html) は畳みを開いてから絞り込みで隠れているかを見ているので、先に隠れているかを見て、隠れていれば畳みを開かない。
 
 #### 完了条件
-- [ ] プロジェクトの絞り込みで隠れている Message を指すバッジを押すと、隠れていることを知らせ、スレッドは動かない
-- [ ] 畳んだ範囲の中の Message を指すバッジを押すと、畳みが開き、その Message が表示されて強調される
-- [ ] hook の質問・許可待ちで数えた You バッジを押すと、その Event の行へ飛んで強調される
-- [ ] 上の 3 場面が `npm run ui:check` の場面として入り、通る
+- [ ] プロジェクトの絞り込みで隠れている Message を指すバッジを押すと、ステータスに隠れていること (All projects で出せること) を出し、スレッドは動かない (畳んだ範囲の中にあって隠れている場合も、畳みを開かない)
+- [ ] 畳んだ範囲の中の (絞り込みで隠れていない) Message を指すバッジを押すと、畳みが開き、その Message がスレッドの表示範囲に入って強調される
+- [ ] hook の質問・許可待ちで数えた You バッジを押すと、その Event の行がスレッドの表示範囲に入って強調される (Event が人宛ての返信待ちの request より古い場合と新しい場合の両方で、古い方へ飛ぶ)
+- [ ] 人宛ての返信待ちの request (outgoing.to の user) で数えた You バッジと、未接続の Mailbox の未読で数えた Stuck? バッジを押すと、その Message へ飛んで強調される
+- [ ] 上の場面が `npm run ui:check` の場面として入り、通る
 - [ ] `npm test` が通る
 
 
