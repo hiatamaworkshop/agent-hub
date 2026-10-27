@@ -8,9 +8,9 @@
 - 番号は使い回さない。終わったら節を消し、フェーズの行を `[x] C<n> …` にして、確かめた記録をその下に書く。その項目を待つ `ブロック(C<n> の後)` の行も同じ片付けで外す (状態は進捗で、約束ではない)。
 - 却下したら節を消し、フェーズか「既知の問題」に `[-] C<n> 題 (却下 YYYY-MM-DD、理由 1 行)` を残す。理由が長ければ design.md §9 に書いて指す (design.md §3.16)。
 - 予定の一覧: 台帳に `## 予定` を 1 つ置き、状態の行のない項目と `ブロック(C<n> の後)` の項目を取りかかる順に `- [ ] C<n>` で並べる。題は書かない。この 2 つは必ず載せ、ほかは載せない。ブロックの項目は、待つ項目より後に並べる。並べ替えは人の判断 (design.md §3.15)。
-- 状態の分け方: 4 段のそれぞれが 1 つの状態に当たる。`提案` は人の判断待ちだけ。`ブロック(C<n> の後)` はほかの項目を待つときだけで、理由に `C<n>` を書く。外の出来事 (公式資料の更新、次に usage limit に当たることなど) を待つものは、決定の項目でも `保留(再開の条件)` にし、理由は省かない。
-- 閉じた行 (`[x] C<n>` / `[-] C<n>`) は、行に日付 `YYYY-MM-DD` を書く。
-- 予定を聞かれたら `## 予定` と閉じた行の日付を材料に答える。台帳を全部読んで分類し直さない (4 段の答え方は skill `roadmap-items`。材料は `npm run docs:check -- --index` の JSON)。
+- 状態の分け方: 4 段のそれぞれが 1 つの状態に当たる。`提案` は人の判断待ちだけ。`ブロック(C<n> の後)` は決定の項目 (完了条件を持つ) だけで、ほかの項目を待つときに使い、理由に `C<n>` を書く。決まっていない項目がほかを待つときは `保留(C<n> の後)`。外の出来事 (公式資料の更新、次に usage limit に当たることなど) を待つものは、決定の項目でも `保留(再開の条件)` にし、理由は省かない。受け入れて手を付けないものは保留にせず、却下 `[-]` にする。
+- 閉じた行 (`[x] C<n>` / `[-] C<n>`) は、閉じた日 (`YYYY-MM-DD`) を行末の括弧の先頭に書く (例 `(2026-10-27、ユーザーの依頼)`、却下は `(却下 2026-10-27、理由)`)。題の中の日付は数えない。
+- 予定を聞かれたら、先に `npm run -s docs:check` で崩れを見てから、`npm run -s docs:check -- docs/roadmap.md --index` の JSON と閉じた行の日付を材料に答える。台帳を全部読んで分類し直さない (4 段の答え方は skill `roadmap-items`)。
 - 規則の崩れは `npm run docs:check` で検査する (`src/shared/roadmap.ts`)。
 - 他のプロジェクトで同じ規則を書くための説明は、グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/`) に置いた。正本はこの冒頭と `src/shared/roadmap.ts`。
 
@@ -18,7 +18,6 @@
 
 取りかかる順。状態の行のない項目とブロックの項目だけを載せる (題は索引から引く)。並べ替えは人の判断。
 
-- [ ] C53
 - [ ] C52
 
 ## P0: 1 セッションで往復する (完了 2026-10-16)
@@ -156,19 +155,19 @@
 - [x] C2 compose の Hub に対して、実セッションで受け入れ条件 1〜6 を通す (2026-10-19。記録は上の Dockerfile の項目)
 - [ ] C3 Claude Code 以外の実クライアントと、受け手の読み方を確かめる
 - [ ] C4 engram への区切り知見の保存連携 (任意)
-- [x] C7 項目の索引と規則の検査 (design.md §3.15。2026-10-19)
+- [x] C7 項目の索引と規則の検査 (2026-10-19、design.md §3.15)
   - `src/shared/roadmap.ts` の `parseRoadmap` が項目 (ID・題・状態・完了条件の進み具合・行) と、節の外の `[ ] C<n>` / `[x] C<n>` を取り出す。Node の API に依存しないので、ブラウザでも使える (C8)
   - `checkRoadmap` は、見出しの形、ID の重複、状態の語彙と位置、ブロックの理由、決定の項目の `#### 完了条件`、`[ ] C<n>` の指す節の有無、節が残っている `[x] C<n>` を error にし、完了条件が全部埋まった項目を warning にする
   - `npm run docs:check` で回し、error があれば exit 1。`-- --index` で索引を JSON で出す。テスト `src/shared/roadmap.test.ts` (このファイル自身が規則どおりであることも含む)。項目の ID・状態・見出しを崩したコピーで exit 1 と行番号つきの指摘を確かめた
-- [x] C6 溜まりのバッジ (design.md §3.15 の「実装」。2026-10-19)
+- [x] C6 溜まりのバッジ (2026-10-19、design.md §3.15 の「実装」)
   - Hub は `GET /mailboxes` に `backlog` (未読・返信待ちの request・確認待ちを重ならない形で、件数と最も古い ts) を足した。テスト `src/hub/mailbox.test.ts` の「溜まりの材料 (backlog)」
   - UI はカードとサイドバーに `You` / `Agent` / `Stuck?` の件数と最も古いものの経過時間を出し、経過時間で色を変える (30 秒ごとに塗り直す)。タブのタイトルに `N waiting`、favicon に人が動く番の件数を出す
   - 別の Hub (ポート 7795) と headless Chrome で、2 つのプロジェクトの 4 つの Mailbox の層の振り分けとサイドバーの合計、プロジェクトを選ぶとサイドバーが絞られタイトルは全体のままなこと、返信で `Agent`・回答で `You` とタイトルの waiting が消えること、経過時間を 15 分前 / 3 時間前にしたときの色、`backlog` (と `unread` / `unconfirmed`) を外した古い Hub の応答で件数だけが出てページのエラーがないことを確かめた
-- [x] C8 項目のカードと依頼の下書き (design.md §3.15 の未決 2・3 の決定。2026-10-19)
+- [x] C8 項目のカードと依頼の下書き (2026-10-19、design.md §3.15 の未決 2・3 の決定)
   - 索引: `npm run docs:index` が `parseRoadmap` の結果を `PUT /indexes` で送り、Hub は `indexes.json` に写しとして持つ。`parseRoadmap` に完了条件の文言 (`conditionTexts`) と約束の指紋 (`promise`) を足した。テスト `src/hub/indexes.test.ts`、`src/shared/roadmap.test.ts` の「完了条件の文言と約束の指紋」
   - UI: サイドバーの Items に 1 行のカード (ID・題・状態・進み具合・requested / reported)。押すと `GOAL` / `DONE WHEN` の下書きになり、送る request の `meta.item` に項目と送った時点の約束を付ける (Unlink で外せる)。完了条件の文言が変わると、カードに `-` / `+` の差分を出す
   - 別の Hub (ポート 7795) と headless Chrome で、一時フォルダのプロジェクトの roadmap を送ってカードが出ること、プロジェクトの絞り込み、下書きの本文と送った `meta.item`、`requested` → 返信で `reported`、チェックを付けて送り直しても差分が出ず文言を変えると出ること、Unlink で `meta.item` なしになること、`/indexes` が 404 の古い Hub で欄が出ずエラーもないことを確かめた
-- [x] C26 登録した roadmap のプロジェクトを、エージェントがつながる前から使えるようにする (design.md §3.15 の「プロジェクトは値」。2026-10-20)
+- [x] C26 登録した roadmap のプロジェクトを、エージェントがつながる前から使えるようにする (2026-10-20、design.md §3.15 の「プロジェクトは値」)
   - 別の Hub (ポート 7795) で新規プロジェクトを通すと、`docs:index` で登録しても UI のプロジェクトの一覧に出ず、Mailbox がないので `role:` 宛てを選べず、登録を外す手段もなかった
   - UI のプロジェクトの一覧を Mailbox と索引の project の和にした。前回の選択は両方の一覧が届いてから戻す。Mailbox のないプロジェクトには起動の仕方 (`start-agent.ps1 -Project`) を出す
   - Hub に `GET /roles` (roles.json の role) を足し、プロジェクトを選んでいれば Mailbox がなくても `role:<r> @ <project>` を候補にする (All projects では足さない。`/roles` が 404 の古い Hub では今までどおり)。`DELETE /indexes` と SSE `index.deleted`、Items の Remove を足した (protocol.md §3、§7)
@@ -198,6 +197,13 @@
   - agent-hub の roadmap を規則に合わせた: `## 予定` を置き、C35・C46・C47 を `保留(…)` にした。閉じた行は全部日付を持っていたので足していない
   - 完了条件の「C38 を `ブロック(次の usage limit に当たるまで)`」は、2026-10-27 のユーザーの決定で `保留(次の usage limit に当たるまで)` に変えた (外の出来事を待つため)。C19・C20 も同じ理由で保留にした
   - 予定は C52 だけになった。ブロックは他の項目を待つときだけ (理由に `C<n>`) と決まったため、C19・C20・C38 は予定から外れた (ユーザーの決定、2026-10-27)
+- [x] C53 C51 の作法のレビュー指摘を直す (2026-10-27、reviewer の指摘 Message #204、ユーザーが決定。design.md §3.15)
+  - 古い語彙 (design.md §3.15 の「状態は見出しの直後の 1 行」、CLAUDE.md の「ドキュメントの更新」、`roadmap.ts` のエラー文) を `提案 | 保留(再開の条件) | ブロック(C<n> の後)` に揃えた。roadmap 冒頭に、決まっていない項目の `保留(C<n> の後)` と、閉じた日は行末の括弧の先頭、を足した
+  - skill `roadmap-items` を §3.15 に合わせた (予定の例は待つ項目が先、ブロックは決定の項目だけ、閉じた日の位置、答え方の細部、description に「予定・計画を聞かれたとき」)
+  - `checkRoadmap` が次を error にする: ブロックが待つ項目より前に並ぶ、予定に同じ ID が 2 度ある、予定に `[ ]` でない行がある、`## 予定` が 2 つ以上ある、ブロックの待つ項目が閉じている、完了条件のないブロック。`parseRoadmap` の閉じた日は行末の括弧の先頭から読み、なければ error
+  - 試験 `src/shared/roadmap.test.ts` で各場面と、題の中に日付がある閉じた行 (C25 の形) を確かめた。`npm test` 334 件すべて通る。`npm run docs:check` は 0 errors
+  - C5 を却下 `[-]` にした (受け入れて手を付けない)。C3 の理由を再開の条件の形に直した。閉じた行の日付を行末の括弧の先頭に揃えた (C6・C7・C8・C26・C41)
+  - C52 の完了条件の「予定のない索引では今の並びのまま出す」を、2026-10-27 にユーザーが承認して直した (約束の変更)
 
 **受け入れ条件**
 1. 2 つの Mailbox が別トピックを購読し、それぞれの購読分だけ受け取る。
@@ -213,7 +219,8 @@
 - [x] **shim の seq 巻き戻し**: Hub の `data/` を消して再起動すると seq が 1 から振り直され、shim が前の Hub で覚えた seq を stream の `after` に使うため、attach 時の未読を黙って捨てていた。attach のたびに `after` を Hub の `cursor` から数え直すようにした (ack 漏れの再送は id で除去)
 - [x] **未読の算出が全件走査**: `unread()` と `listMessages()` が毎回ログ全体を見ていた。ログは seq の昇順なので、二分探索で `cursor` (または `after`) の位置から見るようにした。長く ack しない Mailbox はその未読分だけ走査する
 - [x] **detached の旧 shim が後継から Mailbox を取り返しうる**: A の stream が切れて猶予 (15 秒) を過ぎ `disconnected` になった間に B が attach すると、戻ってきた A の shim は stream の 404 で attach し直し、「新しい方が勝つ」で B を切り離す。A は superseded ではないので attach し直しを止める仕組みがない。ループバックで 15 秒以上戻れないのは稀なので後回し。対策の候補は、後継のいる Mailbox への attach で、前の Attachment ID を示した attach し直しを拒む、など (design.md §3.3 の takeover。2026-10-17 のレビューで発見)。2026-10-18 にその案で対応した (attach の `previous` と 409 `successor_attached`。テスト `src/hub/mailbox.test.ts` の「切断中の後継 (previous)」、`src/shim/shim.test.ts` の「HubClient: 切断中に後継が attach したとき」)。Hub の再起動と重なった場合は見分けられない
-- [ ] C5 **channel なしで起動した Claude Code の通知を ack してしまう**
+- [-] C5 **channel なしで起動した Claude Code の通知を ack してしまう** (却下 2026-10-27、受け入れて手を付けない。起動手順で channel を付ける前提)
+  - `clientInfo.name` は `claude-code` のままなので Channels 経路になり、Claude Code が通知を捨てても shim は ack する (未読が既読になる)。2026-10-18 に、通知が黙って捨てられること、initialize・環境変数・要求の並びに channel の有無の違いがなく shim から見分けられないことを確かめた (design.md §6.1k)。配送の状態を分けた (2026-10-18) ので、捨てられた分は handed のまま UI に unconfirmed として出て、`inbox` の `unconfirmed: true` で取り直せる。自動では取り戻さない (design.md §3.7)。
 - [x] C21 **切り離されたセッションが、新しい方を閉じれば戻ると誤って案内した** (2026-10-19)
   - C2 の takeover で、superseded のエラーを受けた reviewer がそう案内した。実際には切り離された shim は attach し直さない
   - 文面を `SUPERSEDED_NOTE` (`src/shim/main.ts`) の 1 か所に置き、`whoami` 以外のエラーと `whoami` の `note` に使う。再接続しないこと (新しい方を閉じても戻らない) と、使い続けるなら起動し直すこと (今つながっている方が切り離される) を書いた (protocol.md §5)。テスト `src/shim/shim.test.ts` の takeover の項
@@ -253,7 +260,7 @@
   - UI の人が動く番を `humanTurnOf` の 1 つにまとめた (前は同じ式が 3 か所にあった)。材料は hook の質問・許可待ちと `outgoing.to` の人宛て。カードの状態 (Needs you)・溜まりのバッジ (You)・タブのタイトルと favicon・ほかのプロジェクトの待ちの数がそれを使う。Waiting on others の宛先から人宛てを除いた
   - 別のポート (7793) の Hub とヘッドレスの Chrome で、API で場面を作ってカードの DOM を読んだ。leader が人に尋ねてターンを終えると `Needs you (request)` (`st-you`)、タブは `1 waiting · agent-hub`、バッジは `You 1`。人が新しい依頼で答えると Working (質問は C28 で閉じる)。leader が deployer に渡すと leader は `Waiting on others (deployer)`、deployer は Working。報告が戻って leader が返すと、2 人とも Idle でバッジもない
   - design.md の判定順 (Stopped → Waiting on others、Offline が最後) がコード (Offline が先頭、Waiting on others → Stopped) と違っていた。コードの順が正しい (返事を待つ間は止まっていない) ので、文書を直した (§3.15)
-- [x] C41 **C36〜C40 のレビュー (2026-10-23、`7bb1a8d..3aa8c83`) で見つけた弱いところを直す** (ユーザーの依頼)
+- [x] C41 **C36〜C40 のレビュー (`7bb1a8d..3aa8c83`) で見つけた弱いところを直す** (2026-10-23、ユーザーの依頼)
   - `GET /mailboxes` のたびに、`lastHanded` を求めるためログを後ろから走査していた (何も受け取っていない Mailbox ではログ全体)。summary の「ログ全体は走査しない」に反していた。前に求めた cursor より後だけを見直す形にした。覚えた Message が消えたときと、宛先の判定が変わる記録 (role・project・購読) の後は求め直す。テスト `src/hub/store.test.ts` の「最後に渡した Message は、cursor が進んだ分だけ見直しても全件の走査と同じ」
   - 詰め直したファイルを読むと、閉じる request (C28) を今の Mailbox の role や project で導き直し、動いていたときには閉じなかった request まで閉じえた。詰め直しの先頭の `seq` の行に `answered` を付け、その分は導き直さない。テスト「詰め直したファイルでは閉じた request を導き直さず…」(直しを外すとこの試験だけが落ちることを確かめた)
   - UI の最新の Event とターン終了が、最初に読む最近の 200 件の窓に頼っていた。Hub が Mailbox ごとの最新の Event とターン終了を持ち、`backlog.lastEvent` / `lastTurnEnd` で返す (superseded を除く。消したら残りから求め直す)。UI は手元のものと新しい方を使い、Event が消えたら一覧を取り直す。テスト「Mailbox ごとの最新の Event とターン終了を返し…」
@@ -288,7 +295,7 @@
 開いている項目。書き方は冒頭の規則 (design.md §3.15)。デスクトップアプリ向けの画面操作ベースの連携は範囲外として項目にしない。
 
 ### C3. Claude Code 以外の実クライアントと、受け手の読み方を確かめる
-状態: 保留(Claude Code 以外に MCP の実クライアントがないため。2026-10-19)
+状態: 保留(Claude Code 以外の MCP クライアントを入れたら)
 
 今はテストの MCP クライアントでのみ確かめている。
 
@@ -305,11 +312,6 @@
 状態: 提案
 
 区切り (commit・項目の完了) の知見を engram に残す流れと Hub をつなぐか。任意。
-
-### C5. channel なしで起動した Claude Code の通知を ack してしまう
-状態: 保留(起動手順で channel を付ける前提。取りこぼしは unconfirmed で見える)
-
-`clientInfo.name` は `claude-code` のままなので Channels 経路になり、Claude Code が通知を捨てても shim は ack する (未読が既読になる)。2026-10-18 に、通知が黙って捨てられること、initialize・環境変数・要求の並びに channel の有無の違いがなく shim から見分けられないことを確かめた (design.md §6.1k)。配送の状態を分けた (2026-10-18) ので、捨てられた分は handed のまま UI に unconfirmed として出て、`inbox` の `unconfirmed: true` で取り直せる。自動では取り戻さない (design.md §3.7)。
 
 ### C9. ドキュメントの作法を照らす
 状態: 提案
@@ -472,20 +474,7 @@ design.md §3.15 の「予定の一覧と、予定の答え方」の Hub の側�
 
 #### 完了条件
 - [ ] `docs:index` が予定の並びと閉じた行を送り、Hub が索引に持つ。protocol.md の `PUT /indexes` を合わせ、予定のない古い形の索引も受ける
-- [ ] UI の Items を 4 段で出す: 予定 (並び順、進み具合、ブロックは待つ項目)、判断待ち (提案)、寝かせている (保留、既定で畳む)、最近閉じた (日付の新しい 5 件)。予定のない索引では今の並びのまま出す
+- [ ] UI の Items を 4 段で出す: 予定 (並び順、進み具合、ブロックは待つ項目)、判断待ち (提案)、寝かせている (保留、既定で畳む)、最近閉じた (日付の新しい 5 件)。予定のない索引では、決定とブロックの項目を番号順に 1 段目に出す
 - [ ] roadmap.md を変えたコミットの後に、索引が Hub に送られる (git の post-commit hook。設定の手順を README に書く。Hub が止まっていてもコミットは失敗しない)。design.md §3.15 の未決 2 の記録を合わせる
 - [ ] 上の 4 段の表示が `npm run ui:check` の場面として入り、通る
-- [ ] `npm test` と `npm run docs:check` が通る
-
-### C53. C51 の作法のレビュー指摘を直す
-
-reviewer のレビュー (2026-10-27、Message #204。対象 `d4d6d4a~1..2a1f94c` と skill `roadmap-items`)。agent-hub の中では 4 段で答えられたが、規則の写し (design.md §3.15・roadmap 冒頭・skill・`checkRoadmap`) が食い違い、検査は skill が言う範囲を見ていなかった。決めた点は design.md §3.15 に書いた (2026-10-27、ユーザー)。C52 はこの規則を土台にするので先にやる。
-
-#### 完了条件
-- [ ] 古い語彙を直す: design.md §3.15 の「状態は見出しの直後の 1 行」(`保留(理由)`・「保留の理由は省ける」)、CLAUDE.md の「ドキュメントの更新」、`roadmap.ts` のエラー文を、`提案 | 保留(再開の条件) | ブロック(C<n> の後)` に揃える。roadmap 冒頭の規則に、§3.15 で足した 2 点 (決まっていない項目の `保留(C<n> の後)`、閉じた日は行末の括弧の先頭) を書く
-- [ ] skill `roadmap-items` を §3.15 に合わせる: 予定の例を待つ項目が先の順に直す、`ブロック` は決定の項目だけで決まっていない項目は `保留(C<n> の後)`、閉じた日は行末の括弧の先頭、答え方の細部 (先に `docs:check`、`-s`、保留の進み具合、最近閉じた 5 件と同じ日の順、`## 予定` のない台帳)、description に「予定・計画を聞かれたとき」を足す
-- [ ] `checkRoadmap` が次を error にする: ブロックが待つ項目より前に並ぶ、予定に同じ ID が 2 度ある、予定に `[ ]` でない行がある、`## 予定` が 2 つ以上ある、ブロックの待つ項目がもう閉じている、完了条件のないブロック。`parseRoadmap` の閉じた日を行末の括弧の先頭から読み、そこに日付がない閉じた行を error にする
-- [ ] 試験: 上の検査の場面ごとと、題の中に日付がある閉じた行 (C25 の形) を `src/shared/roadmap.test.ts` で確かめる
-- [ ] agent-hub の roadmap を合わせる: C5 を却下 `[-]` にする (受け入れて手を付けない)、C3 の理由を再開の条件の形に直す (Claude Code 以外の MCP クライアントを入れたら)、閉じた行の日付を行末の括弧の先頭に揃える
-- [ ] C52 の完了条件の「予定のない索引では今の並びのまま出す」を「予定のない索引では、決定とブロックの項目を番号順に 1 段目に出す」に直す (約束の変更、2026-10-27 にユーザーが承認)
 - [ ] `npm test` と `npm run docs:check` が通る
