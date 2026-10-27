@@ -397,7 +397,7 @@ cite-bridge の deployer は usage limit で 2 時間 20 分止まったが、Hu
 
 2026-10-26、kanary の /relay (design.md §8.1) と比べ、評価の依頼は会話の区間でなく対象 (コミットの範囲か `C<n>`) と問いで送り、何を照らすかは reviewer の側の決まりに持たせることにした (design.md §3.12「レビューの依頼は、会話の区間でなく対象で送る」)。今は §3.12 の作法の表に reviewer の行がなく、`tools/dev/roles/` にも reviewer.md がない (reviewer は `roles.json` の 1 行の説明だけで動く)。2026-10-26 にユーザーが起票を決めた。
 
-進捗 (2026-10-27): 完了条件の 1〜3 を済ませた。`tools/dev/roles/reviewer.md` を追加し、`start-agent.ps1 -Role reviewer` の dry run (`claude` の代わりに引数を出すだけの偽物を PATH の先頭に置いた) で、reviewer.md が `--append-system-prompt-file` に入ることを確かめた。4・5 は実チームで確かめるまで未済 (節は残す)。
+進捗 (2026-10-27): 完了条件の 1〜3 を済ませた。`tools/dev/roles/reviewer.md` を追加し、`start-agent.ps1 -Role reviewer` の dry run (`claude` の代わりに引数を出すだけの偽物を PATH の先頭に置いた) で、reviewer.md が `--append-system-prompt-file` に入ることを確かめた。reviewer.md / leader.md に、未実装の項目の文面を見る場合と、完了条件の訂正案を人の承認を経て直す扱いを足した。4・5 は実チームで確かめるまで未済 (節は残す)。
 
 #### 完了条件
 - [x] design.md §3.12 の作法の表に reviewer の行を足す。読むのは依頼の対象、項目なら完了条件と本文、変更に関係する節、§2 の非目標、§9 の決定、却下の `[-] C<n>`。返すのは、指摘ごとに照らした正本の場所 (ファイルと節) を付けたもの
