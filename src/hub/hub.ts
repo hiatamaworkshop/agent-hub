@@ -232,10 +232,13 @@ export class Hub {
 
   // 配信先の Mailbox 名 (未接続も含む。次の attach で未読として届く)。user 宛ては常に空
   recipientsOf(m: Message): string[] {
-    return this.store
-      .listMailboxes()
-      .filter((mb) => this.store.isRecipient(mb.name, m))
-      .map((mb) => mb.name)
+    return this.store.recipientsOf(m)
+  }
+
+  // 送信の応答に付ける配信先。unattached は recipients のうち今 attach していない Mailbox (C49)
+  deliveryOf(m: Message): { recipients: string[]; unattached: string[] } {
+    const recipients = this.recipientsOf(m)
+    return { recipients, unattached: recipients.filter((name) => !this.store.getMailbox(name)?.attachment) }
   }
 
   // --- Event ---

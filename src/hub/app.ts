@@ -138,8 +138,9 @@ export function createApp(opts: AppOptions) {
     const parsed = postMessageSchema.safeParse(await readJson(c))
     if (!parsed.success) return invalid(c, parsed.error)
     const m = hub.postMessage(await withMeta(parsed.data, opts.files), senderOf(c))
-    // recipients は応答にだけ付ける (Message には含めない)。0 件なら誰にも届いていない
-    return c.json({ ...m, recipients: hub.recipientsOf(m) }, 201)
+    // recipients / unattached は応答にだけ付ける (Message には含めない)。0 件なら誰にも届いていない。
+    // unattached は配信先のうち今接続していない Mailbox で、attach するまで読まれない (C49)
+    return c.json({ ...m, ...hub.deliveryOf(m) }, 201)
   })
 
   // 無編集転送。本文・kind・meta は元のメッセージのまま運ぶ。応答は POST /messages と同じ形
@@ -147,7 +148,7 @@ export function createApp(opts: AppOptions) {
     const parsed = forwardSchema.safeParse(await readJson(c))
     if (!parsed.success) return invalid(c, parsed.error)
     const m = hub.forwardMessage(c.req.param('id'), parsed.data.to, senderOf(c))
-    return c.json({ ...m, recipients: hub.recipientsOf(m) }, 201)
+    return c.json({ ...m, ...hub.deliveryOf(m) }, 201)
   })
 
   // 人の操作で消す (design.md §3.14)。1 件と、保存期間を待たない掃除

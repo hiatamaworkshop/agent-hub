@@ -150,7 +150,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolRes
       case 'post_message': {
         if (!hub.attachment) throw new Error(`Hub に接続していない (${hub.state}${hub.lastError ? `: ${hub.lastError}` : ''})`)
         const a = postArgs.parse(args)
-        const m = await hub.request<Message & { recipients: string[] }>('POST', '/messages', {
+        const m = await hub.request<Message & { recipients: string[]; unattached?: string[] }>('POST', '/messages', {
           kind: a.kind,
           body: a.body,
           ...(a.to ? { to: parseAddress(a.to) } : {}),
@@ -163,6 +163,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolRes
         else {
           out.recipients = m.recipients
           if (m.recipients.length === 0) out.warning = `${to} を受け取る Mailbox がない (受理はされた)`
+          // 配信先が全部未接続なら、誰も今は読まない。返事を待ってターンを終えると止まって見える (C49)。unattached のない古い Hub では言わない
+          else if (m.unattached && m.unattached.length === m.recipients.length) {
+            out.unattached = m.unattached
+            out.warning =
+              `${to} の配信先 (${m.unattached.join(', ')}) は今どれも接続していない。受理はされ、相手が attach したら未読として届くが、それまで誰も読まない`
+          }
         }
         return text(out)
       }

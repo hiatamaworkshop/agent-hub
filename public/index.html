@@ -1596,7 +1596,7 @@ function sumLayers(mailboxes) {
 // (backlog の lastHanded・outgoing・awaitingReply と、hook の Event) から UI が導く。
 // 作業中 = 最後に渡した Message が最後のターン終了より新しい (Channels は渡した時点でターンを始めるため)
 const STATES = [
-  { key: 'you', label: 'Needs you', title: 'The session is waiting for your answer, to a question or permission prompt in its terminal or to a request it sent you through the Hub (answer with Reply, or send it your next request).' },
+  { key: 'you', label: 'Needs you', title: 'The session is waiting for your answer, to a question or permission prompt in its terminal or to a request it sent you through the Hub (answer with Reply, or send it your next request). Also shown when every agent it is waiting on is not connected: start that session, and the request arrives as unread.' },
   { key: 'paused', label: 'Paused', title: 'The turn stopped on a usage limit. It continues by itself when the limit resets (if auto-resume is on), so there is nothing to do but wait.' },
   { key: 'working', label: 'Working', title: 'A message was handed to the session after its last turn ended, so it is working on it.' },
   { key: 'stopped', label: 'Stopped, no reply', title: 'The turn ended, but a request handed to this session has no reply yet. Check the terminal, or remind it to reply.' },
@@ -1625,7 +1625,12 @@ function stateOf(mb) {
     // Event が 1 つもないセッションは hook がない見込みで、ターン終了を知らない。推測であることを示す
     return { key: 'working', since: handed.ts, guess: !ev, detail: summaryOf(bySeq(handed.seq)) }
   }
-  if (b.outgoing.count) return { key: 'delegated', since: b.outgoing.oldestAt, detail: outgoingTargets(b.outgoing) }
+  if (b.outgoing.count) {
+    // 待っている相手がどれも接続していなければ、誰も読まないまま止まる。起動するのは人なので Needs you にする (C49)
+    const absent = absentTargets(b.outgoing)
+    if (absent) return { key: 'you', since: b.outgoing.oldestAt, detail: `${absent} not connected` }
+    return { key: 'delegated', since: b.outgoing.oldestAt, detail: outgoingTargets(b.outgoing) }
+  }
   if (b.awaitingReply.count) return { key: 'stopped', since: end ? end.ts : b.awaitingReply.oldestAt }
   return { key: 'idle', since: end ? end.ts : null }
 }
@@ -1643,6 +1648,22 @@ function summaryOf(m) {
 // 人宛ては Needs you に出すので除く (C40)。to のない Hub (C28 より前) では宛先を添えない
 function outgoingTargets(outgoing) {
   return [...new Set((outgoing.to || []).filter((a) => a.type !== 'user').map((a) => a.id))].join(', ')
+}
+// 人宛てを除いた開いた request の配信先 (outgoing.to[].recipients) が全部未接続なら、その名前 (受け手のない宛先は宛先の id)。
+// 1 つでも接続していれば、または recipients のない古い Hub なら null。一覧にない名前は接続状態が分からないので、未接続とみなさない
+function absentTargets(outgoing) {
+  const targets = (outgoing.to || []).filter((a) => a.type !== 'user')
+  if (!targets.length || !targets.every((a) => Array.isArray(a.recipients))) return null
+  const names = []
+  for (const a of targets) {
+    if (!a.recipients.length) { names.push(a.id); continue }
+    for (const name of a.recipients) {
+      const mb = mailboxList.find((x) => x.name === name)
+      if (!mb || mb.attachment) return null
+      names.push(name)
+    }
+  }
+  return [...new Set(names)].join(', ')
 }
 function paintState(line) {
   const st = STATES.find((s) => s.key === line.dataset.state)

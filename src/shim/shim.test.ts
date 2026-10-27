@@ -185,6 +185,20 @@ describe('shim と Hub の結合', () => {
     assert.match(String(out.warning), /topic:nobody/)
     const self = JSON.parse((await call('post_message', { kind: 'notice', body: 'x', to: 'mailbox:test-mb' })).text) as Record<string, unknown>
     assert.deepEqual(self.recipients, ['test-mb'])
+    assert.equal(self.warning, undefined, '接続中の配信先には警告しない')
+  })
+
+  it('post_message は配信先が全部未接続なら、受理されて attach 後に届くと警告する (C49)', async () => {
+    const away = hub.attach('away-mb', { client: 'claude-code' })
+    hub.detach(away.attachmentId)
+    const r = await call('post_message', { kind: 'request', body: 'x', to: 'mailbox:away-mb' })
+    assert.equal(r.isError, false, r.text)
+    const out = JSON.parse(r.text) as Record<string, unknown>
+    assert.deepEqual(out.recipients, ['away-mb'])
+    assert.deepEqual(out.unattached, ['away-mb'])
+    assert.match(String(out.warning), /away-mb/)
+    assert.match(String(out.warning), /受理/)
+    assert.match(String(out.warning), /attach/)
   })
 
   it('channel で届いて ack された分は inbox に出ない', async () => {

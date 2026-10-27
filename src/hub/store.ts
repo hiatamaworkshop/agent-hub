@@ -78,8 +78,9 @@ export interface Tally {
 }
 
 export interface Outgoing extends Tally {
-  // 宛先 (種類と id) ごとの件数と最も古い ts。古い順。UI は Waiting on others の宛先と、人宛ての Needs you (C40) に使う
-  to: Array<{ type: Address['type']; id: string } & Tally>
+  // 宛先 (種類と id) ごとの件数と最も古い ts。古い順。UI は Waiting on others の宛先と、人宛ての Needs you (C40) に使う。
+  // recipients はその宛先の開いた request を受け取る Mailbox 名 (未接続も含む)。UI が全部未接続なら Needs you にする (C49)
+  to: Array<{ type: Address['type']; id: string; recipients: string[] } & Tally>
 }
 
 export interface Backlog {
@@ -453,6 +454,13 @@ export class Store {
   }
 
   // この Mailbox 宛てか (直接宛て・自分の role 宛て・実効購読のトピック宛て)
+  // 配信先の Mailbox 名 (未接続も含む。次の attach で未読として届く)。user 宛ては常に空
+  recipientsOf(m: Message): string[] {
+    return this.listMailboxes()
+      .filter((mb) => this.isRecipient(mb.name, m))
+      .map((mb) => mb.name)
+  }
+
   isRecipient(name: string, m: Message): boolean {
     const mb = this.mailboxes.get(name)
     if (!mb) return false
@@ -532,8 +540,9 @@ export class Store {
       if (m.from.type === 'mailbox' && m.from.id === name) {
         add(backlog.outgoing, m)
         let to = backlog.outgoing.to.find((a) => a.type === m.to.type && a.id === m.to.id)
-        if (!to) backlog.outgoing.to.push((to = { type: m.to.type, id: m.to.id, count: 0, oldestAt: null, oldestSeq: null }))
+        if (!to) backlog.outgoing.to.push((to = { type: m.to.type, id: m.to.id, recipients: [], count: 0, oldestAt: null, oldestSeq: null }))
         add(to, m)
+        for (const r of this.recipientsOf(m)) if (!to.recipients.includes(r)) to.recipients.push(r)
       }
       if (m.seq <= mb.cursor && this.isRecipient(name, m)) add(backlog.awaitingReply, m)
     }

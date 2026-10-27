@@ -87,7 +87,7 @@ claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels s
 
 | 状態 | 意味 |
 |---|---|
-| `Needs you` (琥珀) | 人が動く番。ターミナルの質問・許可待ちか、エージェントが Hub で人に出した request に返事がない。usage limit の自動の再開が続かない・無効のときもここ |
+| `Needs you` (琥珀) | 人が動く番。ターミナルの質問・許可待ちか、エージェントが Hub で人に出した request に返事がない。usage limit の自動の再開が続かない・無効のときもここ。返事を待っている相手がどれも接続していないときもここで、`(<Mailbox> not connected)` と添える (相手のセッションを起動する) |
 | `Paused` (青緑、⏸) | usage limit で止まっている (`StopFailure` の `error: rate_limit`)。自動の再開が動けば、待つだけで続く。`Working` より先に判定する |
 | `Working` (青) | 渡した Message が最後のターン終了より新しい。hook の Event がないセッションでは `Working?` (推測) |
 | `Waiting on others` (紫の点線) | ターンを終え、自分が出した request の返事を待っている。宛先を添える |

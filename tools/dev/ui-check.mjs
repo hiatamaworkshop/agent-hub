@@ -170,6 +170,25 @@ try {
   await scene('報告が戻り、leader が人に返した', { 'demo.leader': 'Idle', 'demo.deployer': 'Idle' })
   await sections('leader の返事の見出しを節ごとに色分けする (C42)', report, { decide: 2, op: 0, unverified: 1, hd: 5 })
 
+  // 未接続の reviewer に依頼して待つ (C49)。Mailbox はあるがセッションが起動していない
+  const rev = await api('POST', '/mailboxes/demo.reviewer/attach', { client: 'claude-code', role: 'reviewer', cwd, sessionId: 's-rev' })
+  await api('DELETE', `/attachments/${rev.attachmentId}`)
+  const review = await api('POST', '/messages', { kind: 'request', to: { type: 'role', id: 'reviewer' }, body: 'TARGET: C1' }, asLead)
+  if (JSON.stringify(review.unattached) !== JSON.stringify(['demo.reviewer'])) {
+    failed++
+    console.log(`NG  送信の応答が未接続の配信先を示す (C49): ${JSON.stringify({ recipients: review.recipients, unattached: review.unattached })}`)
+  }
+  await turnEnd('demo.leader', 's-lead')
+  await scene('leader が未接続の reviewer に送った依頼を待っている (C49)', { 'demo.leader': 'Needs you (demo.reviewer not connected)' })
+  const rev2 = await api('POST', '/mailboxes/demo.reviewer/attach', { client: 'claude-code', role: 'reviewer', cwd, sessionId: 's-rev-2' })
+  await scene('reviewer が attach した (Waiting on others に戻る)', { 'demo.leader': 'Waiting on others (reviewer)', 'demo.reviewer': 'Working' })
+  await ackAll(rev2.attachmentId)
+  await api('POST', '/messages', { kind: 'reply', replyTo: review.id, body: 'FINDINGS: なし' }, { 'x-hub-attachment': rev2.attachmentId })
+  await turnEnd('demo.reviewer', 's-rev-2')
+  await ackAll(lead.attachmentId)
+  await turnEnd('demo.leader', 's-lead')
+  await scene('reviewer が返した', { 'demo.leader': 'Idle', 'demo.reviewer': 'Idle' })
+
   // UI が最初に読むのは最近の Event 200 件だけ。ほかの Mailbox の Event で押し出しても、Hub の lastTurnEnd で Idle のまま (C41)
   for (let i = 0; i < 250; i++) await turnEnd('demo.noise', 's-noise')
   await cdp('Page.navigate', { url: `${HUB}/` })
