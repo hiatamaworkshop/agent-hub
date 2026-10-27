@@ -242,8 +242,21 @@ npm --prefix <agent-hub> run docs:index -- --file docs/TODO.md            # 別�
 
 - 送ったプロジェクトは、エージェントがつながる前から UI のプロジェクトとして選べ、`role:deployer @ <プロジェクト>` 宛てに依頼を置ける (attach した Mailbox に未読として届く)。
 - Hub が持つのは索引の写しだけで、正本はリポジトリの roadmap。変えたら送り直す。外すのは Items の **Remove**。
+- Items は 4 段で出る: **Plan** (台帳の `## 予定` の並び。ブロックは何を待つかを出す)、**Awaiting a decision** (提案)、**Parked** (保留。既定で畳む)、**Recently closed** (閉じた行の日付の新しい 5 件)。`## 予定` のない台帳では、決定とブロックを番号順に Plan に出す。
 - カードには requested / reported と、送った後に完了条件の文言が変わったときの差分が出る。
 - 独自の書式の台帳を持つプロジェクトでは、送ると項目がすべて「決定」と読まれることがある。そのときは索引に載せず、普通の依頼として送る (roadmap C27)。
+
+**変えたコミットの後に自動で送る** (任意): 台帳 (`docs/roadmap.md`) を変えたコミットのときだけ、索引を送る git の post-commit hook を入れられる。送れなくてもコミットは止まらない (Hub が止まっていれば警告を 1 行出して進む)。
+
+1. 対象のリポジトリの `.git/hooks/` に、hook をコピーする (agent-hub の `tools/hooks/post-commit-index.sh`)。
+   ```powershell
+   Copy-Item <agent-hub>\tools\hooks\post-commit-index.sh <リポジトリ>\.git\hooks\post-commit
+   ```
+2. コピーした `post-commit` の `AGENT_HUB_DIR=` の行を、agent-hub のフォルダに書き換える (`AGENT_HUB_DIR="<agent-hub>"`。`<agent-hub>` は agent-hub のフォルダの絶対パスに、`/` 区切りで書く)。
+3. 送るには、Hub が起動していて、agent-hub の `.env` のトークンが読めること (`npm run docs:index` と同じ)。
+4. 確かめる: 台帳を変えてコミットし、Items に出ればよい。出ないときは、コミットの後に出る警告 1 行を見る。
+
+hook は `npm --prefix <agent-hub> run docs:index` を、コミットしたリポジトリのルートで流す。hook を外すには `.git/hooks/post-commit` を消す。
 
 ### role の定義 (roles.json)
 

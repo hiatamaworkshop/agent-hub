@@ -39,6 +39,34 @@ describe('PUT /indexes と GET /indexes (design.md §3.15)', () => {
     assert.deepEqual(c3.conditionTexts, ['a', 'b'])
   })
 
+  it('予定 (plan) と閉じた行 (closed) を持ち、GET で返す。送らない古い形は plan が null、closed が空', async () => {
+    const { call } = setup()
+    const plan = [
+      { id: 'C4', line: 9 },
+      { id: 'C3', line: 8 },
+    ]
+    const closed = [{ id: 'C1', mark: 'x', date: '2026-10-27', line: 30 }]
+    await call('PUT', '/indexes', { project: '/w/a', source: 'docs/roadmap.md', ...parseRoadmap(roadmap), plan, closed })
+    await call('PUT', '/indexes', { project: '/w/b', source: 'docs/roadmap.md', items: parseRoadmap(roadmap).items })
+    const { indexes } = (await (await call('GET', '/indexes')).json()) as { indexes: { project: string; plan: unknown; closed: unknown }[] }
+    const a = indexes.find((i) => i.project === '/w/a')!
+    const b = indexes.find((i) => i.project === '/w/b')!
+    assert.deepEqual(a.plan, plan, '並びを保つ')
+    assert.deepEqual(a.closed, closed)
+    assert.equal(b.plan, null, '予定を送らない古い形は null')
+    assert.deepEqual(b.closed, [])
+  })
+
+  it('予定と閉じた行の形が違えば 400', async () => {
+    const { call } = setup()
+    const base = { project: '/w/a', source: 'docs/roadmap.md', items: [] }
+    assert.equal((await call('PUT', '/indexes', { ...base, plan: [{ id: 'X1', line: 1 }] })).status, 400)
+    assert.equal((await call('PUT', '/indexes', { ...base, plan: [{ id: 'C1', line: 0 }] })).status, 400)
+    assert.equal((await call('PUT', '/indexes', { ...base, closed: [{ id: 'C1', mark: 'y', date: null, line: 1 }] })).status, 400)
+    assert.equal((await call('PUT', '/indexes', { ...base, closed: [{ id: 'C1', mark: 'x', date: '2026/10/27', line: 1 }] })).status, 400)
+    assert.equal((await call('PUT', '/indexes', { ...base, plan: null, closed: [] })).status, 200, 'null と空は受ける')
+  })
+
   it('同じプロジェクト (表記の揺れを揃える) の同じファイルは置き換え、別のファイルは並べる', async () => {
     const { call } = setup()
     const body = (project: string, source: string) => ({ project, source, items: parseRoadmap(roadmap).items })

@@ -43,11 +43,12 @@ try {
 const errors = checkRoadmap(text).filter((p) => p.level === 'error')
 for (const p of errors) console.warn(`${path}:${p.line}: ${p.message}`)
 
-const { items } = parseRoadmap(text)
+// 予定の並びと閉じた行も送る (Hub は作業ツリーを読まない。design.md §3.15)
+const { items, plan, closed } = parseRoadmap(text)
 const res = await fetch(`${hubUrl}/indexes`, {
   method: 'PUT',
   headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-  body: JSON.stringify({ project, source, items }),
+  body: JSON.stringify({ project, source, items, plan, closed }),
 }).catch((e: Error) => {
   console.error(`${hubUrl} に届かない: ${e.message}`)
   process.exit(1)

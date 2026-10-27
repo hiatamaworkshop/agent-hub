@@ -91,6 +91,9 @@
   .item .tag.rep { color: var(--reply); font-weight: 600; }
   .item .diff { font-family: var(--mono); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--warn); margin-top: 2px; }
   .itemhead { font-size: 12px; font-weight: 600; color: var(--muted); margin: 8px 0 4px; overflow-wrap: anywhere; }
+  .tier { font-size: 11px; color: var(--muted); margin: 6px 0 2px; }
+  details.held > summary { cursor: pointer; list-style: none; }
+  .closedrow { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 1px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
   .dot.on { background: var(--reply); }
   section { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -1845,6 +1848,21 @@ function itemRequests() {
 }
 
 const ITEM_STATUS = { proposed: 'proposed', held: 'on hold', blocked: 'blocked' }
+const numOf = (item) => Number(item.id.slice(1))
+// 4 段 (design.md §3.15)。1 予定: plan の並び (plan のない索引は、決定とブロックを番号順)。2 判断待ち: 提案。
+// 3 寝かせている: 保留 (既定で畳む)。4 最近閉じた: 閉じた行を日付の新しい順 (同じ日は台帳の行の順) に 5 件
+function tiersOf(ix) {
+  const byId = new Map(ix.items.map((x) => [x.id, x]))
+  const plan = Array.isArray(ix.plan) ? ix.plan.map((p) => byId.get(p.id)).filter(Boolean) : ix.items.filter((x) => x.status === 'decided' || x.status === 'blocked').sort((a, b) => numOf(a) - numOf(b))
+  const closed = [...(ix.closed || [])].sort((a, b) => (b.date || '').localeCompare(a.date || '') || a.line - b.line).slice(0, 5)
+  return {
+    plan,
+    proposed: ix.items.filter((x) => x.status === 'proposed'),
+    held: ix.items.filter((x) => x.status === 'held'),
+    closed,
+  }
+}
+function tierHead(text) { return el('div', 'tier', text) }
 function renderItems() {
   const root = $('items')
   root.textContent = ''
@@ -1860,7 +1878,27 @@ function renderItems() {
     rm.onclick = () => removeIndex(ix)
     h.append(' ', rm)
     root.append(h)
-    for (const item of ix.items) root.append(itemCard(ix, item, latest.get(itemKey(ix.project, item.id)), replied))
+    const tiers = tiersOf(ix)
+    const card = (item) => itemCard(ix, item, latest.get(itemKey(ix.project, item.id)), replied)
+    if (tiers.plan.length) {
+      root.append(tierHead(`Plan (${tiers.plan.length})${Array.isArray(ix.plan) ? '' : ' · no ## 予定 in this file'}`))
+      for (const item of tiers.plan) root.append(card(item))
+    }
+    if (tiers.proposed.length) {
+      root.append(tierHead(`Awaiting a decision (${tiers.proposed.length})`))
+      for (const item of tiers.proposed) root.append(card(item))
+    }
+    if (tiers.held.length) {
+      // 寝かせている: 既定で畳む。開いても進み具合と再開の条件は出る
+      const d = el('details', 'held')
+      d.append(el('summary', 'tier', `Parked (${tiers.held.length})`))
+      for (const item of tiers.held) d.append(card(item))
+      root.append(d)
+    }
+    if (tiers.closed.length) {
+      root.append(tierHead('Recently closed'))
+      for (const c of tiers.closed) root.append(el('div', 'closedrow', `${c.id} ${c.mark === 'x' ? 'done' : 'rejected'} ${c.date || '(no date)'}`))
+    }
   }
 }
 
@@ -1868,7 +1906,10 @@ function itemCard(ix, item, req, replied) {
   const box = el('div', 'item')
   const line = el('div', 'line')
   line.append(el('span', 'id', item.id), el('span', 'title', item.title))
-  if (item.status !== 'decided') line.append(el('span', 'tag', ITEM_STATUS[item.status] || item.status))
+  // ブロックは待つ項目を示す (理由の C<n>)。それ以外は状態の語
+  const waits = item.status === 'blocked' && item.statusReason && /C\d+/.exec(item.statusReason)
+  if (waits) line.append(el('span', 'tag', `waits ${waits[0]}`))
+  else if (item.status !== 'decided') line.append(el('span', 'tag', ITEM_STATUS[item.status] || item.status))
   if (item.conditions) line.append(el('span', 'tag', `${item.conditions.done}/${item.conditions.total}`))
   if (req) {
     const done = replied.has(req.id)

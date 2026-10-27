@@ -373,6 +373,79 @@ try {
   verify('Stuck?: 未接続の Mailbox の未読を押すと、その Message へ飛んで強調される (C48)', stuck && stuck.seq === String(stuckSeq) && stuck.shown, { stuckSeq, stuck })
   await evaluate("chooseProject('')")
 
+  // Items の 4 段 (C52): 予定 (plan の並び)、判断待ち (提案)、寝かせている (保留、既定で畳む)、最近閉じた (日付の新しい 5 件)
+  const itemOf = (id, title, status, extra = {}) => ({ id, title, status, conditionTexts: [], promise: null, line: 1, conditions: null, ...extra })
+  const sendIndex = (project, source, body) => api('PUT', '/indexes', { project, source, ...body })
+  // 段ごとの組 (見出し・畳みの開き・項目の番号・閉じた行) を DOM から読む
+  const readTiers = () => evaluate(`(() => {
+    const groups = []
+    const tags = {}
+    let cur = null
+    const take = (node) => {
+      const id = node.querySelector('.id').textContent
+      tags[id] = (node.querySelector('.tag') || {}).textContent || ''
+      cur.ids.push(id)
+    }
+    for (const node of document.getElementById('items').children) {
+      if (node.classList.contains('itemhead')) { cur = null; continue }
+      if (node.classList.contains('tier')) { cur = { head: node.textContent, open: null, ids: [], rows: [] }; groups.push(cur); continue }
+      if (node.tagName === 'DETAILS') {
+        cur = { head: node.querySelector('summary').textContent, open: node.open, ids: [], rows: [] }
+        groups.push(cur)
+        node.querySelectorAll('.item').forEach(take)
+        continue
+      }
+      if (!cur) continue
+      if (node.classList.contains('item')) take(node)
+      if (node.classList.contains('closedrow')) cur.rows.push(node.textContent)
+    }
+    return { groups, tags }
+  })()`)
+  await sendIndex(cwd, 'docs/roadmap.md', {
+    items: [
+      itemOf('C1', '一つ目', 'decided', { conditions: { done: 1, total: 2 }, line: 3 }),
+      itemOf('C2', '二つ目 (C1 を待つ)', 'blocked', { statusReason: 'C1 の後' }),
+      itemOf('C3', '三つ目 (人が決める)', 'proposed'),
+      itemOf('C4', '四つ目 (保留)', 'held', { statusReason: '再開の条件', conditions: { done: 1, total: 2 } }),
+      itemOf('C5', '五つ目 (予定の先頭)', 'decided', { conditions: { done: 0, total: 1 } }),
+    ],
+    plan: [{ id: 'C5', line: 20 }, { id: 'C1', line: 21 }, { id: 'C2', line: 22 }],
+    closed: [
+      { id: 'C20', mark: 'x', date: '2026-10-01', line: 10 },
+      { id: 'C21', mark: 'x', date: '2026-10-02', line: 11 },
+      { id: 'C22', mark: 'x', date: '2026-10-03', line: 12 },
+      { id: 'C23', mark: 'x', date: '2026-10-04', line: 13 },
+      { id: 'C24', mark: '-', date: '2026-10-05', line: 14 },
+      { id: 'C25', mark: 'x', date: '2026-10-06', line: 15 },
+      { id: 'C26', mark: 'x', date: '2026-10-06', line: 16 },
+    ],
+  })
+  await sleep(1500)
+  const tiers = await readTiers()
+  const tiersOk = JSON.stringify(tiers.groups) === JSON.stringify([
+    { head: 'Plan (3)', open: null, ids: ['C5', 'C1', 'C2'], rows: [] },
+    { head: 'Awaiting a decision (1)', open: null, ids: ['C3'], rows: [] },
+    { head: 'Parked (1)', open: false, ids: ['C4'], rows: [] },
+    { head: 'Recently closed', open: null, ids: [], rows: ['C25 done 2026-10-06', 'C26 done 2026-10-06', 'C24 rejected 2026-10-05', 'C23 done 2026-10-04', 'C22 done 2026-10-03'] },
+  ])
+  verify('Items: 予定は plan の並び、判断待ちと寝かせている (畳む) と、最近閉じた 5 件 (同じ日は行の順) に分かれる (C52)', tiersOk, tiers.groups)
+  verify('Items: ブロックは待つ項目を示す (waits C1)', tiers.tags.C2 === 'waits C1', tiers.tags)
+
+  // 予定のない古い形の索引 (plan も closed も送らない): 決定とブロックを番号順に 1 段目に出す
+  await api('DELETE', `/indexes?project=${encodeURIComponent(cwd)}&source=${encodeURIComponent('docs/roadmap.md')}`)
+  await api('PUT', '/indexes', {
+    project: join(work, 'old'),
+    source: 'docs/old.md',
+    items: [itemOf('C9', '九', 'proposed'), itemOf('C8', '八 (C7 を待つ)', 'blocked', { statusReason: 'C7 の後', conditions: { done: 0, total: 1 } }), itemOf('C7', '七', 'decided', { conditions: { done: 0, total: 1 } }), itemOf('C6', '六', 'decided', { conditions: { done: 0, total: 1 } })],
+  })
+  await sleep(1500)
+  const oldTiers = await readTiers()
+  const oldOk = JSON.stringify(oldTiers.groups) === JSON.stringify([
+    { head: 'Plan (3) · no ## 予定 in this file', open: null, ids: ['C6', 'C7', 'C8'], rows: [] },
+    { head: 'Awaiting a decision (1)', open: null, ids: ['C9'], rows: [] },
+  ])
+  verify('Items: 予定のない索引は、決定とブロックを番号順に 1 段目に出す (C52)', oldOk && oldTiers.tags.C8 === 'waits C7', oldTiers)
+
   // 時刻の表示 (C31): 今日は時刻だけ、前日は日付つき
   const t = await cdp('Runtime.evaluate', {
     expression: `(() => { const now = Date.now(), old = now - 26 * 3600 * 1000; return { today: time(now), todayPlain: new Date(now).toLocaleTimeString(), old: time(old), oldPlain: new Date(old).toLocaleTimeString() } })()`,

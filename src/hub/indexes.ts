@@ -19,21 +19,48 @@ const itemSchema = z.object({
   line: z.number().int().positive(),
 })
 
-// 送られた索引。ほかのキー (parseRoadmap の num・endLine など) は捨てる
+// 予定の並び (`## 予定`)。見出しがなければ送られない (null)
+const planSchema = z.array(z.object({ id: z.string().regex(/^C\d{1,9}$/), line: z.number().int().positive() })).max(1000)
+
+// 閉じた行 (`[x] C<n>` / `[-] C<n>`)。日付は行末の括弧の先頭 (なければ null)
+const closedSchema = z
+  .array(
+    z.object({
+      id: z.string().regex(/^C\d{1,9}$/),
+      mark: z.enum(['x', '-']),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+      line: z.number().int().positive(),
+    }),
+  )
+  .max(1000)
+
+// 送られた索引。ほかのキー (parseRoadmap の refs・num・endLine など) は捨てる。
+// plan と closed を送らない古い形の索引も受ける (plan は null、closed は空として持つ)
 export const indexInputSchema = z.object({
   project: z.string().min(1).max(4096),
   source: z.string().min(1).max(256),
   items: z.array(itemSchema.strip()).max(1000),
+  plan: planSchema.nullish(),
+  closed: closedSchema.nullish(),
 })
 
 export type IndexInput = z.infer<typeof indexInputSchema>
 export type IndexItem = z.infer<typeof itemSchema>
+export type IndexPlan = z.infer<typeof planSchema>
+export type IndexClosed = z.infer<typeof closedSchema>
 
 export interface ProjectIndex {
   project: string
   source: string
   updatedAt: string
   items: IndexItem[]
+  plan: IndexPlan | null
+  closed: IndexClosed
+}
+
+// 送られた形を持つ形にする。plan を送らない古い形は予定がないもの (null)、closed は空
+function toProjectIndex(input: IndexInput, updatedAt: string): ProjectIndex {
+  return { project: input.project, source: input.source, updatedAt, items: input.items, plan: input.plan ?? null, closed: input.closed ?? [] }
 }
 
 // 同じプロジェクト (区切りと大文字小文字を揃えたパス) の同じファイルは置き換える
@@ -56,7 +83,7 @@ export class IndexStore {
     }
     try {
       const list = z.array(indexInputSchema.extend({ updatedAt: z.string() })).parse(JSON.parse(raw))
-      for (const ix of list) this.indexes.set(keyOf(ix.project, ix.source), ix)
+      for (const ix of list) this.indexes.set(keyOf(ix.project, ix.source), toProjectIndex(ix, ix.updatedAt))
     } catch (e) {
       console.warn(`[hub] ${file} を読めないので索引を空から始める: ${(e as Error).message}`)
     }
@@ -64,7 +91,7 @@ export class IndexStore {
 
   // 書けてからメモリを更新する (書けずに 500 を返したのに、新しい索引が GET /indexes に出ないように)
   put(input: IndexInput): ProjectIndex {
-    const ix: ProjectIndex = { project: input.project, source: input.source, updatedAt: this.now().toISOString(), items: input.items }
+    const ix = toProjectIndex(input, this.now().toISOString())
     const key = keyOf(ix.project, ix.source)
     this.save(new Map(this.indexes).set(key, ix))
     this.indexes.set(key, ix)
