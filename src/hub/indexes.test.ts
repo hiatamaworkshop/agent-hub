@@ -35,8 +35,18 @@ describe('PUT /indexes と GET /indexes (design.md §3.15)', () => {
     const { indexes } = (await (await call('GET', '/indexes')).json()) as { indexes: { items: Record<string, unknown>[] }[] }
     assert.equal(indexes.length, 1)
     const c3 = indexes[0]!.items[0]!
-    assert.deepEqual(Object.keys(c3).sort(), ['conditionTexts', 'conditions', 'id', 'line', 'promise', 'status', 'title'])
+    assert.deepEqual(Object.keys(c3).sort(), ['conditionChecks', 'conditionTexts', 'conditions', 'id', 'line', 'promise', 'status', 'title'])
     assert.deepEqual(c3.conditionTexts, ['a', 'b'])
+    assert.deepEqual(c3.conditionChecks, [true, false], '1 行ずつのチェックを持つ')
+  })
+
+  it('完了条件の 1 行ずつのチェックは省略できる (古い形の索引も受ける)', async () => {
+    const { call } = setup()
+    const old = { id: 'C3', title: '題', status: 'decided', conditionTexts: ['a'], conditions: { done: 0, total: 1 }, promise: null, line: 1 }
+    assert.equal((await call('PUT', '/indexes', { project: '/w/a', source: 'docs/roadmap.md', items: [old] })).status, 200)
+    assert.equal((await call('PUT', '/indexes', { project: '/w/a', source: 'docs/roadmap.md', items: [{ ...old, conditionChecks: [true, 'x'] }] })).status, 400, '真偽の配列でなければ 400')
+    const { indexes } = (await (await call('GET', '/indexes')).json()) as { indexes: { items: Record<string, unknown>[] }[] }
+    assert.equal(indexes[0]!.items[0]!.conditionChecks, undefined, '送らない行は持たない (UI は印を出さない)')
   })
 
   it('予定 (plan) と閉じた行 (closed) を持ち、GET で返す。送らない古い形は plan が null、closed が空', async () => {

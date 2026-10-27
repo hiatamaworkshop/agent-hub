@@ -233,7 +233,7 @@ npm run hub                                   # ターミナル A
 
 ### roadmap の項目から依頼する (Items)
 
-roadmap の `### C<n>. 題` の項目 (書き方は [docs/roadmap.md](docs/roadmap.md) の冒頭) を Hub に送ると、サイドバーの **Items** にカードが並ぶ。押すと `GOAL` / `DONE WHEN` の下書きになり、送る request に項目 (`meta.item`) が付く (design.md §3.15)。
+roadmap の `### C<n>. 題` の項目 (書き方は [docs/roadmap.md](docs/roadmap.md) の冒頭) を Hub に送ると、サイドバーの **Items** にカードが並ぶ。カードを押すと中身のモーダルが開く (ID・題・状態と理由・完了条件の 1 行ずつのチェック・依頼の状態・約束の差分)。モーダルの **Draft request** で `GOAL` / `DONE WHEN` の下書きになり、送る request に項目 (`meta.item`) が付く。**Open in editor** で台帳のその行を開く (`vscode://` のリンク。エディタが対応していること)。本文は索引に載せず、モーダルにも出さない (design.md §3.15)。サイドバーの幅はつまみで変えられ、この Hub のブラウザに覚えさせる。
 
 ```powershell
 npm run docs:index                                                       # agent-hub の docs/roadmap.md

@@ -15,6 +15,8 @@ const itemSchema = z.object({
   statusReason: z.string().max(500).optional(),
   conditions: z.object({ done: z.number().int().nonnegative(), total: z.number().int().nonnegative() }).nullable(),
   conditionTexts: z.array(z.string().max(2000)).max(100),
+  // 古い形の索引は送らない (省略は null 扱いで、UI は印を出さない)
+  conditionChecks: z.array(z.boolean()).max(100).optional(),
   promise: z.string().regex(/^[0-9a-f]{8}$/).nullable(),
   line: z.number().int().positive(),
 })

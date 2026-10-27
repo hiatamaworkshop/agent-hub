@@ -53,6 +53,7 @@ describe('parseRoadmap', () => {
   it('完了条件の文言と約束の指紋。チェックを付けても指紋は変わらず、文言を変えると変わる', () => {
     const c2 = parseRoadmap(sample).items[0]!
     assert.deepEqual(c2.conditionTexts, ['一つ目', '二つ目', '入れ子も数える'])
+    assert.deepEqual(c2.conditionChecks, [true, false, true], '完了条件の 1 行ずつのチェック (入れ子も数える)')
     assert.equal(c2.promise, promiseFingerprint(['一つ目', '二つ目', '入れ子も数える']))
     assert.match(c2.promise!, /^[0-9a-f]{8}$/)
     assert.equal(parseRoadmap(sample.replace('- [ ] 二つ目', '- [x] 二つ目')).items[0]!.promise, c2.promise)

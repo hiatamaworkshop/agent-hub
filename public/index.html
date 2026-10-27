@@ -34,7 +34,10 @@
   #conn.ok::before { content: "● "; color: var(--reply); }
   #conn.ng::before { content: "● "; color: var(--warn); }
   /* grid の行は中身の高さに伸ばさず、残りの高さを行に割り当てる (min-height: 0 でスクロールさせる) */
-  main { flex: 1; min-height: 0; display: grid; grid-template-columns: 260px 1fr; grid-template-rows: minmax(0, 1fr); }
+  /* サイドバーの幅は --side-w (つまみで変える。既定 260px、200〜520px、ブラウザに覚える) */
+  main { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--side-w, 260px) 6px 1fr; grid-template-rows: minmax(0, 1fr); }
+  #sideResize { cursor: col-resize; background: var(--line); }
+  #sideResize:hover, #sideResize:focus-visible { background: var(--accent); outline: none; }
   aside { min-height: 0; border-right: 1px solid var(--line); overflow: auto; padding: 12px; background: var(--panel); }
   aside h2 { font-size: 12px; color: var(--muted); margin: 0 0 8px; text-transform: uppercase; letter-spacing: .04em; }
   .mb { padding: 8px; border: 1px solid var(--line); border-left: 4px solid var(--pc, var(--line)); border-radius: 6px; margin-bottom: 8px; cursor: pointer; }
@@ -186,6 +189,15 @@
   dialog#cmdDialog { width: min(640px, 92vw); max-height: 85vh; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg); }
   dialog#cmdDialog::backdrop { background: rgba(0, 0, 0, .35); }
   #cmdDialog h2 { font-size: 15px; margin: 0 0 6px; }
+  dialog#itemDialog { width: min(560px, 92vw); max-height: 85vh; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg); overflow: auto; }
+  dialog#itemDialog::backdrop { background: rgba(0, 0, 0, .35); }
+  #itemDialog h2 { font-size: 15px; margin: 0 0 8px; overflow-wrap: anywhere; }
+  #itemDialog .meta { font-size: 12px; color: var(--muted); margin-bottom: 8px; overflow-wrap: anywhere; }
+  #itemDialog .cond { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; margin: 2px 0; }
+  #itemDialog .progress { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  #itemDialog .reqline { font-size: 12px; margin: 8px 0 4px; }
+  #itemDialog .diff { margin-top: 4px; }
+  #itemDialog .foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; }
   #cmdDialog .desc { margin: 0 0 12px; font-size: 12px; color: var(--muted); }
   #cmdRows { max-height: 50vh; overflow: auto; }
   .cmd-row { border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin-bottom: 8px; display: grid; gap: 6px; }
@@ -202,6 +214,7 @@
   @media (max-width: 720px) {
     /* 小さい画面: サイドバーは上に小さく置き、残りをスレッドに回す */
     main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+    #sideResize { display: none; }
     aside { border-right: none; border-bottom: 1px solid var(--line); max-height: 16vh; }
     textarea { max-height: 24vh; }
   }
@@ -222,6 +235,7 @@
     <h2 id="itemsHead" hidden title="Roadmap items sent by npm run docs:index. Click one to draft a request for it.">Items</h2>
     <div id="items"></div>
   </aside>
+  <div id="sideResize" class="sideResize" role="separator" aria-orientation="vertical" aria-label="Resize the sidebar" aria-valuemin="200" aria-valuemax="520" tabindex="0" title="Drag to resize the sidebar (the width is remembered in this browser)"></div>
   <section>
     <div class="foldbar">
       <button type="button" id="fold" title="Hide messages older than the latest N and show them as one row. Display only: the Hub record and unread counts are unchanged.">Compact</button>
@@ -262,6 +276,17 @@
   <div id="cmdRows"></div>
   <div class="row"><button type="button" id="cmdAdd">Add command</button></div>
   <div class="row cmd-foot"><span id="cmdErr"></span><span><button type="button" id="cmdCancel">Cancel</button> <button type="button" id="cmdSave">Save</button></span></div>
+</dialog>
+<dialog id="itemDialog" aria-labelledby="itemTitle">
+  <h2 id="itemTitle"></h2>
+  <div id="itemMeta" class="meta"></div>
+  <div id="itemConds"></div>
+  <div id="itemReq" class="reqline"></div>
+  <div id="itemDiff" class="diff" hidden></div>
+  <div class="foot">
+    <a id="itemEditor" class="linkbtn">Open in editor</a>
+    <span><button type="button" id="itemDraft">Draft request</button> <button type="button" id="itemClose">Close</button></span>
+  </div>
 </dialog>
 <script>
 'use strict'
@@ -1918,24 +1943,136 @@ function itemCard(ix, item, req, replied) {
     line.append(tag)
   }
   box.append(line)
-  // 送った後に完了条件の文言が変わった (約束の変更)。チェックを付けただけでは指紋は変わらない
-  const sent = req && req.meta.item
-  if (sent && typeof sent.promise === 'string' && item.promise && sent.promise !== item.promise) {
-    const was = Array.isArray(sent.conditions) ? sent.conditions.filter((t) => typeof t === 'string') : null
-    const now = item.conditionTexts || []
-    const lines = was ? [...was.filter((t) => !now.includes(t)).map((t) => `- ${t}`), ...now.filter((t) => !was.includes(t)).map((t) => `+ ${t}`)] : []
-    const d = el('div', 'diff', [`Done-when changed since #${req.seq}`, ...lines].join('\n'))
+  const diff = promiseDiffOf(item, req)
+  if (diff) {
+    const d = el('div', 'diff', diff)
     d.title = 'The completion conditions were edited after the request was sent. Confirm the change with whoever is working on it.'
     box.append(d)
   }
   const tip = [`${item.id}. ${item.title}`, `${ix.source}:${item.line}`]
   if (item.statusReason) tip.push(`Reason: ${item.statusReason}`)
   if (item.conditionTexts && item.conditionTexts.length) tip.push('Done when:', ...item.conditionTexts.map((t) => `- ${t}`))
-  tip.push('', 'Click to draft a request for this item.')
+  tip.push('', 'Click to open it (the draft request and the editor link are there).')
   box.title = tip.join('\n')
-  box.onclick = () => draftFromItem(ix, item)
+  box.onclick = () => openItemDialog(ix, item)
   return box
 }
+
+// 送った後に完了条件の文言が変わったときの差分 (約束の変更)。チェックを付けただけでは指紋は変わらないので出ない
+function promiseDiffOf(item, req) {
+  const sent = req && req.meta.item
+  if (!(sent && typeof sent.promise === 'string' && item.promise && sent.promise !== item.promise)) return null
+  const was = Array.isArray(sent.conditions) ? sent.conditions.filter((t) => typeof t === 'string') : null
+  const now = item.conditionTexts || []
+  const lines = was ? [...was.filter((t) => !now.includes(t)).map((t) => `- ${t}`), ...now.filter((t) => !was.includes(t)).map((t) => `+ ${t}`)] : []
+  return [`Done-when changed since #${req.seq}`, ...lines].join('\n')
+}
+
+// vscode://file/<project>/<source>:<line>。パスは / に揃え、各段を符号化する。C: のような駆動器の段はそのまま。
+// 索引の文字列は値として扱う (HTML にしない)。変な段 (.. など) や行が正の整数でなければ null
+function editorUrl(project, source, line) {
+  if (!Number.isInteger(line) || line < 1) return null
+  const path = `${String(project)}/${String(source)}`.replace(/\\/g, '/').replace(/\/+/g, '/')
+  const segs = path.split('/').filter((s) => s !== '')
+  if (segs.some((s) => s === '..' || s === '.')) return null
+  const enc = segs.map((s, i) => (i === 0 && /^[A-Za-z]:$/.test(s) ? s : encodeURIComponent(s)))
+  return `vscode://file/${enc.join('/')}:${line}`
+}
+
+// カードを押すと開く中身 (C54)。ID・題・状態と理由・完了条件の 1 行ずつ・依頼の状態・約束の差分を出す。本文は索引に無く、出さない。
+// 下書きは、今までカードを押したときの動き (draftFromItem) をそのまま使う
+function openItemDialog(ix, item) {
+  const dlg = $('itemDialog')
+  const { latest, replied } = itemRequests()
+  const req = latest.get(itemKey(ix.project, item.id))
+  $('itemTitle').textContent = `${item.id}. ${item.title}`
+  const meta = $('itemMeta')
+  meta.textContent = ''
+  meta.append(el('div', null, `Status: ${ITEM_STATUS[item.status] || item.status}`))
+  if (item.statusReason) meta.append(el('div', null, `Reason: ${item.statusReason}`))
+  meta.append(el('div', null, `${folderName(ix.project)} · ${ix.source}:${item.line}`))
+  const conds = $('itemConds')
+  conds.textContent = ''
+  if (item.conditions) conds.append(el('div', 'progress', `${item.conditions.done}/${item.conditions.total} done`))
+  const texts = item.conditionTexts || []
+  // 古い形の索引はチェックを送らない。数が合わなければ印を出さない
+  const checks = Array.isArray(item.conditionChecks) && item.conditionChecks.length === texts.length ? item.conditionChecks : null
+  if (!texts.length) conds.append(el('div', 'cond', 'No completion conditions.'))
+  texts.forEach((t, i) => conds.append(el('div', 'cond', `${checks ? (checks[i] ? '[x] ' : '[ ] ') : ''}${t}`)))
+  const reqLine = $('itemReq')
+  if (req) {
+    const done = replied.has(req.id)
+    reqLine.textContent = `${done ? 'Reported' : 'Requested'}: request #${req.seq}${done ? ', replied' : ', awaiting a reply'}`
+  } else {
+    reqLine.textContent = 'Not requested yet.'
+  }
+  const diff = promiseDiffOf(item, req)
+  const d = $('itemDiff')
+  d.textContent = diff || ''
+  d.hidden = !diff
+  const a = $('itemEditor')
+  const url = editorUrl(ix.project, ix.source, item.line)
+  if (url) a.setAttribute('href', url)
+  else a.removeAttribute('href')
+  a.hidden = !url
+  $('itemDraft').onclick = () => {
+    dlg.close()
+    draftFromItem(ix, item)
+  }
+  $('itemClose').onclick = () => dlg.close()
+  if (!dlg.open) dlg.showModal()
+}
+
+// サイドバーの幅 (C54)。つまみで変え、幅はブラウザに覚える。読み書きが失敗したり、保存された値が範囲外・数でなければ既定の幅
+const SIDE_KEY = 'agent-hub.sidebar'
+const SIDE_DEFAULT = 260
+const SIDE_MIN = 200
+const SIDE_MAX = 520
+function loadSideWidth() {
+  let raw = null
+  try { raw = localStorage.getItem(SIDE_KEY) } catch {}
+  const v = Number(raw)
+  return raw !== null && Number.isInteger(v) && v >= SIDE_MIN && v <= SIDE_MAX ? v : SIDE_DEFAULT
+}
+function saveSideWidth(px) {
+  try { localStorage.setItem(SIDE_KEY, String(px)) } catch {}
+}
+function setSideWidth(px) {
+  const w = Math.min(SIDE_MAX, Math.max(SIDE_MIN, Math.round(px)))
+  document.documentElement.style.setProperty('--side-w', `${w}px`)
+  const grip = $('sideResize')
+  grip.setAttribute('aria-valuenow', String(w))
+  return w
+}
+function initSideResize() {
+  setSideWidth(loadSideWidth())
+  const grip = $('sideResize')
+  let start = null
+  grip.addEventListener('pointerdown', (e) => {
+    start = { x: e.clientX, w: document.querySelector('aside').getBoundingClientRect().width }
+    grip.setPointerCapture(e.pointerId)
+    e.preventDefault()
+  })
+  grip.addEventListener('pointermove', (e) => {
+    if (start) setSideWidth(start.w + e.clientX - start.x)
+  })
+  const end = (e) => {
+    if (!start) return
+    const w = setSideWidth(start.w + e.clientX - start.x)
+    start = null
+    saveSideWidth(w)
+  }
+  grip.addEventListener('pointerup', end)
+  grip.addEventListener('pointercancel', () => { start = null; setSideWidth(loadSideWidth()) })
+  // キーボードでも動かせる (← → で 16px)
+  grip.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+    const w = setSideWidth(document.querySelector('aside').getBoundingClientRect().width + (e.key === 'ArrowRight' ? 16 : -16))
+    saveSideWidth(w)
+  })
+}
+initSideResize()
 
 // 下書き: GOAL に ID と題、DONE WHEN に完了条件。人が直して Send する (自動では送らない。design.md §2)。
 // 送る request の meta.item に、項目の指し示しと送った時点の約束 (指紋と文言) を付ける

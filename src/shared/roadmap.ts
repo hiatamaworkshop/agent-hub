@@ -13,6 +13,8 @@ export interface RoadmapItem {
   conditions: { done: number; total: number } | null
   // 完了条件の各行の文言 (チェックボックスを除く)。request の DONE WHEN に写す
   conditionTexts: string[]
+  // 同じ並びのチェックの有無 (true は [x])。約束の指紋には入れない (チェックを付けても約束は変わらない)
+  conditionChecks: boolean[]
   // 約束の指紋: 完了条件の文言だけから取る。チェックを付けても変わらず、文言を変えると変わる。完了条件がなければ null
   promise: string | null
   line: number // 見出しの行 (1 始まり)
@@ -129,11 +131,12 @@ function readStatus(sec: Section): { status: ItemStatus; reason?: string; valid:
   return { status: STATUS_WORDS[m[1]!]!, reason: m[2], valid: true, present: true }
 }
 
-function readConditions(sec: Section): { counts: { done: number; total: number } | null; texts: string[] } {
+function readConditions(sec: Section): { counts: { done: number; total: number } | null; texts: string[]; checks: boolean[] } {
   let inside = false
   let found = false
   let done = 0
   const texts: string[] = []
+  const checks: boolean[] = []
   for (const l of sec.body) {
     const lv = headingLevel(l.text)
     if (lv > 0) {
@@ -145,9 +148,10 @@ function readConditions(sec: Section): { counts: { done: number; total: number }
     const m = CHECKBOX.exec(l.text)
     if (!m) continue
     texts.push(l.text.slice(m[0].length).trim())
+    checks.push(m[1] !== ' ')
     if (m[1] !== ' ') done++
   }
-  return { counts: found ? { done, total: texts.length } : null, texts }
+  return { counts: found ? { done, total: texts.length } : null, texts, checks }
 }
 
 // 約束の指紋。空白の揺れは同じとみなす。改ざん検知ではなく「変わったか」を見るだけなので FNV-1a (32 bit) で足りる
@@ -221,6 +225,7 @@ export function parseRoadmap(text: string): RoadmapIndex {
       ...(st.reason !== undefined ? { statusReason: st.reason } : {}),
       conditions: cond.counts,
       conditionTexts: cond.texts,
+      conditionChecks: cond.checks,
       promise: cond.counts ? promiseFingerprint(cond.texts) : null,
       line: sec.head.no,
       endLine: endLine(sec),

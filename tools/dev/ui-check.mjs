@@ -446,6 +446,105 @@ try {
   ])
   verify('Items: 予定のない索引は、決定とブロックを番号順に 1 段目に出す (C52)', oldOk && oldTiers.tags.C8 === 'waits C7', oldTiers)
 
+  // カードの中身はモーダルで見る (C54)。本文は出さず、完了条件の 1 行ずつのチェック・依頼の状態・約束の差分・下書きとエディタのリンク
+  await sendIndex(cwd, 'docs/roadmap.md', {
+    items: [
+      itemOf('C1', '一つ目', 'decided', { conditions: { done: 1, total: 2 }, conditionTexts: ['一つ目', '二つ目'], conditionChecks: [true, false], promise: 'aaaaaaaa', line: 3 }),
+      itemOf('C2', '二つ目の項目', 'held', { statusReason: '再開の条件' }),
+    ],
+    plan: [{ id: 'C1', line: 20 }],
+  })
+  // 依頼のあとで完了条件の文言が変わった状態を作る (送った指紋と文言が今と違う)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'demo.deployer' }, body: 'GOAL: C1 一つ目', meta: { item: { id: 'C1', project: cwd, source: 'docs/roadmap.md', promise: 'deadbeef', conditions: ['古い文言'] } } })
+  const reqSeq = await seqOf('GOAL: C1 一つ目')
+  await sleep(1500)
+  const clickCard = (id) => evaluate(`(() => {
+    const c = [...document.querySelectorAll('#items .item')].find((x) => x.querySelector('.id').textContent === ${JSON.stringify(id)})
+    if (!c) return false
+    c.click()
+    return true
+  })()`)
+  const modalState = () => evaluate(`(() => ({
+    open: $('itemDialog').open,
+    title: $('itemTitle').textContent,
+    conds: [...$('itemConds').querySelectorAll('.cond')].map((x) => x.textContent),
+    req: $('itemReq').textContent,
+    diff: $('itemDiff').hidden ? null : $('itemDiff').textContent,
+    href: $('itemEditor').getAttribute('href'),
+  }))()`)
+  // エディタのリンクの期待値 (パスは / に揃え、段ごとに符号化。駆動器の C: はそのまま)
+  const editorHref = (dir, source, line) => {
+    const segs = `${dir}/${source}`.replace(/\\/g, '/').replace(/\/+/g, '/').split('/').filter(Boolean)
+    return 'vscode://file/' + segs.map((x, i) => (i === 0 && /^[A-Za-z]:$/.test(x) ? x : encodeURIComponent(x))).join('/') + ':' + line
+  }
+  await clickCard('C1')
+  await sleep(300)
+  const m1 = await modalState()
+  verify('モーダル: 題・完了条件の 1 行ずつの [x] / [ ]・依頼の状態・約束の差分を出す (C54)', m1.open && m1.title === 'C1. 一つ目' && JSON.stringify(m1.conds) === JSON.stringify(['[x] 一つ目', '[ ] 二つ目']) && m1.req.startsWith(`Requested: request #${reqSeq}`) && m1.diff !== null && m1.diff.includes(`Done-when changed since #${reqSeq}`) && m1.diff.includes('- 古い文言') && m1.diff.includes('+ 一つ目'), m1)
+  verify('モーダル: エディタで開くリンクは vscode://file/<project>/<source>:<line> (C54)', m1.href === editorHref(cwd, 'docs/roadmap.md', 3), { href: m1.href, want: editorHref(cwd, 'docs/roadmap.md', 3) })
+  await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+  await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+  await sleep(300)
+  verify('モーダル: Esc で閉じる (C54)', (await modalState()).open === false)
+  await clickCard('C2')
+  await sleep(300)
+  await evaluate("$('itemClose').click()")
+  verify('モーダル: 閉じるボタンで閉じる (C54)', (await modalState()).open === false)
+  await clickCard('C1')
+  await sleep(300)
+  await evaluate("$('itemDraft').click()")
+  await sleep(300)
+  const draft = await evaluate("({ open: $('itemDialog').open, body: $('body').value })")
+  verify('モーダル: 「依頼の下書き」はカードを押したときと同じ下書きを入れ、モーダルを閉じる (C54)', !draft.open && draft.body.startsWith('GOAL: C1 一つ目') && draft.body.includes('DONE WHEN:') && draft.body.includes('- 一つ目'), draft)
+  await evaluate("$('body').value = ''")
+  // チェックを送らない古い形の索引は、印を出さない
+  await api('PUT', '/indexes', { project: join(work, 'old2'), source: 'docs/x.md', items: [itemOf('C30', '古い形', 'decided', { conditionTexts: ['古い形の一行'], conditions: { done: 0, total: 1 } })] })
+  await sleep(1500)
+  await clickCard('C30')
+  await sleep(300)
+  const oldM = await modalState()
+  verify('モーダル: チェックを送らない古い形の索引は印を出さない (C54)', JSON.stringify(oldM.conds) === JSON.stringify(['古い形の一行']), oldM)
+  await evaluate("$('itemClose').click()")
+
+  // サイドバーの幅 (C54): つまみで変えられ、200〜520px に収まり、ブラウザに覚える。保存値が壊れていれば既定の 260px
+  const sideW = () => evaluate("Math.round(document.querySelector('aside').getBoundingClientRect().width)")
+  const grip = () => evaluate("(() => { const r = $('sideResize').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()")
+  const dragBy = async (dx) => {
+    const g = await grip()
+    await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: g.x, y: g.y, button: 'left', buttons: 1, clickCount: 1 })
+    await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: g.x + dx, y: g.y, button: 'left', buttons: 1 })
+    await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: g.x + dx, y: g.y, button: 'left', buttons: 0, clickCount: 1 })
+    await sleep(200)
+  }
+  const stored = () => evaluate("(() => { try { return localStorage.getItem('agent-hub.sidebar') } catch (e) { return 'ERR' } })()")
+  const reload = async () => {
+    await cdp('Page.navigate', { url: `${HUB}/?token=${TOKEN}` })
+    await sleep(1000)
+  }
+  await evaluate("try { localStorage.removeItem('agent-hub.sidebar') } catch (e) {}")
+  await reload()
+  const w0 = await sideW()
+  await dragBy(100)
+  const w1 = await sideW()
+  verify('サイドバーの幅: つまみで広げられ、幅を覚える (C54)', w0 === 260 && Math.abs(w1 - 360) <= 2 && (await stored()) === String(w1), { w0, w1, stored: await stored() })
+  await dragBy(1000)
+  const wMax = await sideW()
+  verify('サイドバーの幅: 広げすぎは 520px で止まる (C54)', wMax === 520 && (await stored()) === '520', { wMax, stored: await stored() })
+  await dragBy(-2000)
+  const wMin = await sideW()
+  verify('サイドバーの幅: 狭めすぎは 200px で止まる (C54)', wMin === 200 && (await stored()) === '200', { wMin, stored: await stored() })
+  await reload()
+  verify('サイドバーの幅: 読み直しても覚えた幅 (200px) で出る (C54)', (await sideW()) === 200)
+  await evaluate("localStorage.setItem('agent-hub.sidebar', 'abc')")
+  await reload()
+  const wBad = await sideW()
+  const listOk = await evaluate("document.querySelector('#list').getBoundingClientRect().width > 0")
+  verify('サイドバーの幅: 保存値が数でなければ既定の 260px で、表示は崩れない (C54)', wBad === 260 && listOk, { wBad, listOk })
+  await evaluate("localStorage.setItem('agent-hub.sidebar', '9999')")
+  await reload()
+  verify('サイドバーの幅: 保存値が範囲外なら既定の 260px (C54)', (await sideW()) === 260)
+  await evaluate("try { localStorage.removeItem('agent-hub.sidebar') } catch (e) {}")
+
   // 時刻の表示 (C31): 今日は時刻だけ、前日は日付つき
   const t = await cdp('Runtime.evaluate', {
     expression: `(() => { const now = Date.now(), old = now - 26 * 3600 * 1000; return { today: time(now), todayPlain: new Date(now).toLocaleTimeString(), old: time(old), oldPlain: new Date(old).toLocaleTimeString() } })()`,
