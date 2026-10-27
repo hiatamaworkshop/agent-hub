@@ -285,6 +285,94 @@ try {
   console.log(`${jumpOk ? 'ok' : 'NG'}  5 日前の返信待ちの Agent バッジを押すと、その依頼が見えて強調される (C44)`)
   if (!jumpOk) console.log(`      ${JSON.stringify(jv)} (期待は Agent 1 · 5d と、表示され強調された依頼)`)
 
+  // 溜まりのバッジの飛び先 (C48)。demo の絞り込みで、隠れた場面・畳んだ範囲の中の場面・You と Stuck? の場面を確かめる
+  const verify = (label, ok, detail) => {
+    if (!ok) failed++
+    console.log(`${ok ? 'ok' : 'NG'}  ${label}`)
+    if (!ok) console.log(`      ${JSON.stringify(detail)}`)
+  }
+  const evaluate = async (expression) => (await cdp('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })).result.value
+  const seqOf = async (body) => (await api('GET', '/messages?after=0&limit=1000')).messages.findLast((m) => m.body === body).seq
+  // バッジ (カードの名前と層) を実際に押し、強調された行と表示範囲を読む
+  const jumpFrom = (card, layer) => evaluate(`(async () => {
+    const box = [...document.querySelectorAll('#mailboxes .mb')].find((b) => (b.querySelector('.name') || {}).textContent === ${JSON.stringify(card)})
+    const chip = box && box.querySelector('.bl.jump[data-layer="${layer}"]')
+    if (!chip) return null
+    const text = chip.textContent
+    document.querySelectorAll('.hit').forEach((e) => e.classList.remove('hit')) // 前の飛び先の強調を消してから押す
+    chip.click()
+    await new Promise((r) => setTimeout(r, 400))
+    const hit = document.querySelector('#list .hit')
+    const stub = !!document.querySelector('#list .stub')
+    if (!hit) return { text, hit: null, stub }
+    const list = document.getElementById('list').getBoundingClientRect()
+    const r = hit.getBoundingClientRect()
+    return { text, hit: hit.classList.contains('evt') ? 'evt' : 'msg', seq: hit.dataset.seq ?? null, shown: r.top >= list.top && r.bottom <= list.bottom, stub }
+  })()`)
+  // 隠れた Message の seq で jumpTo を呼ぶ。バッジと同じ形の t を渡す (隠れた Message を指すバッジは通常の数え方では出ない)
+  const hiddenJump = (seq) => evaluate(`(() => {
+    const list = $('list')
+    const before = { top: list.scrollTop, folded: folded.length, stub: !!document.querySelector('#list .stub'), boxes: list.querySelectorAll('.msg, .evt').length }
+    jumpTo({ count: 1, oldestAt: null, oldestSeq: ${seq}, eventId: null })
+    const m = [...seen.values()].find((x) => x.seq === ${seq})
+    const target = m && msgBoxes.get(m.id)
+    return {
+      status: $('status').textContent,
+      moved: list.scrollTop !== before.top || folded.length !== before.folded || !!document.querySelector('#list .stub') !== before.stub || list.querySelectorAll('.msg, .evt').length !== before.boxes,
+      hit: !!(target && target.classList.contains('hit')),
+      stillFolded: folded.some((f) => f.seq === ${seq}),
+    }
+  })()`)
+  const demoKey = await evaluate("[...projects.values()].find((p) => p.label === 'demo').key")
+  await evaluate(`chooseProject(${JSON.stringify(demoKey)})`)
+
+  // 1. 隠れた依頼 (畳みの外): ステータスに隠れていると出し、スレッドは動かず、強調もしない
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'oth.reviewer' }, body: 'HIDDEN-NEW: 絞り込みで隠れた依頼 (畳みの外)' })
+  await sleep(1500)
+  const hiddenNew = await hiddenJump(await seqOf('HIDDEN-NEW: 絞り込みで隠れた依頼 (畳みの外)'))
+  verify('隠れた依頼 (畳みの外) を指すと、隠れていると出し、スレッドは動かない (C48)', hiddenNew.status.includes('hidden by the project filter') && hiddenNew.status.includes('All projects') && !hiddenNew.moved && !hiddenNew.hit, hiddenNew)
+
+  // 2. 隠れた依頼が畳みの中にある: keep を 1 にして畳み直すと、TARGET: C2 (ほかのプロジェクトの依頼) は畳みの中に入る
+  const hiddenOld = await seqOf('TARGET: C2')
+  await evaluate("$('keep').value = 1; $('fold').click()")
+  await sleep(300)
+  const inFold = await evaluate(`folded.some((f) => f.seq === ${hiddenOld})`)
+  verify('(準備) 隠れた依頼 TARGET: C2 が畳みの中にある', inFold, { hiddenOld })
+  const hiddenFolded = await hiddenJump(hiddenOld)
+  verify('隠れた依頼が畳みの中にあっても、畳みは開かず、ステータスに隠れていると出す (C48)', hiddenFolded.status.includes('hidden by the project filter') && hiddenFolded.status.includes('All projects') && !hiddenFolded.moved && hiddenFolded.stillFolded, hiddenFolded)
+
+  // 3. 畳みの中の (隠れていない) 依頼: 畳みが開き、表示範囲に入って強調される
+  const shownFolded = await evaluate('folded.some((f) => f.seq === 1)')
+  verify('(準備) 隠れていない最も古い依頼 (#1) が畳みの中にある', shownFolded, {})
+  const expanded = await jumpFrom('demo.old', 'agent')
+  verify('畳みの中の (隠れていない) 依頼を指すと、畳みが開き、表示範囲に入って強調される (C48)', expanded && expanded.seq === '1' && expanded.hit === 'msg' && expanded.shown && !expanded.stub, expanded)
+
+  // 4. You: hook の質問と人宛ての request の両方がある。古い方へ飛ぶ (request が古い場合)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'user', id: 'browser' }, body: 'YOU-REQ-OLD: 人宛ての依頼 (質問より古い)' }, { 'x-hub-attachment': rev2.attachmentId })
+  await hook('demo.reviewer', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'tu-y1', session_id: 's-rev-2' })
+  await sleep(1500)
+  const youReq = await seqOf('YOU-REQ-OLD: 人宛ての依頼 (質問より古い)')
+  const youOld = await jumpFrom('demo.reviewer', 'you')
+  verify('You: 質問より人宛ての request が古いとき、request へ飛んで強調される (C48)', youOld && youOld.seq === String(youReq) && youOld.shown, { youReq, youOld })
+
+  // 5. You: 質問の Event が人宛ての request より古い場合は、Event へ飛ぶ
+  const quiet = await api('POST', '/mailboxes/demo.quiet/attach', { client: 'claude-code', cwd, sessionId: 's-quiet' })
+  await hook('demo.quiet', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'tu-y2', session_id: 's-quiet' })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'user', id: 'browser' }, body: 'YOU-REQ-NEW: 人宛ての依頼 (質問より新しい)' }, { 'x-hub-attachment': quiet.attachmentId })
+  await sleep(1500)
+  const youEvt = await jumpFrom('demo.quiet', 'you')
+  verify('You: 質問の Event が人宛ての request より古いとき、Event へ飛んで強調される (C48)', youEvt && youEvt.hit === 'evt' && youEvt.shown, youEvt)
+
+  // 6. Stuck?: 未接続の Mailbox に届いた未読を押すと、その Message へ飛んで強調される
+  const ghost = await api('POST', '/mailboxes/demo.ghost/attach', { client: 'claude-code', cwd, sessionId: 's-ghost' })
+  await api('DELETE', `/attachments/${ghost.attachmentId}`)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'demo.ghost' }, body: 'STUCK-UNREAD: 未接続の Mailbox の未読' })
+  await sleep(1500)
+  const stuckSeq = await seqOf('STUCK-UNREAD: 未接続の Mailbox の未読')
+  const stuck = await jumpFrom('demo.ghost', 'stuck')
+  verify('Stuck?: 未接続の Mailbox の未読を押すと、その Message へ飛んで強調される (C48)', stuck && stuck.seq === String(stuckSeq) && stuck.shown, { stuckSeq, stuck })
+  await evaluate("chooseProject('')")
+
   // 時刻の表示 (C31): 今日は時刻だけ、前日は日付つき
   const t = await cdp('Runtime.evaluate', {
     expression: `(() => { const now = Date.now(), old = now - 26 * 3600 * 1000; return { today: time(now), todayPlain: new Date(now).toLocaleTimeString(), old: time(old), oldPlain: new Date(old).toLocaleTimeString() } })()`,

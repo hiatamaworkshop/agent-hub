@@ -1735,7 +1735,8 @@ function backlogChips(box, layers, jump = false) {
   return box
 }
 // バッジから、そのバッジに数えた中で最も古いもの (Event か Message) へ飛ぶ (C44)。畳んだ分は開き、
-// 今のプロジェクトの絞り込みで隠れているものと、手元にないもの (Event は最近の 200 件まで) は、その旨を出す
+// 今のプロジェクトの絞り込みで隠れているものと、手元にないもの (Event は最近の 200 件まで) は、その旨を出す。
+// 隠れているかは畳みを開く前に見る (C48)。隠れていれば畳んだ範囲の中にあっても開かず、スレッドは動かさない
 function jumpTo(t) {
   let box = null
   if (t.eventId) box = evtBoxes.get(t.eventId) || null
@@ -1744,8 +1745,8 @@ function jumpTo(t) {
     box = m ? msgBoxes.get(m.id) || null : null
   }
   if (!box) { setStatus(t.eventId ? 'That event is not loaded. The thread shows only the latest 200 events.' : `#${t.oldestSeq} is not loaded in this page.`); return }
-  if (folded.some((f) => f.box === box)) unfold()
   if (box.classList.contains('off')) { setStatus(`${t.eventId ? 'This event' : `#${t.oldestSeq}`} is hidden by the project filter. Choose All projects to show it.`); return }
+  if (folded.some((f) => f.box === box)) unfold()
   box.scrollIntoView({ block: 'center' })
   box.classList.remove('hit')
   void box.offsetWidth
