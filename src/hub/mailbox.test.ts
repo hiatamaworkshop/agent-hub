@@ -606,6 +606,35 @@ describe('溜まりの材料 (backlog。design.md §3.15)', () => {
     assert.equal(oldest(), second.seq, '消した後は次に古いもの')
   })
 
+  // 閉じ方は送り手ごとに違う (protocol.md §2・C28)。古い依頼は y が出し、新しい依頼は人が出す。
+  // y への返信・y への後の依頼は y の依頼だけを閉じ、人の依頼は残る
+  describe('古い方の依頼だけが閉じるとき (C44)', () => {
+    const setup = () => {
+      const hub = new Hub(new Store())
+      const x = hub.attach('x', { client: 'claude-code' })
+      const y = hub.attach('y', { client: 'claude-code' })
+      const older = hub.postMessage({ kind: 'request', to: toX, body: 'from y' }, hub.senderOf(y.attachmentId))
+      const newer = hub.postMessage({ kind: 'request', to: toX, body: 'from the user' }, user)
+      hub.ack(x.attachmentId, newer.seq)
+      const oldest = () => hub.describeMailboxes().find((d) => d.name === 'x')!.backlog.awaitingReply
+      return { hub, x, older, newer, oldest, asX: hub.senderOf(x.attachmentId) }
+    }
+
+    it('返信で閉じると、残った新しい方の seq になる', () => {
+      const { hub, older, newer, oldest, asX } = setup()
+      assert.deepEqual(oldest(), { count: 2, oldestAt: older.ts, oldestSeq: older.seq })
+      hub.postMessage({ kind: 'reply', replyTo: older.id, body: 'done' }, asX)
+      assert.deepEqual(oldest(), { count: 1, oldestAt: newer.ts, oldestSeq: newer.seq })
+    })
+
+    it('後の依頼で閉じても、残った新しい方の seq になる', () => {
+      const { hub, newer, oldest, asX } = setup()
+      hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'y' }, body: 'C5' }, asX)
+      assert.equal(oldest().oldestSeq, newer.seq)
+      assert.equal(oldest().count, 1)
+    })
+  })
+
   it('inbox で受け取っただけの request も、返信があるまで返信待ちに数える', () => {
     const hub = new Hub(new Store())
     const a = hub.attach('x', { client: 'codex' })

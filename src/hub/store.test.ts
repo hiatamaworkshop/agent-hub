@@ -259,7 +259,7 @@ describe('Store: 溜まりの材料 (summary)', () => {
     check(new Store({ file }), '再起動後')
   })
 
-  it('oldestSeq は溜まりの最も古い Message の seq で、閉じた・消した後は次に古いもの', () => {
+  it('oldestSeq は溜まりの最も古い Message の seq で、消した後は次に古いもの', () => {
     const s = new Store()
     s.ensureMailbox('x')
     const toX = { type: 'mailbox', id: 'x' } as const
