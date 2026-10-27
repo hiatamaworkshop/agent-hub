@@ -26,9 +26,26 @@ export interface ItemRef {
   line: number
 }
 
+// `## 予定` の並び。取りかかる順 (design.md §3.15)
+export interface PlanEntry {
+  id: string
+  line: number
+}
+
+// 節の外の閉じた行 (`[x] C<n>` / `[-] C<n>`)。日付は行にある `YYYY-MM-DD`。なければ null
+export interface ClosedItem {
+  id: string
+  mark: 'x' | '-'
+  date: string | null
+  line: number
+}
+
 export interface RoadmapIndex {
   items: RoadmapItem[]
   refs: ItemRef[]
+  // `## 予定` の見出しがなければ null
+  plan: PlanEntry[] | null
+  closed: ClosedItem[]
 }
 
 export interface RoadmapProblem {
@@ -46,6 +63,10 @@ const STATUS_VALUE = /^状態: (提案|保留|ブロック)(?:\((.+)\))?$/
 const CONDITIONS_HEADING = /^#### 完了条件\s*$/
 const CHECKBOX = /^\s*[-*] \[( |x|X)\] /
 const REF = /^\s*[-*] \[( |x|X)\] C(\d+)\b/
+const CLOSED = /^\s*[-*] \[([xX-])\] C(\d+)\b/
+const DATE = /\d{4}-\d{2}-\d{2}/
+const PLAN_HEADING = /^##\s+予定\s*$/
+const PLAN_ITEM = /^\s*[-*] \[[ xX-]\] C(\d+)\b/
 const FENCE = /^\s*(```|~~~)/
 
 const STATUS_WORDS: Record<string, ItemStatus> = { 提案: 'proposed', 保留: 'held', ブロック: 'blocked' }
@@ -143,8 +164,30 @@ function endLine(sec: Section): number {
   return end
 }
 
+// `## 予定` の節 (次の ## 以上の見出しまで)。節の行は refs に入れない (予定の行の誤りは readPlan の側で見る)
+function readPlan(lines: Line[]): { plan: PlanEntry[] | null; planLines: Set<number> } {
+  let found = false
+  let inPlan = false
+  const entries: PlanEntry[] = []
+  const planLines = new Set<number>()
+  for (const l of lines) {
+    const lv = headingLevel(l.text)
+    if (lv > 0 && lv <= 2) {
+      inPlan = PLAN_HEADING.test(l.text)
+      if (inPlan) found = true
+      continue
+    }
+    if (!inPlan) continue
+    planLines.add(l.no)
+    const m = PLAN_ITEM.exec(l.text)
+    if (m) entries.push({ id: `C${m[1]}`, line: l.no })
+  }
+  return { plan: found ? entries : null, planLines }
+}
+
 export function parseRoadmap(text: string): RoadmapIndex {
-  const { sections, outside } = split(contentLines(text))
+  const lines = contentLines(text)
+  const { sections, outside } = split(lines)
   const items: RoadmapItem[] = []
   for (const sec of sections) {
     const m = ITEM_HEADING.exec(sec.head.text)
@@ -164,12 +207,17 @@ export function parseRoadmap(text: string): RoadmapIndex {
       endLine: endLine(sec),
     })
   }
+  const { plan, planLines } = readPlan(lines)
   const refs: ItemRef[] = []
+  const closed: ClosedItem[] = []
   for (const l of outside) {
+    if (planLines.has(l.no)) continue
     const m = REF.exec(l.text)
     if (m) refs.push({ id: `C${m[2]}`, checked: m[1] !== ' ', line: l.no })
+    const c = CLOSED.exec(l.text)
+    if (c) closed.push({ id: `C${c[2]}`, mark: c[1] === '-' ? '-' : 'x', date: DATE.exec(l.text)?.[0] ?? null, line: l.no })
   }
-  return { items, refs }
+  return { items, refs, plan, closed }
 }
 
 // 規則の崩れ。error は直すべきもの、warning は人が見て判断するもの
@@ -179,7 +227,7 @@ export function checkRoadmap(text: string): RoadmapProblem[] {
   const warn = (line: number, message: string) => problems.push({ level: 'warning', line, message })
 
   const { sections } = split(contentLines(text))
-  const { items, refs } = parseRoadmap(text)
+  const { items, refs, plan, closed } = parseRoadmap(text)
   // 状態の行が崩れた項目は、決定とみなした検査を重ねない
   const badStatus = new Set<number>()
 
@@ -203,6 +251,11 @@ export function checkRoadmap(text: string): RoadmapProblem[] {
     else seen.set(it.id, it.line)
 
     if (it.status === 'blocked' && !it.statusReason) err(it.line + 1, `${it.id}: ブロックには理由を書く`)
+    // ブロックはほかの項目を待つときだけ。外の出来事を待つものは保留 (design.md §3.15)
+    else if (it.status === 'blocked' && !/C\d+/.test(it.statusReason ?? '')) {
+      err(it.line + 1, `${it.id}: ブロックは他の項目を待つときだけ。理由に C<n> を書く (外の出来事を待つなら保留)`)
+    }
+    if (it.status === 'held' && !it.statusReason) err(it.line + 1, `${it.id}: 保留には再開の条件を書く`)
     if (it.status === 'decided' && !badStatus.has(it.line)) {
       if (!it.conditions) err(it.line, `${it.id}: 決定の項目には \`#### 完了条件\` が要る (未決なら \`状態: 提案\` を書く)`)
       else if (it.conditions.total === 0) err(it.line, `${it.id}: \`#### 完了条件\` にチェックボックスがない`)
@@ -210,12 +263,30 @@ export function checkRoadmap(text: string): RoadmapProblem[] {
         warn(it.line, `${it.id}: 完了条件が全部埋まっている。節を消し、フェーズの行を \`[x] ${it.id}\` にして記録を書く`)
       }
     }
+    // 決定の項目 (状態の行がないものと、ブロック) は予定に載る (design.md §3.15)。見出しがなければ下で 1 度だけ言う
+    const decided = it.status === 'decided' || it.status === 'blocked'
+    if (plan && decided && !badStatus.has(it.line) && !plan.some((p) => p.id === it.id)) {
+      err(it.line, `${it.id}: 決定の項目が \`## 予定\` にない`)
+    }
+  }
+
+  if (items.length > 0 && !plan) err(1, '項目があるのに `## 予定` がない (決定の項目を取りかかる順に `- [ ] C<n>` で並べる)')
+  for (const p of plan ?? []) {
+    const it = items.find((x) => x.id === p.id)
+    if (!it) err(p.line, `${p.id}: \`## 予定\` に載せたが、項目の節がない`)
+    else if (it.status === 'proposed' || it.status === 'held') {
+      err(p.line, `${p.id}: 決定でない項目 (${it.status === 'proposed' ? '提案' : '保留'}) は \`## 予定\` に載せない`)
+    }
   }
 
   for (const r of refs) {
     const exists = seen.has(r.id)
     if (!r.checked && !exists) err(r.line, `\`[ ] ${r.id}\` が指す項目の節がない`)
     if (r.checked && exists) err(r.line, `\`[x] ${r.id}\` は終わった印だが、項目の節が残っている`)
+  }
+
+  for (const c of closed) {
+    if (!c.date) err(c.line, `\`[${c.mark}] ${c.id}\` の行に日付 (YYYY-MM-DD) がない`)
   }
 
   return problems.sort((a, b) => a.line - b.line)

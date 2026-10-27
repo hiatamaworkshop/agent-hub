@@ -7,7 +7,7 @@ const sample = [
   '# ロードマップ',
   '',
   '## P1',
-  '- [x] C1 終わったもの',
+  '- [x] C1 終わったもの (2026-10-16)',
   '- [ ] C2 開いているもの',
   '',
   '## 項目',
@@ -31,6 +31,9 @@ const sample = [
   '',
   '### C4. 保留のもの',
   '状態: 保留(理由)',
+  '',
+  '## 予定',
+  '- [ ] C2',
   '',
 ].join('\r\n')
 
@@ -70,6 +73,22 @@ describe('parseRoadmap', () => {
     assert.deepEqual(parseRoadmap(text).items.map((i) => i.id), ['C1'])
   })
 
+  it('## 予定 の並びと、閉じた行 (ID・x か -・日付) を取り出す。見出しがなければ plan は null', () => {
+    const text = ['## 予定', '- [ ] C2', '- [ ] C1', '', '## 既知の問題', '- [x] C1 終わり (2026-10-16)', '- [-] C5 却下 (2026-10-17)', '- [x] C6 日付なし'].join('\n')
+    const idx = parseRoadmap(text)
+    assert.deepEqual(idx.plan, [
+      { id: 'C2', line: 2 },
+      { id: 'C1', line: 3 },
+    ])
+    assert.deepEqual(idx.closed, [
+      { id: 'C1', mark: 'x', date: '2026-10-16', line: 6 },
+      { id: 'C5', mark: '-', date: '2026-10-17', line: 7 },
+      { id: 'C6', mark: 'x', date: null, line: 8 },
+    ])
+    assert.deepEqual(idx.refs.map((r) => r.line), [6, 8], '予定の行 (2・3 行目) は参照に入れない')
+    assert.equal(parseRoadmap('### C1. a').plan, null)
+  })
+
   it('問題がなければ空', () => {
     assert.deepEqual(checkRoadmap(sample), [])
   })
@@ -79,7 +98,7 @@ describe('checkRoadmap', () => {
   const messages = (text: string) => checkRoadmap(text).map((p) => [p.level, p.line, p.message])
 
   it('ID の重複', () => {
-    const text = ['### C1. a', '#### 完了条件', '- [ ] x', '### C1. b', '#### 完了条件', '- [ ] y'].join('\n')
+    const text = ['### C1. a', '#### 完了条件', '- [ ] x', '### C1. b', '#### 完了条件', '- [ ] y', '## 予定', '- [ ] C1'].join('\n')
     assert.deepEqual(messages(text), [['error', 4, 'C1 が重複している (先の定義は 1 行目)']])
   })
 
@@ -92,6 +111,8 @@ describe('checkRoadmap', () => {
       '状態: 提案',
       '### C3. c',
       '状態: ブロック',
+      '## 予定',
+      '- [ ] C3',
     ].join('\n')
     const ps = checkRoadmap(text)
     assert.ok(ps.some((p) => p.line === 2 && p.message.startsWith('状態の語彙')))
@@ -102,7 +123,7 @@ describe('checkRoadmap', () => {
   })
 
   it('字下げした状態の行は状態として読み (決定と取り違えない)、字下げを error にする', () => {
-    const text = ['### C1. a', '  状態: 提案', '### C2. b', '\t状態: 保留(待ち)'].join('\n')
+    const text = ['### C1. a', '  状態: 提案', '### C2. b', '\t状態: 保留(待ち)', '## 予定'].join('\n')
     assert.deepEqual(parseRoadmap(text).items.map((it) => [it.id, it.status, it.statusReason]), [
       ['C1', 'proposed', undefined],
       ['C2', 'held', '待ち'],
@@ -114,7 +135,7 @@ describe('checkRoadmap', () => {
   })
 
   it('決定の項目に完了条件がない、またはチェックボックスがない', () => {
-    const text = ['### C1. a', '本文', '### C2. b', '#### 完了条件', '文だけ'].join('\n')
+    const text = ['### C1. a', '本文', '### C2. b', '#### 完了条件', '文だけ', '## 予定', '- [ ] C1', '- [ ] C2'].join('\n')
     assert.deepEqual(
       checkRoadmap(text).map((p) => [p.line, p.message.split(':')[0]]),
       [
@@ -125,12 +146,12 @@ describe('checkRoadmap', () => {
   })
 
   it('完了条件が全部埋まった決定の項目は warning', () => {
-    const text = ['### C1. a', '#### 完了条件', '- [x] x'].join('\n')
+    const text = ['### C1. a', '#### 完了条件', '- [x] x', '## 予定', '- [ ] C1'].join('\n')
     assert.deepEqual(checkRoadmap(text).map((p) => p.level), ['warning'])
   })
 
   it('フェーズの参照が実在の項目と食い違う', () => {
-    const text = ['- [ ] C5 ない', '- [x] C1 まだある', '### C1. a', '#### 完了条件', '- [ ] x'].join('\n')
+    const text = ['- [ ] C5 ない', '- [x] C1 まだある (2026-10-27)', '### C1. a', '#### 完了条件', '- [ ] x', '## 予定', '- [ ] C1'].join('\n')
     assert.deepEqual(
       checkRoadmap(text).map((p) => [p.line, p.message]),
       [
@@ -143,6 +164,49 @@ describe('checkRoadmap', () => {
   it('見出しの形の崩れ', () => {
     const text = ['### C1 ドットなし', '状態: 提案'].join('\n')
     assert.deepEqual(messages(text), [['error', 1, '項目の見出しは `### C<n>. 題` の形にする: ### C1 ドットなし']])
+  })
+
+  it('項目があるのに `## 予定` がない', () => {
+    const text = ['### C1. a', '#### 完了条件', '- [ ] x'].join('\n')
+    assert.deepEqual(messages(text), [['error', 1, '項目があるのに `## 予定` がない (決定の項目を取りかかる順に `- [ ] C<n>` で並べる)']])
+  })
+
+  it('決定の項目 (状態の行がないものと、ブロック) が予定にない。ブロックは決定として載せる', () => {
+    const text = ['### C1. a', '#### 完了条件', '- [ ] x', '### C2. b', '状態: ブロック(C1 の後)', '## 予定', '- [ ] C1'].join('\n')
+    assert.deepEqual(messages(text), [['error', 4, 'C2: 決定の項目が `## 予定` にない']])
+    const ok = ['### C1. a', '#### 完了条件', '- [ ] x', '### C2. b', '状態: ブロック(C1 の後)', '#### 完了条件', '- [ ] y', '## 予定', '- [ ] C1', '- [ ] C2'].join('\n')
+    assert.deepEqual(checkRoadmap(ok), [])
+  })
+
+  it('ブロックの理由に C<n> がない (外の出来事を待つものは保留)', () => {
+    const text = ['### C1. a', '状態: ブロック(次の usage limit に当たるまで)', '## 予定', '- [ ] C1'].join('\n')
+    assert.deepEqual(messages(text), [['error', 2, 'C1: ブロックは他の項目を待つときだけ。理由に C<n> を書く (外の出来事を待つなら保留)']])
+  })
+
+  it('保留の項目は予定に載せない', () => {
+    const text = ['### C1. a', '状態: 保留(理由)', '## 予定', '- [ ] C1'].join('\n')
+    assert.deepEqual(messages(text), [['error', 4, 'C1: 決定でない項目 (保留) は `## 予定` に載せない']])
+  })
+
+  it('予定に決定でない項目 (提案・保留) や、節のない ID がある', () => {
+    const text = ['### C1. a', '#### 完了条件', '- [ ] x', '### C2. b', '状態: 提案', '## 予定', '- [ ] C1', '- [ ] C2', '- [ ] C9'].join('\n')
+    assert.deepEqual(messages(text), [
+      ['error', 8, 'C2: 決定でない項目 (提案) は `## 予定` に載せない'],
+      ['error', 9, 'C9: `## 予定` に載せたが、項目の節がない'],
+    ])
+  })
+
+  it('保留に再開の条件 (理由) がない', () => {
+    const text = ['### C1. a', '状態: 保留', '## 予定'].join('\n')
+    assert.deepEqual(messages(text), [['error', 2, 'C1: 保留には再開の条件を書く']])
+  })
+
+  it('日付のない `[x] C<n>` と `[-] C<n>` の行', () => {
+    const text = ['- [x] C1 終わった', '- [-] C2 却下 (2026-10-27)', '- [-] C3 却下'].join('\n')
+    assert.deepEqual(messages(text), [
+      ['error', 1, '`[x] C1` の行に日付 (YYYY-MM-DD) がない'],
+      ['error', 3, '`[-] C3` の行に日付 (YYYY-MM-DD) がない'],
+    ])
   })
 
   it('リポジトリの roadmap.md は規則どおり', () => {
