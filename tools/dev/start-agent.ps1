@@ -11,11 +11,24 @@ param(
   # 省略時は <プロジェクトのフォルダ名>.<role> (shim の既定と同じ規則)
   [string]$Mailbox,
   # 指定したときだけ claude --permission-mode <値> を渡す。省略時は渡さず、Claude Code の既定で起動する (design.md §6.1o)
-  [string]$PermissionMode
+  [string]$PermissionMode,
+  # start-team.ps1 から起動したとき。checkout の検査は start-team.ps1 が済ませているので繰り返さない
+  [switch]$FromTeam
 )
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $PSScriptRoot 'mailbox-name.ps1')
+. (Join-Path $PSScriptRoot 'team-checks.ps1')
+$startedAt = Get-Date
+$statusFile = $null
+# claude (と起動前の検査) で終わったことを、start-team.ps1 が読むファイルに残す (roadmap C56)
+function Write-StartStatus([int]$Code, [string]$Reason) {
+  if (-not $statusFile) { return }
+  $status = [ordered]@{ exitCode = $Code; elapsedSec = [int]((Get-Date) - $startedAt).TotalSeconds; reason = $Reason; endedAt = (Get-Date).ToString('o') }
+  New-Item -ItemType Directory -Force -Path (Split-Path $statusFile) | Out-Null
+  [System.IO.File]::WriteAllText($statusFile, ($status | ConvertTo-Json), (New-Object System.Text.UTF8Encoding $false))
+}
+trap { Write-StartStatus 1 "$_"; break }
 # 別の場所から起動すると、読むべき CLAUDE.md や hook を読まずに迷うので、プロジェクトのルートに移って起動する
 if ($Project) {
   if (-not (Test-Path -LiteralPath $Project -PathType Container)) { throw "プロジェクトのフォルダ $Project がない" }
@@ -24,6 +37,7 @@ if ($Project) {
   $projectDir = $root
 }
 if (-not $Mailbox) { $Mailbox = Get-DefaultMailbox $projectDir $Role }
+$statusFile = Get-StartStatusPath $Mailbox
 $envFile = Join-Path $root '.env'
 # roles ファイルは Hub と同じ順に決める: 環境変数 HUB_ROLES_FILE → .env の HUB_ROLES_FILE → <リポジトリ>/roles.json。相対パスはリポジトリ直下から解決する
 $rolesFile = $env:HUB_ROLES_FILE
@@ -72,10 +86,11 @@ if (-not $token -and (Test-Path $envFile)) {
 }
 
 # hook は起動したフォルダの .claude/settings.local.json か ~/.claude/settings.json からしか読まれない (--settings は 2.1.301 で誤動作した。design.md §6.1f)。
-# どちらにも Hub の /events がなければ、Event が UI に出ないことを知らせる (起動は止めない)
-$hookFiles = @((Join-Path $projectDir '.claude/settings.local.json'), (Join-Path $projectDir '.claude/settings.json'), (Join-Path $HOME '.claude/settings.json'))
-$hooked = $hookFiles | Where-Object { (Test-Path $_) -and ((Get-Content $_ -Raw -Encoding UTF8) -match '/events') }
-if (-not $hooked) { Write-Warning "hook の設定が見つからないので、質問待ち・ターン終了は UI に出ない。tools/hooks/settings.json の hooks を ~/.claude/settings.json に写す (README)" }
+# どちらにも Hub の /events がなければ、Event が UI に出ないことを、置き直すコマンドつきで知らせる (起動は止めない。C57)
+$hookWarning = Get-HookWarning $projectDir $root
+if ($hookWarning) { Write-Warning $hookWarning }
+# 単独で起動したときだけ、checkout が古くないかを見る (止めない。C58)
+if (-not $FromTeam) { foreach ($w in @(Get-CheckoutWarnings $projectDir)) { Write-Warning $w } }
 
 Write-Host "project: $projectDir / Mailbox: $Mailbox"
 # 起動したシェルに HUB_ROLE / HUB_MAILBOX / HUB_TOKEN を残さない
@@ -86,7 +101,15 @@ try {
   # shim の既定と同じ名前でも明示する。hook の X-Hub-Mailbox ヘッダーにも載せるため (cwd のフォルダ名だけでは <フォルダ名>.<role> を引けない)
   $env:HUB_MAILBOX = $Mailbox
   $env:HUB_TOKEN = $token
+  $global:LASTEXITCODE = 0
   claude @claudeArgs
+  $ran = $?
+  $code = $LASTEXITCODE
+  # claude が見つからないときは $LASTEXITCODE が変わらない
+  if (-not $ran -and $code -eq 0) { $code = 1 }
+  # 失敗なら理由を claude --version で取り直す (対話の画面を壊さないよう、claude の出力はリダイレクトしない)
+  $reason = if ($code -ne 0) { Test-ClaudeCli } else { $null }
+  Write-StartStatus $code $reason
 } finally {
   $env:HUB_ROLE = $saved.HUB_ROLE
   $env:HUB_MAILBOX = $saved.HUB_MAILBOX

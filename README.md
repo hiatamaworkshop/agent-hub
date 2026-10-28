@@ -48,7 +48,7 @@ npm run hub
 ```
 
 `[hub] UI: http://127.0.0.1:7777/?token=…` が表示されるので、その URL をブラウザで開く。
-トークンは cookie に移され、URL からは消える。データは `data/hub.jsonl` に追記される (渡し終えたメッセージは 24 時間で消える。下の「メッセージの保存期間と削除」)。
+トークンは cookie に移され、URL からは消える。`start-team.ps1` で起動したときは、最後の行にも同じ URL が出る (Hub が起動済みでも、compose でも。下の「2 エージェントで role 間の往復を試す」)。データは `data/hub.jsonl` に追記される (渡し終えたメッセージは 24 時間で消える。下の「メッセージの保存期間と削除」)。
 
 #### Docker で常駐させる (直接起動の代わり)
 
@@ -216,6 +216,12 @@ npm run hub                                   # ターミナル A
 - 接続中の role は飛ばす (起動し直すと takeover で今のセッションが切り離されるため)。起動し直すなら `-Force`。
   起動前の Attachment の `attachmentId` を覚え、別の id の Attachment が現れてから「attach した」と出す。前のセッションの Attachment がリースの切れるまで残っていても、成功とは読まない。上限までに現れなければ失敗として警告し、最後に終了コード 1 で終わる (roadmap C33)。
 - `roles.json` にない role は起動前に止める。`dist/` が `src/` より古ければ先に build する (`-NoBuild` で省く)。
+- 起動の前に次を確かめる (roadmap C56〜C58。中身は `tools/dev/team-checks.ps1`)。
+  - `claude --version` が通らなければ (NVM が止めた NVM4306、自己更新で exe を差し替え中など)、出力の先頭を出して、どの role も起動せずに終わる。
+  - hook の設定がなければ警告し、置き直すコマンドを添える (`.claude/settings.local.json` がなければ写す 1 行。あれば上書きせず、手で足すよう出す)。
+  - `-Project` のフォルダで `git fetch` (資格情報を尋ねない・15 秒まで) をしてから、detached HEAD・upstream より遅れている・upstream が無い、のどれかなら警告する。止めはしない。submodule の古い版の上でチームを動かさないため。
+- タブの `claude` が attach する前に終わったら、上限を待たずに失敗とし、終了コードと理由 (`claude --version` の出力) を出す。`start-agent.ps1` が OS の一時フォルダの `agent-hub-start/<Mailbox>.json` に終わりを書き、それを読む。
+- 最後に、上の警告と失敗を `--- まとめ ---` に集め、`UI: http://127.0.0.1:<port>/?token=…` を出す。トークンが Hub と合わなければ、URL の代わりにそう出す。
 - attach の確認には `.env` の `HUB_TOKEN` を使う。タブは起動したのと同じシェル (`pwsh` / `powershell`) で開く。
 
 1. ブラウザの左側に `agent-hub.leader` と `agent-hub.deployer` が role 付きで「接続中」と出ることを確かめる。

@@ -22,6 +22,7 @@ $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $agentScript = Join-Path $PSScriptRoot 'start-agent.ps1'
 . (Join-Path $PSScriptRoot 'mailbox-name.ps1')
+. (Join-Path $PSScriptRoot 'team-checks.ps1')
 if ($Project) {
   if (-not (Test-Path -LiteralPath $Project -PathType Container)) { throw "プロジェクトのフォルダ $Project がない" }
   $projectDir = (Resolve-Path -LiteralPath $Project).Path
@@ -84,6 +85,34 @@ function Test-Attached([string]$Name) {
   return [bool](Get-AttachmentId $Name)
 }
 
+# 最後に出す UI の URL。そのトークンで Hub に通ったときだけ出す (roadmap C55)
+function Write-UiUrl {
+  if (-not $token) { Write-Host 'HUB_TOKEN がないので UI の URL を組み立てられない (.env を確かめる)'; return }
+  try {
+    Invoke-RestMethod -Uri "$hubUrl/mailboxes" -Headers @{ Authorization = "Bearer $token" } -TimeoutSec 3 | Out-Null
+    Write-Host "UI: $hubUrl/?token=$token"
+  } catch {
+    $status = $null
+    if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode }
+    if ($status -eq 401) {
+      Write-Warning ".env の HUB_TOKEN が Hub と合わない。UI の URL は Hub のログに出る (compose なら docker compose logs hub)"
+    } else {
+      Write-Warning "Hub ($hubUrl) に届かないので UI の URL を確かめられない"
+    }
+  }
+}
+
+# 最後のまとめ: 起動の前の警告と attach の失敗を、タブに埋もれさせずにここへ集める (C56〜C58)
+function Write-Summary([string[]]$Notes, [string[]]$Failed) {
+  if ($Notes.Count -gt 0 -or $Failed.Count -gt 0) {
+    Write-Host ''
+    Write-Host '--- まとめ ---'
+    foreach ($n in $Notes) { Write-Host "注意: $n" }
+    foreach ($f in $Failed) { Write-Host "失敗: $f" }
+  }
+  Write-UiUrl
+}
+
 # --- role を決める ---
 # 検査は Hub と同じ roles ファイル (環境変数 HUB_ROLES_FILE → .env → 既定 roles.json。相対パスはリポジトリ直下から)
 $hubRolesFile = Get-EnvValue 'HUB_ROLES_FILE' ''
@@ -117,6 +146,18 @@ $Roles = @($Roles | Select-Object -Unique)
 $unknown = @($Roles | Where-Object { $known.Count -gt 0 -and $known -cnotcontains $_ })
 if ($unknown.Count -gt 0 -and (Test-Path $hubRolesFile)) { throw "role ファイル ($hubRolesFile) にない role: $($unknown -join ', ')" }
 
+# --- 起動の前の検査 ---
+# claude が動かなければ (NVM が止めた・exe の差し替え中など)、どの role も起動しない (C56)
+$cliError = Test-ClaudeCli
+if ($cliError) {
+  Write-Warning "claude が動かないので、どの role も起動しない: $cliError"
+  exit 1
+}
+$notes = @()
+$hookWarning = Get-HookWarning $projectDir $root
+if ($hookWarning) { Write-Warning $hookWarning; $notes += $hookWarning }
+foreach ($w in @(Get-CheckoutWarnings $projectDir)) { Write-Warning $w; $notes += $w }
+
 # --- build (shim は dist/ から起動される) ---
 $dist = Join-Path $root 'dist/shim/main.js'
 if (-not $NoBuild) {
@@ -143,7 +184,7 @@ if (Test-HubPort) {
     if ((Get-Date) -gt $deadline) { throw "Hub が 30 秒以内に起動しなかった。hub のタブを確認する" }
     Start-Sleep -Milliseconds 500
   }
-  Write-Host 'Hub が起動した。UI の URL は hub のタブに出る'
+  Write-Host 'Hub が起動した'
 }
 if (-not $token) { Write-Warning 'HUB_TOKEN がないので attach を確かめられない。待たずに起動だけする' }
 
@@ -159,28 +200,40 @@ foreach ($role in $Roles) {
   # -Force では前の Attachment がリースの切れるまで残る。起動前の id を覚え、別の id が現れたときだけ attach したと読む (roadmap C33)
   $before = if ($token) { Get-AttachmentId $mailbox } else { $null }
   Write-Host "$mailbox を起動する ($projectDir)"
-  $tabArgs = @('-NoExit', '-File', $agentScript, '-Role', $role, '-Project', $projectDir)
+  # 前の起動が残したファイルを消し、この起動で現れたものだけを終わりと読む (C56)
+  $statusFile = Get-StartStatusPath $mailbox
+  Remove-Item -LiteralPath $statusFile -Force -ErrorAction SilentlyContinue
+  $tabArgs = @('-NoExit', '-File', $agentScript, '-Role', $role, '-Project', $projectDir, '-FromTeam')
   if ($PermissionMode) { $tabArgs += @('-PermissionMode', $PermissionMode) }
   Start-Tab $mailbox $tabArgs
   if (-not $token) { Start-Sleep -Seconds 3; continue }
   $deadline = (Get-Date).AddSeconds($AttachTimeout)
   $attached = $false
+  $ended = $null
   while (-not $attached) {
     $now = Get-AttachmentId $mailbox
     if ($now -and $now -ne $before) { $attached = $true; break }
+    # claude が attach する前に終わったら、上限まで待たない
+    if (Test-Path -LiteralPath $statusFile) {
+      try { $ended = Get-Content -LiteralPath $statusFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $ended = [pscustomobject]@{ exitCode = '?'; elapsedSec = '?'; reason = $null } }
+      break
+    }
     if ((Get-Date) -gt $deadline) { break }
     Start-Sleep -Seconds 1
   }
   if ($attached) {
     Write-Host "$mailbox が attach した"
+  } elseif ($ended) {
+    $why = if ($ended.reason) { "。理由: $($ended.reason)" } else { '。理由はタブを見る' }
+    $line = "$mailbox は attach する前に claude が終わった (終了コード $($ended.exitCode)、$($ended.elapsedSec) 秒)$why"
+    Write-Warning "$line。次へ進む"
+    $failed += $line
   } else {
     # 前の接続が残っているだけかもしれないので、成功とは読まない
     Write-Warning "$mailbox は $AttachTimeout 秒以内に新しく attach しなかった (失敗)。タブを確認する (初回の警告ダイアログ、claude の起動エラーなど)。次へ進む"
-    $failed += $mailbox
+    $failed += "$mailbox は $AttachTimeout 秒以内に attach しなかった"
   }
 }
-if ($failed.Count -gt 0) {
-  Write-Host "attach しなかった: $($failed -join ', ')"
-  exit 1
-}
+Write-Summary $notes $failed
+if ($failed.Count -gt 0) { exit 1 }
 Write-Host '完了'

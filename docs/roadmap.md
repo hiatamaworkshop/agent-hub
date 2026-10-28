@@ -18,7 +18,6 @@
 
 取りかかる順。状態の行のない項目とブロックの項目だけを載せる (題は索引から引く)。並べ替えは人の判断。
 
-- [ ] C55
 
 
 ## P0: 1 セッションで往復する (完了 2026-10-16)
@@ -304,6 +303,14 @@
   - leader が起動していない reviewer に request を 2 件送り、返事を待ってターンを終え、人は止まった理由が分からなかった (#157・#160)。`POST /messages` と forward の応答に `unattached` (配信先のうち今接続していない Mailbox) を足し、shim の `post_message` は配信先が全部未接続なら `unattached` と `warning` を返す。leader.md に、その `warning` が返ったら待ってターンを終えず、`要操作` で相手の role の起動を頼むことを書いた
   - Hub は `backlog.outgoing.to` の宛先ごとに `recipients` を返し、UI は待っている相手がどれも接続していなければ `Waiting on others` の代わりに `Needs you (<Mailbox> not connected)` を出す。`humanTurnOf` には入れないので、You バッジには数えない (未読は相手のカードの Stuck? に出るため)。タブのタイトルと favicon には 1 件として数える (2026-10-27 に「カードだけに出す」と決めた点を、タブと favicon には数える形に変えた。ユーザーの決定、2026-10-27)。ほかのプロジェクトの待ちの数 (`N waiting in other projects`) も、タブと同じ `tabWaitingOf` で数える (同じくユーザーの決定、2026-10-27)
   - Hub の試験 (未接続の配信先が `unattached` に出る。forward も)、shim の試験 (全部未接続なら `warning`) を足し、全体の 318 件が通る。`npm run ui:check` に、leader が未接続の reviewer を待つ (`Needs you (demo.reviewer not connected)`) → reviewer が attach する (`Waiting on others (reviewer)`) → 返す (`Idle`) の場面を足し、全場面が合格。待っている間はタブのタイトルが `1 waiting` で始まることも確かめる。別のプロジェクトの leader が未接続の reviewer を待つ場面も足し、demo を選ぶと `1 waiting in other projects` が出ることを確かめる
+- [x] C55 起動スクリプトが UI の URL をいつも出す (2026-10-28、ユーザーが決定)
+  - `start-team.ps1` が最後に `.env` のトークンで `GET /mailboxes` を試し、通れば `UI: http://127.0.0.1:<port>/?token=…`、401 ならトークンが合わないこと (compose なら `docker compose logs hub`)、届かなければそう出す。compose の Hub (7777、起動済み) と、スクリプトが直接起動した Hub (7795、別のデータフォルダ) の両方で URL が出て、7795 の URL は 200 で UI の HTML を返した。間違ったトークンでは URL の代わりに警告が出た。README の起動の手順に、URL が出る場所を書いた
+- [x] C56 claude が起動前に止まったことを、起動スクリプトがすぐ知らせる (2026-10-28、ユーザーが決定)
+  - `start-team.ps1` が role の前に `claude --version` を流し、失敗なら出力の先頭を出してどの role も起動せず終了コード 1。`start-agent.ps1` は `claude` (と起動前の throw) で終わると、終了コード・経過秒・理由 (失敗なら `claude --version` の出力) を OS の一時フォルダの `agent-hub-start/<Mailbox>.json` に書く。`start-team.ps1` は起動前にそれを消し、attach を待つ間に現れたら待たずに失敗とする。`claude` を NVM4306 の文を出して失敗する代役に差し替えて確かめた: 代役が `--version` でも失敗すると起動前に止まり、`--version` だけ通すと 3 秒で「attach する前に claude が終わった (終了コード 5)。理由: NVM4306 …」と出て終了コード 1 (前は 60 秒待った)。タブの代わりに別ウィンドウ (wt なし) の経路で確かめた
+- [x] C57 プロジェクトの hook の設定が無くなったことに気づく (2026-10-28、ユーザーが決定。一本化とカードに出す案は採らない)
+  - 検査を `tools/dev/team-checks.ps1` の `Get-HookWarning` にまとめ、`start-team.ps1` は起動前に流して `--- まとめ ---` に出す。`settings.local.json` がなければ `tools/hooks/settings.json` を写す 1 行、あるのに Hub の hook がなければ上書きせず手で足すよう出す。`start-agent.ps1` の警告も同じ文。hook のある cite-bridge では出ず、ないフォルダ・空の `settings.local.json` のフォルダでそれぞれの文が出ることを確かめた
+- [x] C58 起動するプロジェクトの checkout が古いとき警告する (2026-10-28、ユーザーが決定。警告だけで止めない。`docs:index` には足さない)
+  - `Get-CheckoutWarnings` が `git fetch` (`GIT_TERMINAL_PROMPT=0`・`GCM_INTERACTIVE=never`・ssh は BatchMode、15 秒まで。時間切れは子の git-remote-https ごと `taskkill /T`) の後、detached HEAD (origin の既定のブランチとの差も)・upstream より遅れている・upstream が無い、を警告する。git のリポジトリでなければ黙る。`start-agent.ps1` は単独で起動したときだけ同じ検査をする (`start-team.ps1` は `-FromTeam` を渡す)。cite-bridge と agent-hub (private の origin) で入力待ちなしに 1.8 秒で通り、3 つ遅れた clone・detached の clone (2 つ遅れ)・upstream のないブランチ・届かない origin・応答しない origin (3 秒で時間切れ) のそれぞれで警告の文を確かめた。pwsh 7.6 と Windows PowerShell 5.1 の両方で同じ結果
 
 ## 項目
 
@@ -482,38 +489,3 @@ C45 の後、reviewer が依頼のたびに正本を読む形で足りないと�
 6. §3.10 のブラウザからの画像の経路を、同じプールにまとめるか。
 
 関係: C47 (相談のボタン) と C3 (Claude Code 以外のクライアント) で、別のエージェント・ベンダーにダブルチェックさせるときの運び先になる。
-
-### C55. 起動スクリプトが UI の URL をいつも出す
-
-2026-10-28、ユーザーの決定。トークンつきの UI の URL は Hub の起動ログにしか出ない。compose の Hub ではログがコンテナの中にあるので、`start-team.ps1` は Hub が起動済みのとき URL を出さず、人は `docker compose logs hub` を知らないと見つけられない (毎回見逃していた)。`start-team.ps1` は Hub を自分で起動したときも「UI の URL は hub のタブに出る」と言うだけ。
-トークンは compose も直接起動も同じ `.env` の `HUB_TOKEN` なので、スクリプトの側で組み立てられる。
-
-#### 完了条件
-- [ ] `start-team.ps1` が最後に、`.env` のトークンで組み立てた UI の URL (`http://127.0.0.1:<port>/?token=…`) を 1 行出す。Hub を自分で起動したときと起動済み (compose を含む) のときの両方で出す
-- [ ] そのトークンで `GET /mailboxes` が通ったときだけ出す。通らなければ、URL の代わりにトークンが合わないことを出す
-- [ ] README の起動の手順に、URL が出る場所 (`start-team.ps1` の最後の行、compose なら `docker compose logs hub`) を書く
-- [ ] compose の Hub と直接起動の Hub で `start-team.ps1` を流し、出た URL でブラウザが開けることを確かめる
-
-### C56. claude が起動前に止まったことを、起動スクリプトがすぐ知らせる
-状態: 提案
-
-2026-10-28、cite-bridge のチームの再起動で、leader のタブの `claude` が NVM に止められた (NVM4306。自己更新で `claude.cmd` が変わったため)。`start-team.ps1` は 60 秒待ってから「attach しなかった」と出すだけで、理由はタブの中にしか出ず、エージェントのセッションからは見えなかった。前にも同じ形で何度か止まっている (自己更新の直後、exe の差し替え中)。
-案: `start-agent.ps1` が `claude` の終了コードと最初のエラー行を一時ファイルに残し、`start-team.ps1` は attach を待つ間にそれを見て、終わっていれば待たずに失敗と理由の 1 行を出す。
-決めること: 残す場所 (OS の一時フォルダか `logs/`)、Windows Terminal のタブでなく別ウィンドウで起動したときも同じに取れるか。
-
-### C57. プロジェクトの hook の設定が無くなったことに気づく
-状態: 提案
-
-2026-10-28、cite-bridge の `.claude/settings.local.json` (2026-10-22 に hook を置いた。design.md §6.1p) が `.claude` のフォルダごと無くなっていた。git の管理外 (グローバルの gitignore) なので、submodule の作り直しか clean で消えたとみられる。`start-agent.ps1` の警告はタブにだけ出て、人がタブを見て気づいた。エージェントが置き直そうとすると、Claude Code の auto mode がエージェントの設定の書き換えとして止める (人が置き直した)。`~/.claude/settings.json` には今 Hub の hook がなく、agent-hub と vcp はそれぞれの `settings.local.json` に持っている。
-案 (組み合わせてよい):
-1. `start-team.ps1` の最後のまとめに、hook の設定がないプロジェクトを出す (警告をタブに埋もれさせない)。
-2. 置き直す 1 行のコマンドを警告に添える。
-3. README の勧めどおり `~/.claude/settings.json` に写す運用に揃え、プロジェクトごとに置かない。
-4. UI のカードに、attach してから hook の Event が一度も来ていないことを出す。
-
-### C58. 起動するプロジェクトの checkout が古いとき警告する
-状態: 提案
-
-2026-10-28、cite-bridge のチームを、論文のリポジトリの submodule (C2 の版 4564d16 で detached HEAD) の上で起動した。origin/main には別の clone から C3〜C9 が 10-23 に入っていて、古い台帳を読んだ依頼でチームが C3 を作り直し、push は fast-forward にならず止まった。依頼を書いた側 (このリポジトリのセッション) も fetch せずに台帳を読んでいた。
-案: `start-team.ps1` / `start-agent.ps1` が起動の前に `-Project` のフォルダで `git fetch` (失敗しても止めない) と `git status -sb` を見て、detached HEAD・upstream より遅れている・upstream が無い、のどれかなら警告し、最後のまとめにも出す (C57 の案 1 と同じ場所)。`docs:index` も同じ条件で警告する案がある (古い索引を Items に送らない)。
-決めること: fetch に時間がかかる・ネットワークが無いときの扱い、警告で止めるか進めるか。
