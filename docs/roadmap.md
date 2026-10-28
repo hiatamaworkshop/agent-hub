@@ -311,6 +311,9 @@
   - 検査を `tools/dev/team-checks.ps1` の `Get-HookWarning` にまとめ、`start-team.ps1` は起動前に流して `--- まとめ ---` に出す。`settings.local.json` がなければ `tools/hooks/settings.json` を写す 1 行、あるのに Hub の hook がなければ上書きせず手で足すよう出す。`start-agent.ps1` の警告も同じ文。hook のある cite-bridge では出ず、ないフォルダ・空の `settings.local.json` のフォルダでそれぞれの文が出ることを確かめた
 - [x] C58 起動するプロジェクトの checkout が古いとき警告する (2026-10-28、ユーザーが決定。警告だけで止めない。`docs:index` には足さない)
   - `Get-CheckoutWarnings` が `git fetch` (`GIT_TERMINAL_PROMPT=0`・`GCM_INTERACTIVE=never`・ssh は BatchMode、15 秒まで。時間切れは子の git-remote-https ごと `taskkill /T`) の後、detached HEAD (origin の既定のブランチとの差も)・upstream より遅れている・upstream が無い、を警告する。git のリポジトリでなければ黙る。`start-agent.ps1` は単独で起動したときだけ同じ検査をする (`start-team.ps1` は `-FromTeam` を渡す)。cite-bridge と agent-hub (private の origin) で入力待ちなしに 1.8 秒で通り、3 つ遅れた clone・detached の clone (2 つ遅れ)・upstream のないブランチ・届かない origin・応答しない origin (3 秒で時間切れ) のそれぞれで警告の文を確かめた。pwsh 7.6 と Windows PowerShell 5.1 の両方で同じ結果
+- [x] C43 バックグラウンドの処理を待つターンの終わりを、Stopped と出さない (2026-10-28、ユーザーが決定。上限は 60 分、Stopped の代わりにだけ使う)
+  - Hub は `backlog.lastTurnEnd.running` (`Stop` の `background_tasks` のうち `status: "running"` の件数と最初の処理の `description`) を返す。UI は返信のない依頼を抱えたカードで、最後の `turn.end` に走っている処理があり、その終了から 60 分以内なら Working と出し、要旨の行に `background: <description>` を出す。過ぎたら 30 秒ごとの見直しで Stopped に戻す (終わらない処理を立てたままのターンを Working に残さないため)
+  - Hub の試験 (終わった処理は数えない、空になれば `running` を省く) を足し、全体の 337 件が通る。`npm run ui:check` に、試験をバックグラウンドで流して終えたターン (`Working`・`background: npm test`) → そのターン終了を Event の窓から押し出して読み直す (Hub の値で Working のまま) → UI の時計を 61 分進めると Stopped → 処理が終わったターンで返さない (`Stopped, no reply`) の場面を足し、全場面が合格。実機の Claude Code のターンでは見ていない (次にバックグラウンドの試験を待つ通しで確かめる)
 
 ## 項目
 
@@ -445,12 +448,6 @@ cite-bridge の deployer は usage limit で 2 時間 20 分止まったが、Hu
 - [x] UI のカードに `Paused` の状態を足し、Working より先に判定する。最後の Event が `turn.failed` (`error: rate_limit`) なら Paused (usage limit)、その後の `quota_auto_resume_fired` か `turn.end` で解ける。`quota_auto_resume_stale` と `_disabled` は Needs you (Enter が要る、または自動では続かない) にする。Event の表示名も足す
 - [x] 試験: Hub が `StopFailure` の payload を `turn.failed` として取り込むこと (`src/hub` の Event の変換の試験の形)
 - [ ] 実際に usage limit に当たったときの Event の並びを design.md §6 に記録し、§6.2-6 を閉じる (発火しなかったら、そう書き、Paused を `quota_auto_resume_*` だけで出せる範囲に直すことを報告で提案する)
-
-### C43. バックグラウンドの処理を待つターンの終わりを、Stopped と出さない
-状態: 提案
-
-`Stop` の hook の `background_tasks` に、ターンを終えた時点で走っている処理 (`status: "running"`) が載る (design.md §6.1t)。deployer が試験をバックグラウンドで流して終えたターンは、今の判定では、完了通知で次のターンが始まるまで Stopped, no reply (赤) と出る。2026-10-26 の vcp の C150 で約 4 分。
-案: 最新の `turn.end` の `background_tasks` に `running` があれば、Stopped の代わりに Working (添え書きは処理の `description`) にする。Hub は `backlog.lastTurnEnd` に件数か有無を足す (UI の手元の窓に頼らないため。C41)。処理が終わってもターンが始まらない場合 (完了通知を受けない作り) に Working のまま残らないよう、上限の時間を置くかは決めること。
 
 ### C46. 文書の更新を信号として、購読した Mailbox に流す
 状態: 保留(reviewer が依頼のたびに正本を読む形で足りないと分かってから)

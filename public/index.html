@@ -1626,7 +1626,7 @@ function sumLayers(mailboxes) {
 const STATES = [
   { key: 'you', label: 'Needs you', title: 'The session is waiting for your answer, to a question or permission prompt in its terminal or to a request it sent you through the Hub (answer with Reply, or send it your next request). Also shown when every agent it is waiting on is not connected: start that session, and the request arrives as unread.' },
   { key: 'paused', label: 'Paused', title: 'The turn stopped on a usage limit. It continues by itself when the limit resets (if auto-resume is on), so there is nothing to do but wait.' },
-  { key: 'working', label: 'Working', title: 'A message was handed to the session after its last turn ended, so it is working on it.' },
+  { key: 'working', label: 'Working', title: 'A message was handed to the session after its last turn ended, so it is working on it. Also shown when its turn ended while a background task (such as a test run) was still running: the session continues when the task finishes.' },
   { key: 'stopped', label: 'Stopped, no reply', title: 'The turn ended, but a request handed to this session has no reply yet. Check the terminal, or remind it to reply.' },
   { key: 'delegated', label: 'Waiting on others', title: 'Its turn ended while a request it sent has no reply yet.' },
   { key: 'idle', label: 'Idle', title: 'Connected and nothing pending.' },
@@ -1634,6 +1634,18 @@ const STATES = [
 ]
 // hook の Event が保存期間で消えると、ターン終了が分からない。それより古い受け渡しは作業中とみなさない (時間)
 const STALE_HANDED_HOURS = 12
+// バックグラウンドの処理を待ってターンを終えたとき、Working とみなす上限 (分)。処理が終われば完了通知で次のターンが
+// 始まるので、それより長く何も来なければ、終わらない処理 (開発用のサーバーなど) か通知を受けない作りとみなし、Stopped に戻す (C43)
+const BACKGROUND_MAX_MINUTES = 60
+// ターンを終えた時点で走っていた処理 (Stop の background_tasks)。Hub は lastTurnEnd.running で渡し、SSE で届いた Event は payload から読む
+function runningOf(end) {
+  if (!end) return null
+  if (end.running) return end.running
+  const p = end.payload && typeof end.payload === 'object' ? end.payload : {}
+  const tasks = Array.isArray(p.background_tasks) ? p.background_tasks.filter((t) => t && t.status === 'running') : []
+  if (!tasks.length) return null
+  return { count: tasks.length, description: typeof tasks[0].description === 'string' ? tasks[0].description : '' }
+}
 function stateOf(mb) {
   if (!mb.attachment) return { key: 'offline' }
   const human = humanTurnOf(mb)
@@ -1659,7 +1671,16 @@ function stateOf(mb) {
     if (absent) return { key: 'you', since: b.outgoing.oldestAt, detail: `${absent} not connected` }
     return { key: 'delegated', since: b.outgoing.oldestAt, detail: outgoingTargets(b.outgoing) }
   }
-  if (b.awaitingReply.count) return { key: 'stopped', since: end ? end.ts : b.awaitingReply.oldestAt }
+  if (b.awaitingReply.count) {
+    // 試験などをバックグラウンドで流してターンを終えた。完了通知で次のターンが始まり、そこで返す見込み (C43、design.md §6.1t)
+    const bg = runningOf(end)
+    const until = end && Date.parse(end.ts) + BACKGROUND_MAX_MINUTES * 60000
+    if (bg && Date.now() < until) {
+      const more = bg.count > 1 ? ` (+${bg.count - 1})` : ''
+      return { key: 'working', since: end.ts, until, detail: `background: ${bg.description || 'task'}${more}` }
+    }
+    return { key: 'stopped', since: end ? end.ts : b.awaitingReply.oldestAt }
+  }
   return { key: 'idle', since: end ? end.ts : null }
 }
 function bySeq(seq) {
@@ -1705,6 +1726,8 @@ function stateLine(st) {
   line.dataset.state = st.key
   if (st.since) line.dataset.since = st.since
   if (st.guess) line.dataset.guess = '1'
+  // この時刻を過ぎると判定が変わる (バックグラウンドの処理を待つ上限。C43)。30 秒ごとの見直しで描き直す
+  if (st.until) line.dataset.until = String(st.until)
   // 作業中の要旨は別の行に出す。ほかの状態の detail (質問・委ねた先) は状態の行に括弧で添える
   if (st.detail && st.key !== 'working') line.dataset.detail = st.detail
   line.title = def.title + (st.guess ? ' No hook events from this session, so the end of its turn is unknown (README: hooks).' : '')
@@ -1798,6 +1821,8 @@ function renderBacklog() {
 setInterval(() => {
   document.querySelectorAll('.bl').forEach(paintChip)
   document.querySelectorAll('.mb .state').forEach(paintState)
+  const expired = [...document.querySelectorAll('.mb .state[data-until]')].some((l) => Date.now() >= Number(l.dataset.until))
+  if (expired && mailboxList.length) renderMailboxes(mailboxList)
 }, 30000)
 
 // --- roadmap の項目のカード (design.md §3.15) ---

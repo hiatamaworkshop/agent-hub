@@ -197,14 +197,19 @@ describe('Store: 溜まりの材料 (summary)', () => {
       outgoing,
       lastHanded: null as { seq: number; ts: string } | null,
       lastEvent: null as { id: string; kind: string; ts: string; sessionId?: string; detail?: string } | null,
-      lastTurnEnd: null as { id: string; ts: string } | null,
+      lastTurnEnd: null as { id: string; ts: string; running?: { count: number; description: string } } | null,
     }
     for (const e of s.listEvents(Infinity)) {
       if (e.mailbox !== name || e.superseded) continue
       const p = e.payload as Record<string, unknown>
       const d = e.kind === 'turn.failed' ? p.error : e.kind === 'notification' ? p.notification_type : e.kind === 'permission.resolved' ? p.tool_name : undefined
       backlog.lastEvent = { id: e.id, kind: e.kind, ts: e.ts, ...(e.sessionId ? { sessionId: e.sessionId } : {}), ...(typeof d === 'string' && d ? { detail: d } : {}) }
-      if (e.kind === 'turn.end') backlog.lastTurnEnd = { id: e.id, ts: e.ts }
+      if (e.kind === 'turn.end') {
+        const tasks = Array.isArray(p.background_tasks) ? (p.background_tasks as Array<{ status?: unknown; description?: unknown }>) : []
+        const running = tasks.filter((t) => t && t.status === 'running')
+        const d = running[0]?.description
+        backlog.lastTurnEnd = { id: e.id, ts: e.ts, ...(running.length ? { running: { count: running.length, description: typeof d === 'string' ? d : '' } } : {}) }
+      }
     }
     for (const m of s.listMessages(0, Infinity)) {
       if (s.isAwaitingReply(m) && m.from.type === 'mailbox' && m.from.id === name) {
@@ -307,7 +312,7 @@ describe('Store: 溜まりの材料 (summary)', () => {
     s.ensureMailbox('x')
     let n = 0
     const ev = (kind: HubEvent['kind'], extra: Partial<HubEvent> = {}): HubEvent => {
-      const e: HubEvent = { id: `e_${++n}`, ts: `2026-10-23T00:00:0${n}.000Z`, kind, source: 'claude-code', mailbox: 'x', payload: {}, ...extra }
+      const e: HubEvent = { id: `e_${++n}`, ts: `2026-10-23T00:00:${String(n).padStart(2, '0')}.000Z`, kind, source: 'claude-code', mailbox: 'x', payload: {}, ...extra }
       s.addEvent(e)
       return e
     }
@@ -332,7 +337,22 @@ describe('Store: 溜まりの材料 (summary)', () => {
     assert.equal(s.summary('x').backlog.lastEvent?.detail, 'Bash')
     const later = ev('turn.end', { payload: { error: 'x' } })
     assert.equal(s.summary('x').backlog.lastEvent?.detail, undefined, 'turn.end には detail を付けない')
-    s.deleteEvents([q.id, end.id, failed.id, resumed.id, approved.id, later.id])
+    // ターンを終えた時点で走っていたバックグラウンドの処理は lastTurnEnd.running に載る (C43)。終わった処理は数えない
+    const bg = ev('turn.end', {
+      payload: {
+        background_tasks: [
+          { id: 'b1', type: 'shell', status: 'completed', description: 'build' },
+          { id: 'b2', type: 'shell', status: 'running', description: 'npm test' },
+          { id: 'b3', type: 'shell', status: 'running' },
+        ],
+      },
+    })
+    check('走っている処理のあるターン終了')
+    assert.deepEqual(s.summary('x').backlog.lastTurnEnd, { id: bg.id, ts: bg.ts, running: { count: 2, description: 'npm test' } })
+    const done = ev('turn.end', { payload: { background_tasks: [] } })
+    check('処理が終わった後のターン終了')
+    assert.deepEqual(s.summary('x').backlog.lastTurnEnd, { id: done.id, ts: done.ts })
+    s.deleteEvents([q.id, end.id, failed.id, resumed.id, approved.id, later.id, bg.id, done.id])
     check('消した後は残っている中の最新')
     assert.equal(s.summary('x').backlog.lastEvent, null)
   })

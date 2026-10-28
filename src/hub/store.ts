@@ -63,6 +63,17 @@ function eventDetail(e: HubEvent): string | undefined {
   return typeof v === 'string' && v ? v : undefined
 }
 
+// ターンを終えた時点でまだ走っていたバックグラウンドの処理 (Stop の background_tasks。design.md §6.1t)。なければ undefined
+export function runningTasks(e: HubEvent): { count: number; description: string } | undefined {
+  if (e.kind !== 'turn.end' || typeof e.payload !== 'object' || e.payload === null) return undefined
+  const tasks = (e.payload as Record<string, unknown>).background_tasks
+  if (!Array.isArray(tasks)) return undefined
+  const running = tasks.filter((t) => typeof t === 'object' && t !== null && (t as Record<string, unknown>).status === 'running')
+  if (!running.length) return undefined
+  const d = (running[0] as Record<string, unknown>).description
+  return { count: running.length, description: typeof d === 'string' ? d : '' }
+}
+
 // やりとりの Message: request か reply。notice (返信を求めない知らせ) と無編集転送 (他人の本文) は除く。
 // 送り手が相手に応じて動いた印として、相手の返信待ちの request を閉じ (C28)、送り手に渡してあった分を受領の確認にする (C39)。
 // 2 つの規則はこの判定だけを使う (protocol.md §2・§4)
@@ -95,7 +106,9 @@ export interface Backlog {
   // なので、静かな Mailbox の分も Hub から渡す。作業中と人が動く番を導く材料 (design.md §3.15)
   // sessionId は、今つながっているのと別のセッションの質問待ちを UI が数えないため
   lastEvent: { id: string; kind: HubEvent['kind']; ts: string; sessionId?: string; detail?: string } | null
-  lastTurnEnd: { id: string; ts: string } | null
+  // running は、ターンを終えた時点でまだ走っていたバックグラウンドの処理 (Stop の background_tasks の status: running)。
+  // 件数と最初の処理の description。UI はこれで Stopped の代わりに Working と出す (C43)
+  lastTurnEnd: { id: string; ts: string; running?: { count: number; description: string } } | null
 }
 
 export interface StoreOptions {
@@ -554,7 +567,10 @@ export class Store {
       backlog.lastEvent = { id: ev.id, kind: ev.kind, ts: ev.ts, ...(ev.sessionId ? { sessionId: ev.sessionId } : {}), ...(detail ? { detail } : {}) }
     }
     const end = this.lastTurnEndByMailbox.get(name)
-    if (end) backlog.lastTurnEnd = { id: end.id, ts: end.ts }
+    if (end) {
+      const running = runningTasks(end)
+      backlog.lastTurnEnd = { id: end.id, ts: end.ts, ...(running ? { running } : {}) }
+    }
     let unconfirmed = 0
     for (let i = this.indexAfter(mb.received); i < this.messages.length; i++) {
       const m = this.messages[i]!

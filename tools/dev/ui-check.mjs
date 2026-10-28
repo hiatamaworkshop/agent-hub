@@ -74,6 +74,7 @@ async function screen() {
       name: (b.querySelector('.name') || {}).textContent || '',
       cls: b.className,
       state: (b.querySelector('.state') || {}).textContent || '',
+      doing: (b.querySelector('.doing') || {}).textContent || '',
     })),
   })`
   const r = await cdp('Runtime.evaluate', { expression: expr, returnByValue: true })
@@ -81,14 +82,16 @@ async function screen() {
 }
 
 let failed = 0
-// expect: Mailbox 名 → 状態の行の先頭 (例 'Needs you (request)')。title は タブのタイトルの先頭
+// expect: Mailbox 名 → 状態の行の先頭 (例 'Needs you (request)')、または { state, doing } (doing は作業中の要旨の行)。title は タブのタイトルの先頭
 async function scene(label, expect, title = 'agent-hub') {
   const s = await screen()
   const problems = []
-  for (const [name, state] of Object.entries(expect)) {
+  for (const [name, want] of Object.entries(expect)) {
+    const { state, doing } = typeof want === 'string' ? { state: want } : want
     const card = s.cards.find((c) => c.name === name)
     if (!card) problems.push(`${name}: カードがない`)
     else if (!card.state.startsWith(state)) problems.push(`${name}: 「${card.state}」 (期待は「${state}」)`)
+    else if (doing !== undefined && card.doing !== doing) problems.push(`${name}: 要旨「${card.doing}」 (期待は「${doing}」)`)
   }
   if (!s.title.startsWith(title)) problems.push(`タブのタイトル「${s.title}」 (期待は「${title}」で始まる)`)
   if (problems.length) failed++
@@ -260,8 +263,30 @@ try {
   await permission('demo.deployer', 's-dep')
   await scene('もう一度許可を求め、拒否した (何も届かず Needs you のまま)', { 'demo.deployer': 'Needs you (permission)' }, '2 waiting')
 
+  // バックグラウンドの処理を待って終えたターン (C43)。Stop の background_tasks に走っている処理があれば、Stopped でなく Working
+  const bgEnd = (tasks) => hook('demo.deployer', { hook_event_name: 'Stop', session_id: 's-dep', background_tasks: tasks })
+  await toolDone('demo.deployer', 's-dep', 'tu-b3')
+  await bgEnd([
+    { id: 'bg1', type: 'shell', status: 'running', description: 'npm test', command: 'npm test' },
+    { id: 'bg2', type: 'shell', status: 'completed', description: 'build', command: 'npm run build' },
+  ])
+  await scene('試験をバックグラウンドで流してターンを終えた (Stopped でなく Working。C43)', { 'demo.deployer': { state: 'Working', doing: 'background: npm test' } }, '1 waiting')
+  for (let i = 0; i < 250; i++) await turnEnd('demo.noise', 's-noise')
+  await cdp('Page.navigate', { url: `${HUB}/` })
+  await sleep(1000)
+  await scene('そのターン終了を窓から押し出して読み直した (Hub の lastTurnEnd.running で Working のまま)', { 'demo.deployer': { state: 'Working', doing: 'background: npm test' } }, '1 waiting')
+  // 上限 (BACKGROUND_MAX_MINUTES) を過ぎた分は、UI の時計を進めて確かめる
+  const later = await cdp('Runtime.evaluate', { expression: `(() => { const real = Date.now; Date.now = () => real() + 61 * 60000; const st = stateOf(mailboxList.find((m) => m.name === 'demo.deployer')); Date.now = real; return st && st.key })()`, returnByValue: true })
+  const laterOk = later.result.value === 'stopped'
+  if (!laterOk) failed++
+  console.log(`${laterOk ? 'ok' : 'NG'}  走っている処理のあるターン終了から 61 分たつと Stopped に戻る (C43)`)
+  if (!laterOk) console.log(`      ${JSON.stringify(later.result.value)} (期待は 'stopped')`)
+  await bgEnd([])
+  await scene('処理が終わったターンで返さなかった (Stopped)', { 'demo.deployer': 'Stopped, no reply' }, '1 waiting')
+
   // 溜まりのバッジから最も古いものへ飛ぶ (C44)。古い依頼は止まった Event と違って、畳んだ分の中にあることもある
-  await scene('5 日前の返信待ちの依頼が残っている', { 'demo.old': 'Stopped, no reply' }, '2 waiting')
+  // タブは leader の質問の 1 件 (deployer の許可待ちは上の C43 の場面で解いた)
+  await scene('5 日前の返信待ちの依頼が残っている', { 'demo.old': 'Stopped, no reply' }, '1 waiting')
   const jump = await cdp('Runtime.evaluate', {
     expression: `(async () => {
       const card = [...document.querySelectorAll('#mailboxes .mb')].find((b) => (b.querySelector('.name') || {}).textContent === 'demo.old')
