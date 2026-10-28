@@ -18,6 +18,8 @@
 
 取りかかる順。状態の行のない項目とブロックの項目だけを載せる (題は索引から引く)。並べ替えは人の判断。
 
+- [ ] C55
+
 
 ## P0: 1 セッションで往復する (完了 2026-10-16)
 
@@ -480,3 +482,38 @@ C45 の後、reviewer が依頼のたびに正本を読む形で足りないと�
 6. §3.10 のブラウザからの画像の経路を、同じプールにまとめるか。
 
 関係: C47 (相談のボタン) と C3 (Claude Code 以外のクライアント) で、別のエージェント・ベンダーにダブルチェックさせるときの運び先になる。
+
+### C55. 起動スクリプトが UI の URL をいつも出す
+
+2026-10-28、ユーザーの決定。トークンつきの UI の URL は Hub の起動ログにしか出ない。compose の Hub ではログがコンテナの中にあるので、`start-team.ps1` は Hub が起動済みのとき URL を出さず、人は `docker compose logs hub` を知らないと見つけられない (毎回見逃していた)。`start-team.ps1` は Hub を自分で起動したときも「UI の URL は hub のタブに出る」と言うだけ。
+トークンは compose も直接起動も同じ `.env` の `HUB_TOKEN` なので、スクリプトの側で組み立てられる。
+
+#### 完了条件
+- [ ] `start-team.ps1` が最後に、`.env` のトークンで組み立てた UI の URL (`http://127.0.0.1:<port>/?token=…`) を 1 行出す。Hub を自分で起動したときと起動済み (compose を含む) のときの両方で出す
+- [ ] そのトークンで `GET /mailboxes` が通ったときだけ出す。通らなければ、URL の代わりにトークンが合わないことを出す
+- [ ] README の起動の手順に、URL が出る場所 (`start-team.ps1` の最後の行、compose なら `docker compose logs hub`) を書く
+- [ ] compose の Hub と直接起動の Hub で `start-team.ps1` を流し、出た URL でブラウザが開けることを確かめる
+
+### C56. claude が起動前に止まったことを、起動スクリプトがすぐ知らせる
+状態: 提案
+
+2026-10-28、cite-bridge のチームの再起動で、leader のタブの `claude` が NVM に止められた (NVM4306。自己更新で `claude.cmd` が変わったため)。`start-team.ps1` は 60 秒待ってから「attach しなかった」と出すだけで、理由はタブの中にしか出ず、エージェントのセッションからは見えなかった。前にも同じ形で何度か止まっている (自己更新の直後、exe の差し替え中)。
+案: `start-agent.ps1` が `claude` の終了コードと最初のエラー行を一時ファイルに残し、`start-team.ps1` は attach を待つ間にそれを見て、終わっていれば待たずに失敗と理由の 1 行を出す。
+決めること: 残す場所 (OS の一時フォルダか `logs/`)、Windows Terminal のタブでなく別ウィンドウで起動したときも同じに取れるか。
+
+### C57. プロジェクトの hook の設定が無くなったことに気づく
+状態: 提案
+
+2026-10-28、cite-bridge の `.claude/settings.local.json` (2026-10-22 に hook を置いた。design.md §6.1p) が `.claude` のフォルダごと無くなっていた。git の管理外 (グローバルの gitignore) なので、submodule の作り直しか clean で消えたとみられる。`start-agent.ps1` の警告はタブにだけ出て、人がタブを見て気づいた。エージェントが置き直そうとすると、Claude Code の auto mode がエージェントの設定の書き換えとして止める (人が置き直した)。`~/.claude/settings.json` には今 Hub の hook がなく、agent-hub と vcp はそれぞれの `settings.local.json` に持っている。
+案 (組み合わせてよい):
+1. `start-team.ps1` の最後のまとめに、hook の設定がないプロジェクトを出す (警告をタブに埋もれさせない)。
+2. 置き直す 1 行のコマンドを警告に添える。
+3. README の勧めどおり `~/.claude/settings.json` に写す運用に揃え、プロジェクトごとに置かない。
+4. UI のカードに、attach してから hook の Event が一度も来ていないことを出す。
+
+### C58. 起動するプロジェクトの checkout が古いとき警告する
+状態: 提案
+
+2026-10-28、cite-bridge のチームを、論文のリポジトリの submodule (C2 の版 4564d16 で detached HEAD) の上で起動した。origin/main には別の clone から C3〜C9 が 10-23 に入っていて、古い台帳を読んだ依頼でチームが C3 を作り直し、push は fast-forward にならず止まった。依頼を書いた側 (このリポジトリのセッション) も fetch せずに台帳を読んでいた。
+案: `start-team.ps1` / `start-agent.ps1` が起動の前に `-Project` のフォルダで `git fetch` (失敗しても止めない) と `git status -sb` を見て、detached HEAD・upstream より遅れている・upstream が無い、のどれかなら警告し、最後のまとめにも出す (C57 の案 1 と同じ場所)。`docs:index` も同じ条件で警告する案がある (古い索引を Items に送らない)。
+決めること: fetch に時間がかかる・ネットワークが無いときの扱い、警告で止めるか進めるか。
