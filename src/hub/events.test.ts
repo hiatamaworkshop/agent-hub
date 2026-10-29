@@ -44,6 +44,21 @@ describe('fromClaudeCodeHook', () => {
     assert.notEqual(q.event.id, a.event.id)
   })
 
+  // モデルと effort (C61)。SessionStart と PostModelSwitch は payload を入力のまま持つ。model のない SessionStart も取り込む
+  it('SessionStart → session.start、PostModelSwitch → model.switch。payload は入力のまま (model のない SessionStart も)', () => {
+    const start = { session_id: 's1', cwd: 'C:\work\agent-hub', hook_event_name: 'SessionStart', source: 'startup', model: 'claude-opus-5' }
+    const noModel = { session_id: 's1', cwd: 'C:\work\agent-hub', hook_event_name: 'SessionStart', source: 'clear' }
+    const sw = { session_id: 's1', cwd: 'C:\work\agent-hub', hook_event_name: 'PostModelSwitch', from_model: 'claude-opus-5', to_model: 'claude-sonnet-5-5', source: 'command' }
+    for (const [input, kind] of [[start, 'session.start'], [noModel, 'session.start'], [sw, 'model.switch']] as const) {
+      const r = fromClaudeCodeHook(input, undefined, now)
+      assert.ok('event' in r)
+      assert.equal(r.event.kind, kind)
+      assert.equal(r.event.sessionId, 's1')
+      // 変換は payload を決めない (Hub が入力のまま持つ。app の試験で確かめる)
+      assert.equal(r.event.payload, undefined)
+    }
+  })
+
   it('StopFailure → turn.failed。error と last_assistant_message は変換せず payload に残る', () => {
     const input = { session_id: 's1', cwd: 'C:\work\agent-hub', hook_event_name: 'StopFailure', error: 'rate_limit', last_assistant_message: "You've hit your limit" }
     assert.deepEqual(fromClaudeCodeHook(input, undefined, now), { event: { source: 'claude-code', sessionId: 's1', cwd: 'C:\work\agent-hub', kind: 'turn.failed' } })
@@ -51,7 +66,7 @@ describe('fromClaudeCodeHook', () => {
 
   it('AskUserQuestion 以外のツールと、知らない hook は取り込まない', () => {
     assert.deepEqual(fromClaudeCodeHook({ ...ask('PreToolUse'), tool_name: 'Bash' }, undefined, now), { ignored: 'unsupported_tool' })
-    assert.deepEqual(fromClaudeCodeHook({ hook_event_name: 'SessionStart', session_id: 's1' }, undefined, now), { ignored: 'unsupported_hook' })
+    assert.deepEqual(fromClaudeCodeHook({ hook_event_name: 'ConfigChange', session_id: 's1', source: 'user_settings' }, undefined, now), { ignored: 'unsupported_hook' })
     assert.deepEqual(fromClaudeCodeHook({ session_id: 's1' }, undefined, now), { ignored: 'no_hook_event_name' })
   })
 
@@ -272,11 +287,25 @@ describe('HTTP /events', () => {
 
   it('取り込まない hook も 200 で理由を返す。オブジェクトでない本文は 400', async () => {
     const { post } = setup()
-    const res = await post({ hook_event_name: 'SessionStart', session_id: 's1' })
+    const res = await post({ hook_event_name: 'ConfigChange', session_id: 's1', source: 'user_settings' })
     assert.equal(res.status, 200)
     assert.deepEqual(await res.json(), { ignored: 'unsupported_hook' })
     assert.equal((await post('[1]')).status, 400)
     assert.equal((await post('not json')).status, 400)
+  })
+
+  it('SessionStart と PostModelSwitch を取り込み、payload を入力の JSON のまま残す (model のない SessionStart も)', async () => {
+    const { app } = setup()
+    const postTo = (body: unknown) =>
+      app.request('/events/claude-code', { method: 'POST', headers: { 'content-type': 'application/json', ...bearer }, body: JSON.stringify(body) })
+    const start = { session_id: 's1', cwd: 'C:\work\agent-hub', hook_event_name: 'SessionStart', source: 'startup', model: 'claude-opus-5' }
+    const bare = { session_id: 's1', cwd: 'C:\work\agent-hub', hook_event_name: 'SessionStart', source: 'clear' }
+    const sw = { session_id: 's1', cwd: 'C:\work\agent-hub', hook_event_name: 'PostModelSwitch', from_model: 'claude-opus-5', to_model: 'claude-sonnet-5-5', requested_model: null, source: 'auto' }
+    for (const body of [start, bare, sw]) assert.equal((await postTo(body)).status, 200)
+    const events = ((await (await app.request('/events', { headers: bearer })).json()) as { events: HubEvent[] }).events
+    const byKind = (k: string) => events.filter((e) => e.kind === k).map((e) => e.payload)
+    assert.deepEqual(byKind('session.start'), [start, bare])
+    assert.deepEqual(byKind('model.switch'), [sw])
   })
 
   it('1 MB を超える本文は 413', async () => {

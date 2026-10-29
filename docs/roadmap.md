@@ -507,7 +507,7 @@ C59 の Noise は通知系の Event を固定で扱う。何を Noise に含め�
 
 #### 完了条件
 - [ ] 着手前に、実機で `SessionStart` と `PostModelSwitch` の実ペイロードを確かめ (`model` が載る条件、`/model` で変えたときの `to_model` の形)、公式資料の未読の部分で effort の変更を知らせる仕組みがないかも見て、結果を design.md §6 に記録する。なければ、そう書く
-- [ ] `tools/hooks/settings.json` に `SessionStart` と `PostModelSwitch` を足し、Hub が Event に取り込む (payload は元の JSON のまま)。README の hook の手順と protocol.md の Event の種類を合わせる
-- [ ] 試験: Hub が `SessionStart` と `PostModelSwitch` の payload を取り込むこと (`src/hub` の Event の変換の試験の形)。`model` のない `SessionStart` でも取り込めること
-- [ ] カードに最後に見えた model と effort を小さく出す (例 `opus-5 · medium`)。値が取れないものは何も出さず、片方だけ取れればその片方だけ出す。「最後に見えた値で、今の設定の保証ではない」ことを tooltip に書く
-- [ ] `ui:check` に、両方ある・片方だけ・どちらもない場面を足し、`npm test` と `npm run ui:check` が通る
+- [x] `tools/hooks/settings.json` に `SessionStart` と `PostModelSwitch` を足し、Hub が Event に取り込む (payload は元の JSON のまま)。README の hook の手順と protocol.md の Event の種類を合わせる
+- [x] 試験: Hub が `SessionStart` と `PostModelSwitch` の payload を取り込むこと (`src/hub` の Event の変換の試験の形)。`model` のない `SessionStart` でも取り込めること
+- [x] カードに最後に見えた model と effort を小さく出す (例 `opus-5 · medium`)。値が取れないものは何も出さず、片方だけ取れればその片方だけ出す。「最後に見えた値で、今の設定の保証ではない」ことを tooltip に書く
+- [x] `ui:check` に、両方ある・片方だけ・どちらもない場面を足し、`npm test` と `npm run ui:check` が通る

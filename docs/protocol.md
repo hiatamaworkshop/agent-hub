@@ -83,7 +83,7 @@
 {
   "id": "e_…",
   "ts": "2026-10-16T12:00:00Z",
-  "kind": "turn.end | turn.failed | question | question.answered | permission | permission.resolved | notification | session.boundary",
+  "kind": "turn.end | turn.failed | question | question.answered | permission | permission.resolved | notification | session.boundary | session.start | model.switch",
   "source": "claude-code",
   "sessionId": "…",
   "mailbox": "reviewer (解決できた場合だけ)",
@@ -104,6 +104,8 @@
 | `PostToolUse` + `tool_name: AskUserQuestion` | `question.answered` |
 | `PostToolUse` / `PostToolUseFailure` + ほかのツール | 同じ session の直前の Event が `permission` のときだけ `permission.resolved` (許可された印。`payload.tool_name` にツール名)。payload からは `tool_response` と `tool_input` を落とす。拒否したときは hook が届かない (design.md §6.1s) |
 | `Notification` + `notification_type: permission_prompt` | `permission`。ただし、同じ session の直前の Event が 60 秒以内の `question` なら取り込まない (質問の表示でも出るため。design.md §6.1c) |
+| `SessionStart` | `session.start`。起動の種類は `payload.source`。`payload.model` は載らないことがあるので、あるときだけ使う (カードのモデル。C61) |
+| `PostModelSwitch` | `model.switch`。`payload.from_model` / `payload.to_model`。`/model` の変更や resume の復元で届く (C61) |
 | ほかの `Notification` (`idle_prompt`、`agent_needs_input`、`elicitation_dialog` など) | `notification`。種類は `payload.notification_type` で見る |
 | それ以外の hook、許可待ちの後でない `AskUserQuestion` 以外のツール | 取り込まない |
 

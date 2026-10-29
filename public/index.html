@@ -651,7 +651,7 @@ const evtData = new Map() // Event の id → Event (プロジェクトの絞り
 const lastEventByMailbox = new Map() // Mailbox 名 → 最新の Event (カードに出す)
 const lastTurnEndByMailbox = new Map() // Mailbox 名 → 最新のターン終了 (作業中かを導く)
 const DETACH_LABEL = { closed: 'session ended', disconnected: 'connection lost', lease_expired: 'lease expired' }
-const EVENT_LABEL = { 'turn.end': 'turn end', 'turn.failed': 'turn failed', question: 'question', 'question.answered': 'answered', permission: 'permission', 'permission.resolved': 'approved', notification: 'notification', 'session.boundary': 'boundary' }
+const EVENT_LABEL = { 'turn.end': 'turn end', 'turn.failed': 'turn failed', question: 'question', 'question.answered': 'answered', permission: 'permission', 'permission.resolved': 'approved', notification: 'notification', 'session.boundary': 'boundary', 'session.start': 'session start', 'model.switch': 'model switch' }
 // 人の手を待っている Event。目立たせ、非表示のタブでは未読として数える
 const WAITING = new Set(['question', 'permission'])
 const str = (v) => (typeof v === 'string' ? v : '')
@@ -686,6 +686,11 @@ function eventBody(ev) {
     if (p.error) box.append(el('div', 'note', str(p.error)))
     const last = str(p.last_assistant_message)
     if (last) box.append(bodyOf(last))
+  } else if (ev.kind === 'session.start') {
+    // SessionStart の入力。model は載らないことがある (C61)
+    box.append(el('div', 'note', [str(p.source), str(p.model)].filter(Boolean).join(' · ')))
+  } else if (ev.kind === 'model.switch') {
+    box.append(el('div', 'note', `${str(p.from_model)} → ${str(p.to_model)}`))
   } else if (ev.kind === 'turn.end') {
     const last = str(p.last_assistant_message)
     if (last) {
@@ -1473,7 +1478,7 @@ const FILTER_KEYS = { mailboxes: 'agent-hub.filter.mailboxes', kinds: 'agent-hub
 const KIND_OPTIONS = [
   { key: 'request', label: 'request' }, { key: 'reply', label: 'reply' }, { key: 'notice', label: 'notice' },
   { key: 'turn.end', label: 'turn end' }, { key: 'turn.failed', label: 'turn failed' }, { key: 'question.answered', label: 'answered' },
-  { key: 'permission.resolved', label: 'approved' }, { key: 'notification', label: 'notification' }, { key: 'session.boundary', label: 'boundary' },
+  { key: 'permission.resolved', label: 'approved' }, { key: 'notification', label: 'notification' }, { key: 'session.boundary', label: 'boundary' }, { key: 'session.start', label: 'session start' }, { key: 'model.switch', label: 'model switch' },
 ]
 // Noise に含める Event の種類 (既定)。何を含めるかの設定は C60。待ちを表す質問・許可待ちは含めない
 const NOISE_KINDS = new Set(['notification'])
@@ -1808,6 +1813,25 @@ function sumLayers(mailboxes) {
   }
   return out
 }
+// --- 最後に見えたモデルと effort (C61) ---
+// 手元にある Event (最近の 200 件と SSE の新着) から、その Mailbox の新しい方を取る。値は表示だけ。今の設定の保証ではない
+const EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max'])
+// claude-opus-5 → opus-5、末尾の日付 (-20250929 など) は落とす。表示だけ。完全な ID は tooltip に出す
+const shortModel = (id) => id.replace(/^claude-/, '').replace(/-\d{8}$/, '')
+function lastSeenOf(mb) {
+  let model = null
+  let effort = null
+  for (const ev of evtData.values()) {
+    if (ev.mailbox !== mb.name || ev.superseded) continue
+    const p = ev.payload && typeof ev.payload === 'object' ? ev.payload : {}
+    const modelValue = ev.kind === 'session.start' ? p.model : ev.kind === 'model.switch' ? p.to_model : null
+    if (typeof modelValue === 'string' && modelValue !== '' && (!model || model.ts < ev.ts)) model = { ts: ev.ts, id: modelValue }
+    const level = p.effort && typeof p.effort === 'object' ? p.effort.level : null
+    if (EFFORT_LEVELS.has(level) && (!effort || effort.ts < ev.ts)) effort = { ts: ev.ts, level }
+  }
+  return { model: model ? model.id : null, effort: effort ? effort.level : null }
+}
+
 // --- カードの状態 (design.md §3.15) ---
 // 件数の層とは別に、今そのセッションが何をしているかを 1 つにまとめる。Hub は状態を持たず、材料
 // (backlog の lastHanded・outgoing・awaitingReply と、hook の Event) から UI が導く。
@@ -2381,6 +2405,14 @@ function renderMailboxes(all) {
       const d = el('div', 'doing', st.detail)
       d.title = st.detail
       box.append(d)
+    }
+    // 最後に見えたモデルと effort (C61)。値がなければ何も出さず、片方だけならその片方だけ
+    const seen = lastSeenOf(mb)
+    const shown = [seen.model && shortModel(seen.model), seen.effort].filter(Boolean)
+    if (shown.length) {
+      const me = el('div', 'meta modeleff', shown.join(' · '))
+      me.title = `${seen.model ? `Model: ${seen.model}. ` : ''}${seen.effort ? `Effort: ${seen.effort}. ` : ''}Last seen value, not a guarantee of the current setting.`
+      box.append(me)
     }
     box.append(backlogChips(el('div', 'backlog'), layersOf(mb), true))
     // どのリポジトリの Mailbox か。最後に attach した作業フォルダ (古い Hub と、記録より前の Mailbox は返さない)

@@ -107,6 +107,7 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
 - Hub が配信する 1 枚の HTML (まずはフレームワークなし)。
 - Hub は `GET /` のたびに `public/index.html` を読み直すので、UI の変更はブラウザの再読み込みで効き、Hub と shim の変更は再起動 (shim は新しいセッション) まで効かない。新しい UI が古い Hub と組み合わさるのが普通なので、Hub の応答に足した項目は UI では省略可として読む (2026-10-16、`recipients` がない古い Hub の応答で UI が例外を出し、送れたのに失敗と表示して二重送信になった)。
 - 機能: イベント/メッセージのライブ表示 (SSE)、メッセージ作成・送信、受信メッセージの無編集転送ボタン、Mailbox 一覧 (接続状態・購読・未読数。切れていれば時刻と理由)。
+  カードには最後に見えたモデルと effort を小さく出す (`opus-5 · medium`。手元の Event から。値がなければ出さず、tooltip に「最後に見えた値で、今の設定の保証ではない」と書く。C61)。
   カードの状態 (Needs you / Working など)、溜まりのバッジ、roadmap の項目のカード (Items)、返事の見出しの色分けは §3.15。
 - 画面は固定し、スクロールはスレッド (`#list`) と Mailbox 一覧 (サイドバー) だけ。上部はスレッド操作バー (表示の見せ方: Filter ▾・Compact・Keep latest・Reset、今後の検索など)、下部はコンポーザー (送る操作: kind・宛先・本文・Send、今後の添付など) に置く。
 - メッセージは送り手の role で色分けする (ラベルのチップと縁取り。role がなければ mailbox 名)。kind は枠線だけのバッジで示し、色には使わない。送信フォームの kind も同じバッジを並べたトグルにし、選んだものだけ塗る。
@@ -891,6 +892,15 @@ vcp の C142 を UI から vcp.leader へ依頼した (seq 69)。leader → depl
 - **対象と問いだけの依頼**: leader が reviewer に `TARGET: eceb110~1..f52e297` と `QUESTION:` だけを送った。reviewer は依頼に書かれていない正本を自分で読んだ: CLAUDE.md の「ドキュメントの更新」、roadmap 冒頭の書き方の規則、変更前の C44 の節 (`git show`)、design.md §3.15・§2・§9、protocol.md §3。3 件の指摘を、それぞれ照らした正本の場所 (ファイルと節) を付けて返した。試験は流さず、流していないことを `NOT VERIFIED` に書いた。区間の会話は届いていないのに、正本を読んで照らせた。1 回の観察なので、毎回そうなるとは言い切れない。
 - **項目の文面だけを見る一周**: 起票したばかりの C48 (完了条件がすべて `[ ]`) を `TARGET: C48` で見せた。reviewer は変更を見ず、文面だけを見て、本文への指摘 2 件と、完了条件の訂正案 4 件 (置き換え 3、行の追加 1) を `PROPOSED CONDITIONS:` に返した。leader は訂正案を deployer に渡さず、要判断として番号を付けて人に伝えた (既定は「変えない」)。ユーザーが 2026-10-27 に全部を承認し、deployer は承認された行だけを変えた。項目の本文にも承認の経緯を書いた。
 - **教訓**: C44 の完了条件の「種類の絞り込み」の読み替えは、人の回答がないまま既定として記録されていた。完了条件の意味が変わる要判断は、答えがなければ既定を採らず、もう一度尋ねることにした (leader.md)。
+
+### 6.1v モデルと effort の取り方 (2026-10-29、公式 hooks ページで確認、C61。実機の確認は未了)
+
+公式 hooks ページ (code.claude.com/docs/en/hooks) の記述だけを書く。実機のペイロードはまだ見ていない (下の未確認)。
+- **effort**: 共通入力に `effort: { level }` (`low` / `medium` / `high` / `xhigh` / `max`)。tool-use の文脈の Event (`PreToolUse` / `PostToolUse` / `Stop` / `SubagentStop`) に載り、モデルが effort に対応するときだけ。`$CLAUDE_EFFORT` でも見える。
+- **effort の変更を知らせる hook はない** (Event の一覧にない)。変更は、次に届く tool-use 文脈の Event の `effort.level` を前と比べて分かるので、ターンの終わりまで遅れる。`ConfigChange` は設定ファイルの変更を知らせ、effort を含むかはページの範囲では確認できなかった。
+- **model**: `SessionStart` の入力に `model` (任意。`/clear` の後や会話の復元では載らないことがある、とページにある)。`PostModelSwitch` は `from_model` / `to_model` を持ち、`source` は `command` (`/model`) / `picker` / `sdk` / `auto` (自動のフォールバック) / `resume` (復元)。`Stop` などには載らない。`$CLAUDE_MODEL` はない。
+- **採った形**: `SessionStart` は `session.start`、`PostModelSwitch` は `model.switch` として payload を入力のまま保存する (変換は kind だけを決める)。カードは手元の Event から、effort は `payload.effort.level`、model は `session.start` の `payload.model` か `model.switch` の `payload.to_model` の新しい方を出す。
+- **NOT VERIFIED (実機で未確認)**: `SessionStart` / `PostModelSwitch` の実際のペイロードの形、`model` が載る条件、`/model` で変えたときの `to_model` の形。新しい Claude Code セッションを hook の追加のあとに起動し、`/model` で切り替えて確かめる (人の操作。要操作)。effort が実機の `effort.level` に載るかも同じ機会に確かめる。
 
 ### 6.2 未検証
 

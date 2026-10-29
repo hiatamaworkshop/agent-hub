@@ -17,6 +17,12 @@
     ],
     "PostToolUseFailure": [
       { "hooks": [{ "type": "http", "url": "http://127.0.0.1:7777/events/claude-code", "timeout": 5, "headers": { "Authorization": "Bearer $HUB_TOKEN", "X-Hub-Mailbox": "$HUB_MAILBOX" }, "allowedEnvVars": ["HUB_TOKEN", "HUB_MAILBOX"] }] }
+    ],
+    "SessionStart": [
+      { "hooks": [{ "type": "http", "url": "http://127.0.0.1:7777/events/claude-code", "timeout": 5, "headers": { "Authorization": "Bearer $HUB_TOKEN", "X-Hub-Mailbox": "$HUB_MAILBOX" }, "allowedEnvVars": ["HUB_TOKEN", "HUB_MAILBOX"] }] }
+    ],
+    "PostModelSwitch": [
+      { "hooks": [{ "type": "http", "url": "http://127.0.0.1:7777/events/claude-code", "timeout": 5, "headers": { "Authorization": "Bearer $HUB_TOKEN", "X-Hub-Mailbox": "$HUB_MAILBOX" }, "allowedEnvVars": ["HUB_TOKEN", "HUB_MAILBOX"] }] }
     ]
   }
 }

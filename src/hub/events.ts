@@ -70,6 +70,11 @@ export const fromClaudeCodeHook: EventConverter = (input, previous, now) => {
     // API のエラーでターンが終わった (usage limit など)。error と last_assistant_message は payload のまま持つ (design.md §6.1q)
     case 'StopFailure':
       return { event: { ...base, kind: 'turn.failed' } }
+    // モデルと起動の種類。payload は入力のまま持つ (model は SessionStart に載らないことがある。C61)
+    case 'SessionStart':
+      return { event: { ...base, kind: 'session.start' } }
+    case 'PostModelSwitch':
+      return { event: { ...base, kind: 'model.switch' } }
     case 'PreToolUse':
     case 'PostToolUse':
     case 'PostToolUseFailure': {
