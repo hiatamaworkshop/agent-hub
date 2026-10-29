@@ -18,7 +18,6 @@
 
 取りかかる順。状態の行のない項目とブロックの項目だけを載せる (題は索引から引く)。並べ替えは人の判断。
 
-- [ ] C63
 - [ ] C64
 - [ ] C66
 - [ ] C65
@@ -329,6 +328,12 @@
   - レビュー #273 の指摘を扱った: 「最後に見えた」値の既知の限界 (model は起動と切り替えの Event だけ) を §6.1v と §3.2 に書き、tooltip に足した。SessionStart の http が届かなかった件は公式の記述どおりと書き、実機の切り分けは未了と明記した。日付つきのモデル名の表示は合成の hook の POST で確かめたと分けた。README に SessionStart の script パスの注意を足した。
   - 試験: `npm test` 342 件が通る。`npm run ui:check` は 77 件が合格 (日付なし・日付つきのモデル名の場面を含む)。`npm run docs:check` はエラーなし。
   - 残り (記録のみ、§6.1v の NOT VERIFIED): effort を変えたあと、カードが次の Stop まで古い値を出すこと。`PostModelSwitch` の source が picker 以外の実ペイロード。
+- [x] C63 GitHub で公開する前の下ごしらえ (2026-10-29、ユーザーの依頼。public にする操作は人が行う、告知はしない)
+  - `LICENSE` (MIT、Copyright 2026 Hiatama Workshop) を置き、`package.json` の `license` を `MIT` にした。`"private": true` は npm への誤公開を防ぐもので、GitHub の公開とは別なので残した
+  - 履歴の走査 (全 157 コミット、`git log --all`): 一度でも足されたファイルのうち `.env*`・`data/`・`logs/`・`roles.json`・`*.sqlite`・`*.log`・`*.jsonl` は `.env.example` だけ。今の `.env` の `HUB_TOKEN` の値は pickaxe (`-S`) と全リビジョンの `git grep` で 0 件。`token`/`Bearer`/`secret` に続く 16 文字以上の値と既知の鍵の形式 (`sk-ant-`・`ghp_`・`github_pat_`・`AKIA`・`tvly-`・`xox[bp]-`) を追加の行から探し、出たのは試験用の `test-token-0123456789` だけ
+  - 個人のパスは `docs/plan-p0.md` の 1 か所で、`<agent-hub の絶対パス>` に置き換えた (試験の `/home/x/…` などは架空)。CLAUDE.md の「private リポジトリ」の書き方を外した
+  - ほかのプロジェクト名 (vcp・cite-bridge・cairn・engram・dcp) は文書・試験・起動スクリプトに約 170 か所あり、一覧で報告した。それらも公開する前提なので、名前も過去の履歴もそのまま残す (ユーザーが決定、2026-10-29)
+  - `npm test` 342 件と `npm run docs:check` が通る
 
 ## 項目
 
@@ -521,19 +526,6 @@ GitHub で公開する (2026-10-29、ユーザーが決定。告知はしない)
 - [ ] Linux (WSL かコンテナ) と Windows で実際に起動して確かめ、design.md §6 に記録する。macOS は確かめられなければ未確認と書く
 - [ ] README の起動の手順を OS ごとに直す
 - [ ] `npm test` が通る
-
-### C63. GitHub で公開する前の下ごしらえ
-
-GitHub の private リポジトリを public にする (2026-10-29、ユーザーが決定。告知はしない)。public にする操作は人が行う。ライセンスは MIT (同日、ユーザーが決定)。
-
-#### 完了条件
-- [x] `LICENSE` (MIT) を置き、`package.json` の `license` を `MIT` にする
-- [x] git の履歴全体を走査し、トークン・`.env`・`data/`・`logs/` の中身が一度も入っていないことを確かめ、方法と結果を報告する。見つかったら止めて報告する
-- [x] 文書とスクリプトから個人のパス (`C:/Users/<名前>/…` など) を除く (例 `docs/plan-p0.md`)
-- [ ] 文書に出てくるほかの私的なプロジェクト (vcp・cite-bridge など) の名前の箇所を一覧にして報告する。残すか直すかは人が決める
-- [x] `npm test` と `npm run docs:check` が通る
-
-2026-10-29 の走査 (全 157 コミット、`git log --all`): 一度でも足されたファイルのうち `.env*`・`data/`・`logs/`・`roles.json`・`*.sqlite`・`*.log`・`*.jsonl` は `.env.example` だけ。今の `.env` の `HUB_TOKEN` の値は pickaxe (`-S`) と全リビジョンの `git grep` で 0 件。`token`/`Bearer`/`secret` に続く 16 文字以上の値と既知の鍵の形式 (`sk-ant-`・`ghp_`・`github_pat_`・`AKIA`・`tvly-`・`xox[bp]-`) を追加の行から探し、出たのは試験用の `test-token-0123456789` だけ。個人のパスは `docs/plan-p0.md` の 1 か所で、`<agent-hub の絶対パス>` に置き換えた (試験の `/home/x/…` などは架空)。
 
 ### C64. 台帳と返事の型を、英語の語彙でも読めるようにする
 

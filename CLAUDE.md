@@ -74,7 +74,7 @@
 - ブランチは `main`。フェーズごとの作業はトピックブランチを切ってよい。
 - コミットメッセージ: 件名は 72 文字以内・命令形、`feat:` / `fix:` / `docs:` などのプレフィクス可。
   本文は 1〜3 行で「なぜ」を書く。ファイル単位の詳細は diff に任せる。
-- **push はユーザーの指示があるまでしない**。リモートは `origin` = GitHub の private リポジトリ `hiatamaworkshop/agent-hub`。
+- **push はユーザーの指示があるまでしない**。リモートは `origin` = GitHub のリポジトリ `hiatamaworkshop/agent-hub`。
 
 ## ドキュメントの更新
 
