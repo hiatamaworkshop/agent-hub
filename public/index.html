@@ -1445,7 +1445,8 @@ async function loadMailboxes() {
   mailboxesLoaded = true
   buildProjects()
   renderItems() // 前回の選択が戻ると Items の絞り込みも変わる
-  pruneMailboxFilter()
+  // 消えた Mailbox を外したときは、履歴を先に描いていても、チップ・Reset・隠れた件数・.off を掛け直す
+  if (pruneMailboxFilter()) applyFilter()
   renderMailboxes(mailboxes)
   buildTo(mailboxes)
   applyFilter()
@@ -1614,11 +1615,13 @@ function loadFilters() {
   } catch {}
 }
 // Mailbox の一覧が届いたら、今ない名前は黙って落とす (届く前は残す)
+// 外したら true (呼ぶ側は applyFilter で掛け直す)
 function pruneMailboxFilter() {
   const gone = [...FILTER.mailboxes].filter((n) => !mailboxList.some((mb) => mb.name === n))
-  if (!gone.length) return
+  if (!gone.length) return false
   for (const n of gone) FILTER.mailboxes.delete(n)
   saveSet(FILTER_KEYS.mailboxes, FILTER.mailboxes)
+  return true
 }
 // Filter ▾ のポップオーバー。外を押すか Esc で閉じる
 function closeFilter() {
@@ -1986,7 +1989,10 @@ function jumpTo(t) {
   const why = hiddenBy({ ...viewOf(box), compacted: false })
   if (why) {
     const what = t.eventId ? 'This event' : `#${t.oldestSeq}`
-    setStatus(why === 'project' ? `${what} is hidden by the project filter. Choose All projects to show it.` : `${what} is hidden by the ${AXES.find((a) => a.key === why).label} filter. Reset to show it.`)
+    // Noise は Reset ではなく、チップの × かポップオーバーで外す (Reset は既定の Noise を on に戻すため)
+    const hint = { project: 'Choose All projects to show it.', noise: 'Remove the Hide noise chip (×) or untick Noise in Filter ▾ to show it.' }[why] || 'Reset to show it.'
+    const name = why === 'project' ? 'project' : AXES.find((a) => a.key === why).label
+    setStatus(`${what} is hidden by the ${name} filter. ${hint}`)
     return
   }
   if (box.dataset.compacted === '1') unfold()
@@ -2509,6 +2515,8 @@ async function catchUp(after, counts) {
   for (;;) {
     const { messages } = await api(`/messages?after=${after}&limit=1000`)
     for (const m of messages) receive(m, counts)
+    // 履歴は一覧 (/mailboxes) より先に描かれることがある。隠れた件数とチップは、描いたところで出しておく
+    renderBar()
     if (messages.length < 1000) return
     after = messages[messages.length - 1].seq
   }

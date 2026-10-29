@@ -59,6 +59,7 @@ async function until(fn, label, tries = 40) {
 
 let nextId = 0
 const pending = new Map()
+const paused = [] // Fetch で止めた要求 (/mailboxes を履歴より後に返すための場面で使う)
 function cdp(method, params = {}) {
   const id = ++nextId
   ws.send(JSON.stringify({ id, method, params }))
@@ -141,6 +142,7 @@ try {
   await new Promise((r) => ws.addEventListener('open', r, { once: true }))
   ws.addEventListener('message', (e) => {
     const m = JSON.parse(e.data)
+    if (m.method === 'Fetch.requestPaused') paused.push(m.params.requestId)
     const p = m.id && pending.get(m.id)
     if (!p) return
     pending.delete(m.id)
@@ -602,6 +604,10 @@ try {
     return { noise: FILTER.noise, resetShown: !$('resetFilter').hidden, chips: [...document.querySelectorAll('#chips .fchip')].map((c) => c.textContent), evt: off.filter((b) => b.classList.contains('evt')).map((b) => b.querySelector('.kind').textContent), msg: off.filter((b) => b.classList.contains('msg')).length, waitingOff: off.filter((b) => b.classList.contains('waiting')).length }
   })()`)
   verify('保存がなければ Noise は on: 通知の Event だけが隠れ、Noise のチップが出て、Reset は出ない (C59)', dflt.noise === true && !dflt.resetShown && JSON.stringify(dflt.chips) === JSON.stringify(['Hide noise×']) && dflt.evt.length >= 1 && dflt.evt.every((k) => k === 'notification') && dflt.msg === 0 && dflt.waitingOff === 0, dflt)
+  // 通知が Noise で隠れているときのバッジの飛び先は、Reset ではなくチップの × かポップオーバーで外すと言う (C59 追補)
+  const notifId = await evaluate("(() => { const b = [...document.querySelectorAll('#list .evt.off')].find((x) => x.querySelector('.kind').textContent === 'notification'); return b ? b.dataset.id : null })()")
+  const noiseHint = await evaluate(`(() => { jumpTo({ count: 1, oldestAt: null, oldestSeq: null, eventId: ${JSON.stringify(notifId)} }); return $('status').textContent })()`)
+  verify('通知が Noise で隠れているバッジの飛び先は、チップの × かポップオーバーで外すと言い、Reset とは言わない (C59)', notifId !== null && noiseHint.includes('hidden by the Noise filter') && noiseHint.includes('Hide noise chip (×)') && noiseHint.includes('Filter ▾') && !noiseHint.includes('Reset'), { notifId, noiseHint })
   // b. Noise のチップの × で off になり、何も隠れず、Reset が出る。on に戻すと通知だけがまた隠れる
   const chipX = (text) => evaluate(`(() => {
     const c = [...document.querySelectorAll('#chips .fchip')].find((x) => x.textContent.startsWith(${JSON.stringify(text)}))
@@ -657,6 +663,19 @@ try {
   const allOk = all.humanReq >= 1 && all.humanReqOff === 0 && all.waits >= 1 && all.waitsOff === 0 && all.cards.includes('demo.leader') && all.cards.includes('demo.quiet') && !all.cards.includes('demo.deployer')
   verify('全部の軸を掛けても、質問・許可待ち・人宛ての request と、待ちのあるカードは隠れない (C59)', allOk, all)
   await reset()
+  // 保存された Mailbox が消えていて、履歴が /mailboxes より先に描かれる場面。/mailboxes を止めて履歴だけ描かせ、届いたら落とす
+  await evaluate("localStorage.setItem('agent-hub.filter.mailboxes', JSON.stringify(['demo.gone']))")
+  await cdp('Fetch.enable', { patterns: [{ urlPattern: '*/mailboxes', requestStage: 'Request' }] })
+  await cdp('Page.navigate', { url: `${HUB}/?token=${TOKEN}` })
+  await until(async () => paused.length > 0 && (await evaluate("document.querySelectorAll('#list .msg').length")) > 0, 'history before mailboxes')
+  const stale = await evaluate("({ msgs: document.querySelectorAll('#list .msg').length, msgOff: document.querySelectorAll('#list .msg.off').length, chips: [...document.querySelectorAll('#chips .fchip')].map((c) => c.textContent), resetShown: !$('resetFilter').hidden })")
+  await cdp('Fetch.continueRequest', { requestId: paused[0] })
+  await sleep(1000)
+  await cdp('Fetch.disable')
+  const fresh = await evaluate("({ msgOff: document.querySelectorAll('#list .msg.off').length, chips: [...document.querySelectorAll('#chips .fchip')].map((c) => c.textContent), resetShown: !$('resetFilter').hidden, stored: localStorage.getItem('agent-hub.filter.mailboxes') })")
+  verify('保存された消えた Mailbox は、履歴が先に描かれても、一覧が届いたとき外れてチップと Reset が消え、隠れていたものが出る (C59)', stale.msgs > 0 && stale.msgOff > 0 && stale.chips.includes('Mailbox: demo.gone×') && stale.resetShown && fresh.msgOff === 0 && JSON.stringify(fresh.chips) === JSON.stringify(['Hide noise×']) && !fresh.resetShown && fresh.stored === '[]', { stale, fresh })
+  await reload()
+
   // f. Compact: 畳んだ件数と Expand はスレッド操作バーに出る。待ちは畳まれず、Expand で全部戻る
   await evaluate("$('keep').value = 1; $('fold').click()")
   await sleep(200)
