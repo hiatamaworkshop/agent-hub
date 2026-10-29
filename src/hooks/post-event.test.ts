@@ -5,6 +5,7 @@ import { createServer, type IncomingHttpHeaders, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { after, before, describe, it } from 'node:test'
+import { fromClaudeCodeHook } from '../hub/events.js'
 
 // command hook の本体 (design.md §3.11)。子プロセスとして起動し、偽の Hub (ローカルの HTTP サーバー) に POST させて確かめる
 const SCRIPT = resolve(import.meta.dirname, '../../tools/hooks/post-event.mjs')
@@ -39,9 +40,9 @@ after(async () => {
 })
 
 // hook を起動する。env は HUB_* だけを上書きし、PATH はそのまま (git を探せるように)
-function runHook(stdin: string, env: Record<string, string | undefined> = {}) {
+function runHook(stdin: string, env: Record<string, string | undefined> = {}, args: string[] = []) {
   return new Promise<{ code: number | null; stdout: string; stderr: string }>((ok, fail) => {
-    const child = spawn(process.execPath, [SCRIPT], {
+    const child = spawn(process.execPath, [SCRIPT, ...args], {
       env: { ...process.env, HUB_PORT: String(port), HUB_TOKEN: TOKEN, HUB_MAILBOX: 'deployer', ...env },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
@@ -83,6 +84,7 @@ async function makeRepo(): Promise<string> {
 }
 
 const stop = (cwd: string) => ({ session_id: 's1', cwd, hook_event_name: 'Stop', last_assistant_message: 'done', stop_hook_active: false })
+const sessionStart = (cwd: string) => ({ session_id: 's1', cwd, hook_event_name: 'SessionStart', source: 'startup', model: 'claude-opus-5' })
 
 describe('tools/hooks/post-event.mjs', () => {
   it('git リポジトリ: HEAD・変更・未追跡を agent_hub_git に足し、認証と mailbox のヘッダーを付けて送る', async () => {
@@ -148,5 +150,47 @@ describe('tools/hooks/post-event.mjs', () => {
       assert.equal(r.stdout + r.stderr, '')
     }
     assert.equal(received.length, count)
+  })
+
+  it('--no-git: git リポジトリの中でも git を呼ばず、入力をそのまま送る (agent_hub_git は足さない)', async () => {
+    const repo = await makeRepo()
+    const input = sessionStart(repo)
+    received = []
+    const r = await runHook(JSON.stringify(input), {}, ['--no-git'])
+    assert.equal(r.code, 0)
+    assert.equal(r.stdout + r.stderr, '')
+    assert.equal(received.length, 1)
+    assert.deepEqual(received[0]!.body, input)
+    assert.equal('agent_hub_git' in received[0]!.body, false)
+  })
+
+  it('--no-git で Hub が止まっている: exit 0 で、何も出さない', async () => {
+    const probe = createServer()
+    await new Promise<void>((ok) => probe.listen(0, '127.0.0.1', ok))
+    const deadPort = (probe.address() as { port: number }).port
+    await new Promise<void>((ok) => probe.close(() => ok()))
+    const r = await runHook(JSON.stringify(sessionStart(await tempDir())), { HUB_PORT: String(deadPort) }, ['--no-git'])
+    assert.equal(r.code, 0)
+    assert.equal(r.stdout + r.stderr, '')
+  })
+
+  // Hub が受け取るときの変換 (src/hub/events.ts の fromClaudeCodeHook) を、fake Hub が受けた body に掛けて確かめる
+  it('SessionStart は --no-git の有無のどちらでも session.start になる。changes は git の欄があるときだけ付く', async () => {
+    const repo = await makeRepo()
+    const input = sessionStart(repo)
+
+    received = []
+    await runHook(JSON.stringify(input), {}, ['--no-git'])
+    const plain = fromClaudeCodeHook(received[0]!.body, undefined, new Date())
+    assert.ok('event' in plain)
+    assert.equal(plain.event.kind, 'session.start')
+    assert.equal('changes' in plain.event, false)
+
+    received = []
+    await runHook(JSON.stringify(input))
+    const withGit = fromClaudeCodeHook(received[0]!.body, undefined, new Date())
+    assert.ok('event' in withGit)
+    assert.equal(withGit.event.kind, 'session.start')
+    assert.equal(withGit.event.changes?.untracked.includes('sub/new.md'), true)
   })
 })

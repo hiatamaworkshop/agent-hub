@@ -139,7 +139,8 @@ Claude Code の HTTP hook で、`AskUserQuestion`・許可待ち・ターン終�
    `--settings` で渡す方法は 2.1.301 で誤動作した (design.md §6.1f) ので使わない。
 2. hook の `Authorization` は環境変数 `HUB_TOKEN` から作られる。`tools/dev/start-agent.ps1` は `.env` の値を渡すので何もしなくてよい。手で `claude` を起動するなら、先に `$env:HUB_TOKEN` を設定する。
    その場合、トークンはセッションの Bash などからも見える。`.env` と同じ扱い。
-   `PostToolUse` / `PostToolUseFailure` は、許可待ちが解けたことを知るため全ツールで送る (Hub は許可待ちの直後の 1 件だけ記録し、ほかは捨てる。1 回あたり数 ms。design.md §6.1s)。前の設定 (`matcher: AskUserQuestion`) を写してあるなら、`matcher` を外し `PostToolUseFailure` を足す。`SessionStart` と `PostModelSwitch` も足す (カードに最後に見えたモデルと effort を出すため。C61)。
+   `PostToolUse` / `PostToolUseFailure` は、許可待ちが解けたことを知るため全ツールで送る (Hub は許可待ちの直後の 1 件だけ記録し、ほかは捨てる。1 回あたり数 ms。design.md §6.1s)。前の設定 (`matcher: AskUserQuestion`) を写してあるなら、`matcher` を外し `PostToolUseFailure` を足す。`PostModelSwitch` も足す (カードに最後に見えたモデルと effort を出すため。C61)。
+   `SessionStart` は **command hook だけ** (公式 hooks の記述。HTTP hook では Event が届かなかった。design.md §6.1v)。`tools/hooks/settings.json` の形で写す: `"command": "node", "args": ["${CLAUDE_PROJECT_DIR}/tools/hooks/post-event.mjs", "--no-git"]`。`--no-git` は外さない (git を呼ばず、入力をそのまま送る速い道。C61)。
 3. Hub が止まっていると、hook はエラーを表示するだけで作業は止まらない (タイムアウト 5 秒)。1 MB を超える入力 (大きなファイルの `Read` の結果など) も、Hub が 413 を返して hook のエラーになるだけ。
    設定ファイルの hook は、起動中のセッションにも読み直されて効く (起動し直さなくてよい。design.md §6.1q)。
 4. (任意) `Stop` で変更の事実 (HEAD・変更ファイル・未追跡ファイル) を Hub に送るには、[tools/hooks/settings.command.json](tools/hooks/settings.command.json) の `Stop` を使う。`Stop` の HTTP hook (1 の `Stop`) と**両方置くと `turn.end` が 2 件になる**ので、HTTP の `Stop` は外して置き換える。

@@ -8,14 +8,17 @@
 //   untracked = git ls-files --others --exclude-standard (無視されていない未追跡ファイル)
 //   パスはどちらもリポジトリのルートからの相対パス。配列はそれぞれ 1000 件まで
 //
+//   --no-git: git を一切呼ばず、入力をそのまま送る (SessionStart など、git の事実が要らない Event 用の速い道)。上限は 2 秒
+//
 // 環境変数 (HTTP hook と同じもの): HUB_TOKEN (Bearer)、HUB_MAILBOX (X-Hub-Mailbox、空なら省く)、HUB_PORT (既定 7777)
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
 const FIELD = 'agent_hub_git'
 const MAX_ITEMS = 1000
+const NO_GIT = process.argv.includes('--no-git')
 // hook 全体の上限。settings 側の timeout (6 秒) より先にこちらで終わらせる
-const BUDGET_MS = 5000
+const BUDGET_MS = NO_GIT ? 2000 : 5000
 
 const run = promisify(execFile)
 const started = Date.now()
@@ -70,7 +73,7 @@ async function main() {
   const input = JSON.parse(await readStdin())
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return
   const cwd = typeof input.cwd === 'string' && input.cwd !== '' ? input.cwd : process.cwd()
-  const facts = await gitFacts(cwd)
+  const facts = NO_GIT ? undefined : await gitFacts(cwd)
   const body = facts ? { ...input, [FIELD]: facts } : input
 
   const headers = { 'content-type': 'application/json' }

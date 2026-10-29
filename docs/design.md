@@ -896,6 +896,7 @@ vcp の C142 を UI から vcp.leader へ依頼した (seq 69)。leader → depl
 ### 6.1v モデルと effort の取り方 (2026-10-29、公式 hooks ページで確認、C61。実機の確認は未了)
 
 公式 hooks ページ (code.claude.com/docs/en/hooks) の記述だけを書く。実機のペイロードはまだ見ていない (下の未確認)。
+- **SessionStart の hook の種類 (公式、実機は未確認)**: 「Only `type: "command"` and `type: "mcp_tool"` hooks are supported」。`http` の SessionStart は無視される。実機でも、`SessionStart` を HTTP hook (`type: "http"`) で置いたとき Hub に Event が 1 件も届かなかった (2026-10-29、C61 の確認中の観察。原因の切り分けは未了)。そのため `tools/hooks/settings.json` は `command` で `tools/hooks/post-event.mjs --no-git` を呼ぶ形にした (`--no-git` は git を呼ばず入力をそのまま送る)。`PostModelSwitch` の対応する hook の種類は、今読んだ範囲のページには書かれていなかった。HTTP のまま置き、実機の確認は未了。
 - **effort**: 共通入力に `effort: { level }` (`low` / `medium` / `high` / `xhigh` / `max`)。tool-use の文脈の Event (`PreToolUse` / `PostToolUse` / `Stop` / `SubagentStop`) に載り、モデルが effort に対応するときだけ。`$CLAUDE_EFFORT` でも見える。
 - **effort の変更を知らせる hook はない** (Event の一覧にない)。変更は、次に届く tool-use 文脈の Event の `effort.level` を前と比べて分かるので、ターンの終わりまで遅れる。`ConfigChange` は設定ファイルの変更を知らせ、effort を含むかはページの範囲では確認できなかった。
 - **model**: `SessionStart` の入力に `model` (任意。`/clear` の後や会話の復元では載らないことがある、とページにある)。`PostModelSwitch` は `from_model` / `to_model` を持ち、`source` は `command` (`/model`) / `picker` / `sdk` / `auto` (自動のフォールバック) / `resume` (復元)。`Stop` などには載らない。`$CLAUDE_MODEL` はない。
