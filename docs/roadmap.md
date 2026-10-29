@@ -22,6 +22,7 @@ In the order they will be taken up. Only items without a status line and blocked
 - [ ] C71
 - [ ] C70
 - [ ] C72
+- [ ] C74
 
 (Items with a status line are listed under "Items".)
 
@@ -546,7 +547,7 @@ Related: it becomes the destination for having another agent or vendor double-ch
 ### C60. Making which notifications Noise includes configurable
 Status: held(after C59)
 
-C59's Noise treats notification-type Events as fixed. Let a human configure what Noise includes (per Event kind). Where the setting lives (`settings.json` or `localStorage`) is decided by looking at what C59's implementation showed. Once decided, remove the status and write the done-when conditions.
+C59's Noise treats notification-type Events as fixed. Let a human configure what Noise includes (per Event kind). Where the setting lives is decided by looking at what C59's implementation showed: per browser in `localStorage` like the other filters, or shared in the Hub's configuration file (C74). C74 does not decide this. Once decided, remove the status and write the done-when conditions.
 
 ### C70. Give the browser tab a hub icon that shows the same two signals as the cards
 
@@ -612,21 +613,41 @@ Raised 2026-10-30. The project list is the union of the `project` values of Mail
 
 Idea:
 - Order by recent activity (the latest attach or message of that project), most recent first. Computed from existing times; no new state.
-- Projects with no activity for N days (default 30) go under a collapsed "Older" group. They are only hidden from the top, not deleted. N is a setting in the configuration file, not a constant in the page.
+- Projects with no activity for N days (default 30) go under a collapsed "Older" group. They are only hidden from the top, not deleted. N is `projects.olderDays` in the Hub's configuration file (C74), not a constant in the page.
 - Each entry shows how many things wait on the human and how many Mailboxes are connected.
 - A "remove this project" action that deletes its Mailboxes and indexes through the existing deletions, after a confirmation saying how many of each go. The project stays a value (no entity).
 
-Waits for C74 (where the configuration lives and its shape). Not decided: whether the remove action is wanted at all.
+Waits for C74, which builds the configuration file with this value as its first user. Not decided: whether the remove action is wanted at all.
 
-### C74. Decide where settings live, and move what should be configurable there
-Status: proposed
+### C74. A read-only configuration file for the Hub and the page
 
-Raised 2026-10-30 (survey while filing C73). Settings are in four places: environment variables (`.env`, 13 `HUB_*`), `roles.json`, `HUB_DATA_DIR/settings.json` (custom commands only, writable through the API), and the browser's `localStorage` (filters, project, sidebar width, Compact count). Judgment values for the display are constants in `public/index.html` (`STALE_HANDED_HOURS`=12, `BACKGROUND_MAX_MINUTES`=60, `KEEP_DEFAULT`=10, `FLASH_MS`=1500, `SIDE_*`), and the image limits (20 MB, 4 files) are written twice, in the page and in `src/hub/files.ts`.
+Raised 2026-10-30 (survey while filing C73; reviewed the same day). The human prefers a configuration file to constants in code. Settings today are in four places: environment variables (`.env`; the Hub reads 11 `HUB_*`, while `HUB_MAILBOX`, `HUB_ROLE` and `HUB_FILES_DIR` are read by the shim, `npm run team` and hooks), `roles.json`, `HUB_DATA_DIR/settings.json` (custom commands written by the UI through `PUT /settings`, plus a hand-edited `defaultTo`), and the browser's `localStorage` (per-browser preferences).
 
-Idea:
-- Hub-side settings (shared across browsers) go in the Hub's `settings.json`, extended with a validated section for display values; per-browser preferences stay in `localStorage`. The page reads the Hub's values at load.
-- Move to settings: the display judgment values above, the project list's "Older" days (C73), the state colors (the `--st-*` variables of C71 overridable), Noise's contents (C60), and the image limits as one source the page reads from the Hub.
-- Stay as they are: protocol constants (`MESSAGE_KINDS`, `EVENT_KINDS`, `META_MAX_BYTES`), security limits (`MAX_INDEX_BYTES`, `MAX_COMMANDS`), and `HUB_TOKEN` (secrets never go into the settings file). Retention and unread limits stay in `.env` unless a reason to move them appears.
-- Every value is validated for type and range on load; an out-of-range or unknown value falls back to the default and is reported, never trusted. Values reaching the page are used as data (never `innerHTML`, never a selector or path unvalidated).
+Why not extend `data/settings.json`: in Docker it sits in the named volume `hub-data`, out of reach for hand editing; it is state the UI rewrites (the whole file is re-serialized on save, and one broken command makes the whole file 500 `settings_invalid`); and configuration already has a precedent in the repository root (`roles.json`, and the consult item's fixed texts "in the repository's configuration").
 
-Not decided: the file's exact shape, whether colors belong in it, and whether the Hub serves it to the page over the existing API. Once decided, write the done-when conditions and remove the status.
+Shape:
+- `hub.config.json` at the repository root, ignored by git like `/roles.json`, with a committed `hub.config.example.json`. The path can be overridden with `HUB_CONFIG_FILE`. In Docker it is read through the existing `./:/host:ro` mount.
+- The Hub reads it once at startup (like `roles.json`; a change needs a restart) and never writes it. No write API, so holding the browser token does not let anyone change thresholds.
+- Validation is per value: a value of the wrong type, out of range, or an unknown key falls back to the default (or is ignored) and is reported in the Hub's startup log and as a warning in the UI. A broken or missing file means all defaults; the Hub still starts.
+- The Hub serves the validated values to the page (for example `GET /config`, behind the same token). The page uses them as data only (never `innerHTML`, never a selector, path or stylesheet text).
+- Scope: the Hub and the page. The shim, `npm run team` and hooks keep their environment variables. `HUB_TOKEN` and other deployment values (host, port, directories) stay in `.env`; retention and unread limits stay in `.env` too, so no value has two sources.
+- Not moved: protocol constants (`MESSAGE_KINDS`, `EVENT_KINDS`, `META_MAX_BYTES`), security limits (`MAX_INDEX_BYTES`, `MAX_COMMANDS`, the image size and count), and low-value UI constants (`FLASH_MS`, `SIDE_*`, `KEEP_DEFAULT`, which `localStorage` already overrides after the first use). Colors stay in the CSS block of C71 for now; if they move later, only `#rrggbb` values, light and dark pairs, applied with `style.setProperty`.
+- First user: `projects.olderDays` for C73. Other values move when their own items need them (C60 decides Noise's place itself; C75 reads the Hub's limits).
+
+#### Done when
+- [ ] The Hub reads `hub.config.json` (or `HUB_CONFIG_FILE`) once at startup; a missing or non-JSON file gives all defaults and a log line, and the Hub starts.
+- [ ] Each value is validated by type and range; a bad value or unknown key falls back to the default or is ignored, and is named in the startup log and in a UI warning. Covered by `npm test`.
+- [ ] The page gets the validated values from the Hub behind the token and uses them only as data; the Hub has no write API for them.
+- [ ] `hub.config.example.json` is committed with `projects.olderDays` (default 30) and comments in `docs/usage.md`; `/hub.config.json` is in `.gitignore`; the Docker setup reads it through the existing mount (checked with `docker compose up`).
+- [ ] design.md (where configuration lives, §3.8 / §3.14) and protocol.md (the new endpoint) are updated in the same change.
+
+### C75. The page reads the Hub's limits and retention instead of its own copies
+Status: held(after C74)
+
+Raised 2026-10-30 in the C74 review. Two places in `public/index.html` copy values the Hub owns:
+- Image limits: the page's `MAX_IMAGE_BYTES` / `MAX_IMAGES` (20 MB, 4) repeat the Hub's `MAX_UPLOAD_BYTES` / `MAX_FILES_PER_MESSAGE` (`src/hub/files.ts`, whose error text also says "20 MB"), and the shim's `MAX_FETCH_BYTES` (25 MB, `src/shim/files.ts`) must stay at least the Hub's limit. These are security limits and stay constants; only the copies go.
+- `STALE_HANDED_HOURS` (12) exists because hook Events disappear with retention, so it assumes `HUB_READ_RETENTION_HOURS` (default 24) is longer. With retention set below 12 hours, a hand-over whose turn-end Event was already deleted could still show as Working until 12 hours pass (inferred from the code, not observed).
+
+Idea: the Hub serves its upload limits and retention through C74's endpoint (read-only, not settings); the page's pre-check uses them, and the stale threshold is capped at the retention period. A check that the shim's fetch limit is not below the Hub's upload limit is added to `npm test`.
+
+Once C74's endpoint exists, write the done-when conditions and change the status.
