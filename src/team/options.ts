@@ -5,10 +5,11 @@ import { OPENERS, type Opener } from './tabs.js'
 export const USAGE = `Usage:
   npm run team -- [--roles leader,deployer] [--project <dir>] [--attach-timeout 60] [--force] [--no-build]
                   [--permission-mode <mode>] [--tabs ${OPENERS.join('|')}]
-  npm run team -- agent --role <role> [--project <dir>] [--model <model>] [--mailbox <name>] [--permission-mode <mode>]`
+  npm run team -- agent --role <role> [--project <dir>] [--model <model>] [--mailbox <name>] [--permission-mode <mode>]
+  npm run team -- hooks [--project <dir>] [--write]   (list the Hub hooks the project lacks; --write adds them)`
 
 export interface Parsed {
-  command: 'team' | 'agent' | 'hub' | 'help'
+  command: 'team' | 'agent' | 'hub' | 'hooks' | 'help'
   roles: string[]
   role?: string
   project?: string
@@ -19,6 +20,7 @@ export interface Parsed {
   model?: string
   mailbox?: string
   fromTeam: boolean
+  write: boolean
   tabs?: Opener
 }
 
@@ -37,12 +39,13 @@ export function parse(argv: string[]): Parsed {
       model: { type: 'string' },
       mailbox: { type: 'string' },
       'from-team': { type: 'boolean' },
+      write: { type: 'boolean' },
       tabs: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   })
   const sub = positionals[0] ?? 'team'
-  if (positionals.length > 1 || !['team', 'agent', 'hub'].includes(sub)) throw new Error(`Unknown command: ${positionals.join(' ')}`)
+  if (positionals.length > 1 || !['team', 'agent', 'hub', 'hooks'].includes(sub)) throw new Error(`Unknown command: ${positionals.join(' ')}`)
   const timeout = values['attach-timeout'] === undefined ? 60 : Number(values['attach-timeout'])
   if (!Number.isInteger(timeout) || timeout <= 0) throw new Error(`--attach-timeout must be a positive whole number of seconds: ${values['attach-timeout']}`)
   const tabs = values.tabs
@@ -60,6 +63,7 @@ export function parse(argv: string[]): Parsed {
     model: values.model,
     mailbox: values.mailbox,
     fromTeam: values['from-team'] ?? false,
+    write: values.write ?? false,
     tabs: tabs as Opener | undefined,
   }
 }

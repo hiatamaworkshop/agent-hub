@@ -84,7 +84,12 @@ claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels s
 
 ### 5. Hooks (so the cards can show waits)
 
-Copy the `hooks` of [tools/hooks/settings.json](tools/hooks/settings.json) into this repository's `.claude/settings.local.json` (or `~/.claude/settings.json` to use them in every repository). Without them the Hub still delivers messages, but the cards cannot show question waits, permission waits and turn ends. Details and gotchas are in the [usage guide](docs/usage.md#show-question-waits-permission-waits-and-turn-ends-in-the-browser-hooks).
+```sh
+npm run team -- hooks --write                        # this repository
+npm run team -- hooks --project <folder> --write     # another project (or `hub-team hooks --write` in that folder)
+```
+
+It adds to `<project>/.claude/settings.local.json` only the Hub's hook events that are missing from the project's and your user settings, and leaves everything already there as it is (the previous file is kept as `.bak`). Without `--write` it only lists what is missing. Without them the Hub still delivers messages, but the cards cannot show question waits, permission waits and turn ends. Details and gotchas are in the [usage guide](docs/usage.md#show-question-waits-permission-waits-and-turn-ends-in-the-browser-hooks).
 
 ### 6. Start a team (leader / deployer)
 
@@ -112,7 +117,7 @@ npm run team -- --roles leader,deployer --project ~/work/cairn       # cairn.lea
 - `claude` is started in the `--project` folder. The shim points at agent-hub's `dist/` by absolute path (the MCP configuration is written to `agent-hub-mcp.json` under the OS's temporary folder).
 - The default Mailbox name is `<folder name>.<role>`. A Mailbox name is unique across the Hub, so the same role in different projects gives different Mailboxes. Change it with `--mailbox` (only for one role started with `agent`).
 - A `role:deployer` message sent by an agent reaches only the deployer of the sender's own project. To reach another project, address `mailbox:cairn.deployer`. From the browser, it reaches every project if the project selector says `All projects`, or only the selected project if one is selected (design.md §9-7).
-- The target repository's `.claude/settings.local.json` has no hooks, so copy the `hooks` of `tools/hooks/settings.json` into `~/.claude/settings.json`. If they are nowhere, the script warns (it does not stop the start).
+- Hooks: run `npm run team -- hooks --project <folder> --write` once per project (step 5). Do not copy `tools/hooks/settings.json` as is: its `SessionStart` points at `${CLAUDE_PROJECT_DIR}`, which is the other project. Starting a team warns about each missing hook event (it does not stop the start).
 - The browser's card shows `Project: <folder name>` (the full path appears on hover). Attaching to the same Mailbox from a different folder than last time shows the warning `Attached from a different folder (was …)` (it is not refused).
 
 Without the scripts, register the shim in the user scope with an absolute path and start at the project's root with the same flag.

@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { claudeArgs } from './agent.js'
 import { claudeCommand, hookWarning, spawnArgs } from './checks.js'
-import { envSetting, hubRolesFile } from './env.js'
+import { hookTemplate, runHooks } from './hooks.js'
+import { envSetting, hubRolesFile, ROOT } from './env.js'
 import { parse } from './options.js'
 import { commandLine, quoteForPlatform } from './quote.js'
 import { detectOpener, launchFor, wtSeparatorError } from './tabs.js'
@@ -98,17 +99,53 @@ test('agent: claude arguments, with haiku for the deployer and --add-dir last', 
   assert.deepEqual(deployer.slice(4), ['--model', 'haiku', '--add-dir', 'files'])
 })
 
-test('hook warning: found, missing with a command per OS, and an existing settings.local.json', () => {
+test('hook warning: none, some events missing, a script that does not exist, and all set (C69)', () => {
   const home = tmp()
   const project = tmp()
-  assert.match(hookWarning(project, '/hub', 'linux', home)!, /mkdir -p .* && cp .*settings\.local\.json/)
-  assert.match(hookWarning(project, 'C:\\hub', 'win32', home)!, /New-Item -ItemType Directory -Force .*; Copy-Item /)
+  assert.match(hookWarning(project, ROOT, home)!, /No Hub hook settings found.*hooks --project .* --write/)
   mkdirSync(join(project, '.claude'))
-  writeFileSync(join(project, '.claude', 'settings.local.json'), '{}')
-  assert.match(hookWarning(project, '/hub', 'linux', home)!, /by hand instead of overwriting/)
+  const local = join(project, '.claude', 'settings.local.json')
+  writeFileSync(local, '{"hooks":{"Stop":[{"hooks":[{"type":"http","url":"http://127.0.0.1:7777/events/claude-code"}]}]}}')
+  const partial = hookWarning(project, ROOT, home)!
+  assert.match(partial, /Hub hooks missing for .*SessionStart/)
+  assert.doesNotMatch(partial, /missing for Stop,/)
+  writeFileSync(local, '{"hooks":{"Notification":[{"hooks":[{"type":"http","url":"http://127.0.0.1:7777/events"}]}]}}')
+  assert.doesNotMatch(hookWarning(project, ROOT, home)!, /Notification/)
+  writeFileSync(local, '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"node","args":["${CLAUDE_PROJECT_DIR}/tools/hooks/post-event.mjs"]}]}]}}')
+  assert.match(hookWarning(project, ROOT, home)!, /post-event\.mjs, which does not exist here/)
+  rmSync(local)
   mkdirSync(join(home, '.claude'))
-  writeFileSync(join(home, '.claude', 'settings.json'), '{"hooks":{"Stop":[{"url":"http://127.0.0.1:7777/events"}]}}')
-  assert.equal(hookWarning(project, '/hub', 'linux', home), null)
+  writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify(hookTemplate(ROOT, '7777')))
+  assert.equal(hookWarning(project, ROOT, home), null)
+})
+
+test('hooks: the template points at agent-hub by absolute path, and --write adds only what is missing (C69)', () => {
+  const t = hookTemplate(ROOT, '7795')
+  const text = JSON.stringify(t)
+  assert.ok(!text.includes('${CLAUDE_PROJECT_DIR}'))
+  assert.ok(text.includes(`${ROOT.replace(/\\/g, '/')}/tools/hooks/post-event.mjs`))
+  assert.ok(text.includes('127.0.0.1:7795') && !text.includes(':7777'))
+  const home = tmp()
+  const project = tmp()
+  mkdirSync(join(project, '.claude'))
+  const local = join(project, '.claude', 'settings.local.json')
+  const mine = { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node', args: [`${ROOT}/tools/hooks/post-event.mjs`] }] }] }, permissions: { allow: ['Bash(ls)'] } }
+  writeFileSync(local, JSON.stringify(mine))
+  const log = console.log
+  console.log = () => {}
+  try {
+    assert.equal(runHooks(project, ROOT, false, home), 1)
+    assert.deepEqual(JSON.parse(readFileSync(local, 'utf8')), mine)
+    assert.equal(runHooks(project, ROOT, true, home), 0)
+    const after = JSON.parse(readFileSync(local, 'utf8')) as { hooks: Record<string, unknown[]>; permissions: unknown }
+    assert.deepEqual(after.permissions, mine.permissions)
+    assert.deepEqual(after.hooks.Stop, mine.hooks.Stop)
+    assert.deepEqual(Object.keys(after.hooks).sort(), Object.keys(t.hooks!).sort())
+    assert.deepEqual(JSON.parse(readFileSync(`${local}.bak`, 'utf8')), mine)
+    assert.equal(runHooks(project, ROOT, true, home), 0)
+  } finally {
+    console.log = log
+  }
 })
 
 test('wt: an argument with ; is refused because wt would split the command there', () => {

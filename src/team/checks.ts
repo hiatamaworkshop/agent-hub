@@ -1,9 +1,11 @@
 // Checks before starting (does claude run, the hook settings, how stale the checkout is) and the file the agent
 // leaves when claude ends (roadmap C56-C58). Shared by `team` and `agent`.
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
+import { envSetting } from './env.js'
+import { hookState, hookTemplate } from './hooks.js'
 import { quoteForPlatform } from './quote.js'
 
 // The file `agent` writes when claude ends. `team` deletes it before starting a role and reads it while waiting for attach (C56)
@@ -47,22 +49,18 @@ export function testClaudeCli(cmd = claudeCommand()): string | null {
   return lines.length ? lines.join(' / ') : `claude --version ended with exit code ${r.status}`
 }
 
-// Look for the hook settings (the Hub's /events) in the three files claude reads. Returns a warning, or null if found.
-// Adds a command to put them back, and never offers to overwrite an existing settings.local.json (C57)
-export function hookWarning(projectDir: string, root: string, platform = process.platform, home = homedir()): string | null {
-  const local = join(projectDir, '.claude', 'settings.local.json')
-  const files = [local, join(projectDir, '.claude', 'settings.json'), join(home, '.claude', 'settings.json')]
-  const hooked = files.some((f) => existsSync(f) && readFileSync(f, 'utf8').includes('/events'))
-  if (hooked) return null
-  const src = join(root, 'tools', 'hooks', 'settings.json')
-  const head = `No hook settings found (${projectDir}). Question waits and turn ends will not show in the UI.`
-  if (existsSync(local)) return `${head} ${local} exists but has no Hub hooks. Add the hooks from ${src} by hand instead of overwriting it`
-  const q = (s: string) => quoteForPlatform(s, platform === 'win32' ? 'powershell' : 'posix')
-  const dir = join(projectDir, '.claude')
-  const cmd = platform === 'win32'
-    ? `New-Item -ItemType Directory -Force ${q(dir)} | Out-Null; Copy-Item ${q(src)} ${q(local)}`
-    : `mkdir -p ${q(dir)} && cp ${q(src)} ${q(local)}`
-  return `${head} To put them back: ${cmd}`
+// The Hub's hook settings for a project, per event (C57, C69). Returns a warning, or null if every event is set.
+// The fix offered is `hooks --write`, which adds only the missing events and never overwrites what is there
+export function hookWarning(projectDir: string, root: string, home = homedir()): string | null {
+  const st = hookState(projectDir, hookTemplate(root, envSetting('HUB_PORT', '7777', root)), home)
+  const parts: string[] = []
+  if (st.missing.length === st.events.length) parts.push(`No Hub hook settings found (${projectDir}). Question waits and turn ends will not show in the UI.`)
+  else if (st.missing.length) parts.push(`Hub hooks missing for ${st.missing.join(', ')} (${projectDir}); the card cannot show what they carry.`)
+  for (const f of st.unreadable) parts.push(`${f} is not valid JSON.`)
+  for (const p of st.brokenScripts) parts.push(`A hook runs ${p}, which does not exist here.`)
+  if (!parts.length) return null
+  if (st.missing.length) parts.push(`To add them: npm run team -- hooks --project ${quoteForPlatform(projectDir, process.platform === 'win32' ? 'powershell' : 'posix')} --write`)
+  return parts.join(' ')
 }
 
 interface GitResult { code: number; out: string; err: string; timedOut: boolean }
