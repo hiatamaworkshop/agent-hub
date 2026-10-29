@@ -19,7 +19,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C62
+(Nothing is decided and waiting. Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
 
@@ -350,6 +350,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Live check (design.md §6.1w): with the compose Hub rebuilt with `HUB_LANGUAGE=ja` and the English roles, an English request (#277) went leader → deployer (#278, English `GOAL`…) → leader (#279, English `CHANGED`…) → user (#280): English headings `RESULT` / `VERIFIED` / `NOT VERIFIED` / `NEEDS DECISION` / `NEEDS ACTION`, Japanese bodies. This also closes C66's live check.
   - Translating the open items changed the wording of their done-when conditions, so their promise fingerprints changed (a request sent earlier with `meta.item` for C3, C38 or C62 would show a diff). No such request was open.
   - `npm test` 349 pass, `npm run ui:check` 79 ok, `npm run docs:check` no errors.
+- [x] C62 Starting the team on platforms other than Windows (2026-10-29, requested by the user)
+  - `npm run team` (`src/team/`, run with tsx) replaces the PowerShell startup; `tools/dev/start-team.ps1` / `start-agent.ps1` stay as wrappers with the same parameters, and `team-checks.ps1` / `mailbox-name.ps1` were removed. Only opening tabs differs per OS (wt or a console window, Terminal.app, tmux); with none, each role's command is printed and the human runs it (design.md §3.8, §5).
+  - Checked (design.md §6.1x): Linux in a container with a stub `claude` that runs the shim (tmux tabs, Hub start, attach, skipping connected roles, the print fallback, fast failure, no `claude`); Windows with a real `claude` through `start-team.ps1` (attached), and the console-window fallback.
+  - Closed with macOS and a real `claude` session on Linux unchecked, as the user decided (recorded in design.md §6.2-8). A first Windows try opened the tab hidden (`windowsHide`), fixed before closing.
+  - `npm test` 357 pass, `npm run docs:check` no errors. The UI did not change.
 
 ## Items
 
@@ -527,20 +532,3 @@ Related: it becomes the destination for having another agent or vendor double-ch
 Status: held(after C59)
 
 C59's Noise treats notification-type Events as fixed. Let a human configure what Noise includes (per Event kind). Where the setting lives (`settings.json` or `localStorage`) is decided by looking at what C59's implementation showed. Once decided, remove the status and write the done-when conditions.
-
-### C62. Starting the team on platforms other than Windows
-
-With publishing on GitHub (2026-10-29, decided by the user; no announcement), starting is PowerShell only (`tools/dev/start-team.ps1` / `start-agent.ps1` / `team-checks.ps1` / `mailbox-name.ps1`), and people on macOS and Linux cannot start a team.
-
-What the current startup scripts provide: checking that the role is in `roles.json`, checking `claude --version` beforehand, warning about hook settings (C57), warning when the checkout is stale (C58), waiting for attach and detecting failure (C33, C56), printing the UI URL (C55), arguments such as `-PermissionMode`, and opening a tab per role (Windows Terminal).
-
-An idea (to decide at implementation, with the reasons written in design.md): move starting to a Node script (`npm run team -- …`) so the OS differences are in one place. The means of opening tabs differ per OS (Windows Terminal, tmux, macOS Terminal and so on), so when tabs cannot be opened, fall back to printing each role's start command for the human to open by hand.
-
-Progress (2026-10-29): `npm run team` (`src/team/`) replaces the PowerShell scripts, which remain as wrappers; how and why are in design.md §3.8 and §5. Linux was checked in a container with a stub `claude` that runs the shim, Windows with a real `claude` (design.md §6.1x). Not checked: macOS, and a real `claude` session on Linux (design.md §6.2-8).
-
-#### Done when
-- [ ] A team can be started on macOS and Linux, including the checks, warnings, waiting for attach and the UI URL above. Windows can do the same as now
-- [x] The way of starting (the script's language, how tabs are opened and the fallback when they cannot be) and the reasons are written in design.md
-- [ ] Actually start it on Linux (WSL or a container) and Windows to check, and record it in design.md §6. If macOS cannot be checked, write that it is unverified
-- [x] Fix the README's startup steps per OS
-- [x] `npm test` passes
