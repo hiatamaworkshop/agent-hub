@@ -113,6 +113,64 @@ describe('parseRoadmap', () => {
   })
 })
 
+// 同じ台帳を英語の語彙で書いたもの (design.md §3.15 の対応表)。行の位置は sample と同じにする
+const english = sample
+  .replace('# ロードマップ', '# Roadmap')
+  .replace(/#### 完了条件/g, '#### Done when')
+  .replace('状態: 提案', 'Status: proposed')
+  .replace('状態: 保留(理由)', 'Status: held(reason)')
+  .replace('## 予定', '## Plan')
+
+describe('英語の語彙の台帳', () => {
+  it('日本語の台帳と同じ形の索引を返す (状態・理由・完了条件・指紋・予定・参照)', () => {
+    const ja = parseRoadmap(sample)
+    const en = parseRoadmap(english)
+    assert.deepEqual(
+      en.items.map((i) => ({ ...i, statusReason: i.statusReason && 'R' })),
+      ja.items.map((i) => ({ ...i, statusReason: i.statusReason && 'R' })),
+    )
+    assert.equal(en.items[2]!.statusReason, 'reason')
+    assert.deepEqual(en.plan, ja.plan)
+    assert.deepEqual(en.refs, ja.refs)
+    assert.deepEqual(checkRoadmap(english), [])
+  })
+
+  it('ブロックの理由 `after C<n>`、却下の `rejected YYYY-MM-DD`、ブロックを待つ項目の順', () => {
+    const text = [
+      '## Plan',
+      '- [ ] C2',
+      '- [ ] C1',
+      '',
+      '## Known issues',
+      '- [x] C3 done (2026-10-16, requested)',
+      '- [-] C4 dropped (rejected 2026-10-17, not needed)',
+      '',
+      '## Items',
+      '### C1. first',
+      '#### Done when',
+      '- [ ] a',
+      '### C2. second',
+      'Status: blocked(after C1)',
+      '#### Done when',
+      '- [ ] b',
+    ].join('\n')
+    const idx = parseRoadmap(text)
+    assert.deepEqual(idx.items.map((i) => [i.id, i.status, i.statusReason]), [['C1', 'decided', undefined], ['C2', 'blocked', 'after C1']])
+    assert.deepEqual(idx.closed.map((c) => [c.id, c.mark, c.date]), [['C3', 'x', '2026-10-16'], ['C4', '-', '2026-10-17']])
+    assert.deepEqual(messages(text), [['error', 2, 'C2: 待つ項目 C1 より前に並んでいる。C1 の後に置く']])
+  })
+
+  it('英語の状態の崩れ (語の大文字・知らない語) は日本語と同じに error。日本語と英語が混ざった台帳も読む', () => {
+    const text = ['### C1. a', 'Status: Proposed', '### C2. b', 'status: pending', '### C3. c', '状態: 提案', '## Plan'].join('\n')
+    const ps = checkRoadmap(text)
+    assert.ok(ps.some((p) => p.line === 2 && p.message.startsWith('状態の語彙')))
+    assert.ok(ps.some((p) => p.line === 4 && p.message.startsWith('状態の語彙')))
+    assert.equal(parseRoadmap(text).items[2]!.status, 'proposed')
+  })
+})
+
+const messages = (text: string) => checkRoadmap(text).map((p) => [p.level, p.line, p.message])
+
 describe('checkRoadmap', () => {
   const messages = (text: string) => checkRoadmap(text).map((p) => [p.level, p.line, p.message])
 

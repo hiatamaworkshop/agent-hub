@@ -59,22 +59,26 @@ export interface RoadmapProblem {
 const ITEM_HEADING = /^### C(\d+)\. (\S.*)$/
 const LOOSE_ITEM_HEADING = /^###\s+C\d+\b/
 const HEADING = /^(#{1,6})\s/
+// 語彙は日本語と英語の 2 組 (design.md §3.15 の対応表)。1 つの台帳に混ざっていても行ごとに読む。
 // 字下げしていても状態の行として読む (決定と取り違えないため)。字下げは checkRoadmap が error にする
-const STATUS_LINE = /^\s*状態\s*[:：]/
-const STATUS_VALUE = /^状態: (提案|保留|ブロック)(?:\((.+)\))?$/
-const CONDITIONS_HEADING = /^#### 完了条件\s*$/
+const STATUS_LINE = /^\s*(?:状態\s*[:：]|status\s*:)/i
+const STATUS_VALUE = /^(?:状態: (提案|保留|ブロック)|Status: (proposed|held|blocked))(?:\((.+)\))?$/
+const CONDITIONS_HEADING = /^#### (?:完了条件|Done when)\s*$/
 const CHECKBOX = /^\s*[-*] \[( |x|X)\] /
 const REF = /^\s*[-*] \[( |x|X)\] C(\d+)\b/
 const CLOSED = /^\s*[-*] \[([xX-])\] C(\d+)\b/
 // 閉じた日は行末の括弧の先頭 (却下なら `却下 YYYY-MM-DD`)。題の中の日付は数えない (design.md §3.15)
 const TRAILING_PAREN = /\(([^()]*)\)\s*$/
-const CLOSED_DATE = /^(?:却下\s+)?(\d{4}-\d{2}-\d{2})(?!\d)/
-const PLAN_HEADING = /^##\s+予定\s*$/
+const CLOSED_DATE = /^(?:(?:却下|rejected)\s+)?(\d{4}-\d{2}-\d{2})(?!\d)/
+const PLAN_HEADING = /^##\s+(?:予定|Plan)\s*$/
 const PLAN_LIST = /^\s*[-*]\s/
 const PLAN_ITEM = /^[-*] \[ \] C(\d+)\b/
 const FENCE = /^\s*(```|~~~)/
 
-const STATUS_WORDS: Record<string, ItemStatus> = { 提案: 'proposed', 保留: 'held', ブロック: 'blocked' }
+const STATUS_WORDS: Record<string, ItemStatus> = {
+  提案: 'proposed', 保留: 'held', ブロック: 'blocked',
+  proposed: 'proposed', held: 'held', blocked: 'blocked',
+}
 
 interface Line {
   text: string
@@ -128,7 +132,7 @@ function readStatus(sec: Section): { status: ItemStatus; reason?: string; valid:
   if (!first || !STATUS_LINE.test(first.text)) return { status: 'decided', valid: true, present: false }
   const m = STATUS_VALUE.exec(first.text.trim())
   if (!m) return { status: 'decided', valid: false, present: true }
-  return { status: STATUS_WORDS[m[1]!]!, reason: m[2], valid: true, present: true }
+  return { status: STATUS_WORDS[(m[1] ?? m[2])!]!, reason: m[3], valid: true, present: true }
 }
 
 function readConditions(sec: Section): { counts: { done: number; total: number } | null; texts: string[]; checks: boolean[] } {
@@ -260,7 +264,7 @@ export function checkRoadmap(text: string): RoadmapProblem[] {
     const st = readStatus(sec)
     if (st.present && !st.valid) {
       badStatus.add(sec.head.no)
-      err(sec.body[0]!.no, `状態の語彙は \`状態: 提案 | 保留(再開の条件) | ブロック(C<n> の後)\`: ${sec.body[0]!.text.trim()}`)
+      err(sec.body[0]!.no, `状態の語彙は \`状態: 提案 | 保留(再開の条件) | ブロック(C<n> の後)\` か \`Status: proposed | held(…) | blocked(after C<n>)\`: ${sec.body[0]!.text.trim()}`)
     }
     if (st.present && /^\s/.test(sec.body[0]!.text)) err(sec.body[0]!.no, '状態の行は字下げしない')
     for (const l of sec.body.slice(st.present ? 1 : 0)) {

@@ -171,9 +171,16 @@ try {
   await ackAll(lead.attachmentId)
   const report = ['結果: C1 ができた', '確認: 試験が通る', '未確認: 画面で開くこと', '要判断: (1) 設計の解釈 A でよいか', '  既定: A', '要操作: なし'].join('\n')
   await api('POST', '/messages', { kind: 'reply', replyTo: order.id, body: report }, asLead)
+  // 英語の見出しの型 (C64)。見出しは英語で固定し、本文は人の言語のまま
+  const reportEn = ['RESULT: C1 ができた', 'VERIFIED: 試験が通る', 'NOT VERIFIED: 画面で開くこと', 'NEEDS DECISION: (1) 設計の解釈 A でよいか', '  既定: A', 'NEEDS ACTION: なし', 'SKIPPED: なし'].join('\n')
+  await api('POST', '/messages', { kind: 'reply', replyTo: order.id, body: reportEn }, asLead)
+  const reportEnAction = ['RESULT: C2 ができた', 'NEEDS ACTION: push の指示'].join('\n')
+  await api('POST', '/messages', { kind: 'reply', replyTo: order.id, body: reportEnAction }, asLead)
   await turnEnd('demo.leader', 's-lead')
   await scene('報告が戻り、leader が人に返した', { 'demo.leader': 'Idle', 'demo.deployer': 'Idle' })
   await sections('leader の返事の見出しを節ごとに色分けする (C42)', report, { decide: 2, op: 0, unverified: 1, hd: 5 })
+  await sections('英語の見出しの返事も日本語と同じに色分けする (C64)', reportEn, { decide: 2, op: 0, unverified: 1, hd: 6 })
+  await sections('英語の NEEDS ACTION に中身があれば見出しの色を付ける (C64)', reportEnAction, { decide: 0, op: 1, unverified: 0, hd: 2 })
 
   // 未接続の reviewer に依頼して待つ (C49)。Mailbox はあるがセッションが起動していない
   const rev = await api('POST', '/mailboxes/demo.reviewer/attach', { client: 'claude-code', role: 'reviewer', cwd, sessionId: 's-rev' })
@@ -470,7 +477,7 @@ try {
   await sleep(1500)
   const oldTiers = await readTiers()
   const oldOk = JSON.stringify(oldTiers.groups) === JSON.stringify([
-    { head: 'Plan (3) · no ## 予定 in this file', open: null, ids: ['C6', 'C7', 'C8'], rows: [] },
+    { head: 'Plan (3) · no ## Plan (## 予定) in this file', open: null, ids: ['C6', 'C7', 'C8'], rows: [] },
     { head: 'Awaiting a decision (1)', open: null, ids: ['C9'], rows: [] },
   ])
   verify('Items: 予定のない索引は、決定とブロックを番号順に 1 段目に出す (C52)', oldOk && oldTiers.tags.C8 === 'waits C7', oldTiers)

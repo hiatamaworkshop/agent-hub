@@ -332,9 +332,12 @@ const time = (ts) => {
 }
 
 // 返事の型の見出し (tools/dev/roles の leader.md・deployer.md)。行頭の「見出し:」で節が始まり、次の見出しまで続く。
-// 節の種類で目立たせ方を変える。中身が「なし」「-」だけの節は目立たせない
+// 節の種類で目立たせ方を変える。中身が「なし」「-」だけの節は目立たせない。
+// leader の型は英語の見出しと前の日本語の見出しの両方を読む (design.md §3.15 の対応表)
 const REPORT_HEADINGS = new Map([
-  ['要判断', 'decide'], ['要対応', 'decide'], ['要操作', 'op'], ['未確認', 'unverified'], ['NOT VERIFIED', 'unverified'],
+  ['NEEDS DECISION', 'decide'], ['NEEDS ACTION', 'op'], ['NOT VERIFIED', 'unverified'],
+  ['RESULT', ''], ['SKIPPED', ''],
+  ['要判断', 'decide'], ['要対応', 'decide'], ['要操作', 'op'], ['未確認', 'unverified'],
   ['結果', ''], ['確認', ''], ['見送り', ''],
   ['GOAL', ''], ['SCOPE', ''], ['SPEC', ''], ['DONE WHEN', ''], ['REPORT FORMAT', ''], ['CHANGED', ''], ['VERIFIED', ''], ['NOTES', ''],
 ])
@@ -2152,7 +2155,7 @@ function renderItems() {
     const tiers = tiersOf(ix)
     const card = (item) => itemCard(ix, item, latest.get(itemKey(ix.project, item.id)), replied)
     if (tiers.plan.length) {
-      root.append(tierHead(`Plan (${tiers.plan.length})${Array.isArray(ix.plan) ? '' : ' · no ## 予定 in this file'}`))
+      root.append(tierHead(`Plan (${tiers.plan.length})${Array.isArray(ix.plan) ? '' : ' · no ## Plan (## 予定) in this file'}`))
       for (const item of tiers.plan) root.append(card(item))
     }
     if (tiers.proposed.length) {

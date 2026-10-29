@@ -11,6 +11,7 @@
 - 状態の分け方: 4 段のそれぞれが 1 つの状態に当たる。`提案` は人の判断待ちだけ。`ブロック(C<n> の後)` は決定の項目 (完了条件を持つ) だけで、ほかの項目を待つときに使い、理由に `C<n>` を書く。決まっていない項目がほかを待つときは `保留(C<n> の後)`。外の出来事 (公式資料の更新、次に usage limit に当たることなど) を待つものは、決定の項目でも `保留(再開の条件)` にし、理由は省かない。受け入れて手を付けないものは保留にせず、却下 `[-]` にする。
 - 閉じた行 (`[x] C<n>` / `[-] C<n>`) は、閉じた日 (`YYYY-MM-DD`) を行末の括弧の先頭に書く (例 `(2026-10-27、ユーザーの依頼)`、却下は `(却下 2026-10-27、理由)`)。題の中の日付は数えない。
 - 予定を聞かれたら、先に `npm run -s docs:check` で崩れを見てから、`npm run -s docs:check -- docs/roadmap.md --index` の JSON と閉じた行の日付を材料に答える。台帳を全部読んで分類し直さない (4 段の答え方は skill `roadmap-items`)。
+- 語は英語でも書ける: `Status: proposed | held(…) | blocked(after C<n>)`・`#### Done when`・`## Plan`・`(rejected YYYY-MM-DD, …)`。検査と索引は両方を同じに読む (対応表は design.md §3.15)。
 - 規則の崩れは `npm run docs:check` で検査する (`src/shared/roadmap.ts`)。
 - 他のプロジェクトで同じ規則を書くための説明は、グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/`) に置いた。正本はこの冒頭と `src/shared/roadmap.ts`。
 
@@ -18,7 +19,6 @@
 
 取りかかる順。状態の行のない項目とブロックの項目だけを載せる (題は索引から引く)。並べ替えは人の判断。
 
-- [ ] C64
 - [ ] C66
 - [ ] C65
 - [ ] C62
@@ -334,6 +334,13 @@
   - 個人のパスは `docs/plan-p0.md` の 1 か所で、`<agent-hub の絶対パス>` に置き換えた (試験の `/home/x/…` などは架空)。CLAUDE.md の「private リポジトリ」の書き方を外した
   - ほかのプロジェクト名 (vcp・cite-bridge・cairn・engram・dcp) は文書・試験・起動スクリプトに約 170 か所あり、一覧で報告した。それらも公開する前提なので、名前も過去の履歴もそのまま残す (ユーザーが決定、2026-10-29)
   - `npm test` 342 件と `npm run docs:check` が通る
+- [x] C64 台帳と返事の型を、英語の語彙でも読めるようにする (2026-10-29、ユーザーの依頼)
+  - 台帳の英語の語: `Status: proposed | held(…) | blocked(after C<n>)`・`#### Done when`・`## Plan`・`(rejected YYYY-MM-DD, …)`。返事の型の見出し: `RESULT`・`VERIFIED`・`NOT VERIFIED`・`NEEDS DECISION`・`NEEDS ACTION`・`SKIPPED` (deployer・reviewer の大文字の型に揃えた)。対応表と「見出しは英語で固定し、訳さない」は design.md §3.15。roadmap.md 冒頭にも英語の語を書いた
+  - `src/shared/roadmap.ts` は行ごとに両方の語を読み、索引は同じ形。英語の状態の語は小文字だけで、`Status: Proposed` などは error。試験に英語の台帳 3 場面 (日本語の見本を訳した台帳が同じ索引になる、`after C<n>` と `rejected` とブロックの順、崩れと混在) を足した。手元の英語の台帳で `docs:check` と `--index` も流し、状態・理由・進み・予定・閉じた日を読めた
+  - UI の `bodyOf` に英語の見出しを足した (日本語の見出しも残す)。Items の予定のない索引の注記を `no ## Plan (## 予定) in this file` にした。`npm run ui:check` に英語の見出しの返事 2 場面を足した
+  - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
+  - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
+  - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
 
 ## 項目
 
@@ -527,22 +534,8 @@ GitHub で公開する (2026-10-29、ユーザーが決定。告知はしない)
 - [ ] README の起動の手順を OS ごとに直す
 - [ ] `npm test` が通る
 
-### C64. 台帳と返事の型を、英語の語彙でも読めるようにする
-
-文書を英語に置き換える (C65) と、台帳の語 (`状態:`・`#### 完了条件`・`## 予定`・`却下`、`src/shared/roadmap.ts`) と leader の返事の型 (`結果`・`確認`・`未確認`・`要判断`・`要操作`、UI の見出しの色分け `public/index.html`) が英語になる。ほかのプロジェクト (vcp・cite-bridge など) の台帳と、ログに残った前の返事は日本語のままなので、両方を読む。
-
-語の案: `Status: proposed | held(…) | blocked(after C<n>)`、`#### Done when`、`## Plan`、`(rejected YYYY-MM-DD, …)`。返事の型は deployer の `CHANGED` などに揃えた大文字の見出し。
-
-#### 完了条件
-- [ ] 英語の語彙を決め、日本語との対応を design.md §3.15 に表で書く
-- [ ] `docs:check` と `--index` (Items の索引) が、日本語の台帳と英語の台帳の両方を同じ結果の形で読む。試験 `src/shared/roadmap.test.ts` に英語の台帳の場面を足す
-- [ ] UI が英語の返事の型の見出しを日本語と同じに色分けする。`npm run ui:check` に英語の返事の場面を足す
-- [ ] 返事の型の見出しは英語で固定し、利用者の言語を問わず同じ語を使う (本文の言語は C66)。design.md §3.15 にそう書く
-- [ ] グローバルの skill `roadmap-items` に英語の語彙があることを書く
-- [ ] `npm test`・`npm run ui:check`・`npm run docs:check` が通る
-
 ### C65. 公開する文書を英語に置き換える
-状態: ブロック(C64・C66 の後)
+状態: ブロック(C66 の後)
 
 GitHub で公開するにあたり、公開する文書を英語にする (2026-10-29、ユーザーが決定)。日本語版は残さず置き換える (二重に保守しない)。以後、このリポジトリで書き足す文書も英語にする。
 
