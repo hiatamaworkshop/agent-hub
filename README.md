@@ -108,6 +108,7 @@ npm run team -- --roles leader,deployer --project ~/work/cairn       # cairn.lea
 ./tools/dev/start-team.ps1 -Roles leader,deployer -Project C:\work\cairn   # the same on Windows PowerShell
 ```
 
+- **From the project's own folder**: put [tools/bin/](tools/bin/) on PATH and run `hub-team` there (`hub-team --roles leader,deployer`, `hub-team agent --role deployer`). It runs `npm run team` in agent-hub's folder with `--project` set to the folder you are in (your own `--project` wins). agent-hub's folder is `AGENT_HUB_DIR` if set, else found from the script's location. `hub-team.cmd` is checked on Windows; the sh version `hub-team` was only tried with a stub `npm`.
 - `claude` is started in the `--project` folder. The shim points at agent-hub's `dist/` by absolute path (the MCP configuration is written to `agent-hub-mcp.json` under the OS's temporary folder).
 - The default Mailbox name is `<folder name>.<role>`. A Mailbox name is unique across the Hub, so the same role in different projects gives different Mailboxes. Change it with `--mailbox` (only for one role started with `agent`).
 - A `role:deployer` message sent by an agent reaches only the deployer of the sender's own project. To reach another project, address `mailbox:cairn.deployer`. From the browser, it reaches every project if the project selector says `All projects`, or only the selected project if one is selected (design.md §9-7).

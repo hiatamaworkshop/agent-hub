@@ -339,6 +339,10 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C67 Starting a team from another project's folder (2026-10-29, requested by the user)
+  - Decided with the user: a thin wrapper only, no skill (a session must not start a team by itself; design.md §2), and `npm run team`'s own `--project` default stays agent-hub. `tools/bin/hub-team.cmd` and `tools/bin/hub-team` (sh) add `--project <current folder>` unless one is given, then run `npm run team` in agent-hub's folder (`AGENT_HUB_DIR`, else two levels above the script).
+  - Checked with a stub `npm` that prints its folder and arguments: from a folder with a space in its name the `.cmd` passed `--project "<that folder>"`, and a given `--project` was left alone; the sh version did the same under Git Bash. `hub-team.cmd --help` reached the real `npm run team`. A real team was not started through it. sh on macOS/Linux is not run on a real machine.
+  - README "Using it in other repositories" has the one-line how-to. `npm test` and `docs:check` pass.
 - [x] C68 Slim down the README (2026-10-29, requested by the user)
   - README went from 395 to 145 lines: it keeps the goals, status, setup, the first round trip, hooks and team start in short, and "Using it in other repositories". The reference parts moved to `docs/usage.md` (cards, commands, images, hooks, Forward, subscriptions, takeover, retention, teams in detail, Items, roles.json, `HUB_LANGUAGE`, inbox, curl, development) with the text unchanged except links. The "Inspiration" section was removed.
   - Fixed references: CLAUDE.md's document map, the pointers in `tools/hooks/post-commit-index.sh`, the UI tooltip and a comment in `public/index.html`, and design.md §6.1 (hooks step 3). Records in closed lines that name the README stay as they were.
@@ -535,12 +539,3 @@ Related: it becomes the destination for having another agent or vendor double-ch
 Status: held(after C59)
 
 C59's Noise treats notification-type Events as fixed. Let a human configure what Noise includes (per Event kind). Where the setting lives (`settings.json` or `localStorage`) is decided by looking at what C59's implementation showed. Once decided, remove the status and write the done-when conditions.
-
-### C67. Starting a team from another project's folder
-Status: proposed
-
-2026-10-29, user: they usually work inside each project's repository, so having to move to agent-hub only to run `npm run team -- --project <folder>` runs against that habit. Today the only way in is Hub → project (README "Using it in other repositories").
-Direction (not yet decided): a thin entry point that runs from the project's folder and calls `npm run team` with `--project` set to the current folder. Candidates: a wrapper script on PATH (e.g. `hub-team`) / a global skill that prints the command. agent-hub's location comes from an environment variable or is baked into the wrapper.
-- Keep the line in design.md §2 and CLAUDE.md: a human starts the team. A session must not start a team on its own; at most it shows the command to run.
-- The wrapper only starts things. It does not read or judge the project's content (CLAUDE.md "When running another project's team").
-- To decide: wrapper vs skill vs both; how the wrapper finds agent-hub; Windows (`.ps1`/`.cmd`) and sh versions; whether `npm run team` itself gets a `--project .` default when run elsewhere.

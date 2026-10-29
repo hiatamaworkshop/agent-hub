@@ -1,0 +1,15 @@
+#!/bin/sh
+# Start an agent-hub team in the folder you are in (C67). Put this folder on PATH, or link this file onto it.
+# Usage: hub-team [npm run team arguments]   e.g. hub-team --roles leader,deployer / hub-team agent --role deployer
+# agent-hub's folder: AGENT_HUB_DIR if set, else the folder two levels above this file.
+here=$(cd "$(dirname "$0")" && pwd -P)
+hub=${AGENT_HUB_DIR:-$(cd "$here/../.." && pwd -P)}
+proj=$(pwd -P)
+for a in "$@"; do
+  [ "$a" = "--project" ] && proj=
+done
+cd "$hub" || exit 1
+if [ -n "$proj" ]; then
+  exec npm run team -- "$@" --project "$proj"
+fi
+exec npm run team -- "$@"
