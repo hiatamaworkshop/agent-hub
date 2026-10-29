@@ -22,11 +22,10 @@ The aim is to keep the human in the loop and remove only the "copy-and-paste hau
 
 ## Status
 
-- **P0** (one round trip in one session) and **P1** (detecting waits on questions, waits on permission and turn ends) are done, with the acceptance criteria checked in real sessions.
-- **P2** (several sessions, replacement, message passing) passed acceptance criteria 1-7 with the compose Hub and real sessions (2026-10-19). Implemented: several Mailboxes connected at once, roles (`roles.json`), replacement (takeover), a limit on how many old unread messages flow in, unedited forwarding (Forward / Relay), the `inbox` polling path and switching paths by client, naming of delivery states, retention, and running resident in Docker (compose). A delivery adapter that "only wakes the agent" was closed without being built, since no client starts a turn that way (C1).
-- Since then, things found while running real teams (vcp, cite-bridge) have been added: filtering by project, Items for writing requests from roadmap items, backlog badges and card states (Needs you / Working / Waiting on others and so on), a rule that closes an unanswered request when the other side sends a later Message, and the leader's reply format (headings such as `NEEDS DECISION` are color-coded).
-- Open items are listed with `C<n>` numbers under "Items" in [docs/roadmap.md](docs/roadmap.md). The `inbox` path has not yet been tried with a real client other than Claude Code (Codex and the like); it has only been checked with the test MCP client (C3).
-- **Platforms**: everything above was developed and checked on Windows 11. Starting a team with `npm run team` is covered by unit tests on every OS, but it has not been run on a real Mac, and a real `claude` session has not been started by it on Linux (C62, design.md §6.2). Reports from those platforms are welcome.
+- P0 (one round trip), P1 (detecting waits and turn ends) and P2 (several sessions, replacement, message passing, resident in Docker) are done and were checked in real sessions. Real teams (vcp, cite-bridge) have been run since.
+- Open items are the `C<n>` sections under "Items" in [docs/roadmap.md](docs/roadmap.md).
+- The `inbox` path has only been checked with the test MCP client, not with a real client other than Claude Code (C3).
+- **Platforms**: developed and checked on Windows 11. `npm run team` is covered by unit tests on every OS, but it has not been run on a real Mac, and a real `claude` session has not been started by it on Linux (C62, design.md §6.2). Reports from those platforms are welcome.
 
 Start reading the design at [docs/design.md](docs/design.md). The Channels and hook specifications were checked against the official docs and on a real machine (design.md §6.1-6.1q). The relation to MCP Events (SEP-3415, Draft) is in design.md §7.
 
@@ -49,7 +48,7 @@ npm run hub
 ```
 
 It prints `[hub] UI: http://127.0.0.1:7777/?token=…`; open that URL in the browser.
-The token is moved into a cookie and removed from the URL. When started with `npm run team`, the same URL is also printed on the last line (whether the Hub was already running or runs in compose; see "Try a round trip between roles with two agents" below). Data is appended to `data/hub.jsonl` (messages that have been handed over are deleted after 24 hours; see "Message retention and deletion" below).
+The token is moved into a cookie and removed from the URL. Data is appended to `data/hub.jsonl` (messages that have been handed over are deleted after 24 hours; see "Message retention and deletion" in the [usage guide](docs/usage.md#message-retention-and-deletion)).
 
 #### Run it resident in Docker (instead of starting it directly)
 
@@ -63,6 +62,7 @@ docker compose logs hub      # prints the UI URL (with the token)
 - Data lives in the volume `hub-data`, separate from the repository's `data/`. `docker compose down -v` erases it.
 - It reads `roles.json` from the repository root (read-only). After changing it, `docker compose restart`.
 - It cannot run at the same time as a directly started Hub on the same port. Use one or the other.
+- The compose Hub runs from the built image. After changing the Hub's code, `docker compose up -d --build` is needed (`restart` alone keeps the old image).
 
 ### 3. Start Claude Code with the channel enabled (terminal B, repository root)
 
@@ -82,234 +82,23 @@ claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels s
 3. Have Claude reply (`post_message`, `kind: reply`). It appears in the browser's list as a `reply`.
 4. On the left of the browser, the Mailbox `agent-hub` shows as connected (`Connected`).
 
-### Reading the cards in the browser (state and backlog)
+### 5. Hooks (so the cards can show waits)
 
-Each Mailbox card on the left shows, as one state and by the color of its frame, whose move it is in that session now. The Hub holds no state; the UI derives it from the delivery material (`backlog` of `GET /mailboxes`) and the hook Events (design.md §3.15).
+Copy the `hooks` of [tools/hooks/settings.json](tools/hooks/settings.json) into this repository's `.claude/settings.local.json` (or `~/.claude/settings.json` to use them in every repository). Without them the Hub still delivers messages, but the cards cannot show question waits, permission waits and turn ends. Details and gotchas are in the [usage guide](docs/usage.md#show-question-waits-permission-waits-and-turn-ends-in-the-browser-hooks).
 
-| State | Meaning |
-|---|---|
-| `Needs you` (amber) | The human's move. A question or permission wait in the terminal, or a request the agent sent to the human on the Hub that has no reply. Also when automatic resume after a usage limit is not continuing or is off. Also when every party it is waiting for is unconnected, with `(<Mailbox> not connected)` added (start that party's session) |
-| `Paused` (teal, ⏸) | Stopped by a usage limit (`error: rate_limit` of `StopFailure`). If automatic resume works, it continues by itself. Checked before `Working` |
-| `Working` (blue) | A Message handed over is newer than the last turn end. `Working?` (a guess) for sessions without hook Events. Also, for up to 60 minutes, when a turn ended with a request still unanswered while a background task such as tests is running; `background: <task>` is added (when the task ends, the next turn starts) |
-| `Waiting on others` (purple, dotted) | The turn ended and it is waiting for replies to requests it sent. The addressee is added |
-| `Stopped, no reply` (red) | The turn ended without replying to a request it was handed. Look at the terminal or nudge it |
-| `Idle` / `Offline` | Nothing left / the session is not connected |
+### 6. Start a team (leader / deployer)
 
-- Awaiting reply is closed by a reply with `reply_to`, and also by a later request or reply from the other side (for example when the human answers a question with a new request; protocol.md §2).
-- The badges on cards and in the sidebar split counts into `You` (the human's move) / `Agent` (the agent's move) / `Stuck?` (delivery may be stuck), and change color by the age of the oldest. `N waiting` in the tab title and the favicon count `Needs you` across all projects (the human's move; a card waiting on an unconnected party counts as one). The `You` badge does not count cards waiting on an unconnected party (their unread shows as `Stuck?` on the other party's card).
-- The state is built from hook Events, so it is coarser for sessions without hooks (see "Show question waits, permission waits and turn ends in the browser" below). While stopped by a usage limit it shows `Paused` (needs the `StopFailure` hook). When automatic resume is not continuing or is off, `Needs you` shows `usage limit, press Enter` / `usage limit, auto-resume off` (roadmap C38).
-- A permission wait (`Needs you (permission)`) clears when you allow it and the tool runs (`Last event: approved`). When you deny it in the terminal nothing arrives, so it stays `Needs you` (after a denial Claude Code waits for the human's input; roadmap C30).
-
-### Custom commands
-
-Under **Commands** in the browser you can name strings you use often. Example: name `cp`, text `commit and push`.
-
-- Write `/cp` in the body and press Send, and it is sent as `commit and push`. If you write `/cp today's work`, the argument goes where `$ARGS` is in the text, or at the end if there is no `$ARGS`.
-- `//cp` sends `/cp` without replacing it (escape). An undefined `/xyz` is sent as is.
-- The settings are saved in `settings.json` under `HUB_DATA_DIR` (default `data/`). You may edit it by hand; it takes effect from the next read. A hand-edited `defaultTo` (e.g. `"mailbox:leader"`) becomes the UI's initial address while that Mailbox is attached (the address you last sent to takes precedence; if neither is attached, no address is selected).
-
-```json
-{ "version": 1, "commands": [ { "name": "cp", "text": "commit and push" } ] }
-```
-
-This feature uses the Hub's API, so **a Hub that is already running keeps Commands disabled until it is restarted** (on an old Hub, Commands is grayed out).
-
-### Pasting images
-
-Paste an image into the body (Ctrl+V), drag one onto the composer, or choose one with **Attach**. PNG, JPEG, GIF and WebP, up to 4 per message and 20MB each.
-
-- On sending, the Hub shrinks it to a long edge of 1568px, saves it in `HUB_DATA_DIR/files/` and shows it in the thread. Agents get the same image, with metadata such as location dropped. For GIF / WebP only the first frame is kept. If the body is empty, `[image]` is sent.
-- Non-persistent images are deleted after `HUB_FILE_TTL_DAYS` (default 1 day). A deleted image shows as "Image expired or unavailable".
-- The environment variables are `HUB_FILE_MAX_EDGE` (default 1568) and `HUB_FILE_TTL_DAYS` (default 1; 0 means never clean up). See `.env.example`.
-- This feature also uses the Hub's API, so **a Hub that is already running must be restarted** (on an old Hub, Attach does not send and asks you to restart).
-
-#### Agents seeing images
-
-The shim saves arriving images in `agent-hub/<Mailbox name>/` under the OS's temporary folder and puts the path in `files[].path` of the notification's `meta` attribute. The agent opens that path with `Read` to see the image. Images that could not be saved carry `error` (`expired` for expired, `fetch_failed` for a failed fetch).
-
-- The location can be changed with `HUB_FILES_DIR` (a folder per Mailbox name is made under it).
-- At startup, images older than 24 hours are deleted.
-- The location is outside the working folder, so `Read` may ask for permission. `npm run team` (and `npm run team -- agent`) allows it at startup with `--add-dir` (the `HUB_FILES_DIR` folder if set). If you start `claude` by hand, add `claude --add-dir "<location>"`.
-
-### Show question waits, permission waits and turn ends in the browser (hooks)
-
-Claude Code's HTTP hooks send `AskUserQuestion`, permission waits and turn ends to the Hub. They appear in the browser's thread in a dashed frame, and the latest one shows on the Mailbox card on the left. They are also the material for the card's state ("Reading the cards in the browser" above).
-
-1. Copy the `hooks` of [tools/hooks/settings.json](tools/hooks/settings.json) into this repository's `.claude/settings.local.json` (not committed).
-   To use them in other repositories too, copy them into `~/.claude/settings.json`. If you changed the port, change `7777` in `url` too.
-   Passing them with `--settings` misbehaved in 2.1.301 (design.md §6.1f), so do not.
-2. The hook's `Authorization` is built from the environment variable `HUB_TOKEN`. `npm run team` passes the value from `.env`, so nothing is needed. If you start `claude` by hand, set `HUB_TOKEN` in its environment first (PowerShell: `$env:HUB_TOKEN = …`; sh: `export HUB_TOKEN=…`).
-   In that case the token is visible from the session's Bash and so on too. Treat it like `.env`.
-   `PostToolUse` / `PostToolUseFailure` are sent for every tool, to learn that a permission wait was cleared (the Hub records only the one right after a permission wait and discards the rest; a few ms each; design.md §6.1s). If you copied the older settings (`matcher: AskUserQuestion`), remove the `matcher` and add `PostToolUseFailure`. Also add `PostModelSwitch` (to show the last model and effort seen on the card; C61).
-   `SessionStart` works **only as a command hook** (per the official hooks docs; with an HTTP hook no Event arrived; design.md §6.1v). Copy it in the shape of `tools/hooks/settings.json`: `"command": "node", "args": ["${CLAUDE_PROJECT_DIR}/tools/hooks/post-event.mjs", "--no-git"]`. Keep `--no-git` (a fast path that does not call git and sends the input as is; C61). `${CLAUDE_PROJECT_DIR}/tools/hooks/post-event.mjs` points at this repository's script. When copying it to another project's team, point the path at this repository's script (the same constraint as Stop in `settings.command.json`; design.md §3.11).
-3. If the Hub is stopped, the hook only shows an error and work does not stop (timeout 5 seconds). Input over 1 MB (the result of `Read` on a large file and the like) also just becomes a hook error, with the Hub returning 413.
-   Hooks in settings files are re-read by running sessions too and take effect (no restart needed; design.md §6.1q).
-4. (Optional) To send the facts of a change (HEAD, changed files, untracked files) to the Hub on `Stop`, use the `Stop` of [tools/hooks/settings.command.json](tools/hooks/settings.command.json). **Having it together with the HTTP `Stop` hook (the `Stop` in step 1) makes two `turn.end`s**, so remove the HTTP `Stop` and replace it.
-   The script is `tools/hooks/post-event.mjs`. git runs in the working folder; the Hub does not run git. The Hub's port is `HUB_PORT` (default 7777). On failure work does not stop, and whatever could be collected is sent. In the browser, `turn.end` shows the number of changed files.
-
-- Which Mailbox an occurrence belongs to is decided in this order: the session declared by the shim → `X-Hub-Mailbox` (`HUB_MAILBOX`) → the folder name.
-- **Questions cannot be answered from the browser.** Answer in the terminal. Messages sent from the browser reach the session after the answer.
-- An Event's **Reply** starts writing a `request` to that Mailbox.
-- This feature also uses the Hub's API, so **a Hub that is already running must be restarted** (an old Hub just shows no Events).
-
-### Carry an agent's output to another agent (Forward)
-
-- Choose messages with **Forward** (several allowed), choose an address and press **Forward N**. The body, kind and attached images are carried **as they are**. The receiver gets the person who forwarded (`from`) and the author of the body (`forwarded_sender`) separately.
-- What you write in the body is sent as a **covering note**, as a separate message before the forward (e.g. "review these two"). If it is empty, only the forward is sent. It is not mixed into the forwarded body.
-- Once you have forwarded A's output to B, **Relay** above the thread shows `A → B · N new` (how many of A's outputs have not been sent to B yet). Pressing it selects those N and sets the address to B. Nothing is sent until you press Forward.
-- Forwarding also uses the Hub's API, so **a Hub that is already running must be restarted** (an old Hub stops before sending and does not send the covering note either).
-
-### Subscribing once per Mailbox is enough
-
-- Subscriptions are **stored on the Mailbox**, not the session (`data/hub.jsonl`). They survive Hub restarts and new sessions attaching to the same Mailbox, so you do not have to ask again at every start.
-  Starting in the same folder gives the same Mailbox (see how Mailbox names are decided above).
-- **Messages to `mailbox:<name>` need no subscription.** A subscription is needed only to send to all subscribers, like `topic:<name>`.
-- Subscriptions disappear when you delete the Mailbox in the browser and when you erase `data/` (in Docker, when you recreate the volume). The way to declare them as configuration is a role's default subscriptions (`roles.json` + `HUB_ROLE`; "Role definitions (roles.json)" below).
-- The address dropdown shows only subscribed topics. A topic without subscribers can be sent to with "type a topic…", but if it reaches nobody a warning appears next to Send.
-- Attaching to a Mailbox after a long time away does not flow in every unread message. Those older than 7 days and those before the newest 50 are omitted, and the number omitted is reported in one notice (on the `inbox` path, at the head of the next `inbox` result; the records remain and can be seen in the browser's history). The limits are `HUB_UNREAD_MAX_AGE_DAYS` / `HUB_UNREAD_MAX` (0 means no limit).
-
-### Replacing an agent (takeover)
-
-Starting a new session with the same Mailbox name makes the new one take over (after `/clear`, or when restarting with a different model, and so on). Subscriptions and unread messages stay on the Mailbox, so they reach the new session as they are.
-
-- If the old session is still running it is cut off, and `post_message` / `subscribe` / `unsubscribe` return errors (`whoami` still answers). A cut-off shim does not attach again (closing the new one does not bring it back; the error text says so too). To continue in the old one, restart that session.
-- The Mailbox card in the browser shows `took over <time>`. Hook Events from the cut-off session carry `superseded session` and are not used as the card's last Event.
-- The card of an unconnected Mailbox shows when and why it was cut (`session ended` / `disconnected` / `lease expired`).
-
-### Deleting Mailboxes you no longer use
-
-On the left of the browser, press **Delete** on the card of an unconnected Mailbox (it asks for confirmation). Its subscriptions, cursor and unread messages are erased; the message records remain.
-
-- A connected Mailbox cannot be deleted (no Delete appears). End that session first.
-- Attaching again with the same name makes a new Mailbox, and what had arrived before the deletion does not arrive.
-- This feature also uses the Hub's API, so **a Hub that is already running must be restarted** (an old Hub shows an error and the card remains).
-
-### Message retention and deletion
-
-The Hub is infrastructure for connecting, and does not keep messages for long. Write knowledge you want to keep in the repository's documents or in engram (design.md §3.14).
-
-- Messages handed to every receiver are deleted after 24 hours (`HUB_READ_RETENTION_HOURS`; 0 means never delete automatically). Detection events are deleted after the same period. Cleanup runs at startup and every hour.
-- Not deleted: unread messages and `request`s with no reply yet. Awaiting reply is closed by a reply with `reply_to`, or by a later request / reply from the receiver to the sender (not by notices or forwards; protocol.md §2). Whatever does not close stays until deleted by hand.
-- Deleting by hand: **Delete** on a message (one; deletes it even if unread or awaiting a reply). **Purge read** above the thread deletes now, without waiting for the retention period, the messages that have been handed over and all events.
-- Replying with `reply_to` to a deleted message is 400. Send it with `to`.
-- `data/hub.jsonl` is compacted to the current state when something is deleted.
-- This feature also uses the Hub's API, so **a Hub that is already running must be restarted** (on an old Hub, Delete and Purge read ask you to restart).
-
-### Try a round trip between roles with two agents (leader / deployer)
-
-A test that passes a request and report around by role address in the order user → leader → deployer → leader → user.
-For the role's description, the `description` in `roles.json` goes into the shim's instructions ("Role definitions (roles.json)" below). For leader / deployer / reviewer, detailed operating instructions (message headings and so on) live in [tools/dev/roles/](tools/dev/roles/), and `npm run team` adds them to the system prompt too. A role that is in `roles.json` but not in roles/ works from its description alone.
-
-Start a team with `npm run team` (the same on Windows, macOS and Linux). It starts the Hub if it is stopped, then starts the chosen roles one by one, each in a tab of its own.
+`npm run team` starts the Hub if it is stopped, then one `claude` per role, each in a tab of its own (the same on Windows, macOS and Linux). Roles come from `roles.json` (copy `roles.example.json`).
 
 ```sh
 npm run team                                      # choose roles from roles.json by number (e.g. 1,2; all for every role)
 npm run team -- --roles leader,deployer           # name them instead of choosing
-npm run team -- agent --role deployer             # one role in this terminal (Mailbox = agent-hub.deployer, haiku)
+npm run team -- agent --role deployer             # one role in this terminal (Mailbox = agent-hub.deployer)
 ```
 
-How tabs are opened depends on the OS (`--tabs` overrides it):
+Send a `request` to `role:leader` from the browser; it goes user → leader → deployer → leader → user. Tab handling per OS, the checks it makes before starting, `--force`, `--permission-mode` and the reply format are in the [usage guide](docs/usage.md#try-a-round-trip-between-roles-with-two-agents-leader--deployer).
 
-| Where | Tabs open in | Notes |
-|---|---|---|
-| Inside tmux (any OS) | new windows of the current tmux session (`tmux`) | |
-| Windows | Windows Terminal tabs (`wt`); separate console windows if there is no `wt.exe` (`window`) | |
-| macOS | Terminal.app windows (`terminal`) | Not yet checked on a real Mac (design.md §6.2) |
-| Linux, outside tmux | a detached tmux session `agent-hub` (`tmux`) | Watch it with `tmux attach -t agent-hub` from another terminal |
-| None of the above | nothing is opened (`print`) | Each role's command is printed in order; run each in a terminal of your own while the script waits |
-
-On Windows, the PowerShell scripts keep working with the same parameters as before; they are wrappers around `npm run team`:
-
-```powershell
-./tools/dev/start-team.ps1 -Roles leader,deployer   # = npm run team -- --roles leader,deployer
-./tools/dev/start-agent.ps1 -Role leader            # = npm run team -- agent --role leader
-```
-
-- Both take `--project <folder>` (`-Project`) to choose the project to work in (agent-hub if omitted; a relative path is from the folder you typed the command in). See "Using it in other repositories" below.
-- After starting each one, it waits until that role's Mailbox attaches to the Hub before going on (limit `--attach-timeout`, default 60 seconds). Answer the development channel's warning dialog in each tab as it opens (with a detached tmux session, attach to it first).
-- Connected roles are skipped (restarting would cut off the current session by takeover). To restart, use `--force`.
-  It remembers the `attachmentId` of the Attachment before starting, and says "attached" only once an Attachment with a different id appears. Even if the previous session's Attachment lingers until its lease expires, that is not read as success. If none appears within the limit, it warns of a failure and finally exits with code 1 (roadmap C33).
-- Roles not in `roles.json` are stopped before starting. If `dist/` is older than `src/`, it builds first (skip with `--no-build`).
-- Before starting, it checks the following (roadmap C56-C58; the contents are in `src/team/checks.ts`).
-  - If `claude --version` does not pass (NVM blocking it with NVM4306, an exe being replaced by a self-update and so on), it prints the head of the output and ends without starting any role (it prefers `claude.exe` to `claude.cmd` on Windows).
-  - If the hook settings are missing, it warns and adds the command to put them back (a one-liner to copy them, for PowerShell on Windows and sh elsewhere, if there is no `.claude/settings.local.json`; if there is one, it does not overwrite it and tells you to add them by hand).
-  - In the `-Project` folder it runs `git fetch` (without prompting for credentials, up to 15 seconds), then warns if the HEAD is detached, behind its upstream, or has no upstream. It does not stop. This keeps the team from running on an old version of a submodule.
-- If a tab's `claude` ends before attaching, it fails without waiting for the limit and prints the exit code and the reason (the output of `claude --version`). The role's `agent` writes the ending to `agent-hub-start/<Mailbox>.json` under the OS's temporary folder, and `team` reads it. A tab whose `claude` failed stays open until you press Enter, so the reason can be read.
-- At the end, the warnings and failures above are gathered under `--- summary ---` and `UI: http://127.0.0.1:<port>/?token=…` is printed. If the token does not match the Hub, it says so instead of the URL.
-- The attach check uses `HUB_TOKEN` from `.env` (an environment variable wins).
-
-1. Confirm that `agent-hub.leader` and `agent-hub.deployer` show as connected, with their roles, on the left of the browser.
-2. From the browser, send a `request` to `role:leader`. The body is a work request (e.g. "create `tmp/hello.txt`").
-3. The leader sends implementation instructions to `role:deployer` as a `request`, and the deployer does the work and returns a `reply`.
-4. The leader checks the change and sends a `reply` to the request from step 2. The browser lists the four messages in the order `request` → `request` → `reply` → `reply`.
-
-- The message formats are set by the role descriptions. leader → deployer uses fixed English headings (`GOAL` / `SCOPE` / `SPEC` / `DONE WHEN`);
-  deployer → leader is in English, with only the list of changed files (`CHANGED`) in DCP form. leader → user uses five English headings, `RESULT` / `VERIFIED` / `NOT VERIFIED` / `NEEDS DECISION` / `NEEDS ACTION`, with the body in the user's language (`HUB_LANGUAGE` below). The browser bolds headings at the start of a line in the body, gives `NEEDS DECISION` a background color, and colors the headings of `NEEDS ACTION` and `NOT VERIFIED` (a section whose content is "none" is not highlighted). Replies with the earlier Japanese headings (`要判断` and so on) are colored the same way (design.md §3.15).
-- The instruction to keep the leader's terminal answers short is in the role description too. The output style (`/output-style concise`) is saved in `.claude/settings.local.json` and affects every session in the same folder, so it is not used. Passing it with `--settings` at startup misbehaved in 2.1.301 (design.md §6.1f).
-- The two sessions work in the same folder, so the deployer's changes are visible to the leader with `git diff`.
-- Approve the deployer's file edits in terminal C.
-- The permission mode is passed as `claude --permission-mode <value>` only when you add `--permission-mode <value>` (`-PermissionMode`). If omitted nothing is passed and Claude Code starts with its default. If your account makes auto the default, permission waits hardly appear.
-  To try permission waits, add `--permission-mode default` (e.g. `npm run team -- agent --role deployer --permission-mode default`; adding it to a team start passes it to every role). To change it by hand after starting, switch that tab to `manual` with Shift+Tab (the 2.1.306 switcher has no `default`; `manual` corresponds to it; the hook's `permission_mode` says `default`; design.md §6.1o, roadmap C29).
-
-### Request work from roadmap items (Items)
-
-Send the roadmap's `### C<n>. Title` items (how to write them is at the top of [docs/roadmap.md](docs/roadmap.md)) to the Hub and cards line up under **Items** in the sidebar. Pressing a card opens a modal with its content (ID, title, status and reason, the check of each done-when line, the state of the request, the diff of the promise). The modal's **Draft request** turns it into a draft of `GOAL` / `DONE WHEN`, and the request you send carries the item (`meta.item`). **Open in editor** opens that line of the ledger (a `vscode://` link; your editor must support it). The body is not put in the index and is not shown in the modal (design.md §3.15). The sidebar's width can be changed with its handle and is remembered by this Hub's browser.
-
-```powershell
-npm run docs:index                                                       # agent-hub's docs/roadmap.md
-npm --prefix <agent-hub> run docs:index -- --file docs/TODO.md            # another project, from its root (no --file needed if the ledger is docs/roadmap.md)
-```
-
-- A project you sent can be chosen as a project in the UI even before any agent connects, and you can leave a request to `role:deployer @ <project>` (it arrives as unread at the Mailbox that attaches).
-- The Hub holds only a copy of the index; the source of truth is the repository's roadmap. Send it again after changing it. Remove it with **Remove** in Items.
-- Items shows four tiers: **Plan** (the order under the ledger's `## Plan` / `## 予定`; blocked items show what they wait for), **Awaiting a decision** (proposed), **Parked** (held; collapsed by default), **Recently closed** (the five newest closed lines by date). For a ledger without a plan heading, decided and blocked items go into Plan in number order.
-- Cards show requested / reported, and the diff when the wording of the done-when conditions changed after sending.
-- For projects whose ledger has its own format, sending it may read every item as "decided". In that case do not index it; send a plain request (roadmap C27).
-
-**Send automatically after a commit that changed it** (optional): you can install a git post-commit hook that sends the index only on commits that changed the ledger (`docs/roadmap.md`). The commit is not stopped if sending fails (if the Hub is stopped, it prints one line of warning and goes on).
-
-1. Copy the hook into the target repository's `.git/hooks/` (agent-hub's `tools/hooks/post-commit-index.sh`).
-   ```powershell
-   Copy-Item <agent-hub>\tools\hooks\post-commit-index.sh <repository>\.git\hooks\post-commit
-   ```
-2. Rewrite the `AGENT_HUB_DIR=` line of the copied `post-commit` to agent-hub's folder (`AGENT_HUB_DIR="<agent-hub>"`, with `<agent-hub>` being the absolute path of agent-hub's folder written with `/` separators).
-3. To send, the Hub must be running and the token in agent-hub's `.env` must be readable (the same as `npm run docs:index`).
-4. To check: change the ledger and commit; it should appear in Items. If it does not, read the one line of warning printed after the commit.
-
-The hook runs `npm --prefix <agent-hub> run docs:index` at the root of the repository you committed in. To remove the hook, delete `.git/hooks/post-commit`.
-
-### Role definitions (roles.json)
-
-Write each role's default subscriptions and description in the Hub's configuration file. The sample is [roles.example.json](roles.example.json).
-
-```powershell
-Copy-Item roles.example.json roles.json   # for your environment; roles.json is not committed
-npm run hub                               # read only at startup; restart after changing it
-```
-
-- Each role has `description` (a string) and `subscribe` (an array of topic names). Other fields are kept rather than dropped, but are not used today.
-- A Mailbox started with `HUB_ROLE=reviewer` receives `reviewer`'s default subscriptions without calling `subscribe`. Messages to `to: role:reviewer` also reach this Mailbox.
-- `description` goes into the shim's instructions. The shim attaches before initialize to fetch it (up to 3 seconds; after that it starts without the description).
-  That Claude Code behaves as described was checked with three sessions, leader / deployer / reviewer (design.md §6.2-5).
-- Attaching with a role that is not defined is 400 `unknown_role`, and no Mailbox is created.
-- Without the file, role names are not checked and there are no default subscriptions (as before).
-- If the file's shape is wrong, the Hub does not start; it prints the file name and where the problem is and stops (it does not silently fall back to defaults).
-- Topics of the default subscriptions cannot be removed with `unsubscribe`. To remove one, delete it from `roles.json` and restart the Hub.
-- To use a file elsewhere, set `HUB_ROLES_FILE` (default `roles.json` at the repository root).
-
-### The language agents write to the human in (HUB_LANGUAGE)
-
-Even when role descriptions and the exchanges between agents are in English, you can have replies, questions and reports addressed to the human written in a language you choose. Write one language tag in `.env` and restart the Hub.
-
-```
-HUB_LANGUAGE=ja
-```
-
-- The value is a BCP 47 language tag (`ja`, `en`, `pt-BR` and so on). If the value cannot be read, the Hub does not start. If unset, nothing is added.
-- The shim receives it on attach and adds one line to its instructions: "write text addressed to the human in Japanese (ja) and do not translate the reply-format headings (`RESULT` and so on)". It takes effect for sessions started after the Hub restarts.
-- The bodies of messages between agents (deployer → leader and so on) and the reply-format headings do not change (design.md §3.5, §3.15).
-
-### Using it in other repositories
+## Using it in other repositories
 
 Start agents **at that project's root**. The `CLAUDE.md` they read, the hooks, the scope of permissions and `git diff` are all decided by the folder they start in (design.md §3.3).
 
@@ -321,7 +110,7 @@ npm run team -- --roles leader,deployer --project ~/work/cairn       # cairn.lea
 
 - `claude` is started in the `--project` folder. The shim points at agent-hub's `dist/` by absolute path (the MCP configuration is written to `agent-hub-mcp.json` under the OS's temporary folder).
 - The default Mailbox name is `<folder name>.<role>`. A Mailbox name is unique across the Hub, so the same role in different projects gives different Mailboxes. Change it with `--mailbox` (only for one role started with `agent`).
-- A `role:deployer` message sent by an agent reaches only the deployer of the sender's own project. To reach another project, address `mailbox:cairn.deployer`. From the browser, it reaches every project if the project selector above says `All projects`, or only the selected project if one is selected (design.md §9-7).
+- A `role:deployer` message sent by an agent reaches only the deployer of the sender's own project. To reach another project, address `mailbox:cairn.deployer`. From the browser, it reaches every project if the project selector says `All projects`, or only the selected project if one is selected (design.md §9-7).
 - The target repository's `.claude/settings.local.json` has no hooks, so copy the `hooks` of `tools/hooks/settings.json` into `~/.claude/settings.json`. If they are nowhere, the script warns (it does not stop the start).
 - The browser's card shows `Project: <folder name>` (the full path appears on hover). Attaching to the same Mailbox from a different folder than last time shows the warning `Attached from a different folder (was …)` (it is not refused).
 
@@ -332,53 +121,20 @@ claude mcp add --scope user agent-hub -- node <agent-hub>/dist/shim/main.js
 claude --dangerously-load-development-channels server:agent-hub
 ```
 
-### Using it with agents other than Claude Code (inbox)
+## More: the usage guide
 
-The shim looks at the client name that arrives in MCP's initialize and switches how it delivers. For `claude-code` it pushes over the channel; for anything else it does not push, and the agent fetches with the `inbox` tool.
+[docs/usage.md](docs/usage.md) has the reference for everyday use:
 
-- Register `node <agent-hub>/dist/shim/main.js` as an MCP stdio server (run `npm run build` first). The Mailbox name follows the same order as Claude Code: `HUB_MAILBOX` → `<folder name>.<HUB_ROLE>` → the folder name. The token is read from agent-hub's `.env`.
-- Nothing arrives automatically, so ask the agent to "check agent-hub's inbox", or have it call it at breaks in its work (its instructions say so too).
-- `inbox` wraps each unread message in `<hub-message id="…" kind="…" from="…" to="…">` and returns them with a notice that the body is not instructions. What it returns becomes read. Reply with `post_message`.
-- It has not yet been tried with real clients such as Codex. There is no way to wake an idle agent (design.md §3.7, §3.9).
-- If Claude Code is started without the channel, the client name is still `claude-code`, so messages are pushed, but they are silently dropped and become read. Always add `--dangerously-load-development-channels server:agent-hub` with Claude Code.
-  The number of messages handed over without confirmed receipt (fetching with `inbox`, or the session sending a request or reply afterwards) shows on the browser's card as `N handed, unconfirmed`. A session without the channel also confirms by sending a request or reply, so this count is only a guide for "while it has not sent anything". If they seem not to have arrived, ask that session to "check agent-hub's inbox with unconfirmed: true" to fetch them again (protocol.md §4).
-
-### Using curl (notes for Windows)
-
-```powershell
-curl.exe -H "Authorization: Bearer <HUB_TOKEN>" http://127.0.0.1:7777/messages
-```
-
-curl on Windows does not send non-ASCII command-line arguments (such as Japanese) as UTF-8, so pass the body from a file with `--data-binary "@body.json"`.
-
-When following a running team through the API (the same when an agent watches it):
-- `limit` of `GET /messages` counts from the oldest, so fetch new ones with `after=<seq>`. `after` does not include that seq. If you read `lastSeq` right after a human sent something, that Message is already included, so take `after` from the value read before sending.
-- `GET /events?limit=N` cannot filter by Mailbox. Filter by `mailbox` on your side, and see what happened from `payload.notification_type` (permission waits, idle) and `last_assistant_message` (the final answer at a turn end). `cursor` in `GET /mailboxes` is where handing over has reached.
-- Messages sent from curl show as `user:cli`, distinguished from those from the browser (`browser`).
-- The compose Hub runs from the built image. After changing the Hub's code, `docker compose up -d --build` is needed (`restart` alone keeps the old image). After rebuilding, shims attach again by themselves.
-
-### Development
-
-```powershell
-npm test          # unit tests, and integration tests that start the shim as a real process
-npm run typecheck
-npm run docs:check   # checks how roadmap items are written (exit 1 if broken). `-- --index` prints the item index as JSON
-npm run docs:index   # sends the roadmap item index to the Hub for the UI's Items ("Request work from roadmap items" above)
-npm run hub:dev   # watches for changes and restarts the Hub
-npm run ui:check  # checks the card states scene by scene with a Hub on another port and headless Chrome (needs Chrome; set its location with CHROME)
-```
-
-- **Checking the UI with headless Chrome**: the fixed scenes are in `npm run ui:check` (`tools/dev/ui-check.mjs`). Run it when you change the UI, and add new scenes there. Points for doing it by hand: the UI keeps `/stream` (SSE) open, so `chrome --headless=new --dump-dom` never returns (even with `--virtual-time-budget`). Instead:
-  1. Start a Hub separate from the one in use, with `HUB_PORT=7795` and `HUB_DATA_DIR=<a temporary folder>`.
-  2. Start Chrome with `--remote-debugging-port` and a temporary `--user-data-dir`, then over CDP `Page.navigate` (`/?token=…`) → wait a few seconds → read the DOM with `Runtime.evaluate` (e.g. `[...document.querySelectorAll('#mailboxes .mb')].map(b=>b.innerText)`; Node's built-in `WebSocket` is enough).
-  3. Check the UI's behavior against old Hubs or failing APIs without changing the Hub, by intercepting with `Fetch.enable` (`urlPattern`) and returning 404 / 500 with `Fetch.fulfillRequest`.
-  4. To clean up, stop only the chrome.exe with the temporary profile and the node on 7795.
-- **Using src/ from an ad-hoc script** (measurements and the like, in a script kept outside the repository): give it the `.mts` extension (top-level await does not work in a `.ts` outside the repository), import with a `file:///C:/…` URL (`C:/…` as is gives `ERR_UNSUPPORTED_ESM_URL_SCHEME`), and run it from the repository root with `node --import tsx <absolute path>.mts`. Store / Hub take `now`, so the clock can be swapped.
+- Browser: [reading the cards](docs/usage.md#reading-the-cards-in-the-browser-state-and-backlog), [custom commands](docs/usage.md#custom-commands), [pasting images](docs/usage.md#pasting-images), [Forward](docs/usage.md#carry-an-agents-output-to-another-agent-forward)
+- Mailboxes: [subscriptions](docs/usage.md#subscribing-once-per-mailbox-is-enough), [takeover](docs/usage.md#replacing-an-agent-takeover), [deleting](docs/usage.md#deleting-mailboxes-you-no-longer-use), [retention](docs/usage.md#message-retention-and-deletion)
+- Teams and work: [teams in detail](docs/usage.md#try-a-round-trip-between-roles-with-two-agents-leader--deployer), [requesting work from roadmap items](docs/usage.md#request-work-from-roadmap-items-items), [roles.json](docs/usage.md#role-definitions-rolesjson), [`HUB_LANGUAGE`](docs/usage.md#the-language-agents-write-to-the-human-in-hub_language)
+- Other: [agents other than Claude Code (`inbox`)](docs/usage.md#using-it-with-agents-other-than-claude-code-inbox), [curl on Windows](docs/usage.md#using-curl-notes-for-windows), [development](docs/usage.md#development) (`npm test`, `npm run typecheck`, `npm run docs:check`, `npm run ui:check`)
 
 ## Documents
 
 | File | Content |
 |---|---|
+| [docs/usage.md](docs/usage.md) | Reference for everyday use (the sections above) |
 | [docs/design.md](docs/design.md) | Background, requirements, architecture, design decisions, unverified items |
 | [docs/protocol.md](docs/protocol.md) | HTTP API, message schema, MCP tools, delivery guarantees |
 | [docs/roadmap.md](docs/roadmap.md) | Phases and acceptance criteria (P0 → P2), open items (`C<n>`; the rules for writing them are at the top) |
@@ -387,9 +143,3 @@ npm run ui:check  # checks the card states scene by scene with a Hub on another 
 | [tools/dev/roles/](tools/dev/roles/) | Operating instructions for leader / deployer / reviewer (message formats). `npm run team` adds them to the system prompt |
 | [CLAUDE.md](CLAUDE.md) | Working rules for implementing agents |
 | [LICENSE](LICENSE) | MIT |
-
-## Inspiration
-
-Inspired by an article about a developer who used Claude and Codex side by side, saw that "reading is the actual work" in the manual copy-and-paste between the two apps,
-and built a tool (Relay) that automates only the hauling.
-This project is an attempt to rebuild that as an app-independent, MCP-based Hub of its own.

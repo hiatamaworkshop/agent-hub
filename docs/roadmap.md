@@ -339,6 +339,9 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C68 Slim down the README (2026-10-29, requested by the user)
+  - README went from 395 to 145 lines: it keeps the goals, status, setup, the first round trip, hooks and team start in short, and "Using it in other repositories". The reference parts moved to `docs/usage.md` (cards, commands, images, hooks, Forward, subscriptions, takeover, retention, teams in detail, Items, roles.json, `HUB_LANGUAGE`, inbox, curl, development) with the text unchanged except links. The "Inspiration" section was removed.
+  - Fixed references: CLAUDE.md's document map, the pointers in `tools/hooks/post-commit-index.sh`, the UI tooltip and a comment in `public/index.html`, and design.md §6.1 (hooks step 3). Records in closed lines that name the README stay as they were.
 - [x] C66 人宛ての本文の言語を 1 つの設定で決める (2026-10-29、ユーザーの依頼)
   - 設定は Hub の `HUB_LANGUAGE` (BCP 47 のタグ) にし、attach の応答の `language` で shim に渡す。shim は role の説明の後に「人宛ての本文は Japanese (ja) で書き、返事の型の見出しは訳さない」の 1 行を英語で差し込む。置き場の理由は design.md §3.5 (roles.json には全体で 1 つの設定を置く場所がない、shim の環境変数ではセッションごとに渡す手間がかかる)。README と `.env.example` に使い方を書いた
   - 読めない値 (`japanese`・`zz`) では Hub が起動しないこと、`JA` が `ja` になり attach の応答に載ることを、別のポートの Hub で確かめた。試験は `src/shared/language.test.ts` と `src/shim/role-instructions.test.ts` (設定あり・なし、Hub から取れないとき)。`npm test` 349 件が通る
@@ -532,3 +535,12 @@ Related: it becomes the destination for having another agent or vendor double-ch
 Status: held(after C59)
 
 C59's Noise treats notification-type Events as fixed. Let a human configure what Noise includes (per Event kind). Where the setting lives (`settings.json` or `localStorage`) is decided by looking at what C59's implementation showed. Once decided, remove the status and write the done-when conditions.
+
+### C67. Starting a team from another project's folder
+Status: proposed
+
+2026-10-29, user: they usually work inside each project's repository, so having to move to agent-hub only to run `npm run team -- --project <folder>` runs against that habit. Today the only way in is Hub → project (README "Using it in other repositories").
+Direction (not yet decided): a thin entry point that runs from the project's folder and calls `npm run team` with `--project` set to the current folder. Candidates: a wrapper script on PATH (e.g. `hub-team`) / a global skill that prints the command. agent-hub's location comes from an environment variable or is baked into the wrapper.
+- Keep the line in design.md §2 and CLAUDE.md: a human starts the team. A session must not start a team on its own; at most it shows the command to run.
+- The wrapper only starts things. It does not read or judge the project's content (CLAUDE.md "When running another project's team").
+- To decide: wrapper vs skill vs both; how the wrapper finds agent-hub; Windows (`.ps1`/`.cmd`) and sh versions; whether `npm run team` itself gets a `--project .` default when run elsewhere.

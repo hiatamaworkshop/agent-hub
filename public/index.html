@@ -1170,7 +1170,7 @@ async function forwardSelected() {
   }
 }
 
-// 向き付きの組 (A → B) ごとの未送の件数 (README「発想の元」の Relay の画面が手本)。
+// 向き付きの組 (A → B) ごとの未送の件数 (Relay の画面が手本)。
 // 組は転送の履歴から作る: Mailbox A が書いたメッセージを Mailbox B へ転送したことがあれば A → B。
 // 未送は、A が書いたメッセージのうち、B へ最後に転送した大元より新しく、B 宛て (mailbox / B の role) でないもの。
 // 表示だけで、Hub の記録や未読には触らない
@@ -1946,7 +1946,7 @@ function stateLine(st) {
   if (st.until) line.dataset.until = String(st.until)
   // 作業中の要旨は別の行に出す。ほかの状態の detail (質問・委ねた先) は状態の行に括弧で添える
   if (st.detail && st.key !== 'working') line.dataset.detail = st.detail
-  line.title = def.title + (st.guess ? ' No hook events from this session, so the end of its turn is unknown (README: hooks).' : '')
+  line.title = def.title + (st.guess ? ' No hook events from this session, so the end of its turn is unknown (docs/usage.md: hooks).' : '')
   paintState(line)
   return line
 }

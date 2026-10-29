@@ -1,7 +1,7 @@
 #!/bin/sh
 # post-commit: docs/roadmap.md を変えたコミットの後に、roadmap の索引を Hub に送る (design.md §3.15 の未決 2)。
 # 送れなくても、トークンがなくても、どんな失敗でも exit 0 で終わる。コミットは止めない。
-# 入れ方は README「roadmap の項目から依頼する (Items)」。AGENT_HUB_DIR に agent-hub のフォルダを入れる。
+# 入れ方は docs/usage.md「Request work from roadmap items (Items)」。AGENT_HUB_DIR に agent-hub のフォルダを入れる。
 AGENT_HUB_DIR="${AGENT_HUB_DIR:-}"
 
 # 設定がなければ何もしない (黙って終わる)
