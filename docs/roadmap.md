@@ -17,8 +17,7 @@
 ## 予定
 
 取りかかる順。状態の行のない項目とブロックの項目だけを載せる (題は索引から引く)。並べ替えは人の判断。
-
-- [ ] C59
+- [ ] C61
 
 
 ## P0: 1 セッションで往復する (完了 2026-10-16)
@@ -315,6 +314,11 @@
 - [x] C43 バックグラウンドの処理を待つターンの終わりを、Stopped と出さない (2026-10-28、ユーザーが決定。上限は 60 分、Stopped の代わりにだけ使う)
   - Hub は `backlog.lastTurnEnd.running` (`Stop` の `background_tasks` のうち `status: "running"` の件数と最初の処理の `description`) を返す。UI は返信のない依頼を抱えたカードで、最後の `turn.end` に走っている処理があり、その終了から 60 分以内なら Working と出し、要旨の行に `background: <description>` を出す。過ぎたら 30 秒ごとの見直しで Stopped に戻す (終わらない処理を立てたままのターンを Working に残さないため)
   - Hub の試験 (終わった処理は数えない、空になれば `running` を省く) を足し、全体の 337 件が通る。`npm run ui:check` に、試験をバックグラウンドで流して終えたターン (`Working`・`background: npm test`) → そのターン終了を Event の窓から押し出して読み直す (Hub の値で Working のまま) → UI の時計を 61 分進めると Stopped → 処理が終わったターンで返さない (`Stopped, no reply`) の場面を足し、全場面が合格。実機の Claude Code のターンでは見ていない (次にバックグラウンドの試験を待つ通しで確かめる)
+- [x] C59 スレッドの絞り込みを 1 つのモジュールにまとめ、Compact も軸の 1 つにする (2026-10-29、leader の依頼)
+  - 絞り込みを `FILTER`・`AXES`・`hiddenBy` の 1 つのモジュールにし、Project・Mailbox (複数選択)・Kind (Message の `kind` と Event の種類)・Noise (既定は `notification`)・Recent (Compact の印) の 5 軸を、述語の積で決める。Compact は DOM から外さず `data-compacted` の印を付け、同じ述語で隠す。stub は消し、`Filter ▾`・チップ (× で 1 つ外す)・`Reset`・隠れた件数と畳んだ件数 (と Expand) をスレッド操作バーの 1 か所に出す。軸ごとの保存は localStorage (`agent-hub.filter.*`)、読むときに決まっていない種類と今ない Mailbox を黙って落とす
+  - 作法は design.md §3.2 に書いた。待ち (質問・許可待ち・人宛ての request・usage limit の通知) は、プロジェクトを除く軸の組み合わせでは隠れず、畳まれもしない。プロジェクトは従来どおり (他プロジェクトの待ちは隠し、`N waiting in other projects` に数える)。完了条件の「どの組み合わせでも」をプロジェクトに及ぼすかは design.md §9-10 で人の判断を待つ
+  - 挙動の変更 2 点 (完了条件の「挙動を変えない」の範囲外として報告): Compact は待ちを畳まなくなった (待ちは隠さない作法を Recent にも及ぼしたため)。Noise の既定は off で、通知を隠すのは人が選んだとき
+  - 試験: `npm test` 337 件が通る。`npm run ui:check` は 69 件が合格。C59 で足したのは Noise (通知だけ隠れ、待ちは残る)、Mailbox (選んだものと待ちのカード。人宛て request と質問は残る)、Kind (× で外れる。隠れた返信のバッジは `hidden by the Kind filter` と出し、開かない)、全軸を掛けても待ちは隠れない、Compact の件数と Expand、Reset、保存の読み直しの場面
 
 ## 項目
 
@@ -488,26 +492,22 @@ C45 の後、reviewer が依頼のたびに正本を読む形で足りないと�
 
 関係: C47 (相談のボタン) と C3 (Claude Code 以外のクライアント) で、別のエージェント・ベンダーにダブルチェックさせるときの運び先になる。
 
-### C59. スレッドの絞り込みを 1 つのモジュールにまとめ、Compact も軸の 1 つにする
-
-設計: design.md §3.2 (スレッド操作バー、プロジェクトの絞り込み)。今は `projectFilter` (プロジェクト) と Compact (最新 N 件) が別々の仕組みで、Mailbox・種類・通知での絞り込みがない。軸ごとの述語を持つ共通のモジュールにし、操作は `Filter ▾` (ポップオーバー)・`Compact`・`Reset` の 3 つと、有効なフィルタのチップ、隠れた件数の 1 か所の表示にそろえる。
-
-作法 (design.md §3.2 に書く):
-- 隠すだけで消さない。Hub・未読・配信には影響させない (今のプロジェクトの絞り込みと同じ)。
-- 質問待ち・許可待ち・人宛ての request は、どの軸でも隠さない。
-- 軸は Project・Mailbox (複数選択)・Kind (Message の `kind` と Event の種類)・Noise (通知系の Event)・Recent (最新 N 件)。軸を足すときは述語とポップオーバーの欄を足すだけにする。
-- 設定は軸ごとに `localStorage` へ保存する。
-
-#### 完了条件
-- [ ] 軸ごとの述語を持つ絞り込みのモジュールがあり、Project・Mailbox・Kind・Noise・Recent の各軸が `show(item)` の積で決まる。既存の `projectFilter` と Compact は、このモジュールに載せ替えて挙動を変えない
-- [ ] Noise の既定は通知系の Event (`Notification` など。待ちを表す質問・許可待ちは含めない)。何を含めるかの設定は C60
-- [ ] 質問待ち・許可待ち・人宛ての request は、どの軸の組み合わせでも隠れない
-- [ ] 有効なフィルタをチップで並べて `×` で個別に外せ、`Reset` で全部外せる。隠れた件数を 1 か所に出し、今の Compact のスタブ (Expand) もそこに寄せる
-- [ ] 溜まりのバッジと、バッジからのジャンプが、新しい軸で隠れたときも今のプロジェクトの絞り込みと同じ扱いになる (隠れた旨を出す)
-- [ ] 設定が軸ごとに保存され、読み込み時に存在しない Mailbox などの値は黙って捨てる
-- [ ] design.md §3.2 に作法を書き、`npm test` と `npm run ui:check` が通る。`ui:check` に Mailbox の絞り込み・通知の非表示・待ちが隠れないこと・Reset を足す
-
 ### C60. 絞り込みの Noise に含める通知を設定できるようにする
 状態: 保留(C59 の後)
 
 C59 の Noise は通知系の Event を固定で扱う。何を Noise に含めるか (Event の種類ごと) を人が設定できるようにする。設定の置き場 (`settings.json` か `localStorage` か) は、C59 の実装で分かったことを見て決める。決まったら状態を外し、完了条件を書く。
+
+### C61. カードにエージェントのモデルと effort を表示する
+
+設計: design.md §3.2 (カード)、§6 (hook の事実)。表示だけで、Hub 経由で変更はしない。取れない値は表示しない (未表示にフォールバックする)。
+
+取り方 (公式 hooks 資料。2026-10-29 に確認、ページの後半は未読):
+- effort: hook の共通入力 `effort: { level }` (`low` / `medium` / `high` / `xhigh` / `max`)。ツール使用の文脈の Event (`PreToolUse` / `PostToolUse` / `Stop` / `SubagentStop`) に載り、モデルが effort に対応しないと載らない。変更を知らせる hook は見つかっていないので、変更は次の `Stop` で分かる (ターンの終わりまで遅れる)。
+- model: `SessionStart` の入力に `model` が載るが、いつも載るとは限らない。`PostModelSwitch` が `from_model` / `to_model` を渡し、`/model` での変更と resume 時の復元が出る。`Stop` などには載らない。
+
+#### 完了条件
+- [ ] 着手前に、実機で `SessionStart` と `PostModelSwitch` の実ペイロードを確かめ (`model` が載る条件、`/model` で変えたときの `to_model` の形)、公式資料の未読の部分で effort の変更を知らせる仕組みがないかも見て、結果を design.md §6 に記録する。なければ、そう書く
+- [ ] `tools/hooks/settings.json` に `SessionStart` と `PostModelSwitch` を足し、Hub が Event に取り込む (payload は元の JSON のまま)。README の hook の手順と protocol.md の Event の種類を合わせる
+- [ ] 試験: Hub が `SessionStart` と `PostModelSwitch` の payload を取り込むこと (`src/hub` の Event の変換の試験の形)。`model` のない `SessionStart` でも取り込めること
+- [ ] カードに最後に見えた model と effort を小さく出す (例 `opus-5 · medium`)。値が取れないものは何も出さず、片方だけ取れればその片方だけ出す。「最後に見えた値で、今の設定の保証ではない」ことを tooltip に書く
+- [ ] `ui:check` に、両方ある・片方だけ・どちらもない場面を足し、`npm test` と `npm run ui:check` が通る

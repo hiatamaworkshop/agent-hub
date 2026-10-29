@@ -318,6 +318,8 @@ try {
   }
   const evaluate = async (expression) => (await cdp('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })).result.value
   const seqOf = async (body) => (await api('GET', '/messages?after=0&limit=1000')).messages.findLast((m) => m.body === body).seq
+  // 畳んだ (Compact の印の付いた) 項目。ページ側の式を文字列で持つ
+  const COMPACTED = "[...msgBoxes.values(), ...evtBoxes.values()].filter((b) => b.dataset.compacted === '1')"
   // バッジ (カードの名前と層) を実際に押し、強調された行と表示範囲を読む
   const jumpFrom = (card, layer) => evaluate(`(async () => {
     const box = [...document.querySelectorAll('#mailboxes .mb')].find((b) => (b.querySelector('.name') || {}).textContent === ${JSON.stringify(card)})
@@ -328,7 +330,7 @@ try {
     chip.click()
     await new Promise((r) => setTimeout(r, 400))
     const hit = document.querySelector('#list .hit')
-    const stub = !!document.querySelector('#list .stub')
+    const stub = ${COMPACTED}.length > 0
     if (!hit) return { text, hit: null, stub }
     const list = document.getElementById('list').getBoundingClientRect()
     const r = hit.getBoundingClientRect()
@@ -337,15 +339,15 @@ try {
   // 隠れた Message の seq で jumpTo を呼ぶ。バッジと同じ形の t を渡す (隠れた Message を指すバッジは通常の数え方では出ない)
   const hiddenJump = (seq) => evaluate(`(() => {
     const list = $('list')
-    const before = { top: list.scrollTop, folded: folded.length, stub: !!document.querySelector('#list .stub'), boxes: list.querySelectorAll('.msg, .evt').length }
+    const before = { top: list.scrollTop, folded: ${COMPACTED}.length, boxes: list.querySelectorAll('.msg, .evt').length }
     jumpTo({ count: 1, oldestAt: null, oldestSeq: ${seq}, eventId: null })
     const m = [...seen.values()].find((x) => x.seq === ${seq})
     const target = m && msgBoxes.get(m.id)
     return {
       status: $('status').textContent,
-      moved: list.scrollTop !== before.top || folded.length !== before.folded || !!document.querySelector('#list .stub') !== before.stub || list.querySelectorAll('.msg, .evt').length !== before.boxes,
+      moved: list.scrollTop !== before.top || ${COMPACTED}.length !== before.folded || list.querySelectorAll('.msg, .evt').length !== before.boxes,
       hit: !!(target && target.classList.contains('hit')),
-      stillFolded: folded.some((f) => f.seq === ${seq}),
+      stillFolded: document.querySelector('#list [data-seq="${seq}"]').dataset.compacted === '1',
     }
   })()`)
   const demoKey = await evaluate("[...projects.values()].find((p) => p.label === 'demo').key")
@@ -361,13 +363,13 @@ try {
   const hiddenOld = await seqOf('TARGET: C2')
   await evaluate("$('keep').value = 1; $('fold').click()")
   await sleep(300)
-  const inFold = await evaluate(`folded.some((f) => f.seq === ${hiddenOld})`)
+  const inFold = await evaluate(`document.querySelector('#list [data-seq="${hiddenOld}"]').dataset.compacted === '1'`)
   verify('(準備) 隠れた依頼 TARGET: C2 が畳みの中にある', inFold, { hiddenOld })
   const hiddenFolded = await hiddenJump(hiddenOld)
   verify('隠れた依頼が畳みの中にあっても、畳みは開かず、ステータスに隠れていると出す (C48)', hiddenFolded.status.includes('hidden by the project filter') && hiddenFolded.status.includes('All projects') && !hiddenFolded.moved && hiddenFolded.stillFolded, hiddenFolded)
 
   // 3. 畳みの中の (隠れていない) 依頼: 畳みが開き、表示範囲に入って強調される
-  const shownFolded = await evaluate('folded.some((f) => f.seq === 1)')
+  const shownFolded = await evaluate(`document.querySelector('#list [data-seq="1"]').dataset.compacted === '1'`)
   verify('(準備) 隠れていない最も古い依頼 (#1) が畳みの中にある', shownFolded, {})
   const expanded = await jumpFrom('demo.old', 'agent')
   verify('畳みの中の (隠れていない) 依頼を指すと、畳みが開き、表示範囲に入って強調される (C48)', expanded && expanded.seq === '1' && expanded.hit === 'msg' && expanded.shown && !expanded.stub, expanded)
@@ -569,6 +571,95 @@ try {
   await reload()
   verify('サイドバーの幅: 保存値が範囲外なら既定の 260px (C54)', (await sideW()) === 260)
   await evaluate("try { localStorage.removeItem('agent-hub.sidebar') } catch (e) {}")
+
+  // 絞り込み (C59): 隠すだけで消さず、待ち (質問・許可待ち・人宛ての request) はどの軸でも隠さない。Reset で全部外れ、保存は軸ごと
+  await hook('demo.old', { hook_event_name: 'Notification', session_id: 's-old', notification_type: 'idle_prompt', message: 'idle' })
+  await sleep(1500)
+  const fcheck = (group, label, on) => evaluate(`(() => {
+    const l = [...document.querySelectorAll('#${group} .fopt')].find((x) => x.textContent === ${JSON.stringify(label)})
+    if (!l) return false
+    const c = l.querySelector('input')
+    c.checked = ${on}
+    c.dispatchEvent(new Event('change'))
+    return true
+  })()`)
+  const fnoise = (on) => evaluate(`(() => { $('fNoise').checked = ${on}; $('fNoise').dispatchEvent(new Event('change')); return true })()`)
+  const offMsg = (prefix) => evaluate(`(() => {
+    const b = [...document.querySelectorAll('#list .msg')].find((x) => ((x.querySelector('.body') || {}).textContent || '').startsWith(${JSON.stringify(prefix)}))
+    return b ? b.classList.contains('off') : null
+  })()`)
+  const cardNames = () => evaluate("[...document.querySelectorAll('#mailboxes .mb .name')].map((n) => n.textContent)")
+  const reset = () => evaluate("$('resetFilter').click()")
+  await evaluate("$('filterBtn').click()") // Filter ▾ を開き、欄を作らせる
+  await sleep(200)
+  // a. 既定では何も隠さず、Reset も出ない
+  const dflt = await evaluate("({ off: document.querySelectorAll('#list .off').length, noise: FILTER.noise, resetShown: !$('resetFilter').hidden })")
+  verify('絞り込みの既定では何も隠さず、Reset は出ない (C59)', dflt.off === 0 && dflt.noise === false && !dflt.resetShown, dflt)
+  // b. Noise: 通知の Event だけが隠れ、質問・許可待ちと Message は隠れない
+  await fnoise(true)
+  const noise = await evaluate(`(() => {
+    const off = [...document.querySelectorAll('#list .off')]
+    return { evt: off.filter((b) => b.classList.contains('evt')).map((b) => b.querySelector('.kind').textContent), msg: off.filter((b) => b.classList.contains('msg')).length, waitingOff: off.filter((b) => b.classList.contains('waiting')).length }
+  })()`)
+  verify('Noise: 通知の Event だけを隠し、質問・許可待ちと Message は隠さない (C59)', noise.evt.length >= 1 && noise.evt.every((k) => k === 'notification') && noise.msg === 0 && noise.waitingOff === 0, noise)
+  await fnoise(false)
+  // c. Mailbox: 選んだ Mailbox と、待ちのあるカードだけ残る。未選択の Mailbox の Message は隠れるが、人宛ての request と質問は隠れない
+  await fcheck('fMailbox', 'demo.leader', true)
+  const onlyLeader = await cardNames()
+  const cardsOk = onlyLeader.includes('demo.leader') && onlyLeader.includes('demo.reviewer') && onlyLeader.includes('demo.quiet') && !onlyLeader.includes('demo.old') && !onlyLeader.includes('demo.deployer')
+  verify('Mailbox: 選んだ Mailbox と、待ちのあるカードだけを出す (C59)', cardsOk, onlyLeader)
+  const mbMsg = { oldHidden: await offMsg(OLD_BODY), youReqShown: await offMsg('YOU-REQ-OLD'), waitsShown: await evaluate("[...document.querySelectorAll('#list .evt.waiting')].every((b) => !b.classList.contains('off'))") }
+  verify('Mailbox: 未選択の Mailbox の Message は隠れ、人宛ての request と質問は隠れない (C59)', mbMsg.oldHidden === true && mbMsg.youReqShown === false && mbMsg.waitsShown, mbMsg)
+  await reset()
+  // Reset: 全部外れ、チップも消え、保存も空に戻る
+  const back = await evaluate("({ off: document.querySelectorAll('#list .off').length, mailboxes: FILTER.mailboxes.size, kinds: FILTER.kinds.size, noise: FILTER.noise, chips: $('chips').childElementCount, stored: localStorage.getItem('agent-hub.filter.kinds'), resetShown: !$('resetFilter').hidden })")
+  const cardsBack = (await cardNames()).includes('demo.old')
+  verify('Reset: 全部外れ、チップも消え、保存も空に戻る (C59)', back.off === 0 && back.mailboxes === 0 && back.kinds === 0 && !back.noise && back.chips === 0 && back.stored === '[]' && !back.resetShown && cardsBack, { back, cardsBack })
+  // d. Kind: reply を隠す。隠れた Message を指すバッジは、隠れた旨を出す。チップの × で 1 つ外れる
+  await fcheck('fKind', 'reply', true)
+  const kindOff = await evaluate("({ allMsgReply: [...document.querySelectorAll('#list .off')].every((b) => b.classList.contains('msg') && b.querySelector('.kind').textContent === 'reply'), count: document.querySelectorAll('#list .msg.off').length })")
+  verify('Kind: reply を隠す (ほかの Message は残る) (C59)', kindOff.allMsgReply && kindOff.count > 0, kindOff)
+  const chipText = await evaluate("[...document.querySelectorAll('#chips .fchip')].map((c) => c.textContent)")
+  verify('有効な絞り込みは、× 付きのチップで並ぶ (C59)', JSON.stringify(chipText) === JSON.stringify(['Hide reply×']), chipText)
+  const replySeq = await seqOf('CHANGED: …')
+  const hiddenStatus = await evaluate(`(() => { jumpTo({ count: 1, oldestAt: null, oldestSeq: ${replySeq}, eventId: null }); return $('status').textContent })()`)
+  verify('隠れた返信を指すバッジは、Kind で隠れていると出し、スレッドは動かさない (C59)', hiddenStatus.includes('hidden by the Kind filter') && hiddenStatus.includes('Reset'), hiddenStatus)
+  await evaluate("document.querySelector('#chips .fchip button').click()")
+  verify('チップの × で Kind が外れ、隠れたものが戻る (C59)', (await evaluate("document.querySelectorAll('#list .off').length")) === 0)
+  // e. 全部の軸を掛けても、待ちは隠れない
+  await fcheck('fMailbox', 'demo.leader', true)
+  for (const label of ['request', 'reply', 'notice', 'turn end', 'turn failed', 'answered', 'approved', 'notification', 'boundary']) await fcheck('fKind', label, true)
+  await fnoise(true)
+  const all = await evaluate(`(() => {
+    const humanReq = [...document.querySelectorAll('#list .msg')].filter((b) => b.querySelector('.kind').textContent === 'request' && b.querySelector('.addr').textContent.includes('→ user:browser'))
+    const waits = [...document.querySelectorAll('#list .evt.waiting')]
+    return {
+      humanReq: humanReq.length, humanReqOff: humanReq.filter((b) => b.classList.contains('off')).length,
+      waits: waits.length, waitsOff: waits.filter((b) => b.classList.contains('off')).length,
+      cards: [...document.querySelectorAll('#mailboxes .mb .name')].map((n) => n.textContent),
+    }
+  })()`)
+  const allOk = all.humanReq >= 1 && all.humanReqOff === 0 && all.waits >= 1 && all.waitsOff === 0 && all.cards.includes('demo.leader') && all.cards.includes('demo.quiet') && !all.cards.includes('demo.deployer')
+  verify('全部の軸を掛けても、質問・許可待ち・人宛ての request と、待ちのあるカードは隠れない (C59)', allOk, all)
+  await reset()
+  // f. Compact: 畳んだ件数と Expand はスレッド操作バーに出る。待ちは畳まれず、Expand で全部戻る
+  await evaluate("$('keep').value = 1; $('fold').click()")
+  await sleep(200)
+  const fold1 = await evaluate("({ text: $('hiddenText').textContent, expand: !$('expand').hidden, bar: !$('hiddenInfo').hidden, waitsFolded: [...document.querySelectorAll('#list .evt.waiting')].filter((b) => b.dataset.compacted === '1').length })")
+  verify('Compact: 畳んだ件数と Expand をスレッド操作バーに出し、待ちは畳まない (C59)', /older items compacted/.test(fold1.text) && fold1.expand && fold1.bar && fold1.waitsFolded === 0, fold1)
+  await evaluate("$('expand').click()")
+  await sleep(200)
+  const fold2 = await evaluate("({ bar: $('hiddenInfo').hidden, flagged: [...msgBoxes.values(), ...evtBoxes.values()].filter((b) => b.dataset.compacted === '1').length })")
+  verify('Expand で畳みが開き、スレッド操作バーの行が消える (C59)', fold2.bar && fold2.flagged === 0, fold2)
+  await evaluate("try { localStorage.removeItem('agent-hub.keep') } catch (e) {}")
+
+  // g. 保存は軸ごと。読むとき、今ない Mailbox と決まっていない種類は黙って落とし、保存も直す
+  await evaluate("localStorage.setItem('agent-hub.filter.mailboxes', JSON.stringify(['demo.leader', 'demo.gone'])); localStorage.setItem('agent-hub.filter.kinds', JSON.stringify(['reply', 'bogus'])); localStorage.setItem('agent-hub.filter.noise', '1')")
+  await reload()
+  const loaded = JSON.parse(await evaluate("JSON.stringify({ m: [...FILTER.mailboxes], k: [...FILTER.kinds], n: FILTER.noise, stored: localStorage.getItem('agent-hub.filter.mailboxes') })"))
+  verify('保存された絞り込みは軸ごとに戻り、今ない Mailbox と決まっていない種類は黙って落とす (C59)', loaded.m.join() === 'demo.leader' && loaded.k.join() === 'reply' && loaded.n === true && loaded.stored === '["demo.leader"]', loaded)
+  await reset()
+  await evaluate("try { ['agent-hub.filter.mailboxes', 'agent-hub.filter.kinds', 'agent-hub.filter.noise'].forEach((k) => localStorage.removeItem(k)) } catch (e) {}")
 
   // 時刻の表示 (C31): 今日は時刻だけ、前日は日付つき
   const t = await cdp('Runtime.evaluate', {

@@ -105,7 +105,19 @@
   .foldbar label { display: flex; gap: 6px; align-items: center; }
   input#keep { width: 72px; font-family: var(--mono); }
   #list { flex: 1 1 0; min-height: 0; overflow: auto; padding: 12px 16px; }
-  .stub { font-size: 12px; color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; }
+  /* 絞り込み (design.md §3.2、C59)。Filter ▾ のポップオーバーと、有効な軸のチップ。隠れた件数と畳みもスレッド操作バーの 1 か所に出す */
+  .filterwrap { position: relative; }
+  .popover { position: absolute; top: calc(100% + 4px); left: 0; z-index: 5; width: min(320px, 90vw); padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: 0 4px 16px rgba(0, 0, 0, .12); display: grid; gap: 6px; }
+  .popover[hidden] { display: none; }
+  .popover fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 0; padding: 4px 8px 6px; }
+  .popover legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
+  .fopts { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .fopt { display: flex; gap: 4px; align-items: center; color: var(--fg); white-space: nowrap; }
+  .fnote { margin: 0; font-size: 11px; color: var(--muted); }
+  .chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+  .chips:empty { display: none; }
+  .fchip { display: inline-flex; gap: 2px; align-items: center; padding: 0 4px 0 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--fg); white-space: nowrap; }
+  .fchip .linkbtn { padding: 0 2px; line-height: 16px; }
   .msg { background: color-mix(in srgb, var(--pc, var(--line)) 6%, var(--panel)); border: 1px solid var(--line); border-left: 4px solid var(--pc, var(--line)); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; }
   /* 送り手の色: 縁取りと、ごく薄い地色。送り手の名前はチップの文字で読める */
   .c0 { --pc: var(--p0); } .c1 { --pc: var(--p1); } .c2 { --pc: var(--p2); } .c3 { --pc: var(--p3); }
@@ -240,6 +252,18 @@
     <div class="foldbar">
       <button type="button" id="fold" title="Hide messages older than the latest N and show them as one row. Display only: the Hub record and unread counts are unchanged.">Compact</button>
       <label title="How many latest messages stay visible after Compact (default 10)">Keep latest <input id="keep" type="number" min="1" step="1"></label>
+      <span class="filterwrap">
+        <button type="button" id="filterBtn" aria-haspopup="true" aria-expanded="false" title="Hide by Mailbox, kind or notification. Display only: the Hub record, unread counts and delivery are unchanged. Questions, permission prompts and requests to you are never hidden by these.">Filter ▾</button>
+        <div id="filterPop" class="popover" hidden>
+          <fieldset><legend>Mailbox (show only these)</legend><div id="fMailbox" class="fopts"></div></fieldset>
+          <fieldset><legend>Hide kind</legend><div id="fKind" class="fopts"></div></fieldset>
+          <fieldset><legend>Noise</legend><label class="fopt"><input type="checkbox" id="fNoise"> Hide notifications</label></fieldset>
+          <p class="fnote">Questions, permission prompts and requests to you are never hidden. Project is chosen at the top of the sidebar.</p>
+        </div>
+      </span>
+      <span id="chips" class="chips"></span>
+      <button type="button" id="resetFilter" class="linkbtn" hidden title="Clear every filter and show the compacted messages again">Reset</button>
+      <span id="hiddenInfo" hidden><span id="hiddenText"></span> <button type="button" id="expand" class="linkbtn" hidden title="Show the compacted messages again">Expand</button></span>
       <button type="button" id="elsewhere" class="linkbtn" hidden title="Sessions in other projects are waiting for a person (question or permission). Click to show all projects."></button>
       <span id="relay" title="Messages from a Mailbox not yet forwarded to a Mailbox you forwarded to before"></span>
       <button type="button" id="purge" class="linkbtn" title="Delete from the Hub now, without waiting for the retention period: messages already handed to every recipient, and all detection events. Unread messages and requests awaiting a reply are kept.">Purge read</button>
@@ -569,6 +593,7 @@ function render(m) {
   const ci = colorIndex(senderKey(m.from))
   const box = el('div', `msg c${ci}`)
   box.dataset.seq = m.seq
+  box.dataset.id = m.id
   box.dataset.ts = m.ts
   const head = el('div', 'head')
   head.append(el('span', `chip c${ci}`, senderLabel(m.from)), el('span', '', `#${m.seq}`), el('span', '', time(m.ts)), el('span', `kind ${m.kind}`, m.kind))
@@ -609,7 +634,7 @@ function render(m) {
   head.append(actions)
   box.append(head, bodyOf(m.body))
   renderFiles(box, m.meta)
-  box.classList.toggle('off', !messageInProject(m))
+  setOff(box)
   list.append(box)
   msgBoxes.set(m.id, box)
   scheduleRelay()
@@ -707,6 +732,7 @@ function renderEvent(ev, counts) {
   const ci = ev.mailbox ? mailboxColor(ev.mailbox) : null
   const box = el('div', `evt${ci === null ? '' : ` c${ci}`}${WAITING.has(ev.kind) ? ' waiting' : ''}`)
   box.dataset.ts = ev.ts
+  box.dataset.id = ev.id
   const head = el('div', 'head')
   head.append(
     ev.mailbox ? el('span', `chip c${ci}`, ev.mailbox) : el('span', '', 'unknown session'),
@@ -730,10 +756,10 @@ function renderEvent(ev, counts) {
     head.append(actions)
   }
   box.append(head, eventBody(ev))
-  box.classList.toggle('off', !eventInProject(ev))
   insertByTs(box, ev.ts)
   evtBoxes.set(ev.id, box)
   evtData.set(ev.id, ev)
+  setOff(box)
   if (atBottom) { pinned = true; list.scrollTop = list.scrollHeight }
   if (ev.mailbox && !ev.superseded) {
     const prev = lastEventByMailbox.get(ev.mailbox)
@@ -769,12 +795,10 @@ async function loadEvents(counts) {
   if (mailboxList.length) renderMailboxes(mailboxList)
 }
 
-// 畳み: 古い分は DOM から外して folded に退避する (seen からは消さない。重複除去と ↩ #seq の解決に使うため)。
+// 畳み (Compact): 古い分は印を付けて、絞り込みの軸 Recent で隠す (DOM からは外さない。seen からも消さない。重複除去と ↩ #seq の解決に使うため)。
 // 畳んだ状態は保存しない。件数 n だけ表示の設定として localStorage に覚える
 const KEEP_KEY = 'agent-hub.keep'
 const KEEP_DEFAULT = 10
-let folded = [] // { box, seq } 古い順
-let stub = null // 先頭に 1 本だけ置く「過去 n 件を畳みました」行
 
 // 未保存 (null) や空入力は既定値に戻す。Number(null) は 0 になるので先に弾く
 function parseKeep(raw) {
@@ -791,53 +815,47 @@ function saveKeep(n) {
   try { localStorage.setItem(KEEP_KEY, String(n)) } catch {}
 }
 
-function makeStub() {
-  const s = el('div', 'stub')
-  s.append(el('span', 'stub-text'), document.createTextNode('  '))
-  const btn = el('button', 'linkbtn', 'Expand')
-  btn.type = 'button'
-  btn.onclick = unfold
-  s.append(btn)
-  return s
+// 畳んだ件数 (今の絞り込みで見えるもの)・隠れた件数・有効な絞り込みのチップを、スレッド操作バーの 1 か所に出す。
+// 畳んだ分の Expand もここ (C59 で、スレッドの中の stub から移した)
+function renderBar() {
+  // 隠れた件数は畳んだ分を除く (畳んだものは別に数える)
+  const hidden = allBoxes().filter((b) => hiddenBy({ ...viewOf(b), compacted: false })).length
+  const compacted = allBoxes().filter((b) => b.dataset.compacted === '1' && !hiddenBy({ ...viewOf(b), compacted: false }))
+  // 畳んだ中の Message の seq の範囲を添える (Event だけなら範囲は出さない)
+  const seqs = compacted.map((b) => b.dataset.seq).filter(Boolean)
+  const parts = []
+  if (hidden) parts.push(`${hidden} hidden`)
+  if (compacted.length) parts.push(`${compacted.length} older items compacted${seqs.length ? ` (#${seqs[0]}–#${seqs[seqs.length - 1]})` : ''}`)
+  $('hiddenText').textContent = parts.join(' · ')
+  $('expand').hidden = !allBoxes().some((b) => b.dataset.compacted === '1')
+  $('hiddenInfo').hidden = parts.length === 0
+  renderChips()
 }
 
-// 畳んだ中の Message の seq の範囲を添える (Event だけなら範囲は出さない)。数えるのは今の絞り込みで見えるものだけ
-function updateStub() {
-  const shown = folded.filter((f) => !f.box.classList.contains('off'))
-  const seqs = shown.map((f) => f.seq).filter((s) => s !== null)
-  const range = seqs.length ? ` (#${seqs[0]}–#${seqs[seqs.length - 1]})` : ''
-  stub.querySelector('.stub-text').textContent = `${shown.length} older items compacted${range}`
-}
-
+// Compact: 今の絞り込みで見えるものを数え、新しい方から keep 件を残して、それより前に印を付ける (Recent の軸。隠すのは述語で行う)。
+// 待ち (質問・許可待ち・人宛ての request) は畳まない。押した後の新着は印が付かないので、畳まれずに見える
 function fold() {
   const list = $('list')
   const keep = parseKeep($('keep').value)
   $('keep').value = keep
   saveKeep(keep)
-  // Message と検知イベントを合わせて、今の絞り込みで見えるものを数える
   const items = [...list.querySelectorAll('.msg, .evt')]
   const visible = items.filter((b) => !b.classList.contains('off'))
   const n = visible.length - keep
   if (n <= 0) return
-  // 隠れているものも、境目より前なら一緒に畳む (絞り込みを変えたときに時刻の順が崩れないため)。
-  // 今回の分は退避済みのものより新しいので、末尾に足すと古い順が保たれる
+  // 隠れているものも、境目より前なら一緒に畳む (絞り込みを変えたときに時刻の順が崩れないため)
   for (const box of items.slice(0, items.indexOf(visible[n - 1]) + 1)) {
-    folded.push({ box, seq: box.dataset.seq ? Number(box.dataset.seq) : null })
-    box.remove()
+    if (viewOf(box).waiting) continue
+    box.dataset.compacted = '1'
   }
-  if (!stub) { stub = makeStub(); list.prepend(stub) }
-  updateStub()
+  applyFilter()
   list.scrollTop = list.scrollHeight
 }
 
+// 畳みを開く。印を外すと述語で見え方が戻る (DOM は動かさないので、時刻の順も変わらない)
 function unfold() {
-  if (!stub) return
-  const frag = document.createDocumentFragment()
-  for (const f of folded) frag.append(f.box)
-  $('list').insertBefore(frag, stub.nextSibling)
-  stub.remove()
-  stub = null
-  folded = []
+  for (const box of allBoxes()) delete box.dataset.compacted
+  applyFilter()
 }
 
 // 宛先は select 1 本で選ぶ (種類と名前を別々に選ばせると食い違う)。
@@ -1427,9 +1445,10 @@ async function loadMailboxes() {
   mailboxesLoaded = true
   buildProjects()
   renderItems() // 前回の選択が戻ると Items の絞り込みも変わる
+  pruneMailboxFilter()
   renderMailboxes(mailboxes)
   buildTo(mailboxes)
-  applyProject()
+  applyFilter()
   scheduleRelay() // 未送の判定に B の role を使う
 }
 
@@ -1442,7 +1461,172 @@ function folderName(p) {
 // プロジェクトは Mailbox の project (作業フォルダ) と roadmap の索引の project から作る。比べるのは Hub と同じ規則で揃えたキー (normalizeProjectPath)
 const PROJECT_KEY = 'agent-hub.project'
 let projects = new Map() // キー → { key, path, label }
-let projectFilter = '' // 選んでいるプロジェクトのキー。'' は All projects
+// --- 絞り込み (design.md §3.2、C59) ---
+// 軸は FILTER の 1 つずつ。どの軸で隠すかは hiddenBy(view) が決める (どれも通せば null)。隠すだけで消さず、Hub・未読・配信には影響させない。
+// 待ち (質問・許可待ち・人宛ての request・人が動く番の通知) は、プロジェクトを除くどの軸でも隠さない。プロジェクトは従来どおり
+// (ほかのプロジェクトの待ちは #elsewhere に数える)。Recent (最新 N 件) は Compact が付ける印 (data-compacted) で、畳んだものは同じ述語で隠す。
+const FILTER = { project: '', mailboxes: new Set(), kinds: new Set(), noise: false } // project: 選んでいるプロジェクトのキー。'' は All projects
+const FILTER_KEYS = { mailboxes: 'agent-hub.filter.mailboxes', kinds: 'agent-hub.filter.kinds', noise: 'agent-hub.filter.noise' }
+// 隠せる種類 (Message の kind と Event の種類)。質問・許可待ちは待ちなので並べない
+const KIND_OPTIONS = [
+  { key: 'request', label: 'request' }, { key: 'reply', label: 'reply' }, { key: 'notice', label: 'notice' },
+  { key: 'turn.end', label: 'turn end' }, { key: 'turn.failed', label: 'turn failed' }, { key: 'question.answered', label: 'answered' },
+  { key: 'permission.resolved', label: 'approved' }, { key: 'notification', label: 'notification' }, { key: 'session.boundary', label: 'boundary' },
+]
+// Noise に含める Event の種類 (既定)。何を含めるかの設定は C60。待ちを表す質問・許可待ちは含めない
+const NOISE_KINDS = new Set(['notification'])
+// 軸の述語 (v は軸が読む形。下の *View)。軸を足すときは、述語を 1 つと、ポップオーバーの欄を 1 つ足す
+const AXES = [
+  { key: 'mailbox', label: 'Mailbox', test: (v) => !FILTER.mailboxes.size || v.names.some((n) => FILTER.mailboxes.has(n)) },
+  { key: 'kind', label: 'Kind', test: (v) => !FILTER.kinds.has(v.kind) },
+  { key: 'noise', label: 'Noise', test: (v) => !(FILTER.noise && NOISE_KINDS.has(v.kind)) },
+  { key: 'recent', label: 'Recent', test: (v) => !v.compacted },
+]
+// 隠す軸の key。見せるなら null
+function hiddenBy(v) {
+  if (!v.inProject) return 'project'
+  if (v.waiting) return null
+  const axis = AXES.find((a) => !a.test(v))
+  return axis ? axis.key : null
+}
+// Message・Event・Mailbox のカードを、軸が読む形にする
+function messageView(m) {
+  return {
+    kind: m.kind,
+    names: [m.from, m.to].filter((a) => a.type === 'mailbox').map((a) => a.id),
+    inProject: messageInProject(m),
+    waiting: m.kind === 'request' && m.to.type === 'user',
+  }
+}
+function eventView(ev) {
+  return {
+    kind: ev.kind,
+    names: ev.mailbox ? [ev.mailbox] : [],
+    inProject: eventInProject(ev),
+    waiting: WAITING.has(ev.kind) || (ev.kind === 'notification' && QUOTA_NEEDS_YOU.has(eventDetailOf(ev))),
+  }
+}
+function mailboxView(mb) {
+  return { kind: null, names: [mb.name], inProject: mailboxInProject(mb), waiting: tabWaitingOf(mb) > 0 }
+}
+function viewOf(box) {
+  const view = box.classList.contains('evt') ? eventView(evtData.get(box.dataset.id)) : messageView(seen.get(box.dataset.id))
+  return { ...view, compacted: box.dataset.compacted === '1' }
+}
+const visibleCard = (mb) => !hiddenBy(mailboxView(mb))
+const allBoxes = () => [...msgBoxes.values(), ...evtBoxes.values()]
+const setOff = (box) => box.classList.toggle('off', !!hiddenBy(viewOf(box)))
+// すべての軸を掛け直す (描画済みの Message・Event・カード。畳んだ中のものも)。プロジェクトの変更もここで掛ける
+function applyFilter() {
+  for (const box of allBoxes()) setOff(box)
+  renderMailboxes(mailboxList)
+  renderBar()
+  if (!$('filterPop').hidden) renderFilterFields()
+}
+// 欄やチップから値を足す・外す。保存して掛け直す
+function toggleIn(set, value, on) {
+  if (on) set.add(value)
+  else set.delete(value)
+  persistFilters()
+  applyFilter()
+}
+// Reset: 軸をすべて外し、畳みを開く。プロジェクトも All projects に戻る
+function resetFilters() {
+  unfold()
+  FILTER.mailboxes.clear()
+  FILTER.kinds.clear()
+  FILTER.noise = false
+  persistFilters()
+  if (FILTER.project) chooseProject('')
+  else applyFilter()
+}
+// 有効な軸をチップで出す。× で 1 つ外す。Reset は有効なものがあるときだけ出す
+function renderChips() {
+  const box = $('chips')
+  box.textContent = ''
+  const chip = (text, off) => {
+    const c = el('span', 'fchip', text)
+    const x = el('button', 'linkbtn', '×')
+    x.type = 'button'
+    x.title = 'Remove this filter'
+    x.setAttribute('aria-label', `Remove ${text}`)
+    x.onclick = off
+    c.append(x)
+    box.append(c)
+  }
+  const scope = currentProject()
+  if (scope) chip(`Project: ${scope.label}`, () => chooseProject(''))
+  for (const name of [...FILTER.mailboxes].sort()) chip(`Mailbox: ${name}`, () => toggleIn(FILTER.mailboxes, name, false))
+  for (const k of KIND_OPTIONS) if (FILTER.kinds.has(k.key)) chip(`Hide ${k.label}`, () => toggleIn(FILTER.kinds, k.key, false))
+  if (FILTER.noise) chip('Hide noise', () => { FILTER.noise = false; persistFilters(); applyFilter() })
+  if (allBoxes().some((b) => b.dataset.compacted === '1')) chip('Compacted', unfold)
+  $('resetFilter').hidden = box.childElementCount === 0
+}
+// ポップオーバーの欄。Mailbox は今の一覧から、種類は決まった一覧から作り、チェックは今の値をそのまま映す
+function renderFilterFields() {
+  const mbs = $('fMailbox')
+  mbs.textContent = ''
+  if (!mailboxList.length) mbs.append(el('span', 'fnote', 'No Mailboxes yet'))
+  for (const mb of [...mailboxList].sort((a, b) => a.name.localeCompare(b.name))) {
+    mbs.append(checkOpt(mb.name, FILTER.mailboxes.has(mb.name), (on) => toggleIn(FILTER.mailboxes, mb.name, on)))
+  }
+  const kinds = $('fKind')
+  kinds.textContent = ''
+  for (const k of KIND_OPTIONS) kinds.append(checkOpt(k.label, FILTER.kinds.has(k.key), (on) => toggleIn(FILTER.kinds, k.key, on)))
+  $('fNoise').checked = FILTER.noise
+}
+function checkOpt(label, checked, onChange) {
+  const l = el('label', 'fopt')
+  const c = document.createElement('input')
+  c.type = 'checkbox'
+  c.checked = checked
+  c.onchange = () => onChange(c.checked)
+  l.append(c, label)
+  return l
+}
+// 保存は軸ごとに localStorage。読むときに、種類は決まった一覧にないものを、Mailbox は一覧が届いてから落とす
+function readList(key) {
+  try {
+    const v = JSON.parse(localStorage.getItem(key))
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []
+  } catch { return [] }
+}
+function saveSet(key, set) { try { localStorage.setItem(key, JSON.stringify([...set])) } catch {} }
+function persistFilters() {
+  saveSet(FILTER_KEYS.mailboxes, FILTER.mailboxes)
+  saveSet(FILTER_KEYS.kinds, FILTER.kinds)
+  try { localStorage.setItem(FILTER_KEYS.noise, FILTER.noise ? '1' : '0') } catch {}
+}
+function loadFilters() {
+  FILTER.mailboxes = new Set(readList(FILTER_KEYS.mailboxes))
+  const known = new Set(KIND_OPTIONS.map((k) => k.key))
+  FILTER.kinds = new Set(readList(FILTER_KEYS.kinds).filter((k) => known.has(k)))
+  try { FILTER.noise = localStorage.getItem(FILTER_KEYS.noise) === '1' } catch {}
+}
+// Mailbox の一覧が届いたら、今ない名前は黙って落とす (届く前は残す)
+function pruneMailboxFilter() {
+  const gone = [...FILTER.mailboxes].filter((n) => !mailboxList.some((mb) => mb.name === n))
+  if (!gone.length) return
+  for (const n of gone) FILTER.mailboxes.delete(n)
+  saveSet(FILTER_KEYS.mailboxes, FILTER.mailboxes)
+}
+// Filter ▾ のポップオーバー。外を押すか Esc で閉じる
+function closeFilter() {
+  $('filterPop').hidden = true
+  $('filterBtn').setAttribute('aria-expanded', 'false')
+}
+$('filterBtn').onclick = () => {
+  const open = $('filterPop').hidden
+  $('filterPop').hidden = !open
+  $('filterBtn').setAttribute('aria-expanded', String(open))
+  if (open) renderFilterFields()
+}
+$('fNoise').onchange = () => { FILTER.noise = $('fNoise').checked; persistFilters(); applyFilter() }
+$('resetFilter').onclick = resetFilters
+$('expand').onclick = unfold
+document.addEventListener('mousedown', (e) => { if (!e.target.closest('.filterwrap')) closeFilter() })
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeFilter() })
+
 // 前回の選択は、最初の一覧が届いてから効かせる (一覧を取れないうちに全部を隠さないため)
 let savedProject = readProject()
 function readProject() { try { return localStorage.getItem(PROJECT_KEY) || '' } catch { return '' } }
@@ -1451,30 +1635,30 @@ function projectKey(p) {
   const s = p.replace(/[\\/]+/g, '/').replace(/(.)\/$/, '$1')
   return /^[a-z]:/i.test(s) ? s.toLowerCase() : s
 }
-function currentProject() { return (projectFilter && projects.get(projectFilter)) || null }
+function currentProject() { return (FILTER.project && projects.get(FILTER.project)) || null }
 function projectOfMailbox(name) {
   const mb = mailboxList.find((x) => x.name === name)
   return mb && mb.project ? projectKey(mb.project) : null
 }
-function mailboxInProject(mb) { return !projectFilter || (!!mb.project && projectKey(mb.project) === projectFilter) }
+function mailboxInProject(mb) { return !FILTER.project || (!!mb.project && projectKey(mb.project) === FILTER.project) }
 
 // 送り手か宛先の Mailbox がそのプロジェクトのもの、to.project がそのプロジェクト、
 // project のない role / topic 宛てでそのプロジェクトの Mailbox が受け取るもの。user 宛ては送り手で決まる
 function messageInProject(m) {
-  if (!projectFilter) return true
-  if (m.from.type === 'mailbox' && projectOfMailbox(m.from.id) === projectFilter) return true
+  if (!FILTER.project) return true
+  if (m.from.type === 'mailbox' && projectOfMailbox(m.from.id) === FILTER.project) return true
   const to = m.to
-  if (to.type === 'mailbox') return projectOfMailbox(to.id) === projectFilter
+  if (to.type === 'mailbox') return projectOfMailbox(to.id) === FILTER.project
   const here = mailboxList.filter(mailboxInProject)
-  if (to.type === 'role') return to.project ? projectKey(to.project) === projectFilter : here.some((mb) => mb.role === to.id)
+  if (to.type === 'role') return to.project ? projectKey(to.project) === FILTER.project : here.some((mb) => mb.role === to.id)
   if (to.type === 'topic') return here.some((mb) => subscriptionsOf(mb).includes(to.id))
   return false
 }
 // Mailbox が分からない Event は、hook の cwd で決める
 function eventInProject(ev) {
-  if (!projectFilter) return true
-  if (ev.mailbox && projectOfMailbox(ev.mailbox) !== null) return projectOfMailbox(ev.mailbox) === projectFilter
-  return typeof ev.cwd === 'string' && ev.cwd !== '' && projectKey(ev.cwd) === projectFilter
+  if (!FILTER.project) return true
+  if (ev.mailbox && projectOfMailbox(ev.mailbox) !== null) return projectOfMailbox(ev.mailbox) === FILTER.project
+  return typeof ev.cwd === 'string' && ev.cwd !== '' && projectKey(ev.cwd) === FILTER.project
 }
 
 // Mailbox と索引の一覧の更新ごとに選択肢を作り直す。プロジェクトは両方に出てくる値の和 (design.md §3.15 の「プロジェクトは値」)。
@@ -1496,10 +1680,10 @@ function buildProjects() {
   for (const p of projects.values()) if (names.get(p.label) > 1) p.label = p.path
   const settled = mailboxesLoaded && indexesSettled
   if (settled && savedProject !== null) {
-    if (projects.has(savedProject)) { projectFilter = savedProject; autoTo = true }
+    if (projects.has(savedProject)) { FILTER.project = savedProject; autoTo = true }
     savedProject = null
   }
-  if (settled && projectFilter && !projects.has(projectFilter)) { projectFilter = ''; saveProject('') }
+  if (settled && FILTER.project && !projects.has(FILTER.project)) { FILTER.project = ''; saveProject('') }
   const sel = $('project')
   sel.textContent = ''
   sel.append(option('', 'All projects'))
@@ -1508,21 +1692,13 @@ function buildProjects() {
     o.title = p.path
     sel.append(o)
   }
-  sel.value = projectFilter
-}
-
-// 描画済みの Message と Event に絞り込みを掛け直す (畳んだ中のものも)
-function applyProject() {
-  for (const [id, box] of msgBoxes) { const m = seen.get(id); if (m) box.classList.toggle('off', !messageInProject(m)) }
-  for (const [id, box] of evtBoxes) { const ev = evtData.get(id); if (ev) box.classList.toggle('off', !eventInProject(ev)) }
-  if (stub) updateStub()
-  renderElsewhere()
+  sel.value = FILTER.project
 }
 
 // ほかのプロジェクトで人の手を待っている件数。タブのタイトルと同じ数え方 (tabWaitingOf の合計)
 function renderElsewhere() {
   const btn = $('elsewhere')
-  const n = projectFilter ? mailboxList.filter((mb) => !mailboxInProject(mb)).reduce((sum, mb) => sum + tabWaitingOf(mb), 0) : 0
+  const n = FILTER.project ? mailboxList.filter((mb) => !mailboxInProject(mb)).reduce((sum, mb) => sum + tabWaitingOf(mb), 0) : 0
   btn.hidden = n === 0
   btn.textContent = n ? `${n} waiting in other projects` : ''
 }
@@ -1796,8 +1972,14 @@ function jumpTo(t) {
     box = m ? msgBoxes.get(m.id) || null : null
   }
   if (!box) { setStatus(t.eventId ? 'That event is not loaded. The thread shows only the latest 200 events.' : `#${t.oldestSeq} is not loaded in this page.`); return }
-  if (box.classList.contains('off')) { setStatus(`${t.eventId ? 'This event' : `#${t.oldestSeq}`} is hidden by the project filter. Choose All projects to show it.`); return }
-  if (folded.some((f) => f.box === box)) unfold()
+  // 畳んだだけのものは隠れていない (開けば見える)。隠れているかは、畳みを除いた軸で決める (C48)
+  const why = hiddenBy({ ...viewOf(box), compacted: false })
+  if (why) {
+    const what = t.eventId ? 'This event' : `#${t.oldestSeq}`
+    setStatus(why === 'project' ? `${what} is hidden by the project filter. Choose All projects to show it.` : `${what} is hidden by the ${AXES.find((a) => a.key === why).label} filter. Reset to show it.`)
+    return
+  }
+  if (box.dataset.compacted === '1') unfold()
   box.scrollIntoView({ block: 'center' })
   box.classList.remove('hit')
   void box.offsetWidth
@@ -1814,7 +1996,7 @@ function tabWaitingOf(mb) {
 // サイドバー: 表示中のプロジェクトの合計。タブ: 全プロジェクトの Needs you の件数 (tabWaitingOf)
 let tabWaiting = 0
 function renderBacklog() {
-  backlogChips($('backlog'), sumLayers(mailboxList.filter(mailboxInProject)))
+  backlogChips($('backlog'), sumLayers(mailboxList.filter(visibleCard)))
   const you = mailboxList.reduce((sum, mb) => sum + tabWaitingOf(mb), 0)
   if (you !== tabWaiting) { tabWaiting = you; showTabUnread() }
 }
@@ -1844,12 +2026,11 @@ async function loadIndexes() {
 }
 // 索引のプロジェクトはプロジェクトの一覧に入る。選択が変わったら (前回の選択が戻った・外したプロジェクトだった) 絞り込みを掛け直す
 function refreshProjects() {
-  const before = projectFilter
+  const before = FILTER.project
   buildProjects()
-  if (projectFilter !== before) {
-    renderMailboxes(mailboxList)
+  if (FILTER.project !== before) {
     buildTo(mailboxList)
-    applyProject()
+    applyFilter()
   }
   renderItems()
 }
@@ -1916,11 +2097,11 @@ function tierHead(text) { return el('div', 'tier', text) }
 function renderItems() {
   const root = $('items')
   root.textContent = ''
-  const shown = indexList.filter((ix) => !projectFilter || projectKey(ix.project) === projectFilter)
+  const shown = indexList.filter((ix) => !FILTER.project || projectKey(ix.project) === FILTER.project)
   $('itemsHead').hidden = shown.length === 0
   const { latest, replied } = itemRequests()
   for (const ix of shown) {
-    const h = el('div', 'itemhead', projectFilter ? ix.source : `${folderName(ix.project)} · ${ix.source}`)
+    const h = el('div', 'itemhead', FILTER.project ? ix.source : `${folderName(ix.project)} · ${ix.source}`)
     h.title = `${ix.project}\nSent ${new Date(ix.updatedAt).toLocaleString()}. Run npm run docs:index again after editing the file.`
     const rm = el('button', 'linkbtn', 'Remove')
     rm.type = 'button'
@@ -2119,14 +2300,13 @@ function draftFromItem(ix, item) {
 }
 
 function chooseProject(key) {
-  projectFilter = key
+  FILTER.project = key
   saveProject(key)
   $('project').value = key
   // 宛先の候補が変わる。前のプロジェクトで選んだ宛先を持ち越さず、このプロジェクトの初期の宛先を選び直す
   autoTo = true
-  renderMailboxes(mailboxList)
   buildTo(mailboxList)
-  applyProject()
+  applyFilter()
   renderItems()
   const list = $('list')
   list.scrollTop = list.scrollHeight
@@ -2141,7 +2321,7 @@ function renderMailboxes(all) {
   root.textContent = ''
   renderElsewhere()
   renderBacklog()
-  const mailboxes = all.filter(mailboxInProject)
+  const mailboxes = all.filter(visibleCard)
   renderStates(mailboxes)
   const scope = currentProject()
   if (mailboxes.length === 0) {
@@ -2150,7 +2330,7 @@ function renderMailboxes(all) {
     root.append(el('div', 'meta', hint))
   }
   const groupOf = (mb) => (mb.project ? projects.get(projectKey(mb.project)) : null)
-  const grouped = !projectFilter && projects.size > 0
+  const grouped = !FILTER.project && projects.size > 0
   if (grouped) {
     mailboxes.sort((a, b) => {
       const ga = groupOf(a), gb = groupOf(b)
@@ -2268,14 +2448,13 @@ function removeMessages(ids) {
     if (box) {
       box.remove()
       msgBoxes.delete(id)
-      folded = folded.filter((f) => f.box !== box)
     }
     seen.delete(id)
     if (forwarding.delete(id)) forwardChanged = true
     if (replyTo && replyTo.id === id) { replyTo = null; setKind('request'); updateReplyInfo() }
   }
   if (forwardChanged) updateForwardUi()
-  syncStub()
+  renderBar()
   scheduleRelay()
   scheduleItems()
 }
@@ -2287,20 +2466,13 @@ function removeEvents(ids) {
     if (box) {
       box.remove()
       evtBoxes.delete(id)
-      folded = folded.filter((f) => f.box !== box)
     }
     evtData.delete(id)
   }
   for (const [name, ev] of lastEventByMailbox) if (gone.has(ev.id)) lastEventByMailbox.delete(name)
   for (const [name, ev] of lastTurnEndByMailbox) if (gone.has(ev.id)) lastTurnEndByMailbox.delete(name)
-  syncStub()
+  renderBar()
   if (mailboxList.length) renderMailboxes(mailboxList)
-}
-
-// 畳んだ中身が消えたら、行の件数を直すか行ごと外す
-function syncStub() {
-  if (!stub) return
-  if (folded.length === 0) { stub.remove(); stub = null } else updateStub()
 }
 
 async function deleteMailbox(name) {
@@ -2453,6 +2625,7 @@ function connect() {
 ;(async () => {
   // 初期の宛先の判定 (buildTo) より前に設定を読む。Mailbox 一覧が失敗しても、履歴と新着は接続で動かす
   await loadSettings()
+  loadFilters()
   connect()
   refreshMailboxes(0)
 })()
