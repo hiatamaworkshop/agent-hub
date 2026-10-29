@@ -604,3 +604,29 @@ Idea:
 - [ ] A `project` parameter or stored value that is not in the Hub's project list is ignored (no error, no stored value, falls back as above); a value containing markup or quotes is never rendered as HTML.
 - [ ] A URL without `project` restores the last selection as before; `project` is removed from the address bar after use.
 - [ ] `npm run ui:check` covers: parameter wins over stored, unknown parameter ignored, no parameter restores stored. `npm test` passes.
+
+### C73. Keep the project dropdown manageable when projects pile up
+Status: held(after C74)
+
+Raised 2026-10-30. The project list is the union of the `project` values of Mailboxes and roadmap indexes (design.md §3.15, "A project is a value"), so it has no order and a project disappears only when its last Mailbox and index are deleted by hand. With many projects the dropdown gets hard to use.
+
+Idea:
+- Order by recent activity (the latest attach or message of that project), most recent first. Computed from existing times; no new state.
+- Projects with no activity for N days (default 30) go under a collapsed "Older" group. They are only hidden from the top, not deleted. N is a setting in the configuration file, not a constant in the page.
+- Each entry shows how many things wait on the human and how many Mailboxes are connected.
+- A "remove this project" action that deletes its Mailboxes and indexes through the existing deletions, after a confirmation saying how many of each go. The project stays a value (no entity).
+
+Waits for C74 (where the configuration lives and its shape). Not decided: whether the remove action is wanted at all.
+
+### C74. Decide where settings live, and move what should be configurable there
+Status: proposed
+
+Raised 2026-10-30 (survey while filing C73). Settings are in four places: environment variables (`.env`, 13 `HUB_*`), `roles.json`, `HUB_DATA_DIR/settings.json` (custom commands only, writable through the API), and the browser's `localStorage` (filters, project, sidebar width, Compact count). Judgment values for the display are constants in `public/index.html` (`STALE_HANDED_HOURS`=12, `BACKGROUND_MAX_MINUTES`=60, `KEEP_DEFAULT`=10, `FLASH_MS`=1500, `SIDE_*`), and the image limits (20 MB, 4 files) are written twice, in the page and in `src/hub/files.ts`.
+
+Idea:
+- Hub-side settings (shared across browsers) go in the Hub's `settings.json`, extended with a validated section for display values; per-browser preferences stay in `localStorage`. The page reads the Hub's values at load.
+- Move to settings: the display judgment values above, the project list's "Older" days (C73), the state colors (the `--st-*` variables of C71 overridable), Noise's contents (C60), and the image limits as one source the page reads from the Hub.
+- Stay as they are: protocol constants (`MESSAGE_KINDS`, `EVENT_KINDS`, `META_MAX_BYTES`), security limits (`MAX_INDEX_BYTES`, `MAX_COMMANDS`), and `HUB_TOKEN` (secrets never go into the settings file). Retention and unread limits stay in `.env` unless a reason to move them appears.
+- Every value is validated for type and range on load; an out-of-range or unknown value falls back to the default and is reported, never trusted. Values reaching the page are used as data (never `innerHTML`, never a selector or path unvalidated).
+
+Not decided: the file's exact shape, whether colors belong in it, and whether the Hub serves it to the page over the existing API. Once decided, write the done-when conditions and remove the status.
