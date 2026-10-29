@@ -18,6 +18,10 @@
 
 取りかかる順。状態の行のない項目とブロックの項目だけを載せる (題は索引から引く)。並べ替えは人の判断。
 
+- [ ] C63
+- [ ] C64
+- [ ] C65
+- [ ] C62
 
 ## P0: 1 セッションで往復する (完了 2026-10-16)
 
@@ -501,4 +505,57 @@ C45 の後、reviewer が依頼のたびに正本を読む形で足りないと�
 状態: 保留(C59 の後)
 
 C59 の Noise は通知系の Event を固定で扱う。何を Noise に含めるか (Event の種類ごと) を人が設定できるようにする。設定の置き場 (`settings.json` か `localStorage` か) は、C59 の実装で分かったことを見て決める。決まったら状態を外し、完了条件を書く。
+
+### C62. チームの起動を Windows 以外でもできるようにする
+
+GitHub で公開する (2026-10-29、ユーザーが決定。告知はしない) にあたり、起動が PowerShell (`tools/dev/start-team.ps1` / `start-agent.ps1` / `team-checks.ps1` / `mailbox-name.ps1`) だけで、macOS・Linux の人はチームを起動できない。
+
+今の起動スクリプトが持つもの: role が `roles.json` にあるかの確認、`claude --version` の事前確認、hook の設定の警告 (C57)、checkout が古いときの警告 (C58)、attach の待ちと失敗の検出 (C33・C56)、UI の URL の表示 (C55)、`-PermissionMode` などの引数、role ごとにタブを開くこと (Windows Terminal)。
+
+案 (実装のときに決め、design.md に理由を書く): 起動を Node のスクリプト (`npm run team -- …`) に移して OS の差を 1 か所にする。タブを開く手段は OS ごとに違う (Windows Terminal・tmux・macOS の Terminal など) ので、開けないときは role ごとの起動コマンドを出して手で開いてもらう縮退を持つ。
+
+#### 完了条件
+- [ ] macOS・Linux で、上の確認・警告・attach の待ち・UI の URL を含めてチームを起動できる。Windows でも今と同じことができる
+- [ ] 起動の方式 (スクリプトの言語、タブの開き方と開けないときの縮退) と理由を design.md に書く
+- [ ] Linux (WSL かコンテナ) と Windows で実際に起動して確かめ、design.md §6 に記録する。macOS は確かめられなければ未確認と書く
+- [ ] README の起動の手順を OS ごとに直す
+- [ ] `npm test` が通る
+
+### C63. GitHub で公開する前の下ごしらえ
+
+GitHub の private リポジトリを public にする (2026-10-29、ユーザーが決定。告知はしない)。public にする操作は人が行う。ライセンスは MIT (同日、ユーザーが決定)。
+
+#### 完了条件
+- [ ] `LICENSE` (MIT) を置き、`package.json` の `license` を `MIT` にする
+- [ ] git の履歴全体を走査し、トークン・`.env`・`data/`・`logs/` の中身が一度も入っていないことを確かめ、方法と結果を報告する。見つかったら止めて報告する
+- [ ] 文書とスクリプトから個人のパス (`C:/Users/<名前>/…` など) を除く (例 `docs/plan-p0.md`)
+- [ ] 文書に出てくるほかの私的なプロジェクト (vcp・cite-bridge など) の名前の箇所を一覧にして報告する。残すか直すかは人が決める
+- [ ] `npm test` と `npm run docs:check` が通る
+
+### C64. 台帳と返事の型を、英語の語彙でも読めるようにする
+
+文書を英語に置き換える (C65) と、台帳の語 (`状態:`・`#### 完了条件`・`## 予定`・`却下`、`src/shared/roadmap.ts`) と leader の返事の型 (`結果`・`確認`・`未確認`・`要判断`・`要操作`、UI の見出しの色分け `public/index.html`) が英語になる。ほかのプロジェクト (vcp・cite-bridge など) の台帳と、ログに残った前の返事は日本語のままなので、両方を読む。
+
+語の案: `Status: proposed | held(…) | blocked(after C<n>)`、`#### Done when`、`## Plan`、`(rejected YYYY-MM-DD, …)`。返事の型は deployer の `CHANGED` などに揃えた大文字の見出し。
+
+#### 完了条件
+- [ ] 英語の語彙を決め、日本語との対応を design.md §3.15 に表で書く
+- [ ] `docs:check` と `--index` (Items の索引) が、日本語の台帳と英語の台帳の両方を同じ結果の形で読む。試験 `src/shared/roadmap.test.ts` に英語の台帳の場面を足す
+- [ ] UI が英語の返事の型の見出しを日本語と同じに色分けする。`npm run ui:check` に英語の返事の場面を足す
+- [ ] グローバルの skill `roadmap-items` に英語の語彙があることを書く
+- [ ] `npm test`・`npm run ui:check`・`npm run docs:check` が通る
+
+### C65. 公開する文書を英語に置き換える
+状態: ブロック(C64 の後)
+
+GitHub で公開するにあたり、公開する文書を英語にする (2026-10-29、ユーザーが決定)。日本語版は残さず置き換える (二重に保守しない)。以後、このリポジトリで書き足す文書も英語にする。
+
+範囲外 (日本語のまま): `src/`・`tools/` のコードのコメントとエラー文、roadmap の閉じた項目 (`[x]` / `[-]`) の下の記録。過去のコミットメッセージは変えない。
+
+#### 完了条件
+- [ ] `README.md`・`CLAUDE.md`・`docs/*.md` を英語に置き換える。台帳は C64 の英語の語彙で書く
+- [ ] role の説明 (`tools/dev/roles/*.md`) と `roles.example.json` を英語に置き換え、返事の型は C64 の英語の見出しにする
+- [ ] 中身を減らさない: 節の構成・決定と日付・§6 の検証の記録を保ち、`CLAUDE.md` の文書の地図を英語の見出しに合わせる
+- [ ] 英語の role の説明でチームを 1 度起動し、leader と deployer が英語の返事の型で往復することを確かめて記録する
+- [ ] `npm test`・`npm run ui:check`・`npm run docs:check` が通る
 
