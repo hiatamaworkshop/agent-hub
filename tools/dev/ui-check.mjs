@@ -737,6 +737,96 @@ try {
   const kinds = await evaluate("[...document.querySelectorAll('#list .evt .kind')].map((k) => k.textContent)")
   verify('SessionStart と PostModelSwitch は、Event として取り込まれ、スレッドに出る (C61)', kinds.includes('session start') && kinds.includes('model switch'), kinds)
 
+  // カードの信号 (C71): 信号が変わったときだけ 1.5 秒光る。最初の描画と変わらない描き直しでは光らない。作業中は枠が脈打ち、人の番は脈打たない。
+  // 光りは描き直しの前に仕掛けた記録 (30ms ごとに .st-flash を見る) で読む。1.5 秒は場面の読みより短いため
+  const SIG_RECORDER = "window.__flashed = []; setInterval(() => { for (const b of document.querySelectorAll('#mailboxes .mb.st-flash')) { const k = b.querySelector('.name').textContent + ' ' + [...b.classList].find((c) => c.startsWith('flash-')); if (!window.__flashed.includes(k)) window.__flashed.push(k) } }, 30)"
+  // role を付けない: role:deployer 宛ての依頼 (上の場面) が未読として届いてしまうため
+  const sig = await api('POST', '/mailboxes/demo.sig/attach', { client: 'claude-code', cwd, sessionId: 's-sig' })
+  await turnEnd('demo.sig', 's-sig')
+  await cdp('Page.enable') // addScriptToEvaluateOnNewDocument は Page を有効にしてから
+  await cdp('Page.addScriptToEvaluateOnNewDocument', { source: SIG_RECORDER })
+  await cdp('Page.navigate', { url: `${HUB}/?token=${TOKEN}` })
+  await sleep(1500)
+  const cardOf = (name) => evaluate(`(() => {
+    const b = [...document.querySelectorAll('#mailboxes .mb')].find((x) => (x.querySelector('.name') || {}).textContent === ${JSON.stringify(name)})
+    if (!b) return null
+    const cs = getComputedStyle(b)
+    return { cls: b.className, state: b.querySelector('.state').textContent, shadow: cs.boxShadow, anim: cs.animationName }
+  })()`)
+  const sigCard = () => cardOf('demo.sig')
+  const flashes = () => evaluate('window.__flashed.splice(0)')
+  // ヘッドレスの Chrome は環境によって動きを減らす設定になる。脈打ちと光りを確かめる場面は、先に動きを許す
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] })
+  const first = await sigCard()
+  const firstFlash = await flashes()
+  verify('信号: 最初の描画は光らず、Idle には枠も脈打ちもない (C71)', first !== null && first.state.startsWith('Idle') && first.shadow === 'none' && first.anim === 'none' && firstFlash.length === 0, { first, firstFlash })
+
+  // 渡す (shim が受け取る) まで、未読だけ。信号は渡したあとの Working (ackAll で渡したことにする)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'demo.sig' }, body: 'SIG-1: 作業を頼む' })
+  await ackAll(sig.attachmentId)
+  await sleep(2500)
+  const working = await sigCard()
+  const workFlash = await flashes()
+  // 脈打っている最中の色は混ざった値なので、色は見ず、脈打つ動きがあることと枠があることを見る
+  verify('信号: Idle から Working に変わると作業中の色で 1.5 秒光り、そのあと枠が 2 秒で脈打つ (C71)', working !== null && working.state.startsWith('Working') && workFlash.includes('demo.sig flash-working') && working.anim === 'ring-pulse' && working.shadow !== 'none', { working, workFlash })
+
+  // 依頼に返信してから終える。返信のない依頼を渡されたまま終えると、Idle でなく Stopped になる
+  const sigReq = (await api('GET', '/messages?after=0&limit=1000')).messages.findLast((m) => m.body === 'SIG-1: 作業を頼む')
+  await ackAll(sig.attachmentId)
+  await api('POST', '/messages', { kind: 'reply', replyTo: sigReq.id, body: 'SIG-1: できた' }, { 'x-hub-attachment': sig.attachmentId })
+  await turnEnd('demo.sig', 's-sig')
+  await sleep(2500)
+  const idle = await sigCard()
+  const idleFlash = await flashes()
+  verify('信号: Working から Idle に変わると緑に 1.5 秒光り、Idle に枠は残らない (C71)', idle !== null && idle.state.startsWith('Idle') && idleFlash.includes('demo.sig flash-idle') && idle.shadow === 'none' && idle.anim === 'none', { idle, idleFlash })
+
+  await evaluate('renderMailboxes(mailboxList)')
+  await sleep(300)
+  await evaluate('renderMailboxes(mailboxList)')
+  await sleep(1000)
+  const unchanged = await flashes()
+  verify('信号: 変わらない描き直しでは光らない (C71)', unchanged.length === 0, unchanged)
+
+  await hook('demo.sig', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'tu-sig', session_id: 's-sig' })
+  await sleep(2500)
+  const you = await sigCard()
+  const youFlash = await flashes()
+  verify('信号: 人の番 (Needs you) に変わると琥珀に光り、枠は脈打たない太い琥珀 (C71)', you !== null && you.state.startsWith('Needs you') && youFlash.includes('demo.sig flash-you') && you.anim === 'none' && you.shadow.includes('154, 91, 0'), { you, youFlash })
+
+  // 動きを減らす設定: 作業中は脈打たず、枠だけ残す。光りも出さない
+  // 質問に答えて (Needs you を解く)、依頼を渡す。動きを減らす設定では、作業中の枠は脈打たず、色の枠のまま残る
+  await hook('demo.sig', { hook_event_name: 'PostToolUse', session_id: 's-sig', tool_name: 'AskUserQuestion', tool_use_id: 'tu-sig', tool_input: {}, tool_response: {} })
+  await sleep(2500) // Idle に戻る際の光りを済ませてから、動きを減らす設定にする
+  await flashes()
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'demo.sig' }, body: 'SIG-2: 動きを減らす設定で頼む' })
+  await ackAll(sig.attachmentId)
+  await sleep(2500)
+  const still = await sigCard()
+  const stillFlash = await flashes()
+  await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] })
+  verify('動きを減らす設定: 作業中は脈打たず枠だけ残り、光らない (C71)', still !== null && still.state.startsWith('Working') && still.anim === 'none' && still.shadow.includes('47, 95, 208') && stillFlash.length === 0, { still, stillFlash })
+
+  // 未読だけ (C71): エージェントの未読は信号ではない。接続中の Mailbox に通知だけが届いたとき、Working と書くが、枠も脈打ちも光りもない
+  await api('POST', '/mailboxes/demo.unr/attach', { client: 'claude-code', cwd, sessionId: 's-unr' })
+  await sleep(1000)
+  const unrBefore = await cardOf('demo.unr')
+  await flashes()
+  await api('POST', '/messages', { kind: 'notice', to: { type: 'mailbox', id: 'demo.unr' }, body: 'UNREAD-ONLY: 未読だけ' })
+  await sleep(2500)
+  const unr = await cardOf('demo.unr')
+  const unrFlash = await flashes()
+  verify('未読だけ: 接続中の Mailbox に未読だけがあっても、枠・脈打ち・光りは出ない (C71)', unrBefore !== null && unrBefore.state.startsWith('Idle') && unr !== null && unr.state.startsWith('Working') && unr.cls.includes('st-unread') && !unr.cls.includes('st-working') && unr.anim === 'none' && unr.shadow === 'none' && !unrFlash.some((k) => k.startsWith('demo.unr')), { unrBefore, unr, unrFlash })
+
+  // Stopped (C71): 渡した依頼に返信しないままターンを終えた。Needs you と同じ琥珀の太い枠で、脈打たない
+  const stpAt = await api('POST', '/mailboxes/demo.stp/attach', { client: 'claude-code', cwd, sessionId: 's-stp' })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'demo.stp' }, body: 'STOP-1: 返信しない依頼' })
+  await ackAll(stpAt.attachmentId)
+  await turnEnd('demo.stp', 's-stp')
+  await sleep(2500)
+  const stp = await cardOf('demo.stp')
+  verify('Stopped: Needs you と同じ琥珀の太い枠で、脈打たない (C71)', stp !== null && stp.state.startsWith('Stopped') && stp.cls.includes('st-stopped') && stp.anim === 'none' && stp.shadow.includes('154, 91, 0') && stp.shadow === you.shadow, { stp, you: you.shadow })
+
   // 時刻の表示 (C31): 今日は時刻だけ、前日は日付つき
   const t = await cdp('Runtime.evaluate', {
     expression: `(() => { const now = Date.now(), old = now - 26 * 3600 * 1000; return { today: time(now), todayPlain: new Date(now).toLocaleTimeString(), old: time(old), oldPlain: new Date(old).toLocaleTimeString() } })()`,

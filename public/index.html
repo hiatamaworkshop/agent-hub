@@ -8,10 +8,9 @@
   :root {
     --bg: #f7f7f5; --panel: #ffffff; --fg: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc;
     --accent: #2f5fd0; --reply: #1f8a4c; --warn: #b3261e; --amber: #9a5b00;
-    /* 返事待ち (Waiting on others)。作業中の青・人の番の琥珀・止まりの赤と見分ける */
-    --wait: #6d3fc0;
-    /* 止まっている (Paused: usage limit)。待つだけで自然に再開する。ほかの 4 色と見分ける */
-    --pause: #0b7a75;
+    /* カードの 2 つの信号 (C71)。人の番 (Needs you・Stopped) は --st-you、作業中 (Working・Waiting on others) は --st-working、
+       枠の太さは --st-ring。枠と状態の行はこの 3 つだけを読むので、ここを書き換えれば色と太さが変わる (タブ C70 も同じ) */
+    --st-you: #9a5b00; --st-working: #2f5fd0; --st-ring: 3px;
     /* 送り手の色 (c0〜c7)。チップの文字色は --pfg (全色で 4.5:1 以上) */
     --p0: #2f5fd0; --p1: #b45309; --p2: #15803d; --p3: #7e22ce; --p4: #0f766e; --p5: #be185d; --p6: #854d0e; --p7: #475569; --pfg: #ffffff;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -20,8 +19,7 @@
     :root {
       --bg: #161615; --panel: #1f1f1d; --fg: #ecece8; --muted: #9a9a93; --line: #34342f;
       --accent: #7aa2ff; --reply: #5fcf8e; --warn: #ff8a80; --amber: #f0b050;
-      --wait: #b89cff;
-      --pause: #5fd0c8;
+      --st-you: #f0b050; --st-working: #7aa2ff;
       --p0: #7aa2ff; --p1: #f0a050; --p2: #5fcf8e; --p3: #c4a1ff; --p4: #5fd0c4; --p5: #f489b8; --p6: #e0c060; --p7: #aab4c4; --pfg: #161615;
     }
   }
@@ -61,26 +59,29 @@
   .bl.age1 { color: var(--amber); border-color: var(--amber); }
   .bl.age2 { color: var(--warn); border-color: var(--warn); }
   /* カードの状態 (design.md §3.15)。枠の強調で、誰が動いているか・誰の番かを一目で分ける。色は状態の線とそろえる */
-  .mb.st-working { box-shadow: 0 0 0 2px var(--accent); }
-  .mb.st-you { box-shadow: 0 0 0 2px var(--amber); }
-  .mb.st-stopped { box-shadow: 0 0 0 2px var(--warn); }
-  .mb.st-delegated { outline: 2px dashed var(--wait); outline-offset: 1px; }
-  .mb.st-paused { box-shadow: 0 0 0 2px var(--pause); }
+  /* 枠 (C71)。人の番 (Needs you・Stopped) は太い琥珀の枠で、脈打たない。作業中 (Working・Waiting on others) は 2 秒でゆっくり濃淡する。
+     Idle・Paused・Offline は枠なし。動きを減らす設定では脈打ちを止めて、枠だけ残す */
+  .mb.st-you, .mb.st-stopped { box-shadow: 0 0 0 var(--st-ring) var(--st-you); }
+  .mb.st-working, .mb.st-delegated { box-shadow: 0 0 0 var(--st-ring) var(--st-working); animation: ring-pulse 2s ease-in-out infinite; }
+  @keyframes ring-pulse { 50% { box-shadow: 0 0 0 var(--st-ring) color-mix(in srgb, var(--st-working) 30%, transparent); } }
+  @media (prefers-reduced-motion: reduce) { .mb.st-working, .mb.st-delegated { animation: none; } }
   .mb.st-offline { opacity: .6; }
+  /* 信号が変わったときの 1.5 秒の光 (flashOf)。Idle へ変わったときは緑の一瞬で、枠は残らない */
+  .mb.flash-you { --flash: var(--st-you); }
+  .mb.flash-working { --flash: var(--st-working); }
+  .mb.flash-idle { --flash: var(--reply); }
+  .mb.st-flash { animation: st-flash 1.5s ease-out; }
+  @keyframes st-flash { from { box-shadow: 0 0 0 var(--st-ring) var(--flash); } to { box-shadow: 0 0 0 var(--st-ring) transparent; } }
   .state { font-size: 12px; font-weight: 600; margin: 2px 0; color: var(--muted); }
   .state::before { content: "● "; }
-  .state.st-working { color: var(--accent); }
-  .state.st-delegated { color: var(--wait); }
+  .state.st-working, .state.st-delegated { color: var(--st-working); }
   .state.st-delegated::before { content: "◔ "; }
-  .state.st-paused { color: var(--pause); }
   .state.st-paused::before { content: "⏸ "; }
-  .state.st-you { color: var(--amber); }
-  .state.st-stopped { color: var(--warn); }
+  .state.st-you, .state.st-stopped { color: var(--st-you); }
+  /* 未読だけ (C71): Working と書くが、信号ではない。枠も脈打ちも光りもなく、色は既定の muted */
+  .state.st-unread { color: var(--muted); }
   .state.st-offline::before { content: "○ "; }
   .mb .doing { font-size: 12px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .state.st-working::before { animation: pulse 1.6s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity: .25; } }
-  @media (prefers-reduced-motion: reduce) { .state.st-working::before { animation: none; } }
   .stc { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; }
   /* roadmap の項目のカード (design.md §3.15)。1 行で、押すと request の下書きになる */
   #itemsHead { margin-top: 16px; }
@@ -1875,9 +1876,11 @@ function stateOf(mb) {
   const end = lastTurnEndOf(mb)
   const handed = b.lastHanded
   const fresh = handed && Date.now() - Date.parse(handed.ts) < STALE_HANDED_HOURS * 3600000
-  // 接続中の未読は、渡す直前 (Channels) か、inbox で取りに来るのを待っている (ほかのクライアント)。どちらもエージェントの番
-  if (b.unread.count) return { key: 'working', since: b.unread.oldestAt }
-  if (handed && (end ? Date.parse(handed.ts) > Date.parse(end.ts) : fresh)) {
+  const handedWorking = handed && (end ? Date.parse(handed.ts) > Date.parse(end.ts) : fresh)
+  // 接続中の未読は、渡す直前 (Channels) か、inbox で取りに来るのを待っている (ほかのクライアント)。どちらもエージェントの番。
+  // ただし信号は人の番だけ (C71、2026-10-30 の決定)。未読だけのときは Working と書くが、枠も脈打ちも光りもない (quiet)。渡した後の Working は信号
+  if (b.unread.count && !handedWorking) return { key: 'working', since: b.unread.oldestAt, quiet: true }
+  if (handedWorking) {
     // Event が 1 つもないセッションは hook がない見込みで、ターン終了を知らない。推測であることを示す
     return { key: 'working', since: handed.ts, guess: !ev, detail: summaryOf(bySeq(handed.seq)) }
   }
@@ -1938,7 +1941,7 @@ function paintState(line) {
 }
 function stateLine(st) {
   const def = STATES.find((s) => s.key === st.key)
-  const line = el('div', `state st-${st.key}`)
+  const line = el('div', `state st-${frameClass(st)}`)
   line.dataset.state = st.key
   if (st.since) line.dataset.since = st.since
   if (st.guess) line.dataset.guess = '1'
@@ -1946,16 +1949,18 @@ function stateLine(st) {
   if (st.until) line.dataset.until = String(st.until)
   // 作業中の要旨は別の行に出す。ほかの状態の detail (質問・委ねた先) は状態の行に括弧で添える
   if (st.detail && st.key !== 'working') line.dataset.detail = st.detail
-  line.title = def.title + (st.guess ? ' No hook events from this session, so the end of its turn is unknown (docs/usage.md: hooks).' : '')
+  line.title = def.title + (st.guess ? ' No hook events from this session, so the end of its turn is unknown (docs/usage.md: hooks).' : '') + (st.quiet ? ' Only unread messages so far: not a signal on the card (docs/usage.md).' : '')
   paintState(line)
   return line
 }
-// サイドバーの上: 表示中のプロジェクトで、状態ごとの数 (Idle と Offline は出さない)
+// 枠と状態の行の CSS クラス。未読だけ (quiet) は Working と書くが、信号の Working ではない (C71)
+const frameClass = (st) => (st.quiet ? 'unread' : st.key)
+// サイドバーの上: 表示中のプロジェクトで、状態ごとの数 (Idle と Offline は出さない。未読だけは数えない)
 function renderStates(mailboxes) {
   const box = $('states')
   box.textContent = ''
   const n = new Map()
-  for (const mb of mailboxes) { const st = stateOf(mb); if (st) n.set(st.key, (n.get(st.key) || 0) + 1) }
+  for (const mb of mailboxes) { const st = stateOf(mb); if (st && !st.quiet) n.set(st.key, (n.get(st.key) || 0) + 1) }
   for (const s of STATES) {
     if (s.key === 'idle' || s.key === 'offline' || !n.get(s.key)) continue
     const chip = el('span', `stc state st-${s.key}`, `${s.label} ${n.get(s.key)}`)
@@ -2359,6 +2364,23 @@ $('elsewhere').onclick = () => chooseProject('')
 
 // カードの描画。Event が届いたときは一覧を取り直さず、手元の一覧で描き直す。
 // 1 つのプロジェクトを選んでいればそのカードだけ、All projects ではプロジェクトごとにまとめる (project のない Mailbox は最後)
+// カードの 2 つの信号 (C71)。人の番 (Needs you・Stopped) と作業中 (Working・Waiting on others)。それ以外は静か (枠も光りもなし)
+const SIGNAL = { you: 'you', stopped: 'you', working: 'working', delegated: 'working' }
+const signalOf = (st) => (st && !st.quiet && SIGNAL[st.key]) || 'idle'
+const FLASH_MS = 1500
+const REDUCED_MOTION = matchMedia('(prefers-reduced-motion: reduce)')
+// 信号が変わったカードだけ光らせる。最初の描画と、変わらない描き直しは光らせない。前の信号は Mailbox 名ごとに、描き直しの外で持つ
+const lastSignal = new Map()
+const flashing = new Map() // 名前 → { sig, until }。光っている途中で描き直しても、残りの時間だけは光らせる
+function flashOf(name, sig) {
+  const prev = lastSignal.get(name)
+  lastSignal.set(name, sig)
+  if (prev !== undefined && prev !== sig) flashing.set(name, { sig, until: Date.now() + FLASH_MS })
+  const f = flashing.get(name)
+  if (f && Date.now() < f.until) return f.sig
+  flashing.delete(name)
+  return null
+}
 function renderMailboxes(all) {
   const root = $('mailboxes')
   root.textContent = ''
@@ -2401,8 +2423,14 @@ function renderMailboxes(all) {
     box.append(title)
     const st = stateOf(mb)
     if (st) {
-      box.classList.add(`st-${st.key}`)
+      box.classList.add(`st-${frameClass(st)}`)
       box.append(stateLine(st))
+    }
+    // 信号が変わったときだけ 1.5 秒光らせる (C71)。動きを減らす設定では光らせない (枠は残る)
+    const flash = flashOf(mb.name, signalOf(st))
+    if (flash && !REDUCED_MOTION.matches) {
+      box.classList.add('st-flash', `flash-${flash}`)
+      box.addEventListener('animationend', (e) => { if (e.target === box) box.classList.remove('st-flash', `flash-${flash}`) })
     }
     if (st && st.key === 'working' && st.detail) {
       const d = el('div', 'doing', st.detail)
