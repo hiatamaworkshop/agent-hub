@@ -1,380 +1,381 @@
 # agent-hub
 
-複数の AI エージェントセッション (Claude Code など) と人間を、ローカルの **Hub** 経由でつなぐメッセージ基盤。
-人間をループから外さず、「コピー&ペーストの運搬作業」だけをなくすことを目的とする。
+A messaging layer that connects several AI agent sessions (Claude Code and others) and a human through a local **Hub**.
+The aim is to keep the human in the loop and remove only the "copy-and-paste hauling".
 
 ```
-[ブラウザ UI] ⇄ SSE ⇄ [Hub (常駐 daemon)] ⇄ [shim = MCP サーバー × セッション数] ─ channel で push → [Claude Code]
-                           ▲                                                    └ inbox ツールで取り出す ← [ほかのエージェント]
-         hooks (Stop / StopFailure / Notification / PreToolUse / PostToolUse / PostToolUseFailure / SessionStart / PostModelSwitch) からの POST
+[Browser UI] ⇄ SSE ⇄ [Hub (resident daemon)] ⇄ [shim = MCP server × sessions] ─ push over the channel → [Claude Code]
+                           ▲                                                    └ fetched with the inbox tool ← [other agents]
+         POST from hooks (Stop / StopFailure / Notification / PreToolUse / PostToolUse / PostToolUseFailure / SessionStart / PostModelSwitch)
 ```
 
-## 何ができるか (目標)
+## What it does (goals)
 
-1. エージェントの**セッション区切り・質問待ち**を hook で検知し、Hub に集約する。
-2. ユーザーは**ブラウザ**でそれを確認し、メッセージを書いて (または無編集で) Hub に push できる。
-3. エージェントは**購読を明示的に宣言**し、自分が購読したトピックに push があると notify を受け取る。
-4. エージェント間のメッセージパッシングにも同じ経路を使う。
-5. 宛先は論理名の **Mailbox** で、セッションは一時的に attach するだけ。エージェントが交代しても購読と未読を引き継ぐ。
-6. エージェントは **role** (`reviewer`, `deployer` など) を持ち、role ごとに読むべきメッセージが決まる。
-7. メッセージには機械的な種別 **`kind`** (`request` / `reply` / `notice`) が付き、受信側と UI が扱い方を判断できる。
-8. Claude Code 以外のエージェントは、同じ shim の **`inbox`** ツールで未読を取り出す。送り手の属性は本文と分けて `<hub-message>` の属性で渡す。
+1. Detects an agent's **session breaks and waits on questions** with hooks and gathers them on the Hub.
+2. The user sees them in the **browser**, and can write a message (or forward one unedited) and push it to the Hub.
+3. Agents **declare their subscriptions explicitly** and get notified when something is pushed to a topic they subscribed to.
+4. Message passing between agents uses the same path.
+5. Addresses are logical names, **Mailboxes**; a session only attaches temporarily. When an agent is replaced, its subscriptions and unread messages carry over.
+6. Agents have a **role** (`reviewer`, `deployer` and so on), and the role decides which messages they should read.
+7. Messages carry a machine-readable kind, **`kind`** (`request` / `reply` / `notice`), so the receiver and the UI can decide how to handle them.
+8. Agents other than Claude Code fetch unread messages with the same shim's **`inbox`** tool. The sender's attributes are kept apart from the body, as attributes of `<hub-message>`.
 
-## ステータス
+## Status
 
-- **P0** (1 セッションで往復する) と **P1** (質問待ち・許可待ち・ターン終了の検知) は完了し、実セッションで受け入れ条件を確かめた。
-- **P2** (複数セッション・交代・メッセージパッシング) は、受け入れ条件 1〜7 を compose の Hub と実セッションで通した (2026-10-19)。複数 Mailbox の同時接続、role (`roles.json`)、交代 (takeover)、古い未読の流し込みの上限、無編集転送 (Forward / Relay)、`inbox` の polling 経路と、クライアントによる経路の切り替え、配送の状態の名付け、保存期間、Docker (compose) での常駐まで実装済み。「起こすだけ」の配信アダプタは、ターンを始めるクライアントがないので作らずに閉じた (C1)。
-- その後、実際のチーム運用 (vcp・cite-bridge) で見つかったものを足している: プロジェクトの絞り込み、roadmap の項目から依頼を書く Items、溜まりのバッジとカードの状態 (Needs you / Working / Waiting on others など)、返信のない request を相手の後の Message で閉じる規則、leader の返事の型 (`要判断` などの色分け)。
-- 開いている項目は [docs/roadmap.md](docs/roadmap.md) の「項目」に `C<n>` の番号で並べてある。`inbox` 経路は Claude Code 以外の実クライアント (Codex など) ではまだ試していない (テストの MCP クライアントでのみ確認。C3)。
+- **P0** (one round trip in one session) and **P1** (detecting waits on questions, waits on permission and turn ends) are done, with the acceptance criteria checked in real sessions.
+- **P2** (several sessions, replacement, message passing) passed acceptance criteria 1-7 with the compose Hub and real sessions (2026-10-19). Implemented: several Mailboxes connected at once, roles (`roles.json`), replacement (takeover), a limit on how many old unread messages flow in, unedited forwarding (Forward / Relay), the `inbox` polling path and switching paths by client, naming of delivery states, retention, and running resident in Docker (compose). A delivery adapter that "only wakes the agent" was closed without being built, since no client starts a turn that way (C1).
+- Since then, things found while running real teams (vcp, cite-bridge) have been added: filtering by project, Items for writing requests from roadmap items, backlog badges and card states (Needs you / Working / Waiting on others and so on), a rule that closes an unanswered request when the other side sends a later Message, and the leader's reply format (headings such as `NEEDS DECISION` are color-coded).
+- Open items are listed with `C<n>` numbers under "Items" in [docs/roadmap.md](docs/roadmap.md). The `inbox` path has not yet been tried with a real client other than Claude Code (Codex and the like); it has only been checked with the test MCP client (C3).
 
-設計は [docs/design.md](docs/design.md) から読む。Channels・hook の仕様は公式資料と実機で確認済み (design.md §6.1〜6.1q)。MCP Events (SEP-3415, Draft) との関係は design.md §7。
+Start reading the design at [docs/design.md](docs/design.md). The Channels and hook specifications were checked against the official docs and on a real machine (design.md §6.1-6.1q). The relation to MCP Events (SEP-3415, Draft) is in design.md §7.
 
-## 使い方
+## Usage
 
-前提: Node.js 24 以上、ターミナルで `claude` CLI が動くこと (Channels は対話セッションの CLI でだけ有効)。
+Prerequisites: Node.js 24 or later, and the `claude` CLI working in a terminal (Channels work only in an interactive CLI session).
 
-### 1. 準備
+### 1. Setup
 
 ```powershell
 npm install
-Copy-Item .env.example .env   # HUB_TOKEN を 16 文字以上のランダム値にする (生成例は .env.example)
-npm run build                 # shim を dist/ に出力する
+Copy-Item .env.example .env   # set HUB_TOKEN to a random value of 16+ characters (.env.example shows how to generate one)
+npm run build                 # build the shim into dist/
 ```
 
-### 2. Hub を起動する (ターミナル A)
+### 2. Start the Hub (terminal A)
 
 ```powershell
 npm run hub
 ```
 
-`[hub] UI: http://127.0.0.1:7777/?token=…` が表示されるので、その URL をブラウザで開く。
-トークンは cookie に移され、URL からは消える。`start-team.ps1` で起動したときは、最後の行にも同じ URL が出る (Hub が起動済みでも、compose でも。下の「2 エージェントで role 間の往復を試す」)。データは `data/hub.jsonl` に追記される (渡し終えたメッセージは 24 時間で消える。下の「メッセージの保存期間と削除」)。
+It prints `[hub] UI: http://127.0.0.1:7777/?token=…`; open that URL in the browser.
+The token is moved into a cookie and removed from the URL. When started with `start-team.ps1`, the same URL is also printed on the last line (whether the Hub was already running or runs in compose; see "Try a round trip between roles with two agents" below). Data is appended to `data/hub.jsonl` (messages that have been handed over are deleted after 24 hours; see "Message retention and deletion" below).
 
-#### Docker で常駐させる (直接起動の代わり)
+#### Run it resident in Docker (instead of starting it directly)
 
 ```powershell
 docker compose up -d --build
-docker compose logs hub      # UI の URL (トークン付き) が出る
+docker compose logs hub      # prints the UI URL (with the token)
 ```
 
-- 載るのは Hub だけ。shim と hooks はホストで動き、同じ `.env` の `HUB_TOKEN` と `HUB_PORT` を使う。
-- 公開は `127.0.0.1:<HUB_PORT>` だけ (ホスト以外からは届かない)。`restart: unless-stopped` で Docker の起動とともに立ち上がる。
-- データは volume `hub-data` に置かれ、リポジトリの `data/` とは別物になる。`docker compose down -v` で消える。
-- `roles.json` はリポジトリ直下のものを読む (読み取り専用)。変えたら `docker compose restart`。
-- 直接起動の Hub と同じポートで同時には動かせない。どちらか一方にする。
+- Only the Hub runs in the container. The shim and hooks run on the host and use the same `HUB_TOKEN` and `HUB_PORT` from `.env`.
+- It is published only on `127.0.0.1:<HUB_PORT>` (unreachable from anywhere but the host). With `restart: unless-stopped` it comes up together with Docker.
+- Data lives in the volume `hub-data`, separate from the repository's `data/`. `docker compose down -v` erases it.
+- It reads `roles.json` from the repository root (read-only). After changing it, `docker compose restart`.
+- It cannot run at the same time as a directly started Hub on the same port. Use one or the other.
 
-### 3. Claude Code を channel 有効で起動する (ターミナル B、リポジトリ直下)
+### 3. Start Claude Code with the channel enabled (terminal B, repository root)
 
 ```powershell
 claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels server:agent-hub
 ```
 
-- 警告ダイアログでは **I am using this for local development** を選ぶ。
-- `server:agent-hub · no MCP server configured with that name` という警告が出ても通知は届く (design.md §6.1c)。
-- Mailbox 名は `HUB_MAILBOX` → `HUB_ROLE` があれば `<フォルダ名>.<role>` → フォルダ名 (ここでは `agent-hub`) の順に決まる。
-- shim はトークンを agent-hub の `.env` から読むので、MCP 設定にトークンを書かなくてよい。
+- In the warning dialog, choose **I am using this for local development**.
+- Notifications arrive even if you see the warning `server:agent-hub · no MCP server configured with that name` (design.md §6.1c).
+- The Mailbox name is decided in this order: `HUB_MAILBOX` → `<folder name>.<role>` if `HUB_ROLE` is set → the folder name (here `agent-hub`).
+- The shim reads the token from agent-hub's `.env`, so the MCP configuration does not need it.
 
-### 4. 往復を確かめる
+### 4. Check a round trip
 
-1. Claude に「agent-hub の `user.message` を購読して」と頼む (`subscribe` が呼ばれる)。
-2. ブラウザのフォームで `request` と宛先 `topic:user.message` を選び、本文を書いて Send。Claude の会話に `<channel source="agent-hub" …>` として届く。
-3. Claude に返信させる (`post_message`、`kind: reply`)。ブラウザの一覧に `reply` として出る。
-4. ブラウザの左側に Mailbox `agent-hub` が「接続中」(`Connected`) と表示される。
+1. Ask Claude to "subscribe to agent-hub's `user.message`" (`subscribe` is called).
+2. In the browser's form, choose `request` and the address `topic:user.message`, write a body and press Send. It arrives in Claude's conversation as `<channel source="agent-hub" …>`.
+3. Have Claude reply (`post_message`, `kind: reply`). It appears in the browser's list as a `reply`.
+4. On the left of the browser, the Mailbox `agent-hub` shows as connected (`Connected`).
 
-### ブラウザのカードを読む (状態と溜まり)
+### Reading the cards in the browser (state and backlog)
 
-左の Mailbox のカードには、今そのセッションの番が誰にあるかを 1 つの状態で出し、枠の色で示す。Hub は状態を持たず、配送の材料 (`GET /mailboxes` の `backlog`) と hook の Event から UI が導く (design.md §3.15)。
+Each Mailbox card on the left shows, as one state and by the color of its frame, whose move it is in that session now. The Hub holds no state; the UI derives it from the delivery material (`backlog` of `GET /mailboxes`) and the hook Events (design.md §3.15).
 
-| 状態 | 意味 |
+| State | Meaning |
 |---|---|
-| `Needs you` (琥珀) | 人が動く番。ターミナルの質問・許可待ちか、エージェントが Hub で人に出した request に返事がない。usage limit の自動の再開が続かない・無効のときもここ。返事を待っている相手がどれも接続していないときもここで、`(<Mailbox> not connected)` と添える (相手のセッションを起動する) |
-| `Paused` (青緑、⏸) | usage limit で止まっている (`StopFailure` の `error: rate_limit`)。自動の再開が動けば、待つだけで続く。`Working` より先に判定する |
-| `Working` (青) | 渡した Message が最後のターン終了より新しい。hook の Event がないセッションでは `Working?` (推測)。返信のない request を抱えたまま、試験などのバックグラウンドの処理を走らせてターンを終えたときも、60 分までは `Working` と出し `background: <処理>` を添える (処理が終われば次のターンが始まる) |
-| `Waiting on others` (紫の点線) | ターンを終え、自分が出した request の返事を待っている。宛先を添える |
-| `Stopped, no reply` (赤) | ターンを終えたが、渡された request に返信していない。ターミナルを見るか、催促する |
-| `Idle` / `Offline` | 何も残っていない / セッションがつながっていない |
+| `Needs you` (amber) | The human's move. A question or permission wait in the terminal, or a request the agent sent to the human on the Hub that has no reply. Also when automatic resume after a usage limit is not continuing or is off. Also when every party it is waiting for is unconnected, with `(<Mailbox> not connected)` added (start that party's session) |
+| `Paused` (teal, ⏸) | Stopped by a usage limit (`error: rate_limit` of `StopFailure`). If automatic resume works, it continues by itself. Checked before `Working` |
+| `Working` (blue) | A Message handed over is newer than the last turn end. `Working?` (a guess) for sessions without hook Events. Also, for up to 60 minutes, when a turn ended with a request still unanswered while a background task such as tests is running; `background: <task>` is added (when the task ends, the next turn starts) |
+| `Waiting on others` (purple, dotted) | The turn ended and it is waiting for replies to requests it sent. The addressee is added |
+| `Stopped, no reply` (red) | The turn ended without replying to a request it was handed. Look at the terminal or nudge it |
+| `Idle` / `Offline` | Nothing left / the session is not connected |
 
-- 返信待ちは `reply_to` の返信のほか、相手からの後の request か reply でも閉じる (人が質問に新しい依頼で答えたときなど。protocol.md §2)。
-- カードとサイドバーのバッジは、件数を `You` (人が動く番) / `Agent` (エージェントの番) / `Stuck?` (配送が詰まっているかもしれない) に分け、最も古いものの経過時間で色を変える。タブのタイトルの `N waiting` と favicon は、全プロジェクトの `Needs you` の数 (人が動く番。未接続の相手を待つカードは 1 件として数える)。`You` のバッジには、未接続の相手を待つカードは数えない (未読は相手のカードの `Stuck?` に出るため)。
-- 状態は hook の Event を材料にするので、hook を置いていないセッションでは粗くなる (下の「質問待ち・許可待ち・ターン終了をブラウザに出す」)。usage limit で止まった間は `Paused` と出る (`StopFailure` の hook が要る)。自動の再開が続かない・無効のときは、`Needs you` に `usage limit, press Enter` / `usage limit, auto-resume off` と出る (roadmap C38)。
-- 許可待ち (`Needs you (permission)`) は、許可してツールが動くと解ける (`Last event: approved`)。ターミナルで拒否したときは何も届かないので、`Needs you` のまま残る (拒否の後は Claude Code が人の入力を待つ。roadmap C30)。
+- Awaiting reply is closed by a reply with `reply_to`, and also by a later request or reply from the other side (for example when the human answers a question with a new request; protocol.md §2).
+- The badges on cards and in the sidebar split counts into `You` (the human's move) / `Agent` (the agent's move) / `Stuck?` (delivery may be stuck), and change color by the age of the oldest. `N waiting` in the tab title and the favicon count `Needs you` across all projects (the human's move; a card waiting on an unconnected party counts as one). The `You` badge does not count cards waiting on an unconnected party (their unread shows as `Stuck?` on the other party's card).
+- The state is built from hook Events, so it is coarser for sessions without hooks (see "Show question waits, permission waits and turn ends in the browser" below). While stopped by a usage limit it shows `Paused` (needs the `StopFailure` hook). When automatic resume is not continuing or is off, `Needs you` shows `usage limit, press Enter` / `usage limit, auto-resume off` (roadmap C38).
+- A permission wait (`Needs you (permission)`) clears when you allow it and the tool runs (`Last event: approved`). When you deny it in the terminal nothing arrives, so it stays `Needs you` (after a denial Claude Code waits for the human's input; roadmap C30).
 
-### カスタムコマンド
+### Custom commands
 
-ブラウザの **Commands** で、よく使う文字列に名前を付けられる。例: 名前 `cp`、text `commit and push`。
+Under **Commands** in the browser you can name strings you use often. Example: name `cp`, text `commit and push`.
 
-- 本文に `/cp` と書いて Send を押すと、`commit and push` に置き換えて送る。`/cp 今日の作業` のように書くと、`$ARGS` を含む text ではその位置に、含まなければ後ろに引数が入る。
-- `//cp` は置き換えずに `/cp` を送る (エスケープ)。定義されていない `/xyz` はそのまま送る。
-- 設定は `HUB_DATA_DIR` (既定は `data/`) の `settings.json` に保存される。手で編集してもよく、次の読み込みから反映される。手編集の `defaultTo` (例 `"mailbox:leader"`) を置くと、その Mailbox が attach 中のときに UI の初期の宛先になる (前回送った宛先があればそちらが優先。どちらも attach 中でなければ宛先は未選択)。
+- Write `/cp` in the body and press Send, and it is sent as `commit and push`. If you write `/cp today's work`, the argument goes where `$ARGS` is in the text, or at the end if there is no `$ARGS`.
+- `//cp` sends `/cp` without replacing it (escape). An undefined `/xyz` is sent as is.
+- The settings are saved in `settings.json` under `HUB_DATA_DIR` (default `data/`). You may edit it by hand; it takes effect from the next read. A hand-edited `defaultTo` (e.g. `"mailbox:leader"`) becomes the UI's initial address while that Mailbox is attached (the address you last sent to takes precedence; if neither is attached, no address is selected).
 
 ```json
 { "version": 1, "commands": [ { "name": "cp", "text": "commit and push" } ] }
 ```
 
-この機能は Hub 側の API を使うので、**既に起動している Hub は再起動しないと Commands が無効のまま** (古い Hub では Commands が灰色になる)。
+This feature uses the Hub's API, so **a Hub that is already running keeps Commands disabled until it is restarted** (on an old Hub, Commands is grayed out).
 
-### 画像を貼る
+### Pasting images
 
-本文欄に画像を貼る (Ctrl+V)、画像をコンポーザーにドラッグする、または **Attach** で選ぶ。PNG・JPEG・GIF・WebP を 1 メッセージに 4 枚まで、1 枚 20MB まで。
+Paste an image into the body (Ctrl+V), drag one onto the composer, or choose one with **Attach**. PNG, JPEG, GIF and WebP, up to 4 per message and 20MB each.
 
-- 送ると、Hub が長辺 1568px に縮小して `HUB_DATA_DIR/files/` に保存し、スレッドに画像を出す。agent に届くのも同じ画像で、位置情報などの metadata は落ちる。GIF / WebP は 1 フレーム目だけ。本文が空なら `[image]` を送る。
-- 持続でない画像は `HUB_FILE_TTL_DAYS` (既定 1 日) で消える。消えた画像は「Image expired or unavailable」と表示される。
-- 環境変数は `HUB_FILE_MAX_EDGE` (既定 1568) と `HUB_FILE_TTL_DAYS` (既定 1、0 で掃除しない)。`.env.example` を参照。
-- この機能も Hub 側の API を使うので、**既に起動している Hub は再起動が必要** (古い Hub では Attach で送らずに再起動を促す)。
+- On sending, the Hub shrinks it to a long edge of 1568px, saves it in `HUB_DATA_DIR/files/` and shows it in the thread. Agents get the same image, with metadata such as location dropped. For GIF / WebP only the first frame is kept. If the body is empty, `[image]` is sent.
+- Non-persistent images are deleted after `HUB_FILE_TTL_DAYS` (default 1 day). A deleted image shows as "Image expired or unavailable".
+- The environment variables are `HUB_FILE_MAX_EDGE` (default 1568) and `HUB_FILE_TTL_DAYS` (default 1; 0 means never clean up). See `.env.example`.
+- This feature also uses the Hub's API, so **a Hub that is already running must be restarted** (on an old Hub, Attach does not send and asks you to restart).
 
-#### agent が画像を見る
+#### Agents seeing images
 
-shim は届いた画像を OS の一時フォルダの `agent-hub/<Mailbox 名>/` に保存し、通知の `meta` 属性の `files[].path` にパスを入れる。agent はそのパスを `Read` で開いて画像を見る。保存に失敗したものは `error` (`expired` は期限切れ、`fetch_failed` は取得失敗) が付く。
+The shim saves arriving images in `agent-hub/<Mailbox name>/` under the OS's temporary folder and puts the path in `files[].path` of the notification's `meta` attribute. The agent opens that path with `Read` to see the image. Images that could not be saved carry `error` (`expired` for expired, `fetch_failed` for a failed fetch).
 
-- 保存先は `HUB_FILES_DIR` で変えられる (その下に Mailbox 名のフォルダを作る)。
-- 起動時に 24 時間より古い画像を消す。
-- 保存先は作業フォルダの外なので、`Read` が許可を求めることがある。`tools/dev/start-agent.ps1` は起動時に `--add-dir` で保存先を許可する (`HUB_FILES_DIR` を設定していればそのフォルダ)。手で `claude` を起動するなら、`claude --add-dir "<保存先>"` を付ける。
+- The location can be changed with `HUB_FILES_DIR` (a folder per Mailbox name is made under it).
+- At startup, images older than 24 hours are deleted.
+- The location is outside the working folder, so `Read` may ask for permission. `tools/dev/start-agent.ps1` allows it at startup with `--add-dir` (the `HUB_FILES_DIR` folder if set). If you start `claude` by hand, add `claude --add-dir "<location>"`.
 
-### 質問待ち・許可待ち・ターン終了をブラウザに出す (hook)
+### Show question waits, permission waits and turn ends in the browser (hooks)
 
-Claude Code の HTTP hook で、`AskUserQuestion`・許可待ち・ターン終了を Hub に送る。ブラウザのスレッドに破線の枠で出て、左の Mailbox のカードに最後のものが出る。カードの状態 (上の「ブラウザのカードを読む」) の材料にもなる。
+Claude Code's HTTP hooks send `AskUserQuestion`, permission waits and turn ends to the Hub. They appear in the browser's thread in a dashed frame, and the latest one shows on the Mailbox card on the left. They are also the material for the card's state ("Reading the cards in the browser" above).
 
-1. [tools/hooks/settings.json](tools/hooks/settings.json) の `hooks` を、このリポジトリの `.claude/settings.local.json` (コミットされない) に写す。
-   ほかのリポジトリでも使うなら `~/.claude/settings.json` に写す。ポートを変えているなら `url` の `7777` も変える。
-   `--settings` で渡す方法は 2.1.301 で誤動作した (design.md §6.1f) ので使わない。
-2. hook の `Authorization` は環境変数 `HUB_TOKEN` から作られる。`tools/dev/start-agent.ps1` は `.env` の値を渡すので何もしなくてよい。手で `claude` を起動するなら、先に `$env:HUB_TOKEN` を設定する。
-   その場合、トークンはセッションの Bash などからも見える。`.env` と同じ扱い。
-   `PostToolUse` / `PostToolUseFailure` は、許可待ちが解けたことを知るため全ツールで送る (Hub は許可待ちの直後の 1 件だけ記録し、ほかは捨てる。1 回あたり数 ms。design.md §6.1s)。前の設定 (`matcher: AskUserQuestion`) を写してあるなら、`matcher` を外し `PostToolUseFailure` を足す。`PostModelSwitch` も足す (カードに最後に見えたモデルと effort を出すため。C61)。
-   `SessionStart` は **command hook だけ** (公式 hooks の記述。HTTP hook では Event が届かなかった。design.md §6.1v)。`tools/hooks/settings.json` の形で写す: `"command": "node", "args": ["${CLAUDE_PROJECT_DIR}/tools/hooks/post-event.mjs", "--no-git"]`。`--no-git` は外さない (git を呼ばず、入力をそのまま送る速い道。C61)。`${CLAUDE_PROJECT_DIR}/tools/hooks/post-event.mjs` は、この repository の script を指す。ほかのプロジェクトのチームに写すときは、パスをこの repository の script に向ける (`settings.command.json` の Stop と同じ制約。design.md §3.11)。
-3. Hub が止まっていると、hook はエラーを表示するだけで作業は止まらない (タイムアウト 5 秒)。1 MB を超える入力 (大きなファイルの `Read` の結果など) も、Hub が 413 を返して hook のエラーになるだけ。
-   設定ファイルの hook は、起動中のセッションにも読み直されて効く (起動し直さなくてよい。design.md §6.1q)。
-4. (任意) `Stop` で変更の事実 (HEAD・変更ファイル・未追跡ファイル) を Hub に送るには、[tools/hooks/settings.command.json](tools/hooks/settings.command.json) の `Stop` を使う。`Stop` の HTTP hook (1 の `Stop`) と**両方置くと `turn.end` が 2 件になる**ので、HTTP の `Stop` は外して置き換える。
-   スクリプトは `tools/hooks/post-event.mjs`。git は作業フォルダで実行し、Hub は git を実行しない。Hub のポートは `HUB_PORT` (既定 7777)。失敗しても作業は止まらず、取れた分だけ送る。ブラウザでは `turn.end` に変更ファイルの件数が出る。
+1. Copy the `hooks` of [tools/hooks/settings.json](tools/hooks/settings.json) into this repository's `.claude/settings.local.json` (not committed).
+   To use them in other repositories too, copy them into `~/.claude/settings.json`. If you changed the port, change `7777` in `url` too.
+   Passing them with `--settings` misbehaved in 2.1.301 (design.md §6.1f), so do not.
+2. The hook's `Authorization` is built from the environment variable `HUB_TOKEN`. `tools/dev/start-agent.ps1` passes the value from `.env`, so nothing is needed. If you start `claude` by hand, set `$env:HUB_TOKEN` first.
+   In that case the token is visible from the session's Bash and so on too. Treat it like `.env`.
+   `PostToolUse` / `PostToolUseFailure` are sent for every tool, to learn that a permission wait was cleared (the Hub records only the one right after a permission wait and discards the rest; a few ms each; design.md §6.1s). If you copied the older settings (`matcher: AskUserQuestion`), remove the `matcher` and add `PostToolUseFailure`. Also add `PostModelSwitch` (to show the last model and effort seen on the card; C61).
+   `SessionStart` works **only as a command hook** (per the official hooks docs; with an HTTP hook no Event arrived; design.md §6.1v). Copy it in the shape of `tools/hooks/settings.json`: `"command": "node", "args": ["${CLAUDE_PROJECT_DIR}/tools/hooks/post-event.mjs", "--no-git"]`. Keep `--no-git` (a fast path that does not call git and sends the input as is; C61). `${CLAUDE_PROJECT_DIR}/tools/hooks/post-event.mjs` points at this repository's script. When copying it to another project's team, point the path at this repository's script (the same constraint as Stop in `settings.command.json`; design.md §3.11).
+3. If the Hub is stopped, the hook only shows an error and work does not stop (timeout 5 seconds). Input over 1 MB (the result of `Read` on a large file and the like) also just becomes a hook error, with the Hub returning 413.
+   Hooks in settings files are re-read by running sessions too and take effect (no restart needed; design.md §6.1q).
+4. (Optional) To send the facts of a change (HEAD, changed files, untracked files) to the Hub on `Stop`, use the `Stop` of [tools/hooks/settings.command.json](tools/hooks/settings.command.json). **Having it together with the HTTP `Stop` hook (the `Stop` in step 1) makes two `turn.end`s**, so remove the HTTP `Stop` and replace it.
+   The script is `tools/hooks/post-event.mjs`. git runs in the working folder; the Hub does not run git. The Hub's port is `HUB_PORT` (default 7777). On failure work does not stop, and whatever could be collected is sent. In the browser, `turn.end` shows the number of changed files.
 
-- どの Mailbox の出来事かは、shim が申告した session → `X-Hub-Mailbox` (`HUB_MAILBOX`) → フォルダ名の順で決まる。
-- **質問にはブラウザから答えられない**。ターミナルで答える。ブラウザから送ったメッセージは、回答の後にセッションに届く。
-- Event の **Reply** は、その Mailbox 宛ての `request` を書き始める。
-- この機能も Hub 側の API を使うので、**既に起動している Hub は再起動が必要** (古い Hub では Event が出ないだけ)。
+- Which Mailbox an occurrence belongs to is decided in this order: the session declared by the shim → `X-Hub-Mailbox` (`HUB_MAILBOX`) → the folder name.
+- **Questions cannot be answered from the browser.** Answer in the terminal. Messages sent from the browser reach the session after the answer.
+- An Event's **Reply** starts writing a `request` to that Mailbox.
+- This feature also uses the Hub's API, so **a Hub that is already running must be restarted** (an old Hub just shows no Events).
 
-### エージェントの出力を別のエージェントへ運ぶ (Forward)
+### Carry an agent's output to another agent (Forward)
 
-- メッセージの **Forward** で選び (複数可)、宛先を選んで **Forward N** を押す。本文・kind・添付画像は**元のまま**運ばれる。受け手には、転送した人 (`from`) と本文の書き手 (`forwarded_sender`) が分けて届く。
-- 本文欄に書いたことは**添え書き**として、転送より先に別のメッセージで届く (例「この 2 件をレビューして」)。空なら転送だけ。転送する本文には混ぜない。
-- 一度でも A の出力を B へ転送すると、スレッドの上の **Relay** に `A → B · N new` (A の出力のうち、まだ B へ送っていない件数) が出る。押すとその N 件が選ばれ、宛先が B になる。送るのは Forward を押したときだけ。
-- 転送も Hub 側の API を使うので、**既に起動している Hub は再起動が必要** (古い Hub では送る前に止まり、添え書きも送らない)。
+- Choose messages with **Forward** (several allowed), choose an address and press **Forward N**. The body, kind and attached images are carried **as they are**. The receiver gets the person who forwarded (`from`) and the author of the body (`forwarded_sender`) separately.
+- What you write in the body is sent as a **covering note**, as a separate message before the forward (e.g. "review these two"). If it is empty, only the forward is sent. It is not mixed into the forwarded body.
+- Once you have forwarded A's output to B, **Relay** above the thread shows `A → B · N new` (how many of A's outputs have not been sent to B yet). Pressing it selects those N and sets the address to B. Nothing is sent until you press Forward.
+- Forwarding also uses the Hub's API, so **a Hub that is already running must be restarted** (an old Hub stops before sending and does not send the covering note either).
 
-### 購読は Mailbox ごとに 1 回でよい
+### Subscribing once per Mailbox is enough
 
-- 購読はセッションではなく **Mailbox に保存される** (`data/hub.jsonl`)。Hub の再起動や、新しいセッションが同じ Mailbox に attach したときも残るので、起動のたびに頼み直さなくてよい。
-  同じフォルダで起動すれば同じ Mailbox になる (上の Mailbox 名の決まり方を参照)。
-- **`mailbox:<名前>` 宛てなら購読は要らない**。購読が要るのは、`topic:<名前>` のように購読者全員へ送るときだけ。
-- 購読が消えるのは、ブラウザで Mailbox を削除したときと、`data/` を消したとき (Docker では volume を作り直したとき)。設定として宣言しておく方法は role の既定購読 (`roles.json` + `HUB_ROLE`。下の「role の定義 (roles.json)」)。
-- 宛先のドロップダウンには購読中のトピックだけが出る。購読者のいないトピックは「トピックを手入力…」で送れるが、誰にも届かなければ Send の横に警告が出る。
-- 長く離れた Mailbox に attach しても、未読を全部は流さない。7 日より古いものと、新しい 50 件より前のものは省き、省いた件数を 1 件の通知で伝える (`inbox` 経路では次の `inbox` の結果の先頭。記録は残り、ブラウザの履歴から見える)。上限は `HUB_UNREAD_MAX_AGE_DAYS` / `HUB_UNREAD_MAX` (0 で制限なし)。
+- Subscriptions are **stored on the Mailbox**, not the session (`data/hub.jsonl`). They survive Hub restarts and new sessions attaching to the same Mailbox, so you do not have to ask again at every start.
+  Starting in the same folder gives the same Mailbox (see how Mailbox names are decided above).
+- **Messages to `mailbox:<name>` need no subscription.** A subscription is needed only to send to all subscribers, like `topic:<name>`.
+- Subscriptions disappear when you delete the Mailbox in the browser and when you erase `data/` (in Docker, when you recreate the volume). The way to declare them as configuration is a role's default subscriptions (`roles.json` + `HUB_ROLE`; "Role definitions (roles.json)" below).
+- The address dropdown shows only subscribed topics. A topic without subscribers can be sent to with "type a topic…", but if it reaches nobody a warning appears next to Send.
+- Attaching to a Mailbox after a long time away does not flow in every unread message. Those older than 7 days and those before the newest 50 are omitted, and the number omitted is reported in one notice (on the `inbox` path, at the head of the next `inbox` result; the records remain and can be seen in the browser's history). The limits are `HUB_UNREAD_MAX_AGE_DAYS` / `HUB_UNREAD_MAX` (0 means no limit).
 
-### エージェントを交代する (takeover)
+### Replacing an agent (takeover)
 
-同じ Mailbox 名で新しいセッションを起動すると、新しい方が引き継ぐ (`/clear` の後や、モデルを変えて起動し直したときなど)。購読と未読は Mailbox に残っているので、そのまま新しいセッションに届く。
+Starting a new session with the same Mailbox name makes the new one take over (after `/clear`, or when restarting with a different model, and so on). Subscriptions and unread messages stay on the Mailbox, so they reach the new session as they are.
 
-- 古いセッションが動いたままなら切り離され、`post_message` / `subscribe` / `unsubscribe` はエラーになる (`whoami` は答える)。切り離された shim は attach し直さない (新しい方を閉じても戻らない。エラーの文面もそう伝える)。古い方で続けるなら、そのセッションを起動し直す。
-- ブラウザの Mailbox のカードに `took over <時刻>` が出る。切り離されたセッションの hook の Event には `superseded session` と添えられ、カードの最後の Event には使われない。
-- 接続していない Mailbox のカードには、切れた時刻と理由 (`session ended` / `disconnected` / `lease expired`) が出る。
+- If the old session is still running it is cut off, and `post_message` / `subscribe` / `unsubscribe` return errors (`whoami` still answers). A cut-off shim does not attach again (closing the new one does not bring it back; the error text says so too). To continue in the old one, restart that session.
+- The Mailbox card in the browser shows `took over <time>`. Hook Events from the cut-off session carry `superseded session` and are not used as the card's last Event.
+- The card of an unconnected Mailbox shows when and why it was cut (`session ended` / `disconnected` / `lease expired`).
 
-### 使わなくなった Mailbox を消す
+### Deleting Mailboxes you no longer use
 
-ブラウザの左側で、接続していない Mailbox のカードに出る **Delete** を押す (確認あり)。購読・cursor・未読が消え、メッセージの記録は残る。
+On the left of the browser, press **Delete** on the card of an unconnected Mailbox (it asks for confirmation). Its subscriptions, cursor and unread messages are erased; the message records remain.
 
-- 接続中の Mailbox は消せない (Delete が出ない)。先にそのセッションを終了する。
-- 同じ名前で attach し直すと新しい Mailbox になり、削除前に届いていた分は届かない。
-- この機能も Hub 側の API を使うので、**既に起動している Hub は再起動が必要** (古い Hub ではエラーが出て、カードは残る)。
+- A connected Mailbox cannot be deleted (no Delete appears). End that session first.
+- Attaching again with the same name makes a new Mailbox, and what had arrived before the deletion does not arrive.
+- This feature also uses the Hub's API, so **a Hub that is already running must be restarted** (an old Hub shows an error and the card remains).
 
-### メッセージの保存期間と削除
+### Message retention and deletion
 
-Hub は接続のための基盤で、メッセージを長く残さない。残したい知識はリポジトリの文書か engram に書く (design.md §3.14)。
+The Hub is infrastructure for connecting, and does not keep messages for long. Write knowledge you want to keep in the repository's documents or in engram (design.md §3.14).
 
-- 受け手全員に渡し終えたメッセージは、24 時間 (`HUB_READ_RETENTION_HOURS`、0 で自動では消さない) で消える。検知イベントも同じ期間で消える。掃除は起動時と 1 時間ごと。
-- 消えないもの: 未読と、まだ返信のない `request`。返信待ちは、`reply_to` の返信か、受け手から送り手への後の request / reply で閉じる (notice と転送では閉じない。protocol.md §2)。閉じないものは手で消すまで残る。
-- 手で消す: メッセージの **Delete** (1 件。未読でも返信待ちでも消す)。スレッドの上の **Purge read** は、保存期間を待たずに、渡し終えたメッセージと全イベントを今消す。
-- 消えたメッセージに `reply_to` で返信すると 400 になる。`to` を付けて送る。
-- `data/hub.jsonl` は、消したときに今の状態だけに詰め直される。
-- この機能も Hub 側の API を使うので、**既に起動している Hub は再起動が必要** (古い Hub では Delete と Purge read が再起動を促す)。
+- Messages handed to every receiver are deleted after 24 hours (`HUB_READ_RETENTION_HOURS`; 0 means never delete automatically). Detection events are deleted after the same period. Cleanup runs at startup and every hour.
+- Not deleted: unread messages and `request`s with no reply yet. Awaiting reply is closed by a reply with `reply_to`, or by a later request / reply from the receiver to the sender (not by notices or forwards; protocol.md §2). Whatever does not close stays until deleted by hand.
+- Deleting by hand: **Delete** on a message (one; deletes it even if unread or awaiting a reply). **Purge read** above the thread deletes now, without waiting for the retention period, the messages that have been handed over and all events.
+- Replying with `reply_to` to a deleted message is 400. Send it with `to`.
+- `data/hub.jsonl` is compacted to the current state when something is deleted.
+- This feature also uses the Hub's API, so **a Hub that is already running must be restarted** (on an old Hub, Delete and Purge read ask you to restart).
 
-### 2 エージェントで role 間の往復を試す (leader / deployer)
+### Try a round trip between roles with two agents (leader / deployer)
 
-ユーザー → leader → deployer → leader → ユーザーの順に、role 宛てで依頼と報告を回す試験。
-role の説明は `roles.json` の `description` が shim の instructions に入る (下の「role の定義 (roles.json)」)。leader / deployer / reviewer は、運用の細かい指示 (メッセージの見出しなど) を [tools/dev/roles/](tools/dev/roles/) に置き、`start-agent.ps1` が system prompt にも足す。`roles.json` にだけあって roles/ にない role は、説明だけで動く。
-
-```powershell
-npm run hub                                   # ターミナル A
-./tools/dev/start-agent.ps1 -Role leader      # ターミナル B (Mailbox = agent-hub.leader、既定のモデル)
-./tools/dev/start-agent.ps1 -Role deployer    # ターミナル C (Mailbox = agent-hub.deployer、haiku)
-```
-
-まとめて起動するなら `start-team.ps1` を使う。Hub が止まっていれば起動し、選んだ role を Windows Terminal のタブで 1 つずつ起動する (wt がなければ別ウィンドウ)。
+A test that passes a request and report around by role address in the order user → leader → deployer → leader → user.
+For the role's description, the `description` in `roles.json` goes into the shim's instructions ("Role definitions (roles.json)" below). For leader / deployer / reviewer, detailed operating instructions (message headings and so on) live in [tools/dev/roles/](tools/dev/roles/), and `start-agent.ps1` adds them to the system prompt too. A role that is in `roles.json` but not in roles/ works from its description alone.
 
 ```powershell
-./tools/dev/start-team.ps1                          # roles.json の role を番号で選ぶ (例 1,2。all で全部)
-./tools/dev/start-team.ps1 -Roles leader,deployer   # 選ばずに指定する
+npm run hub                                   # terminal A
+./tools/dev/start-agent.ps1 -Role leader      # terminal B (Mailbox = agent-hub.leader, the default model)
+./tools/dev/start-agent.ps1 -Role deployer    # terminal C (Mailbox = agent-hub.deployer, haiku)
 ```
 
-- どちらのスクリプトも `-Project <フォルダ>` で作業するプロジェクトを選べる (省略時は agent-hub)。下の「他のリポジトリで使う」。
-- 1 つ起動するごとに、その role の Mailbox が Hub に attach するまで待ってから次へ進む (上限 `-AttachTimeout`、既定 60 秒)。開発用 channel の警告ダイアログは、開いたタブで 1 つずつ答える。
-- 接続中の role は飛ばす (起動し直すと takeover で今のセッションが切り離されるため)。起動し直すなら `-Force`。
-  起動前の Attachment の `attachmentId` を覚え、別の id の Attachment が現れてから「attach した」と出す。前のセッションの Attachment がリースの切れるまで残っていても、成功とは読まない。上限までに現れなければ失敗として警告し、最後に終了コード 1 で終わる (roadmap C33)。
-- `roles.json` にない role は起動前に止める。`dist/` が `src/` より古ければ先に build する (`-NoBuild` で省く)。
-- 起動の前に次を確かめる (roadmap C56〜C58。中身は `tools/dev/team-checks.ps1`)。
-  - `claude --version` が通らなければ (NVM が止めた NVM4306、自己更新で exe を差し替え中など)、出力の先頭を出して、どの role も起動せずに終わる。
-  - hook の設定がなければ警告し、置き直すコマンドを添える (`.claude/settings.local.json` がなければ写す 1 行。あれば上書きせず、手で足すよう出す)。
-  - `-Project` のフォルダで `git fetch` (資格情報を尋ねない・15 秒まで) をしてから、detached HEAD・upstream より遅れている・upstream が無い、のどれかなら警告する。止めはしない。submodule の古い版の上でチームを動かさないため。
-- タブの `claude` が attach する前に終わったら、上限を待たずに失敗とし、終了コードと理由 (`claude --version` の出力) を出す。`start-agent.ps1` が OS の一時フォルダの `agent-hub-start/<Mailbox>.json` に終わりを書き、それを読む。
-- 最後に、上の警告と失敗を `--- まとめ ---` に集め、`UI: http://127.0.0.1:<port>/?token=…` を出す。トークンが Hub と合わなければ、URL の代わりにそう出す。
-- attach の確認には `.env` の `HUB_TOKEN` を使う。タブは起動したのと同じシェル (`pwsh` / `powershell`) で開く。
-
-1. ブラウザの左側に `agent-hub.leader` と `agent-hub.deployer` が role 付きで「接続中」と出ることを確かめる。
-2. ブラウザから `request` を `role:leader` 宛てに送る。本文は作業の依頼 (例: 「`tmp/hello.txt` を作って」)。
-3. leader が `role:deployer` 宛てに実装指示を `request` で送り、deployer が作業して `reply` を返す。
-4. leader が変更を確かめ、2 の依頼への `reply` を送る。ブラウザに 4 通が `request` → `request` → `reply` → `reply` の順に並ぶ。
-
-- メッセージの形式は role の説明で決めている。leader → deployer は英語の固定見出し (`GOAL` / `SCOPE` / `SPEC` / `DONE WHEN`)、
-  deployer → leader は英語で、変更ファイルの一覧 (`CHANGED`) だけ DCP 形式。leader → user は日本語で `結果` / `確認` / `未確認` / `要判断` / `要操作` の 5 項目。ブラウザは本文の行頭の見出しを太字にし、`要判断` を地色、`要操作`・`未確認`・`NOT VERIFIED` を見出しの色で目立たせる (中身が「なし」の節は目立たせない)。
-- leader のターミナルでの応答を簡潔にする指示も role の説明に書いている。output style (`/output-style concise`) は `.claude/settings.local.json` に保存され、同じフォルダの全セッションに効くので使わない。起動時に `--settings` で渡す方法は 2.1.301 で誤動作した (design.md §6.1f)。
-- 2 つのセッションは同じフォルダで動くので、deployer の変更は leader から `git diff` で見える。
-- deployer のファイル編集の許可は、ターミナル C で承認する。
-- 権限モードは、`-PermissionMode <値>` を付けたときだけ `claude --permission-mode <値>` として渡す。省略すると何も渡さず、Claude Code の既定で起動する。アカウントで auto を既定にしていると、許可待ちはほとんど出ない。
-  許可待ちを試すなら `-PermissionMode default` を付ける (例 `./tools/dev/start-agent.ps1 -Role deployer -PermissionMode default`。`start-team.ps1` に付ければ全 role に渡る)。起動後に手で変えるなら、そのタブで Shift+Tab から `manual` にする (2.1.306 の切り替えには `default` がなく、`manual` がそれに当たる。hook の `permission_mode` には `default` と載る。design.md §6.1o、roadmap C29)。
-
-### roadmap の項目から依頼する (Items)
-
-roadmap の `### C<n>. 題` の項目 (書き方は [docs/roadmap.md](docs/roadmap.md) の冒頭) を Hub に送ると、サイドバーの **Items** にカードが並ぶ。カードを押すと中身のモーダルが開く (ID・題・状態と理由・完了条件の 1 行ずつのチェック・依頼の状態・約束の差分)。モーダルの **Draft request** で `GOAL` / `DONE WHEN` の下書きになり、送る request に項目 (`meta.item`) が付く。**Open in editor** で台帳のその行を開く (`vscode://` のリンク。エディタが対応していること)。本文は索引に載せず、モーダルにも出さない (design.md §3.15)。サイドバーの幅はつまみで変えられ、この Hub のブラウザに覚えさせる。
+To start them together, use `start-team.ps1`. It starts the Hub if it is stopped, then starts the chosen roles one by one in Windows Terminal tabs (separate windows if there is no wt).
 
 ```powershell
-npm run docs:index                                                       # agent-hub の docs/roadmap.md
-npm --prefix <agent-hub> run docs:index -- --file docs/TODO.md            # 別のプロジェクトはそのルートで (台帳が docs/roadmap.md なら --file は要らない)
+./tools/dev/start-team.ps1                          # choose roles from roles.json by number (e.g. 1,2; all for every role)
+./tools/dev/start-team.ps1 -Roles leader,deployer   # name them instead of choosing
 ```
 
-- 送ったプロジェクトは、エージェントがつながる前から UI のプロジェクトとして選べ、`role:deployer @ <プロジェクト>` 宛てに依頼を置ける (attach した Mailbox に未読として届く)。
-- Hub が持つのは索引の写しだけで、正本はリポジトリの roadmap。変えたら送り直す。外すのは Items の **Remove**。
-- Items は 4 段で出る: **Plan** (台帳の `## 予定` の並び。ブロックは何を待つかを出す)、**Awaiting a decision** (提案)、**Parked** (保留。既定で畳む)、**Recently closed** (閉じた行の日付の新しい 5 件)。`## 予定` のない台帳では、決定とブロックを番号順に Plan に出す。
-- カードには requested / reported と、送った後に完了条件の文言が変わったときの差分が出る。
-- 独自の書式の台帳を持つプロジェクトでは、送ると項目がすべて「決定」と読まれることがある。そのときは索引に載せず、普通の依頼として送る (roadmap C27)。
+- Both scripts take `-Project <folder>` to choose the project to work in (agent-hub if omitted). See "Using it in other repositories" below.
+- After starting each one, it waits until that role's Mailbox attaches to the Hub before going on (limit `-AttachTimeout`, default 60 seconds). Answer the development channel's warning dialog in each tab as it opens.
+- Connected roles are skipped (restarting would cut off the current session by takeover). To restart, use `-Force`.
+  It remembers the `attachmentId` of the Attachment before starting, and says "attached" only once an Attachment with a different id appears. Even if the previous session's Attachment lingers until its lease expires, that is not read as success. If none appears within the limit, it warns of a failure and finally exits with code 1 (roadmap C33).
+- Roles not in `roles.json` are stopped before starting. If `dist/` is older than `src/`, it builds first (skip with `-NoBuild`).
+- Before starting, it checks the following (roadmap C56-C58; the contents are in `tools/dev/team-checks.ps1`).
+  - If `claude --version` does not pass (NVM blocking it with NVM4306, an exe being replaced by a self-update and so on), it prints the head of the output and ends without starting any role.
+  - If the hook settings are missing, it warns and adds the command to put them back (a one-liner to copy them if there is no `.claude/settings.local.json`; if there is one, it does not overwrite it and tells you to add them by hand).
+  - In the `-Project` folder it runs `git fetch` (without prompting for credentials, up to 15 seconds), then warns if the HEAD is detached, behind its upstream, or has no upstream. It does not stop. This keeps the team from running on an old version of a submodule.
+- If a tab's `claude` ends before attaching, it fails without waiting for the limit and prints the exit code and the reason (the output of `claude --version`). `start-agent.ps1` writes the ending to `agent-hub-start/<Mailbox>.json` under the OS's temporary folder, and the script reads it.
+- At the end, the warnings and failures above are gathered under `--- まとめ ---` ("summary") and `UI: http://127.0.0.1:<port>/?token=…` is printed. If the token does not match the Hub, it says so instead of the URL.
+- The attach check uses `HUB_TOKEN` from `.env`. Tabs open in the same shell that started the script (`pwsh` / `powershell`).
 
-**変えたコミットの後に自動で送る** (任意): 台帳 (`docs/roadmap.md`) を変えたコミットのときだけ、索引を送る git の post-commit hook を入れられる。送れなくてもコミットは止まらない (Hub が止まっていれば警告を 1 行出して進む)。
+1. Confirm that `agent-hub.leader` and `agent-hub.deployer` show as connected, with their roles, on the left of the browser.
+2. From the browser, send a `request` to `role:leader`. The body is a work request (e.g. "create `tmp/hello.txt`").
+3. The leader sends implementation instructions to `role:deployer` as a `request`, and the deployer does the work and returns a `reply`.
+4. The leader checks the change and sends a `reply` to the request from step 2. The browser lists the four messages in the order `request` → `request` → `reply` → `reply`.
 
-1. 対象のリポジトリの `.git/hooks/` に、hook をコピーする (agent-hub の `tools/hooks/post-commit-index.sh`)。
+- The message formats are set by the role descriptions. leader → deployer uses fixed English headings (`GOAL` / `SCOPE` / `SPEC` / `DONE WHEN`);
+  deployer → leader is in English, with only the list of changed files (`CHANGED`) in DCP form. leader → user uses five English headings, `RESULT` / `VERIFIED` / `NOT VERIFIED` / `NEEDS DECISION` / `NEEDS ACTION`, with the body in the user's language (`HUB_LANGUAGE` below). The browser bolds headings at the start of a line in the body, gives `NEEDS DECISION` a background color, and colors the headings of `NEEDS ACTION` and `NOT VERIFIED` (a section whose content is "none" is not highlighted). Replies with the earlier Japanese headings (`要判断` and so on) are colored the same way (design.md §3.15).
+- The instruction to keep the leader's terminal answers short is in the role description too. The output style (`/output-style concise`) is saved in `.claude/settings.local.json` and affects every session in the same folder, so it is not used. Passing it with `--settings` at startup misbehaved in 2.1.301 (design.md §6.1f).
+- The two sessions work in the same folder, so the deployer's changes are visible to the leader with `git diff`.
+- Approve the deployer's file edits in terminal C.
+- The permission mode is passed as `claude --permission-mode <value>` only when you add `-PermissionMode <value>`. If omitted nothing is passed and Claude Code starts with its default. If your account makes auto the default, permission waits hardly appear.
+  To try permission waits, add `-PermissionMode default` (e.g. `./tools/dev/start-agent.ps1 -Role deployer -PermissionMode default`; adding it to `start-team.ps1` passes it to every role). To change it by hand after starting, switch that tab to `manual` with Shift+Tab (the 2.1.306 switcher has no `default`; `manual` corresponds to it; the hook's `permission_mode` says `default`; design.md §6.1o, roadmap C29).
+
+### Request work from roadmap items (Items)
+
+Send the roadmap's `### C<n>. Title` items (how to write them is at the top of [docs/roadmap.md](docs/roadmap.md)) to the Hub and cards line up under **Items** in the sidebar. Pressing a card opens a modal with its content (ID, title, status and reason, the check of each done-when line, the state of the request, the diff of the promise). The modal's **Draft request** turns it into a draft of `GOAL` / `DONE WHEN`, and the request you send carries the item (`meta.item`). **Open in editor** opens that line of the ledger (a `vscode://` link; your editor must support it). The body is not put in the index and is not shown in the modal (design.md §3.15). The sidebar's width can be changed with its handle and is remembered by this Hub's browser.
+
+```powershell
+npm run docs:index                                                       # agent-hub's docs/roadmap.md
+npm --prefix <agent-hub> run docs:index -- --file docs/TODO.md            # another project, from its root (no --file needed if the ledger is docs/roadmap.md)
+```
+
+- A project you sent can be chosen as a project in the UI even before any agent connects, and you can leave a request to `role:deployer @ <project>` (it arrives as unread at the Mailbox that attaches).
+- The Hub holds only a copy of the index; the source of truth is the repository's roadmap. Send it again after changing it. Remove it with **Remove** in Items.
+- Items shows four tiers: **Plan** (the order under the ledger's `## Plan` / `## 予定`; blocked items show what they wait for), **Awaiting a decision** (proposed), **Parked** (held; collapsed by default), **Recently closed** (the five newest closed lines by date). For a ledger without a plan heading, decided and blocked items go into Plan in number order.
+- Cards show requested / reported, and the diff when the wording of the done-when conditions changed after sending.
+- For projects whose ledger has its own format, sending it may read every item as "decided". In that case do not index it; send a plain request (roadmap C27).
+
+**Send automatically after a commit that changed it** (optional): you can install a git post-commit hook that sends the index only on commits that changed the ledger (`docs/roadmap.md`). The commit is not stopped if sending fails (if the Hub is stopped, it prints one line of warning and goes on).
+
+1. Copy the hook into the target repository's `.git/hooks/` (agent-hub's `tools/hooks/post-commit-index.sh`).
    ```powershell
-   Copy-Item <agent-hub>\tools\hooks\post-commit-index.sh <リポジトリ>\.git\hooks\post-commit
+   Copy-Item <agent-hub>\tools\hooks\post-commit-index.sh <repository>\.git\hooks\post-commit
    ```
-2. コピーした `post-commit` の `AGENT_HUB_DIR=` の行を、agent-hub のフォルダに書き換える (`AGENT_HUB_DIR="<agent-hub>"`。`<agent-hub>` は agent-hub のフォルダの絶対パスに、`/` 区切りで書く)。
-3. 送るには、Hub が起動していて、agent-hub の `.env` のトークンが読めること (`npm run docs:index` と同じ)。
-4. 確かめる: 台帳を変えてコミットし、Items に出ればよい。出ないときは、コミットの後に出る警告 1 行を見る。
+2. Rewrite the `AGENT_HUB_DIR=` line of the copied `post-commit` to agent-hub's folder (`AGENT_HUB_DIR="<agent-hub>"`, with `<agent-hub>` being the absolute path of agent-hub's folder written with `/` separators).
+3. To send, the Hub must be running and the token in agent-hub's `.env` must be readable (the same as `npm run docs:index`).
+4. To check: change the ledger and commit; it should appear in Items. If it does not, read the one line of warning printed after the commit.
 
-hook は `npm --prefix <agent-hub> run docs:index` を、コミットしたリポジトリのルートで流す。hook を外すには `.git/hooks/post-commit` を消す。
+The hook runs `npm --prefix <agent-hub> run docs:index` at the root of the repository you committed in. To remove the hook, delete `.git/hooks/post-commit`.
 
-### role の定義 (roles.json)
+### Role definitions (roles.json)
 
-role ごとの既定購読と説明を、Hub の設定ファイルに書く。見本は [roles.example.json](roles.example.json)。
+Write each role's default subscriptions and description in the Hub's configuration file. The sample is [roles.example.json](roles.example.json).
 
 ```powershell
-Copy-Item roles.example.json roles.json   # 自分の環境用。roles.json はコミットされない
-npm run hub                               # 読むのは起動時だけ。変えたら再起動する
+Copy-Item roles.example.json roles.json   # for your environment; roles.json is not committed
+npm run hub                               # read only at startup; restart after changing it
 ```
 
-- 各 role は `description` (文字列) と `subscribe` (トピック名の配列) を持つ。ほかの項目は読み捨てずに保持されるが、今は使われない。
-- `HUB_ROLE=reviewer` で起動した Mailbox は、`subscribe` を呼ばなくても `reviewer` の既定購読を受け取る。`to: role:reviewer` 宛てもこの Mailbox に届く。
-- `description` は shim の instructions に入る。shim は initialize より前に attach して取りに行く (3 秒まで。過ぎたら説明なしで起動する)。
-  Claude Code がその説明どおりに振る舞うことは、leader / deployer / reviewer の 3 セッションで確かめた (design.md §6.2-5)。
-- 定義にない role で attach すると 400 `unknown_role` で、Mailbox は作られない。
-- ファイルがなければ、role 名の検証も既定購読もない (今までどおり)。
-- ファイルの形が違うと Hub は起動せず、ファイル名と問題の場所を出して止まる (黙って既定に戻さない)。
-- 既定購読のトピックは `unsubscribe` で外れない。外すには `roles.json` から消して Hub を再起動する。
-- 別の場所のファイルを使うときは `HUB_ROLES_FILE` (既定はリポジトリ直下の `roles.json`)。
+- Each role has `description` (a string) and `subscribe` (an array of topic names). Other fields are kept rather than dropped, but are not used today.
+- A Mailbox started with `HUB_ROLE=reviewer` receives `reviewer`'s default subscriptions without calling `subscribe`. Messages to `to: role:reviewer` also reach this Mailbox.
+- `description` goes into the shim's instructions. The shim attaches before initialize to fetch it (up to 3 seconds; after that it starts without the description).
+  That Claude Code behaves as described was checked with three sessions, leader / deployer / reviewer (design.md §6.2-5).
+- Attaching with a role that is not defined is 400 `unknown_role`, and no Mailbox is created.
+- Without the file, role names are not checked and there are no default subscriptions (as before).
+- If the file's shape is wrong, the Hub does not start; it prints the file name and where the problem is and stops (it does not silently fall back to defaults).
+- Topics of the default subscriptions cannot be removed with `unsubscribe`. To remove one, delete it from `roles.json` and restart the Hub.
+- To use a file elsewhere, set `HUB_ROLES_FILE` (default `roles.json` at the repository root).
 
-### エージェントが人に書く言語 (HUB_LANGUAGE)
+### The language agents write to the human in (HUB_LANGUAGE)
 
-role の説明やエージェント同士のやりとりが英語でも、人宛ての返事・質問・報告は決めた言語で書かせられる。`.env` に言語タグを 1 つ書いて Hub を再起動する。
+Even when role descriptions and the exchanges between agents are in English, you can have replies, questions and reports addressed to the human written in a language you choose. Write one language tag in `.env` and restart the Hub.
 
 ```
 HUB_LANGUAGE=ja
 ```
 
-- 値は BCP 47 の言語タグ (`ja`・`en`・`pt-BR` など)。読めない値なら Hub は起動しない。未設定なら何も足さない。
-- shim は attach したときに受け取り、instructions に「人宛ての本文は Japanese (ja) で書き、返事の型の見出し (`RESULT` など) は訳さない」の 1 行を足す。効くのは、Hub の再起動の後に起動したセッションから。
-- エージェント同士の本文 (deployer → leader など) と、返事の型の見出しは変わらない (design.md §3.5・§3.15)。
+- The value is a BCP 47 language tag (`ja`, `en`, `pt-BR` and so on). If the value cannot be read, the Hub does not start. If unset, nothing is added.
+- The shim receives it on attach and adds one line to its instructions: "write text addressed to the human in Japanese (ja) and do not translate the reply-format headings (`RESULT` and so on)". It takes effect for sessions started after the Hub restarts.
+- The bodies of messages between agents (deployer → leader and so on) and the reply-format headings do not change (design.md §3.5, §3.15).
 
-### 他のリポジトリで使う
+### Using it in other repositories
 
-エージェントは**そのプロジェクトのルートで起動する**。読む `CLAUDE.md`・hook・許可の範囲・`git diff` はどれも起動したフォルダで決まる (design.md §3.3)。
+Start agents **at that project's root**. The `CLAUDE.md` they read, the hooks, the scope of permissions and `git diff` are all decided by the folder they start in (design.md §3.3).
 
 ```powershell
 ./tools/dev/start-agent.ps1 -Role deployer -Project C:\work\cairn            # Mailbox = cairn.deployer
-./tools/dev/start-team.ps1 -Roles leader,deployer -Project C:\work\cairn     # cairn.leader と cairn.deployer
+./tools/dev/start-team.ps1 -Roles leader,deployer -Project C:\work\cairn     # cairn.leader and cairn.deployer
 ```
 
-- スクリプトは `-Project` のフォルダに移ってから `claude` を起動する。shim は agent-hub の `dist/` を絶対パスで指す (MCP 設定は OS の一時フォルダの `agent-hub-mcp.json` に作る)。
-- Mailbox 名の既定は `<フォルダ名>.<role>`。Mailbox 名は Hub 全体で 1 つなので、プロジェクトが違えば同じ role でも別の Mailbox になる。`-Mailbox` で変えられる。
-- エージェントが送る `role:deployer` 宛ては、送り手と同じプロジェクトの deployer にだけ届く。ほかのプロジェクトには `mailbox:cairn.deployer` 宛てにする。ブラウザからは、上のプロジェクトの選択が `All projects` なら全プロジェクトに、1 つ選んでいればそのプロジェクトにだけ届く (design.md §9-7)。
-- hook は対象のリポジトリの `.claude/settings.local.json` には無いので、`tools/hooks/settings.json` の `hooks` を `~/.claude/settings.json` に写す。どこにも無ければスクリプトが警告する (起動は止めない)。
-- ブラウザのカードに `Project: <フォルダ名>` が出る (全体のパスはマウスを載せると出る)。前回と違うフォルダから同じ Mailbox に attach すると、`Attached from a different folder (was …)` と警告が出る (拒みはしない)。
+- The scripts move into the `-Project` folder before starting `claude`. The shim points at agent-hub's `dist/` by absolute path (the MCP configuration is written to `agent-hub-mcp.json` under the OS's temporary folder).
+- The default Mailbox name is `<folder name>.<role>`. A Mailbox name is unique across the Hub, so the same role in different projects gives different Mailboxes. Change it with `-Mailbox`.
+- A `role:deployer` message sent by an agent reaches only the deployer of the sender's own project. To reach another project, address `mailbox:cairn.deployer`. From the browser, it reaches every project if the project selector above says `All projects`, or only the selected project if one is selected (design.md §9-7).
+- The target repository's `.claude/settings.local.json` has no hooks, so copy the `hooks` of `tools/hooks/settings.json` into `~/.claude/settings.json`. If they are nowhere, the script warns (it does not stop the start).
+- The browser's card shows `Project: <folder name>` (the full path appears on hover). Attaching to the same Mailbox from a different folder than last time shows the warning `Attached from a different folder (was …)` (it is not refused).
 
-スクリプトを使わないなら、shim をユーザースコープに絶対パスで登録し、プロジェクトのルートで同じフラグで起動する。
+Without the scripts, register the shim in the user scope with an absolute path and start at the project's root with the same flag.
 
 ```powershell
 claude mcp add --scope user agent-hub -- node <agent-hub>/dist/shim/main.js
 claude --dangerously-load-development-channels server:agent-hub
 ```
 
-### Claude Code 以外のエージェントで使う (inbox)
+### Using it with agents other than Claude Code (inbox)
 
-shim は MCP の initialize で届くクライアント名を見て、届け方を切り替える。`claude-code` なら channel で push し、それ以外は push せず、エージェントが `inbox` ツールで取り出す。
+The shim looks at the client name that arrives in MCP's initialize and switches how it delivers. For `claude-code` it pushes over the channel; for anything else it does not push, and the agent fetches with the `inbox` tool.
 
-- MCP の stdio サーバーとして `node <agent-hub>/dist/shim/main.js` を登録する (先に `npm run build`)。Mailbox 名は Claude Code と同じく `HUB_MAILBOX` → `<フォルダ名>.<HUB_ROLE>` → フォルダ名の順。トークンは agent-hub の `.env` から読む。
-- 自動では届かないので、エージェントに「agent-hub の inbox を確かめて」と頼むか、作業の区切りで呼ばせる (instructions にもそう書いてある)。
-- `inbox` は未読を 1 件ずつ `<hub-message id="…" kind="…" from="…" to="…">` で包み、本文が指示ではないことの注意書きを付けて返す。返した分は既読になる。返信は `post_message`。
-- 実際の Codex などのクライアントではまだ試していない。アイドル中のエージェントを起こす手段はない (design.md §3.7、§3.9)。
-- Claude Code を channel なしで起動すると、クライアント名は `claude-code` のままなので push されるが、黙って捨てられて既読になる。Claude Code では必ず `--dangerously-load-development-channels server:agent-hub` を付ける。
-  渡したが受領の確認 (`inbox` で取り出す・その後にセッションが request か reply を送る) がない件数は、ブラウザのカードに `N handed, unconfirmed` と出る。channel なしのセッションでも request か reply を送ると確認になるので、この件数は「送っていない間」の目安にとどまる。届いていないようなら、そのセッションに「agent-hub の inbox を unconfirmed: true で確かめて」と頼むと取り直せる (protocol.md §4)。
+- Register `node <agent-hub>/dist/shim/main.js` as an MCP stdio server (run `npm run build` first). The Mailbox name follows the same order as Claude Code: `HUB_MAILBOX` → `<folder name>.<HUB_ROLE>` → the folder name. The token is read from agent-hub's `.env`.
+- Nothing arrives automatically, so ask the agent to "check agent-hub's inbox", or have it call it at breaks in its work (its instructions say so too).
+- `inbox` wraps each unread message in `<hub-message id="…" kind="…" from="…" to="…">` and returns them with a notice that the body is not instructions. What it returns becomes read. Reply with `post_message`.
+- It has not yet been tried with real clients such as Codex. There is no way to wake an idle agent (design.md §3.7, §3.9).
+- If Claude Code is started without the channel, the client name is still `claude-code`, so messages are pushed, but they are silently dropped and become read. Always add `--dangerously-load-development-channels server:agent-hub` with Claude Code.
+  The number of messages handed over without confirmed receipt (fetching with `inbox`, or the session sending a request or reply afterwards) shows on the browser's card as `N handed, unconfirmed`. A session without the channel also confirms by sending a request or reply, so this count is only a guide for "while it has not sent anything". If they seem not to have arrived, ask that session to "check agent-hub's inbox with unconfirmed: true" to fetch them again (protocol.md §4).
 
-### curl で触る (Windows の注意)
+### Using curl (notes for Windows)
 
 ```powershell
 curl.exe -H "Authorization: Bearer <HUB_TOKEN>" http://127.0.0.1:7777/messages
 ```
 
-Windows の curl はコマンドライン引数の日本語を UTF-8 で送らないので、本文はファイルから `--data-binary "@body.json"` で渡す。
+curl on Windows does not send non-ASCII command-line arguments (such as Japanese) as UTF-8, so pass the body from a file with `--data-binary "@body.json"`.
 
-動いているチームの様子を API で追うとき (エージェントから見張るときも同じ):
-- `GET /messages` の `limit` は古い方から数えるので、新しいものは `after=<seq>` で取る。`after` はその seq を含まない。人が送った直後に `lastSeq` を読むと、その Message はもう含まれているので、`after` は送る前に読んだ値から取る。
-- `GET /events?limit=N` は Mailbox で絞れない。`mailbox` で手元で絞り、`payload.notification_type` (許可待ち・待機) と `last_assistant_message` (ターン終了の最終応答) で何が起きたかを見る。`GET /mailboxes` の `cursor` は渡し終えたところ。
-- curl から送った Message は `user:cli` と表示され、ブラウザからのもの (`browser`) と区別される。
-- compose の Hub は build したイメージで動く。Hub のコードを変えたら `docker compose up -d --build` が要る (`restart` だけでは古いイメージのまま)。作り直した後、shim は自分で attach し直す。
+When following a running team through the API (the same when an agent watches it):
+- `limit` of `GET /messages` counts from the oldest, so fetch new ones with `after=<seq>`. `after` does not include that seq. If you read `lastSeq` right after a human sent something, that Message is already included, so take `after` from the value read before sending.
+- `GET /events?limit=N` cannot filter by Mailbox. Filter by `mailbox` on your side, and see what happened from `payload.notification_type` (permission waits, idle) and `last_assistant_message` (the final answer at a turn end). `cursor` in `GET /mailboxes` is where handing over has reached.
+- Messages sent from curl show as `user:cli`, distinguished from those from the browser (`browser`).
+- The compose Hub runs from the built image. After changing the Hub's code, `docker compose up -d --build` is needed (`restart` alone keeps the old image). After rebuilding, shims attach again by themselves.
 
-### 開発
+### Development
 
 ```powershell
-npm test          # 単体テストと、shim を実プロセスで起動する結合テスト
+npm test          # unit tests, and integration tests that start the shim as a real process
 npm run typecheck
-npm run docs:check   # roadmap の項目の書き方を検査する (崩れていれば exit 1)。`-- --index` で項目の索引を JSON で出す
-npm run docs:index   # roadmap の項目の索引を Hub に送り、UI の Items に出す (上の「roadmap の項目から依頼する」)
-npm run hub:dev   # 変更を監視して Hub を再起動する
-npm run ui:check  # 別のポートの Hub とヘッドレスの Chrome で、カードの状態を場面ごとに確かめる (Chrome が要る。場所は CHROME で変える)
+npm run docs:check   # checks how roadmap items are written (exit 1 if broken). `-- --index` prints the item index as JSON
+npm run docs:index   # sends the roadmap item index to the Hub for the UI's Items ("Request work from roadmap items" above)
+npm run hub:dev   # watches for changes and restarts the Hub
+npm run ui:check  # checks the card states scene by scene with a Hub on another port and headless Chrome (needs Chrome; set its location with CHROME)
 ```
 
-- **UI を headless Chrome で確かめる**: 決まった場面は `npm run ui:check` (`tools/dev/ui-check.mjs`) にまとめてある。UI を変えたら流し、新しい場面はそこに足す。手で組むときの要点: UI は `/stream` (SSE) を開いたままなので、`chrome --headless=new --dump-dom` は返らない (`--virtual-time-budget` を付けても)。代わりに:
-  1. 使っている Hub とは別の Hub を `HUB_PORT=7795`、`HUB_DATA_DIR=<一時フォルダ>` で起動する。
-  2. Chrome を `--remote-debugging-port` と一時の `--user-data-dir` で起動し、CDP で `Page.navigate` (`/?token=…`) → 数秒待って `Runtime.evaluate` で DOM を読む (例 `[...document.querySelectorAll('#mailboxes .mb')].map(b=>b.innerText)`。Node の組み込みの `WebSocket` で足りる)。
-  3. 古い Hub や失敗する API への UI の振る舞いは、Hub を変えずに `Fetch.enable` (`urlPattern`) で横取りし、`Fetch.fulfillRequest` で 404 / 500 を返して確かめる。
-  4. 片付けは、一時のプロファイルを持つ chrome.exe と 7795 の node だけを止める。
-- **src/ をその場のスクリプトから使う** (計測など、リポジトリの外に置くスクリプト): 拡張子を `.mts` にし (リポジトリ外の `.ts` ではトップレベルの await が使えない)、`file:///C:/…` の URL で import して (`C:/…` のままでは `ERR_UNSUPPORTED_ESM_URL_SCHEME`)、リポジトリ直下から `node --import tsx <絶対パス>.mts` で動かす。Store / Hub は `now` を受け取るので、時計を差し替えられる。
+- **Checking the UI with headless Chrome**: the fixed scenes are in `npm run ui:check` (`tools/dev/ui-check.mjs`). Run it when you change the UI, and add new scenes there. Points for doing it by hand: the UI keeps `/stream` (SSE) open, so `chrome --headless=new --dump-dom` never returns (even with `--virtual-time-budget`). Instead:
+  1. Start a Hub separate from the one in use, with `HUB_PORT=7795` and `HUB_DATA_DIR=<a temporary folder>`.
+  2. Start Chrome with `--remote-debugging-port` and a temporary `--user-data-dir`, then over CDP `Page.navigate` (`/?token=…`) → wait a few seconds → read the DOM with `Runtime.evaluate` (e.g. `[...document.querySelectorAll('#mailboxes .mb')].map(b=>b.innerText)`; Node's built-in `WebSocket` is enough).
+  3. Check the UI's behavior against old Hubs or failing APIs without changing the Hub, by intercepting with `Fetch.enable` (`urlPattern`) and returning 404 / 500 with `Fetch.fulfillRequest`.
+  4. To clean up, stop only the chrome.exe with the temporary profile and the node on 7795.
+- **Using src/ from an ad-hoc script** (measurements and the like, in a script kept outside the repository): give it the `.mts` extension (top-level await does not work in a `.ts` outside the repository), import with a `file:///C:/…` URL (`C:/…` as is gives `ERR_UNSUPPORTED_ESM_URL_SCHEME`), and run it from the repository root with `node --import tsx <absolute path>.mts`. Store / Hub take `now`, so the clock can be swapped.
 
-## ドキュメント
+## Documents
 
-| ファイル | 内容 |
+| File | Content |
 |---|---|
-| [docs/design.md](docs/design.md) | 背景・要件・アーキテクチャ・設計判断・未確認事項 |
-| [docs/protocol.md](docs/protocol.md) | HTTP API・メッセージスキーマ・MCP ツール・配信保証 |
-| [docs/roadmap.md](docs/roadmap.md) | フェーズ分割と受け入れ条件 (P0 → P2)、開いている項目 (`C<n>`。書き方は冒頭の規則) |
-| [docs/plan-p0.md](docs/plan-p0.md) | P0 の技術選定・構成・コミット単位のステップ |
-| [tools/probe/README.md](tools/probe/README.md) | 未検証事項 (design.md §6.2) を実機で確かめる手順 |
-| [tools/dev/roles/](tools/dev/roles/) | leader / deployer の運用の指示 (メッセージの型)。`start-agent.ps1` が system prompt に足す |
-| [CLAUDE.md](CLAUDE.md) | 実装エージェント向けの作業ルール |
+| [docs/design.md](docs/design.md) | Background, requirements, architecture, design decisions, unverified items |
+| [docs/protocol.md](docs/protocol.md) | HTTP API, message schema, MCP tools, delivery guarantees |
+| [docs/roadmap.md](docs/roadmap.md) | Phases and acceptance criteria (P0 → P2), open items (`C<n>`; the rules for writing them are at the top) |
+| [docs/plan-p0.md](docs/plan-p0.md) | P0's technology choices, layout and commit-sized steps |
+| [tools/probe/README.md](tools/probe/README.md) | Steps for checking unverified items (design.md §6.2) on a real machine |
+| [tools/dev/roles/](tools/dev/roles/) | Operating instructions for leader / deployer / reviewer (message formats). `start-agent.ps1` adds them to the system prompt |
+| [CLAUDE.md](CLAUDE.md) | Working rules for implementing agents |
+| [LICENSE](LICENSE) | MIT |
 
-## 発想の元
+## Inspiration
 
-Claude と Codex を併用する開発者が、両アプリ間の手動コピペを「読む作業こそが仕事」と捉え、
-運搬だけを自動化するツール (Relay) を作った、という記事に着想を得ている。
-本プロジェクトはそれをアプリ非依存・MCP ベースで、自前の Hub として作り直す試み。
+Inspired by an article about a developer who used Claude and Codex side by side, saw that "reading is the actual work" in the manual copy-and-paste between the two apps,
+and built a tool (Relay) that automates only the hauling.
+This project is an attempt to rebuild that as an app-independent, MCP-based Hub of its own.

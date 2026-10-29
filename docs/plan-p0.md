@@ -1,67 +1,67 @@
-# P0 実装計画
+# P0 implementation plan
 
-[roadmap.md](roadmap.md) の P0 (1 セッションで往復する) を、コミット単位のステップに分けたもの。
-各ステップは「テストが通る / 手で確認できる」状態で終える。
+The P0 phase of [roadmap.md](roadmap.md) (one round trip in one session), split into commit-sized steps.
+Each step ends in a state where "the tests pass / it can be checked by hand".
 
-## 技術選定
+## Technology choices
 
-| 項目 | 選択 | 理由 |
+| Item | Choice | Reason |
 |---|---|---|
-| ランタイム | Node.js 24 以上 (開発機は v26) | CLAUDE.md の既定 |
-| 言語・実行 | TypeScript 5.9 + tsx (開発) / tsc (shim のビルド) | cairn と揃える |
+| Runtime | Node.js 24 or later (the dev machine has v26) | The default in CLAUDE.md |
+| Language and execution | TypeScript 5.9 + tsx (development) / tsc (building the shim) | Same as cairn |
 | HTTP | Hono + `@hono/node-server` | design.md §5 |
-| MCP | `@modelcontextprotocol/sdk` **~1.32.1 (1.x に固定)** | 2.x は channel が登録されない (design.md §6.1b) |
-| ID | `ulid` | 時系列ソート可能 (protocol.md §1) |
-| 検証 | `zod` (SDK 1.x の依存と同じ系統) | リクエスト本文と `kind` の検証 |
-| テスト | `node --test` + tsx | cairn と揃える。Hub は `app.request()` でネットワークなしにテストする |
+| MCP | `@modelcontextprotocol/sdk` **~1.32.1 (pinned to 1.x)** | With 2.x the channel is not registered (design.md §6.1b) |
+| IDs | `ulid` | Sortable by time (protocol.md §1) |
+| Validation | `zod` (the same line as SDK 1.x's dependency) | Validating request bodies and `kind` |
+| Tests | `node --test` + tsx | Same as cairn. The Hub is tested without the network through `app.request()` |
 
-## ディレクトリ構成
+## Directory layout
 
 ```
 src/
-  shared/      型 (Message, Mailbox, Event)、kind の列挙、名前の検証、channel の meta 組み立てと本文エスケープ
-  hub/         main.ts (起動), app.ts (Hono ルート), store.ts (JSONL 追記と復元), sse.ts, auth.ts
-  shim/        main.ts (channel MCP サーバー)
-public/        index.html (UI。Hub が配信する)
-tools/probe/   §6.2 の実機検証用プローブ (本実装ではない)
+  shared/      types (Message, Mailbox, Event), the kind enumeration, name validation, building the channel meta and escaping the body
+  hub/         main.ts (startup), app.ts (Hono routes), store.ts (JSONL append and restore), sse.ts, auth.ts
+  shim/        main.ts (channel MCP server)
+public/        index.html (the UI, served by the Hub)
+tools/probe/   probes for the live verification in §6.2 (not the implementation)
 ```
 
-1 パッケージに Hub と shim を同居させる。分ける理由 (別々に配布する、依存が衝突する) が出てから分ける。
+The Hub and the shim live in one package. They will be split once there is a reason to (shipping them separately, conflicting dependencies).
 
-## shim の起動方法
+## How the shim is started
 
-エージェントは agent-hub 以外のリポジトリで動くので、shim は**ユーザースコープ** (`~/.claude.json`) に絶対パスで登録する。
-起動の速さと tsx への依存を避けるため、shim は `npm run build` で `dist/` に出力したものを `node` で動かす。
+Agents run in repositories other than agent-hub, so the shim is registered in the **user scope** (`~/.claude.json`) with an absolute path.
+To start quickly and avoid depending on tsx, the shim is built into `dist/` with `npm run build` and run with `node`.
 
 ```jsonc
-// ~/.claude.json の mcpServers (P0 の確認は agent-hub 自身で行うので、最初はプロジェクトの .mcp.json でもよい)
+// mcpServers in ~/.claude.json (P0 is checked inside agent-hub itself, so the project's .mcp.json is fine at first)
 "agent-hub": {
   "command": "node",
-  "args": ["<agent-hub の絶対パス>/dist/shim/main.js"]
+  "args": ["<absolute path of agent-hub>/dist/shim/main.js"]
 }
 ```
 
-## ステップ
+## Steps
 
-| # | 内容 | 終了条件 |
+| # | Content | Done when |
 |---|---|---|
-| 0 | **実機検証** (済): プローブで Channels・hook の挙動を確認し、design.md §6.1c に記録。meta 一本化と session_id 対応付けを反映 | 済 |
-| 1 | 雛形: package.json, tsconfig, 依存 (済) | `npm install` が通り、tsx が動く (src がまだないので typecheck はステップ 2 から) |
-| 2 | `shared/`: 型、`kind` 検証、名前の正規表現、channel の `meta` 組み立てと `</channel>` エスケープ (済) | 単体テスト |
-| 3 | `hub/store.ts`: JSONL 追記、起動時の復元、`seq` 採番 (済) | 単体テスト (再起動後に Mailbox と cursor が戻る) |
-| 4 | `hub/auth.ts` + `app.ts`: Bearer / cookie (`?token=` → Set-Cookie → リダイレクト) / `Origin` 検証。`POST /messages`、`GET /messages`、`GET /stream` (UI 向け SSE) (済) | `app.request()` のテスト (401・403・cookie 発行・SSE 受信) |
-| 5 | Mailbox: attach (作成と冪等性)、購読の PUT/DELETE、`/attachments/:id/stream` (未読の再送 + 新着)、ack で cursor 前進。リースと takeover は P2 (済。takeover は最小限のみ) | テスト (ack 前の再 attach で再送される) |
-| 6 | `shim/main.ts`: `HUB_MAILBOX` → フォルダ名で attach (`CLAUDE_CODE_SESSION_ID` を sessionId として申告)、SSE を受けて `notifications/claude/channel` で push、ack。ツール `subscribe` / `post_message` / `whoami` (`_meta["anthropic/alwaysLoad"]: true`、design.md §6.1c) (実装済み。MCP Client による結合テストあり。Claude Code 上の確認は未) | 手動 (Claude Code 上で受け入れ条件 2〜5) |
-| 7 | `public/index.html`: メッセージ一覧 (ライブ、`kind` 表示)、送信フォーム (`kind` 選択、既定 `request`) (済) | 手動 (ブラウザで往復) |
-| 8 | README に起動手順 (済)。受け入れ条件 1〜7 を通しで確認 (済。結果は roadmap.md) | roadmap の P0 を完了にする |
+| 0 | **Live verification** (done): checked how Channels and hooks behave with probes and recorded it in design.md §6.1c. Folded in the single meta and the session_id mapping | Done |
+| 1 | Skeleton: package.json, tsconfig, dependencies (done) | `npm install` passes and tsx runs (there is no src yet, so typecheck starts at step 2) |
+| 2 | `shared/`: types, `kind` validation, the name regex, building the channel `meta` and escaping `</channel>` (done) | Unit tests |
+| 3 | `hub/store.ts`: JSONL append, restore at startup, numbering `seq` (done) | Unit tests (Mailboxes and cursors come back after a restart) |
+| 4 | `hub/auth.ts` + `app.ts`: Bearer / cookie (`?token=` → Set-Cookie → redirect) / `Origin` check. `POST /messages`, `GET /messages`, `GET /stream` (SSE for the UI) (done) | Tests with `app.request()` (401, 403, issuing the cookie, receiving SSE) |
+| 5 | Mailbox: attach (creation and idempotency), PUT/DELETE of subscriptions, `/attachments/:id/stream` (resending unread + new arrivals), advancing the cursor with ack. Leases and takeover are P2 (done; takeover only minimally) | Tests (attaching again before ack resends) |
+| 6 | `shim/main.ts`: attach as `HUB_MAILBOX` → folder name (declaring `CLAUDE_CODE_SESSION_ID` as sessionId), receive SSE and push with `notifications/claude/channel`, ack. Tools `subscribe` / `post_message` / `whoami` (`_meta["anthropic/alwaysLoad"]: true`, design.md §6.1c) (implemented, with integration tests through an MCP Client; not yet checked on Claude Code) | By hand (acceptance criteria 2-5 on Claude Code) |
+| 7 | `public/index.html`: message list (live, showing `kind`), send form (choosing `kind`, default `request`) (done) | By hand (a round trip in the browser) |
+| 8 | Startup steps in the README (done). Check acceptance criteria 1-7 end to end (done; results in roadmap.md) | Mark P0 done in the roadmap |
 
-## テスト方針
+## Testing approach
 
-- **自動**: shared・store・Hub の HTTP は `node --test` で押さえる。Hub は Hono の `app.request()` を使い、ポートを開かずに検証する。
-- **手動**: Channels は対話セッション + 開発用フラグでしか動かないので、shim と Claude Code の結合 (受け入れ条件 1, 4, 5) は手で確認する。
-  確認手順は README に書き、再現できるようにする。
+- **Automated**: shared, store and the Hub's HTTP are covered with `node --test`. The Hub uses Hono's `app.request()` and is verified without opening a port.
+- **By hand**: Channels only work in an interactive session with the development flag, so the integration of the shim with Claude Code (acceptance criteria 1, 4, 5) is checked by hand.
+  The steps are written in the README so they can be reproduced.
 
-## リスク
+## Risks
 
-- Channels は研究プレビューで、フラグや契約が変わりうる。shim の Channels 依存部分は 1 ファイルに閉じ込める。
-- SDK 1.x 固定はいずれ外す必要がある。Claude Code が `2026-07-28` 上の channel に対応したら見直す (design.md §7 の MCP Events 移行と同時期になる見込み)。
+- Channels are a research preview; the flags and the contract may change. The shim's dependence on Channels is kept to one file.
+- The pin to SDK 1.x will have to go eventually. Revisit it when Claude Code supports channels on `2026-07-28` (expected around the same time as the move to MCP Events in design.md §7).

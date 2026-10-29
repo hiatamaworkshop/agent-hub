@@ -1,30 +1,29 @@
-# ロードマップ
+# Roadmap
 
-各フェーズは「動く状態で終わる」ことを重視する。受け入れ条件を満たしてから次へ進む。
+Each phase puts weight on "ending in a working state". Move on after the acceptance criteria are met.
 
-開いている項目は末尾の「項目」に `### C<n>. 題` の節で書く (design.md §3.15)。
-- 見出しの直後に、例外の状態だけ `状態: 提案 | 保留(再開の条件) | ブロック(C<n> の後)` を字下げせずに 1 行書く。行がなければ決定 (着手してよい)。
-- 決定の項目は `#### 完了条件` (チェックボックスの並び) を持つ。依頼の `DONE WHEN` はここから写す。
-- 番号は使い回さない。終わったら節を消し、フェーズの行を `[x] C<n> …` にして、確かめた記録をその下に書く。その項目を待つ `ブロック(C<n> の後)` の行も同じ片付けで外す (状態は進捗で、約束ではない)。
-- 却下したら節を消し、フェーズか「既知の問題」に `[-] C<n> 題 (却下 YYYY-MM-DD、理由 1 行)` を残す。理由が長ければ design.md §9 に書いて指す (design.md §3.16)。
-- 予定の一覧: 台帳に `## 予定` を 1 つ置き、状態の行のない項目と `ブロック(C<n> の後)` の項目を取りかかる順に `- [ ] C<n>` で並べる。題は書かない。この 2 つは必ず載せ、ほかは載せない。ブロックの項目は、待つ項目より後に並べる。並べ替えは人の判断 (design.md §3.15)。
-- 状態の分け方: 4 段のそれぞれが 1 つの状態に当たる。`提案` は人の判断待ちだけ。`ブロック(C<n> の後)` は決定の項目 (完了条件を持つ) だけで、ほかの項目を待つときに使い、理由に `C<n>` を書く。決まっていない項目がほかを待つときは `保留(C<n> の後)`。外の出来事 (公式資料の更新、次に usage limit に当たることなど) を待つものは、決定の項目でも `保留(再開の条件)` にし、理由は省かない。受け入れて手を付けないものは保留にせず、却下 `[-]` にする。
-- 閉じた行 (`[x] C<n>` / `[-] C<n>`) は、閉じた日 (`YYYY-MM-DD`) を行末の括弧の先頭に書く (例 `(2026-10-27、ユーザーの依頼)`、却下は `(却下 2026-10-27、理由)`)。題の中の日付は数えない。
-- 予定を聞かれたら、先に `npm run -s docs:check` で崩れを見てから、`npm run -s docs:check -- docs/roadmap.md --index` の JSON と閉じた行の日付を材料に答える。台帳を全部読んで分類し直さない (4 段の答え方は skill `roadmap-items`)。
-- 語は英語でも書ける: `Status: proposed | held(…) | blocked(after C<n>)`・`#### Done when`・`## Plan`・`(rejected YYYY-MM-DD, …)`。検査と索引は両方を同じに読む (対応表は design.md §3.15)。
-- 規則の崩れは `npm run docs:check` で検査する (`src/shared/roadmap.ts`)。
-- 他のプロジェクトで同じ規則を書くための説明は、グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/`) に置いた。正本はこの冒頭と `src/shared/roadmap.ts`。
+Open items are written as `### C<n>. Title` sections under "Items" at the end (design.md §3.15).
+- Right after the heading, write only an exceptional status, on one unindented line: `Status: proposed | held(<condition to resume>) | blocked(after C<n>)`. Without the line, the item is decided (may be started).
+- A decided item has `#### Done when` (a list of checkboxes). A request's `DONE WHEN` is copied from it.
+- Numbers are not reused. When done, delete the section, mark the phase line `[x] C<n> …`, and write the record of what was checked below it. In the same cleanup, remove `blocked(after C<n>)` lines that waited for that item (status is progress, not a promise).
+- When rejected, delete the section and leave `[-] C<n> Title (rejected YYYY-MM-DD, one-line reason)` under a phase or "Known issues". If the reason is long, write it in design.md §9 and point to it (design.md §3.16).
+- The plan list: the ledger has one `## Plan`, listing the items without a status line and the `blocked(after C<n>)` items in the order they will be taken up, as `- [ ] C<n>`. No titles. These two kinds are always listed, and nothing else. Blocked items go after the item they wait for. Reordering is a human's decision (design.md §3.15).
+- How states are split: each of the four tiers corresponds to one state. `proposed` is only "awaiting a human's decision". `blocked(after C<n>)` is only for decided items (with done-when conditions) waiting on another item, with `C<n>` in the reason. An undecided item waiting on another is `held(after C<n>)`. Something waiting on an outside event (an update to the official docs, the next time a usage limit is hit and so on) is `held(<condition to resume>)` even if decided, and the reason is not omitted. Something accepted but not to be worked on is not held but rejected, `[-]`.
+- A closed line (`[x] C<n>` / `[-] C<n>`) has the date it was closed (`YYYY-MM-DD`) at the head of the parentheses at the end of the line (e.g. `(2026-10-27, requested by the user)`; for a rejection `(rejected 2026-10-27, reason)`). A date inside the title does not count.
+- When asked about the plan, first check for breakage with `npm run -s docs:check`, then answer from the JSON of `npm run -s docs:check -- docs/roadmap.md --index` and the dates on closed lines. Do not read the whole ledger and reclassify it (the four-tier answer is in the skill `roadmap-items`).
+- The Japanese vocabulary (`状態: 提案 | 保留(…) | ブロック(C<n> の後)`, `#### 完了条件`, `## 予定`, `(却下 YYYY-MM-DD、…)`) is read the same way by the checker and the index (the mapping table is in design.md §3.15). The closed records below, from before 2026-10-29, are in Japanese.
+- Breakage of the rules is checked with `npm run docs:check` (`src/shared/roadmap.ts`).
+- An explanation for writing the same rules in other projects is in the global skill `roadmap-items` (`~/.claude/skills/roadmap-items/`). The source of truth is this header and `src/shared/roadmap.ts`.
 
-## 予定
+## Plan
 
-取りかかる順。状態の行のない項目とブロックの項目だけを載せる (題は索引から引く)。並べ替えは人の判断。
+In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C65
 - [ ] C62
 
-## P0: 1 セッションで往復する (完了 2026-10-16)
+## P0: One round trip in one session (done 2026-10-16)
 
-**ゴール**: ブラウザで書いたメッセージが Claude セッションに届き、Claude が `post_message` で返信し、ブラウザに表示される。
+**Goal**: a message written in the browser reaches a Claude session, Claude replies with `post_message`, and the reply shows in the browser.
 
 - [x] Channels の仕様を公式資料で確認し、結果を design.md §6.1 に追記
 - [x] hook・MCP の仕様を公式資料で確認し、design.md §6.1b に追記
@@ -37,22 +36,22 @@
 - [x] UI: 1 枚の HTML。メッセージ一覧 (ライブ、`kind` の表示)、送信フォーム (`kind` の選択、既定 `request`)
 - [x] 起動手順を README に追記
 
-**受け入れ条件**
-1. Hub を起動し、Claude Code を channel 有効 (`--dangerously-load-development-channels`) で起動できる。
-2. shim が `HUB_MAILBOX` (未指定ならフォルダ名) の Mailbox に attach する。
-3. エージェントが `subscribe("user.message")` を呼ぶ。
-4. ブラウザから `user.message` に送ると、Claude の会話に `<channel source="agent-hub">` として入る。
-5. Claude が `post_message` (`kind: reply`) で返信すると、ブラウザに `kind` 付きで表示される。
-6. トークンなしの API 呼び出しは 401。127.0.0.1 以外からは到達しない。
-7. ブラウザは起動時に表示された `?token=` 付き URL で開くと cookie で認証され、以後 URL にトークンが残らない。
+**Acceptance criteria**
+1. The Hub starts, and Claude Code can be started with the channel enabled (`--dangerously-load-development-channels`).
+2. The shim attaches to the Mailbox `HUB_MAILBOX` (the folder name if not given).
+3. The agent calls `subscribe("user.message")`.
+4. Sending to `user.message` from the browser enters Claude's conversation as `<channel source="agent-hub">`.
+5. When Claude replies with `post_message` (`kind: reply`), it shows in the browser with its `kind`.
+6. API calls without the token are 401. It cannot be reached from anywhere but 127.0.0.1.
+7. Opening the browser with the `?token=` URL printed at startup authenticates by cookie, and afterwards no token remains in the URL.
 
-**確認結果** (2026-10-16、Claude Code 2.1.301 / Haiku 5.5 / Windows 11)
+**Results** (2026-10-16, Claude Code 2.1.301 / Haiku 5.5 / Windows 11)
 - 1〜5, 7: 実セッションとブラウザで確認。`mailbox:agent-hub` 宛て (直接) と、`subscribe("user.message")` 後の `topic:user.message` 宛て (購読) の両方が届き、
   Claude が `post_message` (`to` 省略) で返した reply が `user:browser` 宛てとして UI に出た。
   購読していない `topic:agent-hub` 宛てと `user:agent-hub` 宛ては届かなかった (仕様どおり)。
 - 6: 実起動した Hub に curl でトークンなしの 401 を確認。netstat で `127.0.0.1:<port>` のみで待ち受けていることを確認。
 
-**調整予定** (P0 の実使用で見つかった点。P1 と並行して行う)
+**Planned adjustments** (found in P0's real use; done in parallel with P1)
 - [x] 誰にも届かない送信に気づけない: `topic:agent-hub` (購読者なし) と `user:agent-hub` (`mailbox` のつもりで種類を誤選択) が受理され、無反応だった。
   - [x] UI の宛先を「種類 + 名前」の 2 入力から、ドロップダウン 1 本にする。選択肢は `/mailboxes` から作る (Mailbox / role / 購読中のトピック / `user:browser`)。購読者のいないトピック用に「トピックを手入力」だけ残す。種類と名前の食い違いを構造的になくす
   - [x] `POST /messages` の応答に配信先 Mailbox の一覧を含め、0 件なら UI に「届く Mailbox がない」と警告する (手入力のトピック向け)
@@ -64,9 +63,9 @@
 - [x] 未接続の古い Mailbox に依頼が溜まる: UI の Delete (接続していないカードだけ) と `DELETE /mailboxes/:name` で消せるようにする。接続中は 409。自動の掃除は未決 (design.md §9-3)
 - [x] `kind` の選択をトグルボタンにし、一覧のバッジと見た目を揃える。色は付けず、選んだものだけ塗る (送り手の色とまぎれないため。design.md §3.2)
 
-## P1: 区切り・質問の検知 (完了 2026-10-17)
+## P1: Detecting breaks and questions (done 2026-10-17)
 
-**ゴール**: エージェントが止まった/質問した時点がブラウザに出る。
+**Goal**: the moment an agent stops or asks a question shows in the browser.
 
 - [x] 着手前に、配送を公式 cross-session messaging に移すかを決める → **Channels のまま**。投函の形式が公開されたら見直す (design.md §9-5)
 - [x] 着手前に、公式 Agent View (design.md §8.1) と重なる部分を削る → 状態一覧・ターミナルからの返信・エージェント間のアイドル通知は借りる。
@@ -82,14 +81,14 @@
 - [x] 検知イベントから、ブラウザ上で返信メッセージを作る導線 (Event の Reply → その Mailbox 宛ての request)
 - [x] 受け入れ条件を実セッションで確かめる (2026-10-17、leader / deployer の 2 セッション。許可待ちは `auto` モードでは出ないので、deployer を既定のモードにして確かめた)
 
-**受け入れ条件**
-1. Claude が `AskUserQuestion` を呼ぶと、UI に質問内容が該当 Mailbox の下に出る。
-2. ターン終了と許可待ちが区別して表示される。
-3. UI の返信が該当セッションに届く。質問への回答はターミナルで行い、UI の返信はその後に届く (channel の通知は回答にならない。design.md §6.1c)。
+**Acceptance criteria**
+1. When Claude calls `AskUserQuestion`, the question shows in the UI under that Mailbox.
+2. Turn ends and permission waits are shown distinctly.
+3. A reply from the UI reaches that session. Questions are answered in the terminal, and the UI's reply arrives after that (a channel notification is not an answer; design.md §6.1c).
 
-## P2: 複数セッション・交代・メッセージパッシング
+## P2: Several sessions, replacement, message passing
 
-**ゴール**: 複数エージェントが購読ベースで互いにやり取りでき、交代や再起動をまたいで取りこぼさない。
+**Goal**: several agents exchange messages based on subscriptions, losing nothing across replacements and restarts.
 
 - [x] 複数 Mailbox の同時接続、Mailbox 一覧と接続状態・role・購読・未読数の UI 表示
   - 確かめた (2026-10-17): leader と deployer が同時に接続 (`GET /mailboxes` で両方 attachment 非 null)。ack で未読が減ること (Hub が `mailbox.acked` を流し、リロードも polling もなし)、古い Hub の応答 (`effectiveSubscriptions` / `unread` なし) でもカードが出ること、`Subscribed:` の表示は、headless Chrome で別の Hub (ポート 7795、データは一時フォルダ) に対して確かめた
@@ -155,8 +154,8 @@
     - 3: reviewer に `c2.review` を購読させた後、開いたまま 2 つ目の reviewer を起動すると、`GET /mailboxes` に `takeover` (前の Attachment) が記録され、新しいセッションに `topic:c2.review` と `role:reviewer` 宛てが届いた。切り離された側の `post_message` は superseded のエラーを返し、Hub に記録されなかった
     - 5: ブラウザで deployer の reply 2 件を添え書き付きで leader へ Forward し、添え書き → 転送 2 件の順に記録され、本文・kind・`replyTo` が元と一致し、`forwardedSender` に deployer が入った。leader は 2 件の書き手を `mailbox:agent-hub.deployer (role: deployer)` と答えた (C3 の材料)
 - [x] C2 compose の Hub に対して、実セッションで受け入れ条件 1〜6 を通す (2026-10-19。記録は上の Dockerfile の項目)
-- [ ] C3 Claude Code 以外の実クライアントと、受け手の読み方を確かめる
-- [ ] C4 engram への区切り知見の保存連携 (任意)
+- [ ] C3 Check real clients other than Claude Code, and how receivers read
+- [ ] C4 Connecting the storage of what was learned at breaks to engram (optional)
 - [x] C7 項目の索引と規則の検査 (2026-10-19、design.md §3.15)
   - `src/shared/roadmap.ts` の `parseRoadmap` が項目 (ID・題・状態・完了条件の進み具合・行) と、節の外の `[ ] C<n>` / `[x] C<n>` を取り出す。Node の API に依存しないので、ブラウザでも使える (C8)
   - `checkRoadmap` は、見出しの形、ID の重複、状態の語彙と位置、ブロックの理由、決定の項目の `#### 完了条件`、`[ ] C<n>` の指す節の有無、節が残っている `[x] C<n>` を error にし、完了条件が全部埋まった項目を warning にする
@@ -221,16 +220,16 @@
   - README の Items の使い方を、モーダルと 2 つのボタンに合わせた。`npm test` 337 件すべて通る。`npm run docs:check` は 0 errors (予定が空でも通る)
   - Hub のコードを変えた (索引のチェックの形)。compose の Hub は作り直しが要る
 
-**受け入れ条件**
-1. 2 つの Mailbox が別トピックを購読し、それぞれの購読分だけ受け取る。
-2. セッションを閉じている間に届いたメッセージが、同じ Mailbox に attach した次のセッションに再送される (重複は id で除去できる)。
-3. **交代**: Mailbox `reviewer` のセッション A を `/clear` または終了し、新しいセッション B が `reviewer` に attach すると、購読と未読を引き継ぐ。A がまだ接続中なら A は切り離され、UI に表示される。
-4. `maxAgeMs` を超えた未読は渡されず、エージェントに省略件数が 1 件の通知で伝わる。
-5. ブラウザから、ある Mailbox の出力を無編集で別の Mailbox へ転送できる。
-6. **role**: `HUB_ROLE=reviewer` で起動したセッションは、`subscribe` を呼ばなくても role の既定購読分と `to: role:reviewer` 宛てを受け取る。`deployer` の Mailbox はそれを受け取らない。
-7. Hub を compose で起動しても 1〜6 が成り立ち、ホスト以外から 7777 番に到達できない。
+**Acceptance criteria**
+1. Two Mailboxes subscribe to different topics and each receives only its own subscriptions.
+2. Messages that arrived while a session was closed are resent to the next session that attaches to the same Mailbox (duplicates can be removed by id).
+3. **Replacement**: when session A of Mailbox `reviewer` is `/clear`ed or ended and a new session B attaches to `reviewer`, B takes over the subscriptions and unread messages. If A is still connected, A is cut off, and the UI shows it.
+4. Unread messages older than `maxAgeMs` are not handed over, and the agent is told the number omitted in one notice.
+5. From the browser, one Mailbox's output can be forwarded unedited to another Mailbox.
+6. **role**: a session started with `HUB_ROLE=reviewer` receives the role's default subscriptions and messages to `to: role:reviewer` without calling `subscribe`. The `deployer` Mailbox does not receive them.
+7. 1-6 hold with the Hub started in compose too, and port 7777 cannot be reached from anywhere but the host.
 
-## 既知の問題・後回し
+## Known issues and deferred
 
 - [x] **shim の seq 巻き戻し**: Hub の `data/` を消して再起動すると seq が 1 から振り直され、shim が前の Hub で覚えた seq を stream の `after` に使うため、attach 時の未読を黙って捨てていた。attach のたびに `after` を Hub の `cursor` から数え直すようにした (ack 漏れの再送は id で除去)
 - [x] **未読の算出が全件走査**: `unread()` と `listMessages()` が毎回ログ全体を見ていた。ログは seq の昇順なので、二分探索で `cursor` (または `after`) の位置から見るようにした。長く ack しない Mailbox はその未読分だけ走査する
@@ -344,208 +343,202 @@
   - 設定は Hub の `HUB_LANGUAGE` (BCP 47 のタグ) にし、attach の応答の `language` で shim に渡す。shim は role の説明の後に「人宛ての本文は Japanese (ja) で書き、返事の型の見出しは訳さない」の 1 行を英語で差し込む。置き場の理由は design.md §3.5 (roles.json には全体で 1 つの設定を置く場所がない、shim の環境変数ではセッションごとに渡す手間がかかる)。README と `.env.example` に使い方を書いた
   - 読めない値 (`japanese`・`zz`) では Hub が起動しないこと、`JA` が `ja` になり attach の応答に載ることを、別のポートの Hub で確かめた。試験は `src/shared/language.test.ts` と `src/shim/role-instructions.test.ts` (設定あり・なし、Hub から取れないとき)。`npm test` 349 件が通る
   - 完了条件の 4 つ目 (英語の role の説明と `ja` でチームを起動して確かめる) は、英語の role の説明を作る C65 と互いを待つ形だったため、C65 の起動の確認に移した (2026-10-29、ユーザーが承認)
+- [x] C65 Replace the published documents with English (2026-10-29, requested by the user)
+  - Replaced `README.md`, `CLAUDE.md`, `docs/design.md`, `docs/protocol.md`, `docs/plan-p0.md`, the role descriptions (`tools/dev/roles/*.md`) and `roles.example.json` with English. The roadmap's header rules, phase headings, goals, acceptance criteria, `## Plan` and the open items use C64's English vocabulary; the records under closed lines stay in Japanese (out of scope).
+  - Content was kept: design.md has the same 59 headings at the same levels (§1 to §10, including every §6 verification record), with decisions and dates as they were. CLAUDE.md's document map was rewritten against the English headings, and every section it names was checked to exist. Japanese left in the English documents is only the earlier vocabulary (in the mapping tables and where Japanese ledgers are mentioned) and strings the code emits, quoted as they are (the `inbox` texts, `--- まとめ ---`).
+  - The leader now writes to the human with the English headings and the body in the user's language (`HUB_LANGUAGE`); `roles.json` on this machine was replaced with the English sample too (it was identical to the old sample).
+  - Live check (design.md §6.1w): with the compose Hub rebuilt with `HUB_LANGUAGE=ja` and the English roles, an English request (#277) went leader → deployer (#278, English `GOAL`…) → leader (#279, English `CHANGED`…) → user (#280): English headings `RESULT` / `VERIFIED` / `NOT VERIFIED` / `NEEDS DECISION` / `NEEDS ACTION`, Japanese bodies. This also closes C66's live check.
+  - Translating the open items changed the wording of their done-when conditions, so their promise fingerprints changed (a request sent earlier with `meta.item` for C3, C38 or C62 would show a diff). No such request was open.
+  - `npm test` 349 pass, `npm run ui:check` 79 ok, `npm run docs:check` no errors.
 
-## 項目
+## Items
 
-開いている項目。書き方は冒頭の規則 (design.md §3.15)。デスクトップアプリ向けの画面操作ベースの連携は範囲外として項目にしない。
+Open items. How to write them is in the rules at the top (design.md §3.15). Integration by operating desktop apps' screens is out of scope and is not made an item.
 
-### C3. Claude Code 以外の実クライアントと、受け手の読み方を確かめる
-状態: 保留(Claude Code 以外の MCP クライアントを入れたら)
+### C3. Check real clients other than Claude Code, and how receivers read
+Status: held(once an MCP client other than Claude Code is installed)
 
-今はテストの MCP クライアントでのみ確かめている。
+Today this has only been checked with the test MCP client.
 
-2026-10-19 の C2 で、leader (Claude Code) に「書き手 (forwarded_sender) と本文を列挙して」と添え書きして deployer の reply 2 件を転送すると、2 件とも書き手を deployer と答えた。添え書きが属性の名前を示しているので、指示なしに書き手として読むかはまだ分からない。
+In C2 on 2026-10-19, when two of the deployer's replies were forwarded to the leader (Claude Code) with the covering note "list the authors (forwarded_sender) and bodies", it answered that the author of both was the deployer. The covering note named the attribute, so whether it reads it as the author without being told is still unknown.
 
-実クライアントを入れたら、`tools/probe/resources-probe.mjs` で `resources/updated` によってターンが始まるかも見る (C1 では Claude Code だけ確かめて閉じた。design.md §6.1m)。
+Once a real client is installed, also check with `tools/probe/resources-probe.mjs` whether `resources/updated` starts a turn (C1 checked only Claude Code and closed; design.md §6.1m).
 
-#### 完了条件
-- [ ] Codex など Claude Code 以外のクライアントが `inbox` を呼び、注意書きどおりに本文をデータとして扱うか
-- [ ] 受け手のエージェントが `forwarded_sender` を本文の書き手として読むか (Channels 経路)
-- [ ] 結果を design.md §6 に記録する
+#### Done when
+- [ ] Whether a client other than Claude Code, such as Codex, calls `inbox` and treats the body as data, as the notice says
+- [ ] Whether the receiving agent reads `forwarded_sender` as the author of the body (Channels path)
+- [ ] The results are recorded in design.md §6
 
-### C4. engram への区切り知見の保存連携
-状態: 提案
+### C4. Connecting the storage of what was learned at breaks to engram
+Status: proposed
 
-区切り (commit・項目の完了) の知見を engram に残す流れと Hub をつなぐか。任意。
+Whether to connect the Hub with the flow that leaves what was learned at breaks (commits, items done) in engram. Optional.
 
-### C9. ドキュメントの作法を照らす
-状態: 提案
+### C9. Checking the document conventions
+Status: proposed
 
-design.md §3.12。層 1 は決定的な検査のスクリプト (`npm run docs:check`。地図のずれ、API と列挙の表のずれ、`CHANGED` の docs 漏れ、§9 の決定の日付)。結果は notice か Event で UI に出す。
-作法の表を正本にし、CLAUDE.md・leader.md・deployer.md はそこを指すだけにする。層 2 (軽量ジャッジ) は、層 1 が逃したずれが材料として貯まってから作る価値を測る。
+design.md §3.12. Layer 1 is a script of deterministic checks (`npm run docs:check`: map drift, drift between the API and enumeration tables, `CHANGED` missing docs, dates on §9's decisions). Results are shown in the UI as a notice or Event.
+The table of conventions becomes the source of truth, and CLAUDE.md, leader.md and deployer.md just point to it. For layer 2 (a lightweight judge), measure whether it is worth building once drift missed by layer 1 has accumulated as material.
 
-### C10. leader を使い捨てにできるようにする
-状態: 提案
+### C10. Making the leader disposable
+Status: proposed
 
-台帳の最小版 (未返信の request の一覧) と、捨てるきっかけを誰が持つか (design.md §3.13 の未決)。
+The minimum version of the ledger (a list of unanswered requests), and who holds the trigger to discard it (the open questions of design.md §3.13).
 
-### C11. 依頼の台帳と整合点
-状態: 提案
+### C11. The request ledger and checkpoints
+Status: proposed
 
-メッセージの形の宣言と Hub での検査、依頼ごとの SCOPE と `git diff` の突き合わせ、受け入れの指紋と要再確認 (design.md §3.11、§9-6)。
-語彙は leader / deployer の運用で毎回使っている見出しから取り、先に設計しない。新しい検査は警告だけで始め、人の判断と一致するのを見てから 400 に上げる。
+Declaring message shapes and checking them on the Hub, matching each request's SCOPE against `git diff`, fingerprints of acceptance and needs-re-confirming (design.md §3.11, §9-6).
+The vocabulary is taken from the headings used every time in leader / deployer operation, not designed up front. New checks start as warnings only, and are raised to 400 after seeing that they agree with human judgment.
 
-### C12. 配信ルール (人間確認なしの自動転送) の opt-in
-状態: 提案
+### C12. Opt-in delivery rules (automatic forwarding without human confirmation)
+Status: proposed
 
-既定は人が Send を押す (design.md §2)。入れるなら opt-in で、自律オーケストレーションとの境目は design.md §3.13。
+The default is that a human presses Send (design.md §2). If added, it is opt-in, and the boundary with autonomous orchestration is in design.md §3.13.
 
-### C13. 本文が組み込みコマンドで始まるときの警告
-状態: 提案
+### C13. A warning when the body starts with a built-in command
+Status: proposed
 
-本文が `/clear` などで始まるとき、UI で「文字列として届き、実行されない」と警告する (design.md §6.1h)。任意。
+When the body starts with `/clear` and the like, the UI warns that "it arrives as a string and is not run" (design.md §6.1h). Optional.
 
-### C14. permission relay で UI から許可を出す
-状態: 提案
+### C14. Granting permission from the UI with the permission relay
+Status: proposed
 
-Channels の permission relay を使い、UI から tool 実行の許可を出す (design.md §6.1)。
+Use Channels' permission relay to grant tool execution permission from the UI (design.md §6.1).
 
-### C15. plugin の monitor と Channels の比較
-状態: 提案
+### C15. Comparing plugin monitors with Channels
+Status: proposed
 
-配信経路として plugin の monitor を Channels と比べる (design.md §6.2-3)。
+Compare plugin monitors with Channels as a delivery path (design.md §6.2-3).
 
-### C16. `kind` の追加
-状態: 提案
+### C16. Adding `kind`s
+Status: proposed
 
-交代時の引き継ぎ用 `handoff` など (design.md §3.6)。
+`handoff` for handing over at replacement, and so on (design.md §3.6).
 
-### C17. `report_event` と `Stop` の重複除去
-状態: 保留(P1 の `Stop` の表示で足りないと分かるまで)
+### C17. De-duplicating `report_event` and `Stop`
+Status: held(until showing P1's `Stop` turns out not to be enough)
 
-skill から区切りを申告する `report_event` ツールと、`Stop` との重複除去 (design.md §3.4)。
+A `report_event` tool for skills to declare breaks, and de-duplicating it against `Stop` (design.md §3.4).
 
-### C18. 担当範囲と競合
-状態: 保留(書き手の deployer が 2 人以上になるまで)
+### C18. Assigned areas and conflicts
+Status: held(until there are two or more writing deployers)
 
-まず deployer ごとに git worktree を分け、足りなければ request の `SCOPE` を担当範囲として記録して衝突を UI に警告する。止めたい場合だけ hook で強制する (design.md §9-6)。
+First separate git worktrees per deployer; if that is not enough, record a request's `SCOPE` as the assigned area and warn of conflicts in the UI. Enforce with hooks only where it must be stopped (design.md §9-6).
 
-### C19. 配送を公式 cross-session messaging に移す
-状態: 保留(投函の形式が公式資料に載るまで)
+### C19. Moving delivery to the official cross-session messaging
+Status: held(until the posting format is in the official docs)
 
-design.md §9-5。移すときも Mailbox・role・未読の正本は Hub に置く。
+design.md §9-5. Even after moving, the source of truth for Mailboxes, roles and unread messages stays on the Hub.
 
-### C20. MCP Events (`events/stream`) を shim に足す
-状態: 保留(Claude Code が MCP Events に対応するまで)
+### C20. Adding MCP Events (`events/stream`) to the shim
+Status: held(until Claude Code supports MCP Events)
 
-shim に `io.modelcontextprotocol/events` (`events/stream`) を追加する (design.md §7)。
+Add `io.modelcontextprotocol/events` (`events/stream`) to the shim (design.md §7).
 
-### C22. 項目への依頼の反映済を、索引の変化から導く
-状態: 提案
+### C22. Deriving "reflected" for requests on an item from changes in the index
+Status: proposed
 
-`meta.item: C<n>` の request を送った後、`docs:index` で届いた索引で、その項目の完了条件のチェックが増えた、または節が消えて `[x] C<n>` / `[-] C<n>` になったら、カードに反映済を出す (design.md §3.16)。返信 (自己申告) より先にリポジトリの事実を見せる。索引に閉じた項目の ID と閉じ方を足す必要がある (`parseRoadmap` の `refs` が材料)。
+After a request with `meta.item: C<n>` is sent, if in an index that arrived through `docs:index` that item's done-when checks increased, or its section disappeared and became `[x] C<n>` / `[-] C<n>`, show reflected on the card (design.md §3.16). Show facts in the repository before the reply (self-report). The index needs the IDs of closed items and how they closed (`refs` of `parseRoadmap` is the material).
 
-### C23. 項目のない依頼の選別を促す
-状態: 提案
+### C23. Prompting the sorting of requests without an item
+Status: proposed
 
-`meta.item` のない request に返信が来たら、人に「項目に回収する / 捨てる」を選ばせる (design.md §3.16)。どこに出すか、選んだことを Hub に知識として持たせずにどう残すかは §3.16 の未決 2。
+When a request without `meta.item` gets a reply, have the human choose "gather into an item / discard" (design.md §3.16). Where to show it, and how to keep the choice without the Hub holding it as knowledge, is open question 2 of §3.16.
 
-### C24. 却下の行 `[-] C<n>` を docs:check で検査する
-状態: 提案
+### C24. Checking rejected lines `[-] C<n>` with docs:check
+Status: proposed
 
-roadmap 冒頭の却下の規則 (design.md §3.16) に合わせ、`[-] C<n>` の行の形 (却下の日付と理由)、節が残ったままの `[-] C<n>`、閉じた番号の使い回しを `checkRoadmap` で検査し、索引にも出す。
+Following the rejection rule at the top of the roadmap (design.md §3.16), check with `checkRoadmap` the form of `[-] C<n>` lines (the date and reason of the rejection), a `[-] C<n>` whose section remains, and reuse of closed numbers, and show them in the index too.
 
-### C27. 新規プロジェクトの下ごしらえ
-状態: 提案
+### C27. Preparing new projects
+Status: proposed
 
-C26 の通しで見つかった残り。hook の設定は手で写す (`start-agent.ps1` は警告するだけ)。新しいプロジェクトのエージェントは roadmap の項目の書き方の規則を知る手段がない (規則は agent-hub の roadmap 冒頭にある)。雛形を置くか、起動スクリプトが用意するか。
+What remained from C26's run. Hook settings are copied by hand (`start-agent.ps1` only warns). Agents in a new project have no way to learn the rules for writing roadmap items (the rules are at the top of agent-hub's roadmap). Place a template, or have the startup script prepare one.
 
-既に台帳を持つプロジェクトでは、雛形より書式の違いが先に問題になる。vcp の `docs/TODO.md` (2026-10-20 時点で `### C<n>.` の項目 31 件) に `docs:check` をかけると 31 errors: 30 件が「決定なのに `#### 完了条件` がない」、1 件が見出しの形 (`### C104 の残り.`)。vcp は状態を見出しの括弧に書き (「保留」「記録のみ」「データ待ちでブロック中」)、やることは本文の `- [ ]` に混ぜ、終わった項目は DESIGN_LOG.md へ移して「C-完了」の索引に 1 行残す。`docs:index` はエラーを警告にして送るので、そのまま送ると 30 件すべてが「決定」として UI に出る。
+In projects that already have a ledger, differences in format become a problem before any template does. Running `docs:check` on vcp's `docs/TODO.md` (31 `### C<n>.` items as of 2026-10-20) gives 31 errors: 30 "decided but no done-when heading", and 1 heading form (`### C104 の残り.`, "the rest of C104"). vcp writes state in the heading's parentheses ("held", "record only", "blocked waiting for data"), mixes what to do into the body's `- [ ]`, and moves finished items to DESIGN_LOG.md leaving one line in the "C-done" index. `docs:index` turns errors into warnings and sends, so sending it as is shows all 30 as "decided" in the UI.
 
-- 相手の台帳を agent-hub の書式に書き換えさせるのは筋が悪い (配送の層が文書の作法を押しつけることになる)
-- 候補: 状態の行も完了条件もない項目を「決定」でなく「未分類」として扱う / 完了条件の見出し名や状態の書き方をプロジェクトごとに設定できるようにする / 完了条件がなければ本文の `- [ ]` を約束として写す
-- それまでは、索引に載せず普通の依頼として送る (項目番号は本文に書く)
+- Having the other side rewrite its ledger into agent-hub's format is the wrong way round (the delivery layer would be imposing document conventions)
+- Candidates: treat items with neither a status line nor done-when conditions as "unclassified" rather than "decided" / make the done-when heading name and how states are written configurable per project / without done-when conditions, copy the body's `- [ ]` as the promise
+- Until then, do not index it and send a plain request (with the item number in the body)
 
-2026-10-20 にその形で vcp の C145 の前半を通した (`start-team.ps1 -Roles leader,deployer -Project <vcp>`、compose の Hub)。vcp の hook は `.claude/settings.local.json` に写してあった。user → leader → deployer → leader → user が手を挟まずに回り、手直しの 1 往復も同じ流れで済んだ (leader は報告の食い違いを自分で見つけて deployer に直させた)。agent-hub の不具合は出なかった。質問待ち・許可待ちの Event はこの通しでは出ていない (deployer は `auto` モード)。
+On 2026-10-20 the first half of vcp's C145 was run that way (`start-team.ps1 -Roles leader,deployer -Project <vcp>`, the compose Hub). vcp's hooks had been copied into `.claude/settings.local.json`. user → leader → deployer → leader → user went around without a hand in between, and one round of correction went the same way (the leader found a discrepancy in the report itself and had the deployer fix it). No agent-hub bug appeared. No question or permission Events came up in this run (the deployer was in `auto` mode).
 
-同じ日に vcp の C147 も索引なしの依頼で通した (チームは C145 のまま)。依頼から最終報告まで約 26 分で、人の手直しが 1 回入った。deployer が報告した後、leader がまだ確かめている間に人の手直し (月を月名でなくラベルで選ばせる) を送ると、leader はそのまま deployer に直させ、2 つの依頼の結果を最初の依頼への返信 1 本にまとめて返した。手直しの依頼は返信待ちのまま残り、deployer の報告 2 本は受領の確認が付かないまま残った (design.md §6.1n、C28)。手直しの原因は依頼の文面 (TODO の古い検討にあった「月名を C53 の検査にかける」を写した) で、agent-hub の不具合ではない。
+The same day, vcp's C147 was also run as a request without the index (the team was still C145's). From request to final report took about 26 minutes, with one correction from the human. After the deployer reported and while the leader was still checking, the human sent a correction (choose months by label rather than month name); the leader had the deployer fix it as is, and returned the results of both requests together in one reply to the first request. The correction request stayed awaiting reply, and the deployer's two reports stayed without confirmed receipt (design.md §6.1n, C28). The cause of the correction was the request's wording (it copied "run month names through C53's check" from an old discussion in the TODO), not an agent-hub bug.
 
-### C35. 独自の台帳を持つプロジェクトから依頼を中継する
-状態: 保留(実際に回して要るものが分かってから)
+### C35. Relaying requests from projects with their own ledger
+Status: held(until running it shows what is needed)
 
-Hub で回すのは、作業を切り出したリポジトリ (台帳 `### C<n>.` を持つ) とし、依頼元が独自の台帳や番号の体系を持つプロジェクト (thesis の CLAUDE.md の「項目N」など) には `C<n>` を混ぜない (2026-10-22、ユーザー。グローバルの skill `roadmap-items` に書き方を置いた)。
-例は thesis と cite-bridge: 設計書と取り込み (submodule の更新) は thesis、実装と台帳は cite-bridge。チームは thesis の中ではなく cite-bridge の単独の clone で起動する (親の CLAUDE.md を読ませないため)。
-今は何も足さずに回せる (`project` は値。design.md §3.15)。足すとしたら、項目のカードに「持ち主」(依頼元のプロジェクト) を出す、終わった項目を持ち主の Mailbox へ notice で知らせる、など。重く考えず、実際に回して要るものが分かってから決める。
+What runs on the Hub is the repository the work was cut out into (with a `### C<n>.` ledger); `C<n>` is not mixed into a requesting project that has its own ledger or numbering (such as "item N" in thesis's CLAUDE.md) (2026-10-22, user; how to write it is in the global skill `roadmap-items`).
+The example is thesis and cite-bridge: the design document and taking in (updating the submodule) are thesis's; the implementation and the ledger are cite-bridge's. The team starts in a standalone clone of cite-bridge, not inside thesis (so it does not read the parent's CLAUDE.md).
+For now it runs without adding anything (`project` is a value; design.md §3.15). If something is added, it could be showing the "owner" (the requesting project) on the item card, or notifying the owner's Mailbox with a notice when an item finishes. Do not overthink it; decide once running it shows what is needed.
 
-### C38. usage limit で止まったセッションを、Working と区別して出す
-状態: 保留(次の usage limit に当たるまで)
+### C38. Showing sessions stopped by a usage limit apart from Working
+Status: held(until the next usage limit is hit)
 
-cite-bridge の deployer は usage limit で 2 時間 20 分止まったが、Hub には止まった瞬間の Event がなく、カードの状態 (C37) は `Working` と出ていたはず (design.md §6.1q)。公式の hook の `StopFailure` (API のエラーでターンが終わったとき) と、Notification の `quota_auto_resume_*` を使う。`StopFailure` が自動の再開を待つ場合にも発火するかは未検証 (§6.2-6) なので、登録して次の制限で確かめる。2026-10-23 にユーザーが決定。
-2026-10-26 に実装した: `StopFailure` を `turn.failed` に変換 (`payload` は入力のまま)、`backlog.lastEvent.detail` に `error` / `notification_type` を載せ、UI に Paused と、`quota_auto_resume_stale` / `_disabled` の Needs you を足した。`ui:check` に場面を足して確かめた。`settings.command.json` は `Stop` だけを置き換える command hook の設定で、README の手順では HTTP の `Stop` と置き換えて使い、`StopFailure` は `settings.json` のものをそのまま残す。そこに `StopFailure` を足すと二重になるため足していない。完了条件から「と `settings.command.json`」を外すことを提案し、2026-10-26 にユーザーが承認した。同じ日に、Hub の `/events` を持つ hook の設定 (agent-hub と vcp の `.claude/settings.local.json`。`~/.claude/settings.json` には agent-hub の hook がない) に `StopFailure` を足した。
+cite-bridge's deployer was stopped for 2 hours 20 minutes by a usage limit, but the Hub had no Event for the moment it stopped, and the card state (C37) must have shown `Working` (design.md §6.1q). Use the official hook `StopFailure` (when a turn ended on an API error) and Notification's `quota_auto_resume_*`. Whether `StopFailure` also fires while waiting for automatic resume is unverified (§6.2-6), so register it and check at the next limit. Decided by the user on 2026-10-23.
+Implemented on 2026-10-26: convert `StopFailure` to `turn.failed` (with the `payload` as input), put `error` / `notification_type` in `backlog.lastEvent.detail`, and add Paused to the UI plus Needs you for `quota_auto_resume_stale` / `_disabled`. Checked by adding scenes to `ui:check`. `settings.command.json` is the command hook configuration that replaces only `Stop`; per the README's steps it is used in place of the HTTP `Stop`, and `StopFailure` from `settings.json` stays as it is. Adding `StopFailure` there would double it, so it was not added. Removing "and `settings.command.json`" from the done-when condition was proposed and approved by the user on 2026-10-26. The same day, `StopFailure` was added to the hook settings that have the Hub's `/events` (agent-hub's and vcp's `.claude/settings.local.json`; `~/.claude/settings.json` has no agent-hub hooks).
 
-#### 完了条件
-- [x] `tools/hooks/settings.json` に `StopFailure` を足し、Hub が Event に取り込む (例 `turn.failed`、`error` と `last_assistant_message` を payload のまま持つ)。`README` の hook の手順と protocol.md の Event の種類を合わせる
-- [x] UI のカードに `Paused` の状態を足し、Working より先に判定する。最後の Event が `turn.failed` (`error: rate_limit`) なら Paused (usage limit)、その後の `quota_auto_resume_fired` か `turn.end` で解ける。`quota_auto_resume_stale` と `_disabled` は Needs you (Enter が要る、または自動では続かない) にする。Event の表示名も足す
-- [x] 試験: Hub が `StopFailure` の payload を `turn.failed` として取り込むこと (`src/hub` の Event の変換の試験の形)
-- [ ] 実際に usage limit に当たったときの Event の並びを design.md §6 に記録し、§6.2-6 を閉じる (発火しなかったら、そう書き、Paused を `quota_auto_resume_*` だけで出せる範囲に直すことを報告で提案する)
+#### Done when
+- [x] Add `StopFailure` to `tools/hooks/settings.json`, and the Hub takes it in as an Event (e.g. `turn.failed`, keeping `error` and `last_assistant_message` in the payload as they are). Align the hook steps in the `README` and the Event kinds in protocol.md
+- [x] Add a `Paused` state to the UI's card, decided before Working. If the last Event is `turn.failed` (`error: rate_limit`) it is Paused (usage limit), cleared by a later `quota_auto_resume_fired` or `turn.end`. `quota_auto_resume_stale` and `_disabled` are Needs you (Enter is needed, or it will not continue automatically). Add the Events' display names too
+- [x] Tests: the Hub takes in `StopFailure`'s payload as `turn.failed` (in the form of the tests for Event conversion in `src/hub`)
+- [ ] Record in design.md §6 the order of Events when a usage limit is actually hit, and close §6.2-6 (if it did not fire, say so, and propose in the report narrowing Paused to what `quota_auto_resume_*` alone can show)
 
-### C46. 文書の更新を信号として、購読した Mailbox に流す
-状態: 保留(reviewer が依頼のたびに正本を読む形で足りないと分かってから)
+### C46. Sending document updates as signals to subscribed Mailboxes
+Status: held(until it turns out that the reviewer reading the sources of truth on every request is not enough)
 
-design.md §3.12 の「信号」の層。`docs:index` で届く索引の差分 (完了条件の増減、節の追加と削除、閉じた `C<n>`) を、場所を指す notice としてトピックに流し、文脈を長く持つセッション (leader) が自分の理解が古くなったと知れるようにする。知見そのものは流さない (§3.14)。
-C45 の後、reviewer が依頼のたびに正本を読む形で足りないと分かってから決める (§1.1 の基準 2)。§9 の決定の追加は roadmap の索引に載らないので、拾うなら索引の範囲を広げることになる。
+The "signals" layer of design.md §3.12. Send the differences in the index that arrive through `docs:index` (done-when conditions added or removed, sections added or deleted, closed `C<n>`) to a topic as notices pointing at places, so a session that holds context long (the leader) can learn its understanding has gone stale. The knowledge itself is not sent (§3.14).
+Decide after C45, once it turns out that the reviewer reading the sources of truth on every request is not enough (criterion 2 of §1.1). Additions to §9's decisions are not in the roadmap's index, so picking them up would mean widening the index's scope.
 
-### C47. Forward に定型の添え書きをつけて、別のエージェントに相談する
-状態: 保留(C3 の後。別のベンダーに見せる独立性が要る)
+### C47. Consulting another agent through a Forward with a fixed covering note
+Status: held(after C3; it needs the independence of showing it to another vendor)
 
-将来案 (2026-10-26、ユーザー)。kanary の /relay (design.md §8.1) が速くしているのは、起票 → 別のエージェントに相談 → 訂正案、の一周のうち運ぶ手間。Hub では、leader の報告や提案に「相談」のボタンを置き、押すと宛先が `role:reviewer`、添え書きが定型の問いになった状態で送信の欄を埋め、人が見て Send を押す (design.md §3.12「レビューの依頼は、会話の区間でなく対象で送る」)。
-- 部品はほぼある: 無加工の Forward、添え書き (P2 の受け入れ条件 5)、返事を leader へ戻す Reply / Forward と Relay の件数。足すのは定型文とボタンだけ。
-- 定型文は問いだけにし、何を照らすかは reviewer.md (C45) に任せる。種類は数個 (整合: 決定・非目標・却下と食い違わないか / 反証: 見落としはないか / 約束: 完了条件はそれだけで確かめられるか)。元文面に `meta.item` があれば項目番号を差し込む。
-- 定型文は `roles.json` と同じくリポジトリの設定に置く (設定であって知見ではない。§3.14)。
-- 別のベンダーに見せる独立性は、Claude Code 以外の reviewer が要るので C3 の後。それまでは新しい文脈とモデルの違いまで。
-- C45 で reviewer の作法が決まってから、定型文の中身を決める。
+A future idea (2026-10-26, user). What kanary's /relay (design.md §8.1) speeds up is the hauling in the round of filing → consulting another agent → proposed corrections. On the Hub, put a "consult" button on the leader's reports and proposals; pressing it fills the send form with the address `role:reviewer` and a fixed question as the covering note, and a human looks and presses Send (design.md §3.12 "Send review requests by target, not by a stretch of conversation").
+- The parts are mostly there: unprocessed Forward, the covering note (P2 acceptance criterion 5), and Reply / Forward and Relay's counts to bring the answer back to the leader. What is added is only the fixed texts and the button.
+- The fixed text is only the question; what to check against is left to reviewer.md (C45). A few kinds (consistency: does it contradict decisions, non-goals, rejections / refutation: is anything overlooked / promise: can each done-when condition be checked on its own). If the original message has `meta.item`, insert the item number.
+- The fixed texts live in the repository's configuration, like `roles.json` (configuration, not knowledge; §3.14).
+- The independence of showing it to another vendor needs a reviewer other than Claude Code, so after C3. Until then it goes only as far as a fresh context and a different model.
+- Decide the content of the fixed texts after C45 settles the reviewer's conventions.
 
-### C50. エージェントが作ったものを一時的に置くプールを決め、Hub から参照して受け渡す
-状態: 提案
+### C50. Decide a pool where agents temporarily put what they make, and hand it over by reference from the Hub
+Status: proposed
 
-2026-10-27、kanary relay の作者の発言 (デスクトップアプリのインラインのウィジェットで作った画像や HTML のモックを、ローカルのパス経由で別の AI に渡してダブルチェックさせる) を受けて、ユーザーが方向を決めた。画像に限らず、**エージェントが生成したものを暫定的に置くプールの場所を決め、Hub がそこを参照できる**、という抽象にする。インラインで見る速さそのものはクライアントの持ち場で、追わない (design.md §2・§8.1)。
-今は画像の経路が「ブラウザ → エージェント」だけ (design.md §3.10)。エージェントの `post_message` にはファイルを付ける口がない。本文にパスを書けば同じマシンの相手は `Read` で開けるが、人の UI には出ず、保存期間の管理にも乗らない。
+2026-10-27: prompted by a remark from the author of kanary relay (passing images and HTML mock-ups made with inline widgets in the desktop apps to another AI through a local path to double-check them), the user set the direction. Not only images: the abstraction is **deciding where the pool for provisionally placing what agents generate lives, so the Hub can refer to it**. The speed of seeing things inline is the client's job, and we do not chase it (design.md §2, §8.1).
+Today the only image path is "browser → agent" (design.md §3.10). An agent's `post_message` has no way to attach a file. Writing a path in the body lets a party on the same machine open it with `Read`, but it does not appear in the human's UI and is not covered by retention management.
 
-守る規定 (これに触れる形は採らない):
-- Hub は 127.0.0.1 限定で全 API にトークン認証 (§3.8・§4)。compose の Hub はコンテナの中にいるので、見えるのは mount したものだけ。
-- Hub が持つのは配送のための状態だけ (§3.14)。プールは知識の置き場にせず、期限で消える一時物にする。
-- 他のエージェント由来の中身はデータとして扱う (§4、protocol.md §6)。UI は HTML などを実行しない (画像は表示、ほかは開かずに中身かリンクを出すなど)。
-- 中身を要約・加工しない。Message から来た文字列をそのままパスにしない (§3.10 の id の扱いに倣う)。
+Rules to keep (forms that touch them are not adopted):
+- The Hub is 127.0.0.1 only, with token authentication on every API (§3.8, §4). The compose Hub is inside a container, so it sees only what is mounted.
+- The Hub holds only state for delivery (§3.14). The pool is not a place for knowledge; it is temporary and disappears after a period.
+- Content from other agents is treated as data (§4, protocol.md §6). The UI does not execute HTML and the like (images are displayed; others are shown as content or a link without being opened, for example).
+- Content is not summarized or processed. A string from a Message is not used as a path as is (following how ids are handled in §3.10).
 
-決めること:
-1. プールの場所: プロジェクトごと (例 `<project>/.agent-hub/pool/`、gitignore する) か、ホストに 1 つ (`HUB_POOL_DIR`) か。
-2. Hub の参照のしかた: プールを Hub に読み取り専用で mount するか、shim が Hub へ上げるか (mount なら compose と直接起動の両方の形を決める)。
-3. Message からの指し方: §3.10 の `meta.files` (id) に寄せるか、プールの中の相対パスか。受け手には今と同じく `path` を渡す。
-4. 扱う種類と UI の見せ方: 画像 (A/B/C を並べて見比べる)、HTML のモック、テキストや差分。
-5. 期限と掃除の受け持ち (§3.14 の画像の TTL と揃えるか)。
-6. §3.10 のブラウザからの画像の経路を、同じプールにまとめるか。
+To decide:
+1. Where the pool is: per project (e.g. `<project>/.agent-hub/pool/`, gitignored) or one on the host (`HUB_POOL_DIR`).
+2. How the Hub refers to it: mount the pool into the Hub read-only, or have the shim upload to the Hub (if mounting, decide the form for both compose and the direct start).
+3. How a Message points at it: align with §3.10's `meta.files` (id), or a relative path within the pool. The receiver gets a `path`, as now.
+4. Which kinds to handle and how the UI shows them: images (A/B/C side by side to compare), HTML mock-ups, text and diffs.
+5. Who handles expiry and cleanup (align with the images' TTL in §3.14?).
+6. Whether to merge §3.10's path for images from the browser into the same pool.
 
-関係: C47 (相談のボタン) と C3 (Claude Code 以外のクライアント) で、別のエージェント・ベンダーにダブルチェックさせるときの運び先になる。
+Related: it becomes the destination for having another agent or vendor double-check, in C47 (the consult button) and C3 (clients other than Claude Code).
 
-### C60. 絞り込みの Noise に含める通知を設定できるようにする
-状態: 保留(C59 の後)
+### C60. Making which notifications Noise includes configurable
+Status: held(after C59)
 
-C59 の Noise は通知系の Event を固定で扱う。何を Noise に含めるか (Event の種類ごと) を人が設定できるようにする。設定の置き場 (`settings.json` か `localStorage` か) は、C59 の実装で分かったことを見て決める。決まったら状態を外し、完了条件を書く。
+C59's Noise treats notification-type Events as fixed. Let a human configure what Noise includes (per Event kind). Where the setting lives (`settings.json` or `localStorage`) is decided by looking at what C59's implementation showed. Once decided, remove the status and write the done-when conditions.
 
-### C62. チームの起動を Windows 以外でもできるようにする
+### C62. Starting the team on platforms other than Windows
 
-GitHub で公開する (2026-10-29、ユーザーが決定。告知はしない) にあたり、起動が PowerShell (`tools/dev/start-team.ps1` / `start-agent.ps1` / `team-checks.ps1` / `mailbox-name.ps1`) だけで、macOS・Linux の人はチームを起動できない。
+With publishing on GitHub (2026-10-29, decided by the user; no announcement), starting is PowerShell only (`tools/dev/start-team.ps1` / `start-agent.ps1` / `team-checks.ps1` / `mailbox-name.ps1`), and people on macOS and Linux cannot start a team.
 
-今の起動スクリプトが持つもの: role が `roles.json` にあるかの確認、`claude --version` の事前確認、hook の設定の警告 (C57)、checkout が古いときの警告 (C58)、attach の待ちと失敗の検出 (C33・C56)、UI の URL の表示 (C55)、`-PermissionMode` などの引数、role ごとにタブを開くこと (Windows Terminal)。
+What the current startup scripts provide: checking that the role is in `roles.json`, checking `claude --version` beforehand, warning about hook settings (C57), warning when the checkout is stale (C58), waiting for attach and detecting failure (C33, C56), printing the UI URL (C55), arguments such as `-PermissionMode`, and opening a tab per role (Windows Terminal).
 
-案 (実装のときに決め、design.md に理由を書く): 起動を Node のスクリプト (`npm run team -- …`) に移して OS の差を 1 か所にする。タブを開く手段は OS ごとに違う (Windows Terminal・tmux・macOS の Terminal など) ので、開けないときは role ごとの起動コマンドを出して手で開いてもらう縮退を持つ。
+An idea (to decide at implementation, with the reasons written in design.md): move starting to a Node script (`npm run team -- …`) so the OS differences are in one place. The means of opening tabs differ per OS (Windows Terminal, tmux, macOS Terminal and so on), so when tabs cannot be opened, fall back to printing each role's start command for the human to open by hand.
 
-#### 完了条件
-- [ ] macOS・Linux で、上の確認・警告・attach の待ち・UI の URL を含めてチームを起動できる。Windows でも今と同じことができる
-- [ ] 起動の方式 (スクリプトの言語、タブの開き方と開けないときの縮退) と理由を design.md に書く
-- [ ] Linux (WSL かコンテナ) と Windows で実際に起動して確かめ、design.md §6 に記録する。macOS は確かめられなければ未確認と書く
-- [ ] README の起動の手順を OS ごとに直す
-- [ ] `npm test` が通る
-
-### C65. 公開する文書を英語に置き換える
-
-GitHub で公開するにあたり、公開する文書を英語にする (2026-10-29、ユーザーが決定)。日本語版は残さず置き換える (二重に保守しない)。以後、このリポジトリで書き足す文書も英語にする。
-
-範囲外 (日本語のまま): `src/`・`tools/` のコードのコメントとエラー文、roadmap の閉じた項目 (`[x]` / `[-]`) の下の記録。過去のコミットメッセージは変えない。
-
-#### 完了条件
-- [ ] `README.md`・`CLAUDE.md`・`docs/*.md` を英語に置き換える。台帳は C64 の英語の語彙で書く
-- [ ] role の説明 (`tools/dev/roles/*.md`) と `roles.example.json` を英語に置き換え、返事の型は C64 の英語の見出しにする
-- [ ] 中身を減らさない: 節の構成・決定と日付・§6 の検証の記録を保ち、`CLAUDE.md` の文書の地図を英語の見出しに合わせる
-- [ ] 英語の role の説明と `HUB_LANGUAGE=ja` でチームを 1 度起動し、leader と deployer が英語の返事の型で往復し、leader から人への返事が見出しは英語・本文は日本語になることを確かめて記録する (C66 の実機の確認をここで行う。2026-10-29 にユーザーが承認)
-- [ ] `npm test`・`npm run ui:check`・`npm run docs:check` が通る
+#### Done when
+- [ ] A team can be started on macOS and Linux, including the checks, warnings, waiting for attach and the UI URL above. Windows can do the same as now
+- [ ] The way of starting (the script's language, how tabs are opened and the fallback when they cannot be) and the reasons are written in design.md
+- [ ] Actually start it on Linux (WSL or a container) and Windows to check, and record it in design.md §6. If macOS cannot be checked, write that it is unverified
+- [ ] Fix the README's startup steps per OS
+- [ ] `npm test` passes
