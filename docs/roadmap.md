@@ -19,7 +19,11 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-(Nothing is decided and waiting. Items with a status line are listed under "Items".)
+- [ ] C71
+- [ ] C70
+- [ ] C72
+
+(Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
 
@@ -543,3 +547,60 @@ Related: it becomes the destination for having another agent or vendor double-ch
 Status: held(after C59)
 
 C59's Noise treats notification-type Events as fixed. Let a human configure what Noise includes (per Event kind). Where the setting lives (`settings.json` or `localStorage`) is decided by looking at what C59's implementation showed. Once decided, remove the status and write the done-when conditions.
+
+### C70. Give the browser tab a hub icon that shows the same two signals as the cards
+
+Raised 2026-10-30 while using the Hub from another project. The tab has no static icon (`public/index.html` has no `<link rel="icon">`); only a number badge for unread messages / Needs you (`badgeIcon`, red for unread, amber for waiting) replaces it, and it goes back to the browser default when nothing is pending. Decided 2026-10-30: what matters is two signals, "someone is working" and "waiting on the human", and the tab and the cards express them the same way (C71 defines the two signals and their colors). No blinking in the favicon. The idle icon is a hub (a central node with spokes), drawn as an inline SVG.
+
+- Waiting on the human (Needs you, unread, Stopped): the amber count badge replaces the icon, as now (unread no longer has its own red; it counts as waiting on the human).
+- Working only (someone is working, nobody waits on the human): the hub icon drawn in the working color.
+- Nothing: the plain hub icon.
+- One block near the top of the script holds what a person would edit: the idle icon (an SVG data URI or a path; empty for the browser default). Colors come from the same CSS variables the cards use (`--st-you`, `--st-working` from C71), read at draw time, so recoloring is one place.
+- A white outline around the badge so it reads on light and dark tab strips.
+
+#### Done when
+- [ ] `public/index.html` has a hub-like SVG idle icon that shows when nothing is pending.
+- [ ] While someone is working and nobody waits on the human, the icon is drawn in the working color; while the human is awaited, the amber count badge shows (it takes priority over working). Neither blinks.
+- [ ] The tab colors are read from the same variables as the cards (`--st-you`, `--st-working`); the idle icon is changed in one block without touching the drawing code.
+- [ ] The badge has a white outline.
+- [ ] `npm test` and `npm run ui:check` pass.
+
+### C71. Express "working" and "waiting on the human" on cards, with colors that are easy to change
+
+Raised 2026-10-30. Decided 2026-10-30: only two signals matter, whether someone is working and whether the human is awaited, and the tab (C70) and the cards express them the same way. Cards already show state by a frame color plus a text line (`.mb.st-*`, `.state.st-*`), so color is never the only cue. Gaps: the frame colors are borrowed from general variables (`--accent`, `--amber`, `--warn`, `--wait`, `--pause`), so recoloring a state also recolors every other use of that variable, and nothing marks the moment a state changes.
+
+Fold the states into the two signals:
+- Waiting on the human: Needs you, unread, Stopped. Amber, a thick steady frame (no blinking).
+- Working: Working, Waiting on others (another agent is working). The working color, and the frame pulses.
+- Quiet (no emphasis): Idle, Paused, Offline.
+
+The card's text line keeps naming the exact state (Needs you / Working / Waiting on others / Stopped / Paused / Offline); only the frame and the tab fold them.
+
+Idea:
+- Give the two signals their own variables in one block (`--st-you`, `--st-working`, plus `--st-ring` for the width), defaulting to today's amber and accent colors. Frames, state lines and the tab (C70) read only these, so one block is the whole recoloring surface. Dark mode redefines them in its existing block.
+- Working cards pulse: the frame's intensity changes slowly over about 2 seconds, for as long as the card is working. `prefers-reduced-motion` shows a steady ring instead. Several working cards at once must not be loud.
+- When a card changes between the signals (including Working to Idle, "finished"), it flashes for about 1.5 seconds in the new signal's color (Idle: a brief neutral-green flash, no persistent frame). The first render and re-renders without a change do not flash. The previous state is kept per Mailbox name outside the re-render.
+- Cover it in `npm run ui:check`: a state change flashes, an unchanged re-render does not, a working card pulses, a Needs you card does not.
+
+#### Done when
+- [ ] Frames and state lines read only `--st-you`, `--st-working` and `--st-ring`, defaulting to today's colors, with dark mode redefined; Needs you / unread / Stopped share the steady amber frame.
+- [ ] Working and Waiting on others cards pulse slowly while in that state; `prefers-reduced-motion` shows a steady ring.
+- [ ] A card flashes about 1.5 seconds on a change of state between the signals (Working to Idle included); the first render and unchanged re-renders do not flash. Idle keeps no persistent frame.
+- [ ] `npm run ui:check` covers flash on change, no flash when unchanged, pulse while working, and no pulse for Needs you.
+- [ ] `docs/usage.md` states what the tab and the cards show for the two signals and where to recolor them; `npm test` passes.
+
+### C72. Start the page on the project the team was started for
+
+Raised 2026-10-30. The page restores the last selected project from `localStorage` (`agent-hub.project`, `readProject` / `saveProject`), and the URL that `npm run team` prints (`UI: <hub>/?token=...`, `src/team/team.ts`) carries no project. So starting a team for one repository opens the page on whichever project was selected last (seen: a team for agent-hub opened on vcp).
+
+Idea:
+- The printed URL gets `&project=<the project value the page uses for the team's folder>`.
+- On load, a valid `project` parameter wins over the saved value and is then saved as the new last selection. Without it, restoring the last selection is unchanged.
+- Treat both the parameter and the stored value as untrusted input. Use one as a selection only when it exactly matches a project the Hub's list returned; otherwise ignore it and fall back (parameter, then stored value, then the default). Never put either into `innerHTML`, a selector string or an API path unvalidated; never store a value that did not match the list. After use, remove `project` from the address bar (`history.replaceState`) so a reload or a shared screenshot does not carry it. The token is not touched by this item.
+
+#### Done when
+- [ ] The URL printed by `npm run team` / `hub-team` includes the team's project, URL-encoded.
+- [ ] Opening it selects that project regardless of the last saved selection, and saves it as the last selection.
+- [ ] A `project` parameter or stored value that is not in the Hub's project list is ignored (no error, no stored value, falls back as above); a value containing markup or quotes is never rendered as HTML.
+- [ ] A URL without `project` restores the last selection as before; `project` is removed from the address bar after use.
+- [ ] `npm run ui:check` covers: parameter wins over stored, unknown parameter ignored, no parameter restores stored. `npm test` passes.
