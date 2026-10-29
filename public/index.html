@@ -2411,7 +2411,7 @@ function renderMailboxes(all) {
     const shown = [seen.model && shortModel(seen.model), seen.effort].filter(Boolean)
     if (shown.length) {
       const me = el('div', 'meta modeleff', shown.join(' · '))
-      me.title = `${seen.model ? `Model: ${seen.model}. ` : ''}${seen.effort ? `Effort: ${seen.effort}. ` : ''}Last seen value, not a guarantee of the current setting.`
+      me.title = `${seen.model ? `Model: ${seen.model}. ` : ''}${seen.effort ? `Effort: ${seen.effort}. ` : ''}Last seen value, not a guarantee of the current setting. From recent Events only: the model may disappear when its session start or model switch Event ages out.`
       box.append(me)
     }
     box.append(backlogChips(el('div', 'backlog'), layersOf(mb), true))

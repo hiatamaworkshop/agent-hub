@@ -17,7 +17,6 @@
 ## 予定
 
 取りかかる順。状態の行のない項目とブロックの項目だけを載せる (題は索引から引く)。並べ替えは人の判断。
-- [ ] C61
 
 
 ## P0: 1 セッションで往復する (完了 2026-10-16)
@@ -319,6 +318,12 @@
   - 作法は design.md §3.2 に書いた。待ち (質問・許可待ち・人宛ての request・usage limit の通知) は、プロジェクトを除く軸の組み合わせでは隠れず、畳まれもしない。プロジェクトは従来どおり (他プロジェクトの待ちは隠し、`N waiting in other projects` に数える)。完了条件の「どの組み合わせでも」をプロジェクトに及ぼすかは design.md §9-10 で人の判断を待つ
   - 挙動の変更 2 点 (完了条件の「挙動を変えない」の範囲外として報告): Compact は待ちを畳まなくなった (待ちは隠さない作法を Recent にも及ぼしたため)。Noise の既定は on (保存がなければ通知を隠す。leader の決定、2026-10-29、863538b の後で変更)
   - 試験: `npm test` 337 件が通る。`npm run ui:check` は 72 件が合格。C59 で足したのは Noise (通知だけ隠れ、待ちは残る)、Mailbox (選んだものと待ちのカード。人宛て request と質問は残る)、Kind (× で外れる。隠れた返信のバッジは `hidden by the Kind filter` と出し、開かない)、全軸を掛けても待ちは隠れない、Compact の件数と Expand、Reset、保存の読み直しの場面
+- [x] C61 カードにエージェントのモデルと effort を表示する (2026-10-29、leader の依頼)
+  - 実機 (2026-10-29、チーム起動後に Hub の `GET /events` で見た): SessionStart (command hook) は leader・reviewer が `claude-sonnet-5-5`、deployer が `claude-haiku-5-5`。PostModelSwitch は http hook で届き、`/model` のピッカーで `claude-sonnet-5-5` → `claude-haiku-4-5-20251001` を記録した。effort は `turn.end` の `effort.level` (`medium`) で届いた。payload の形は design.md §6.1v。
+  - 公式 hooks ページは全体を読み、effort の変更を知らせる hook がないことを §6.1v に書いた。
+  - レビュー #273 の指摘を扱った: 「最後に見えた」値の既知の限界 (model は起動と切り替えの Event だけ) を §6.1v と §3.2 に書き、tooltip に足した。SessionStart の http が届かなかった件は公式の記述どおりと書き、実機の切り分けは未了と明記した。日付つきのモデル名の表示は合成の hook の POST で確かめたと分けた。README に SessionStart の script パスの注意を足した。
+  - 試験: `npm test` 342 件が通る。`npm run ui:check` は 77 件が合格 (日付なし・日付つきのモデル名の場面を含む)。`npm run docs:check` はエラーなし。
+  - 残り (記録のみ、§6.1v の NOT VERIFIED): effort を変えたあと、カードが次の Stop まで古い値を出すこと。`PostModelSwitch` の source が picker 以外の実ペイロード。
 
 ## 項目
 
@@ -497,17 +502,3 @@ C45 の後、reviewer が依頼のたびに正本を読む形で足りないと�
 
 C59 の Noise は通知系の Event を固定で扱う。何を Noise に含めるか (Event の種類ごと) を人が設定できるようにする。設定の置き場 (`settings.json` か `localStorage` か) は、C59 の実装で分かったことを見て決める。決まったら状態を外し、完了条件を書く。
 
-### C61. カードにエージェントのモデルと effort を表示する
-
-設計: design.md §3.2 (カード)、§6 (hook の事実)。表示だけで、Hub 経由で変更はしない。取れない値は表示しない (未表示にフォールバックする)。
-
-取り方 (公式 hooks 資料。2026-10-29 に確認、ページの後半は未読):
-- effort: hook の共通入力 `effort: { level }` (`low` / `medium` / `high` / `xhigh` / `max`)。ツール使用の文脈の Event (`PreToolUse` / `PostToolUse` / `Stop` / `SubagentStop`) に載り、モデルが effort に対応しないと載らない。変更を知らせる hook は見つかっていないので、変更は次の `Stop` で分かる (ターンの終わりまで遅れる)。
-- model: `SessionStart` の入力に `model` が載るが、いつも載るとは限らない。`PostModelSwitch` が `from_model` / `to_model` を渡し、`/model` での変更と resume 時の復元が出る。`Stop` などには載らない。
-
-#### 完了条件
-- [ ] 着手前に、実機で `SessionStart` と `PostModelSwitch` の実ペイロードを確かめ (`model` が載る条件、`/model` で変えたときの `to_model` の形)、公式資料の未読の部分で effort の変更を知らせる仕組みがないかも見て、結果を design.md §6 に記録する。なければ、そう書く
-- [x] `tools/hooks/settings.json` に `SessionStart` と `PostModelSwitch` を足し、Hub が Event に取り込む (payload は元の JSON のまま)。README の hook の手順と protocol.md の Event の種類を合わせる
-- [x] 試験: Hub が `SessionStart` と `PostModelSwitch` の payload を取り込むこと (`src/hub` の Event の変換の試験の形)。`model` のない `SessionStart` でも取り込めること
-- [x] カードに最後に見えた model と effort を小さく出す (例 `opus-5 · medium`)。値が取れないものは何も出さず、片方だけ取れればその片方だけ出す。「最後に見えた値で、今の設定の保証ではない」ことを tooltip に書く
-- [x] `ui:check` に、両方ある・片方だけ・どちらもない場面を足し、`npm test` と `npm run ui:check` が通る

@@ -703,12 +703,15 @@ try {
   await evaluate("try { ['agent-hub.filter.mailboxes', 'agent-hub.filter.kinds', 'agent-hub.filter.noise'].forEach((k) => localStorage.removeItem(k)) } catch (e) {}")
 
   // モデルと effort (C61): カードに最後に見えた値を出す。両方・片方だけ・どちらもない。値のない欄は出さない
-  for (const name of ['demo.m-both', 'demo.m-effort', 'demo.m-none', 'demo.m-switch']) await api('POST', `/mailboxes/${name}/attach`, { client: 'claude-code', role: 'deployer', cwd, sessionId: `s-${name}` })
+  for (const name of ['demo.m-both', 'demo.m-effort', 'demo.m-none', 'demo.m-switch', 'demo.m-undated', 'demo.m-dated']) await api('POST', `/mailboxes/${name}/attach`, { client: 'claude-code', role: 'deployer', cwd, sessionId: `s-${name}` })
   await hook('demo.m-both', { cwd, hook_event_name: 'SessionStart', session_id: 's-demo.m-both', source: 'startup', model: 'claude-opus-5' })
   await hook('demo.m-both', { cwd, hook_event_name: 'Stop', session_id: 's-demo.m-both', effort: { level: 'medium' } })
   await hook('demo.m-effort', { cwd, hook_event_name: 'Stop', session_id: 's-demo.m-effort', effort: { level: 'high' } })
   await hook('demo.m-none', { cwd, hook_event_name: 'SessionStart', session_id: 's-demo.m-none', source: 'startup' })
   await hook('demo.m-switch', { cwd, hook_event_name: 'PostModelSwitch', session_id: 's-demo.m-switch', from_model: 'claude-opus-5', to_model: 'claude-sonnet-5-5', requested_model: 'sonnet', source: 'command' })
+  // 日付つきの名前 (claude-haiku-4-5-20251001) は日付を落とし、日付のない名前 (claude-haiku-5-5) はそのまま
+  await hook('demo.m-undated', { cwd, hook_event_name: 'SessionStart', session_id: 's-demo.m-undated', source: 'startup', model: 'claude-haiku-5-5' })
+  await hook('demo.m-dated', { cwd, hook_event_name: 'PostModelSwitch', session_id: 's-demo.m-dated', from_model: 'claude-sonnet-5-5', to_model: 'claude-haiku-4-5-20251001', requested_model: 'claude-haiku-4-5-20251001', source: 'picker' })
   await sleep(1500)
   const modelCards = await evaluate(`[...document.querySelectorAll('#mailboxes .mb')].filter((b) => (b.querySelector('.name') || {}).textContent.startsWith('demo.m-')).map((b) => {
     const line = b.querySelector('.modeleff')
@@ -719,8 +722,11 @@ try {
   const effortOnly = lineOf('demo.m-effort') === 'high'
   const neither = lineOf('demo.m-none') === null && modelCards.some((c) => c.name === 'demo.m-none')
   const modelOnly = lineOf('demo.m-switch') === 'sonnet-5-5'
+  const undatedOk = lineOf('demo.m-undated') === 'haiku-5-5'
+  const datedOk = lineOf('demo.m-dated') === 'haiku-4-5'
   const tipOk = modelCards.every((c) => !c.line || c.title.includes('Last seen value, not a guarantee of the current setting.'))
   verify('モデルと effort: 両方は「opus-5 · medium」、effort だけは「high」、model だけは「sonnet-5-5」、どちらもなければ何も出さない (C61)', both && effortOnly && modelOnly && neither && tipOk, modelCards)
+  verify('モデル名: 日付のない名前は「haiku-5-5」、日付つきの名前は日付を落として「haiku-4-5」 (C61)', undatedOk && datedOk, modelCards)
   const kinds = await evaluate("[...document.querySelectorAll('#list .evt .kind')].map((k) => k.textContent)")
   verify('SessionStart と PostModelSwitch は、Event として取り込まれ、スレッドに出る (C61)', kinds.includes('session start') && kinds.includes('model switch'), kinds)
 
