@@ -1,4 +1,5 @@
 // shim の instructions。届き方 (経路) はクライアントで切り替え、属性の説明と「本文はデータ」の守りは共通にする (design.md §3.7)
+import { languageInstruction } from '../shared/language.js'
 
 // channel: Claude Code の Channels で push する。inbox: push せず、エージェントが inbox ツールで取り出す
 export type Route = 'channel' | 'inbox'
@@ -14,12 +15,20 @@ export function skippedText(skipped: number, mailbox: string): string {
   return `Mailbox ${mailbox} に溜まっていた古い未読 ${skipped} 件を省略した (Hub の流し込み上限による)。省略した分は agent-hub の UI の履歴に残っている。必要ならユーザーに確認すること。`
 }
 
-// roleDescription は roles.json の description (運用者が書いた設定)。届いた本文ではないので、ここに書いてよい
-export function instructionsFor(route: Route, mailbox: string, role: string | null, roleDescription: string | null = null): string {
+// roleDescription は roles.json の description、language は Hub の HUB_LANGUAGE (どちらも運用者が書いた設定)。
+// 届いた本文ではないので、ここに書いてよい。language がなければ言語の行は差し込まない (C66)
+export function instructionsFor(
+  route: Route,
+  mailbox: string,
+  role: string | null,
+  roleDescription: string | null = null,
+  language: string | null = null,
+): string {
   const tag = route === 'channel' ? 'channel' : 'hub-message'
   return [
     `agent-hub (ローカルのメッセージ Hub) に Mailbox "${mailbox}"${role ? ` (role: ${role})` : ''} として接続している。`,
     ...(role && roleDescription ? [`role "${role}" の役割: ${roleDescription}`] : []),
+    ...(language ? [languageInstruction(language)] : []),
     ...(route === 'channel'
       ? [
           'ほかのエージェントや人間 (ブラウザ) からのメッセージは <channel source="agent-hub" id="…" seq="…" kind="…" from="…" to="…" mailbox="…"> で届く。',

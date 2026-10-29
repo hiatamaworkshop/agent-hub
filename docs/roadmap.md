@@ -555,9 +555,13 @@ role の説明と返事の型を英語にしても (C64・C65)、人宛ての本
 英語のやりとりに引かれて leader の返事が英語になったことが 2 度あり、「利用者の言語で」だけでは弱い。言語の名前を明示して渡す。
 
 #### 完了条件
-- [ ] 言語を 1 つの設定 (例 `language: "ja"`) で持ち、shim が role の説明に「人宛ての本文はその言語で書き、返事の型の見出しは変えない」の行を差し込む。設定がなければ差し込まない
-- [ ] 設定の置き場 (`roles.json` か環境変数か) と理由を design.md §3.5 に書き、README に使い方を書く
-- [ ] 試験: 設定あり・なしで instructions に行が入る・入らない (`src/shim/role-instructions.test.ts`)
+- [x] 言語を 1 つの設定 (例 `language: "ja"`) で持ち、shim が role の説明に「人宛ての本文はその言語で書き、返事の型の見出しは変えない」の行を差し込む。設定がなければ差し込まない
+- [x] 設定の置き場 (`roles.json` か環境変数か) と理由を design.md §3.5 に書き、README に使い方を書く
+- [x] 試験: 設定あり・なしで instructions に行が入る・入らない (`src/shim/role-instructions.test.ts`)
 - [ ] 英語の role の説明と `ja` の設定でチームを 1 度起動し、leader から人への返事が見出しは英語・本文は日本語になることを確かめて記録する
-- [ ] `npm test` が通る
+- [x] `npm test` が通る
+
+2026-10-29: 設定は Hub の `HUB_LANGUAGE` (BCP 47 のタグ) にし、attach の応答の `language` で shim に渡す。shim は role の説明の後に「人宛ての本文は Japanese (ja) で書き、返事の型の見出しは訳さない」の 1 行を英語で差し込む。理由は design.md §3.5。読めない値 (`japanese`・`zz`) では Hub が起動しないこと、`JA` が `ja` になり attach の応答に載ることを、別のポートの Hub で確かめた。試験は `src/shared/language.test.ts` と `src/shim/role-instructions.test.ts` (設定あり・なし、Hub から取れないとき)、`npm test` 349 件が通る。
+
+残る実機の確認 (4 つ目) は英語の role の説明が要るが、それを作るのは C65 で、C65 はこの項目を待っている。
 

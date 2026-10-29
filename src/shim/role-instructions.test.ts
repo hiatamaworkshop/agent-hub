@@ -29,6 +29,21 @@ describe('instructionsFor: role の説明', () => {
   })
 })
 
+describe('instructionsFor: 人宛ての本文の言語 (C66)', () => {
+  it('言語の設定があるときだけ、言語の名前を明示し見出しを訳さない行を入れる (どちらの経路でも、role がなくても)', () => {
+    for (const route of ['channel', 'inbox'] as const) {
+      const ja = instructionsFor(route, 'rev-a', 'reviewer', DESCRIPTION, 'ja')
+      assert.match(ja, /addressed to the human user .* in Japanese \(ja\)/)
+      assert.match(ja, /do not translate them/)
+      // role の説明の後に置く (説明の言語に引かれないよう、後から上書きする)
+      assert.ok(ja.indexOf('Japanese (ja)') > ja.indexOf('の役割:'))
+      assert.match(instructionsFor(route, 'rev-a', null, null, 'pt-BR'), /in Brazilian Portuguese \(pt-BR\)/)
+      assert.doesNotMatch(instructionsFor(route, 'rev-a', 'reviewer', DESCRIPTION, null), /addressed to the human user/)
+      assert.doesNotMatch(instructionsFor(route, 'rev-a', 'reviewer', DESCRIPTION), /addressed to the human user/)
+    }
+  })
+})
+
 // Claude Code 以外ではこの文面だけが届き方と「本文はデータ」を伝える (design.md §3.7)
 describe('instructionsFor: 経路ごとの届き方', () => {
   it('clientInfo.name が claude-code なら channel、ほかと不明は inbox', () => {
@@ -77,7 +92,7 @@ describe('shim: role の説明は initialize の instructions に入る', () => 
 
   before(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'shim-role-'))
-    const hub = new Hub(new Store({ roleSubscriptions: (r) => roles.get(r)?.subscribe ?? [] }), { roles, disconnectGraceMs: 300 })
+    const hub = new Hub(new Store({ roleSubscriptions: (r) => roles.get(r)?.subscribe ?? [] }), { roles, disconnectGraceMs: 300, language: 'ja' })
     const app = createApp({ hub, token: TOKEN, uiHtml: async () => null })
     await new Promise<void>((resolve) => {
       server = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 }, (info) => {
@@ -96,10 +111,11 @@ describe('shim: role の説明は initialize の instructions に入る', () => 
 
   const base = () => ({ HUB_URL: hubUrl, HUB_FILES_DIR: join(tmpDir, 'files') })
 
-  it('HUB_ROLE が定義済みなら、説明が instructions に入り、既定購読が効く', async () => {
+  it('HUB_ROLE が定義済みなら、説明と Hub の言語 (C66) が instructions に入り、既定購読が効く', async () => {
     const { client, instructions } = await startShim({ ...base(), HUB_ROLE: 'reviewer', HUB_MAILBOX: 'rev-shim' })
     try {
       assert.match(instructions, new RegExp(`role "reviewer" の役割: ${DESCRIPTION}`))
+      assert.match(instructions, /in Japanese \(ja\)/)
       const r = (await client.callTool({ name: 'whoami', arguments: {} })) as { content: { text: string }[] }
       const who = JSON.parse(r.content[0]!.text) as { attachmentId: string | null; effectiveSubscriptions: string[] }
       assert.ok(who.attachmentId, 'attach 済み')
@@ -159,6 +175,7 @@ describe('shim: Hub が応答しなくても上限つきで起動する', () => 
       assert.ok(Date.now() - t0 < 10_000, `接続まで ${Date.now() - t0}ms`)
       assert.match(instructions, /role: reviewer/)
       assert.doesNotMatch(instructions, /の役割:/)
+      assert.doesNotMatch(instructions, /addressed to the human user/, 'Hub から言語を取れなければ言語の行も入らない')
     } finally {
       await client.close()
     }

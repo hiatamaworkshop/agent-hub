@@ -232,6 +232,7 @@
   "attachmentId": "at_01H…",
   "role": "reviewer | null",
   "roleDescription": "… | null",   // shim が instructions に差し込む
+  "language": "ja | null",          // 人宛ての本文の言語 (HUB_LANGUAGE)。shim が instructions に差し込む
   "cursor": 41,             // stream の after に渡す値。shim は保存しない
   "truncated": false,       // maxAgeMs / maxUnread で未読を切り捨てたら true
   "skipped": 0,             // 切り捨てた件数
@@ -251,6 +252,7 @@
   `terminated` を受け取った後は attach し直さない (取り返しの応酬を避ける)。
 - **role の検証**: `roles.json` があるとき、定義にない role は 400 `unknown_role` で拒み、Mailbox も作らない。`role` を省いた (undefined) ときと `null` は通す (`null` は role を外す)。`roles.json` がないときは role 名を照合せず受け付ける (P0 と同じ)。
 - **`roleDescription`**: 持っている role の `description`。定義がない・role がない・`roles.json` がないときは `null`。
+- **`language`**: Hub の `HUB_LANGUAGE` を正規化した言語タグ (例 `ja`・`pt-BR`)。未設定なら `null`。shim はこれがあれば、人宛ての本文をその言語で書き、返事の型の見出しは訳さない旨の 1 行を instructions に足す (design.md §3.5)。前の Hub は返さないので、shim は欠けていれば `null` と同じに扱う。
 
 #### stream
 

@@ -10,6 +10,7 @@ import { IndexStore } from './indexes.js'
 import { loadRoles, RolesError, type Roles } from './roles.js'
 import { SettingsStore } from './settings.js'
 import { Store } from './store.js'
+import { normalizeLanguage } from '../shared/language.js'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
@@ -58,6 +59,15 @@ if (!Number.isFinite(readRetentionHours) || readRetentionHours < 0) {
   process.exit(1)
 }
 
+// 人宛ての本文の言語 (BCP 47 のタグ、例 ja)。未設定なら shim は言語の行を差し込まない (design.md §3.5、C66)
+const languageRaw = process.env.HUB_LANGUAGE?.trim() || null
+const language = languageRaw === null ? null : normalizeLanguage(languageRaw)
+if (languageRaw !== null && language === null) {
+  console.error(`HUB_LANGUAGE=${languageRaw} は言語タグとして読めない。ja・en・pt-BR のような BCP 47 のタグで設定してください (未設定なら言語の指定なし)`)
+  process.exit(1)
+}
+if (language) console.log(`[hub] language: ${language}`)
+
 // role 定義。読めない・形が違うなら黙って既定に戻さず、ファイル名と理由を出して止まる (ファイルがなければ P0 と同じ)
 const rolesFile = resolve(process.env.HUB_ROLES_FILE ?? join(ROOT, 'roles.json'))
 let roles: Roles | null
@@ -82,6 +92,7 @@ const hub = new Hub(store, {
   unreadMaxAgeMs: Math.round(unreadMaxAgeDays * 24 * 60 * 60_000),
   unreadMax,
   readRetentionMs: Math.round(readRetentionHours * 60 * 60_000),
+  language,
 })
 const app = createApp({
   hub,

@@ -17,6 +17,8 @@ export interface AttachInfo {
   attachmentId: string
   role: string | null
   roleDescription: string | null
+  // 人宛ての本文の言語 (HUB_LANGUAGE)。前の Hub は返さない (undefined)
+  language?: string | null
   cursor: number
   truncated: boolean
   skipped: number

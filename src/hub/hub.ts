@@ -75,6 +75,8 @@ export interface AttachResult {
   attachmentId: string
   role: string | null
   roleDescription: string | null
+  // 人宛ての本文の言語 (HUB_LANGUAGE。C66)。未設定なら null
+  language: string | null
   cursor: number
   truncated: boolean
   skipped: number
@@ -95,6 +97,8 @@ export interface HubOptions {
   unreadMax?: number
   // 渡し終えた Message と Event の保存期間。0 なら自動では消さない (design.md §3.14)
   readRetentionMs?: number
+  // 人宛ての本文の言語 (正規化した BCP 47 のタグ)。attach の応答で shim に渡す (design.md §3.5、C66)
+  language?: string | null
 }
 
 // 消した件数 (POST /messages/purge の応答と掃除のログ)
@@ -134,6 +138,7 @@ export class Hub {
   private readonly unreadMaxAgeMs: number
   private readonly unreadMax: number
   private readonly readRetentionMs: number
+  private readonly language: string | null
 
   constructor(
     readonly store: Store,
@@ -146,6 +151,7 @@ export class Hub {
     this.unreadMaxAgeMs = opts.unreadMaxAgeMs ?? DEFAULT_UNREAD_MAX_AGE_MS
     this.unreadMax = opts.unreadMax ?? DEFAULT_UNREAD_MAX
     this.readRetentionMs = opts.readRetentionMs ?? DEFAULT_READ_RETENTION_MS
+    this.language = opts.language ?? null
   }
 
   // GET /roles 向け。roles.json がなければ null (role 名を検証しないので、候補も出せない)
@@ -380,6 +386,7 @@ export class Hub {
       attachmentId: at.attachmentId,
       role: mailbox.role,
       roleDescription: (mailbox.role && this.roles?.get(mailbox.role)?.description) || null,
+      language: this.language,
       // 省いた分だけ進んでいる (store の Mailbox は書き込みのたびに差し替わる)
       cursor: this.mustMailbox(name).cursor,
       truncated: skipped > 0,

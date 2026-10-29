@@ -55,7 +55,7 @@ server.setRequestHandler(InitializeRequestSchema, (req) => {
     protocolVersion: SUPPORTED_PROTOCOL_VERSIONS.includes(requested) ? requested : LATEST_PROTOCOL_VERSION,
     capabilities: CAPABILITIES,
     serverInfo: SERVER_INFO,
-    instructions: instructionsFor(route, cfg.mailbox, cfg.role, primed?.roleDescription ?? null),
+    instructions: instructionsFor(route, cfg.mailbox, cfg.role, primed?.roleDescription ?? null, primed?.language ?? null),
   }
 })
 
