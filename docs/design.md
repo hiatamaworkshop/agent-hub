@@ -100,7 +100,7 @@ The SEP puts the source of truth for subscription state on the client side, but 
 
 **hooks (detection side)**
 - Claude Code's **HTTP hook** (`type: "http"`) sends the hook's input JSON directly to the Hub's `POST /events/claude-code`. No script is written (§6.1). An example configuration is `tools/hooks/settings.json`.
-  Passing it with `--settings` misbehaves (§6.1f), so copy it into `.claude/settings.local.json` or the like. `Authorization` is expanded from the environment variable `HUB_TOKEN`, so Claude Code's environment needs it (`start-agent.ps1` passes it from `.env`).
+  Passing it with `--settings` misbehaves (§6.1f), so copy it into `.claude/settings.local.json` or the like. `Authorization` is expanded from the environment variable `HUB_TOKEN`, so Claude Code's environment needs it (`npm run team` passes it from `.env`).
 - Responsible for mechanical detection (3.4 below).
 
 **Browser UI**
@@ -304,6 +304,12 @@ The biggest unverified point is **whether agents other than Claude can call `inb
   - `roles.json` is read by mounting the repository root at `/host` read-only. With a bind mount of a single file (`configs` too), if the file does not exist Docker Desktop creates an empty directory on the host, which breaks even the direct start (§6.1l). Without the file it runs without roles, the same as the direct start.
   - Data is a named volume. It is not shared with the repository's `data/` (state does not carry over when switching with the direct start).
   - `init: true` delivers SIGTERM to Node so stopping does not hang. The healthcheck calls `GET /mailboxes` with the token.
+- Starting a team (C62, 2026-10-29): `npm run team` (`src/team/`, run with tsx) starts the Hub if it is stopped and then each role in a tab of its own, one at a time, waiting for each to attach. `npm run team -- agent --role <r>` starts one role in the current terminal; it is also what each role's tab runs. `tools/dev/start-team.ps1` / `start-agent.ps1` are thin wrappers that keep the earlier PowerShell parameters.
+  - **Why Node**: the checks (claude runs, hook settings, stale checkout), the Mailbox name, waiting for attach and the summary are the same on every OS, and Node is already required. Written once in TypeScript they can reuse `src/shared/types.ts` (the Mailbox name rule the shim uses) and be unit tested; a PowerShell copy and a sh copy would drift apart. tsx instead of `dist/` so the starter works before the first build (it builds `dist/` for the shim itself).
+  - **Only opening a tab differs per OS** (`src/team/tabs.ts`): inside tmux, a new tmux window (any OS); Windows Terminal tabs (`wt.exe`), else a console window via `cmd /c start`; macOS Terminal.app via `osascript`; on Linux outside tmux, a detached tmux session `agent-hub`. GNOME Terminal, Konsole and the like are not opened: each has its own flags, and none is present everywhere.
+  - **When no tab can be opened** (`print`, also `--tabs print`): each role's command (`npm run team -- agent …`) is printed in order and the script waits for each attach as usual. The human opens the terminals; nothing else changes, so a missing terminal never blocks starting.
+  - A tab runs `node` directly, not through a shell, so it would close as soon as `claude` ends. When `claude` (or the Hub) ends with an error, the tab waits for Enter so the reason can be read.
+  - On Windows `claude.exe` is preferred to `claude.cmd`; a `.cmd` can only be started through `cmd.exe`, with the line quoted by the starter.
 
 ### 3.9 Delivery adapters (wake / hand over the content)
 
@@ -339,7 +345,7 @@ Deliver screenshots pasted in the browser to agents. Images are stored separatel
   - Delivery becomes the `meta` attribute's JSON with `path` added. If fetching fails, `error` is added instead of `path` (`expired` for 404, `fetch_failed` otherwise). The message is not dropped.
   - Fetching times out after 15 seconds, and over 25MB is a failure. The Hub's values are not rewritten; the fields are added to the copy for delivery.
   - When the shim starts, images older than 24 hours are deleted from the location (only at startup; not at exit).
-  - The location is outside the working folder, so `Read` needs permission. `tools/dev/start-agent.ps1` allows the location with `--add-dir`.
+  - The location is outside the working folder, so `Read` needs permission. `npm run team` (`src/team/agent.ts`) allows the location with `--add-dir`.
   - The shim does not import the Hub's `files.ts`, to keep `sharp` out of the shim.
 
 ### 3.11 The request ledger and checkpoints (concept, not implemented)
@@ -700,6 +706,7 @@ In messages, **strings from other agents or the browser become an agent's input*
 | **Not SQLite (reviewed 2026-10-18).** Keep the JSONL append log + everything in memory | Measured with synthetic data (1KB per message, 4 Mailboxes): even at 40,000 messages (48MB), loading took 170ms, the heap grew by 55MB, and computing unread took 4ms. What has been handed over disappears after 24 hours and is compacted, so for the volume a human reads and carries (a few hundred a day) there is orders of magnitude of room. The only bottleneck was deletion: it scanned everything one message at a time and appended synchronously, so cleaning up 20,000 took 29 seconds, during which the Hub stopped. Changed to delete in a batch, it takes 0.4 seconds. There is no reason now to justify SQLite (a native dependency, Docker builds, migration). Revisit if full-text search, or looking up history beyond the retention period, becomes necessary (the Hub's policy is to hold no knowledge, so that is unlikely; §3.14) |
 | Delivery is split into "wake" and "hand over the content", and the content can always be fetched with `inbox()` | The means of waking (Channels, cross-session messaging, MCP Events, standard notifications) grow and change, but with a single path for handing over the content, the Hub need not change. The path external bodies go through is single too (§3.9) |
 | The Hub's vocabulary is vendor-neutral, and client-specific differences are absorbed by the shim and the `/events` intake | Only Claude Code is used for now, but other companies' agents should be able to join the same Hub later. If Claude-specific formats leaked into the Hub's storage format or API, they could not be removed later (§3.7) |
+| Starting a team is one Node script; only opening tabs differs per OS (C62) | The checks and the attach wait are the same everywhere and reuse the shim's Mailbox name rule; separate PowerShell and sh scripts would drift. Where no tab can be opened, printing the commands keeps starting possible (§3.8) |
 | sharp for image processing | The Hub must guarantee normalization on every upload path (UI, curl, future agents). Shrinking with a canvas in the browser protects only the UI path. There are prebuilt binaries for Windows / Linux, avoiding native builds. On failure, do not silently switch to another library; ask for a decision (§3.10) |
 
 ## 6. Unverified items (always verify before implementing)
@@ -956,6 +963,22 @@ Requested vcp's C142 from the UI to vcp.leader (seq 69). leader → deployer (#7
 - **leader → user** (#280): the headings `RESULT` / `VERIFIED` / `NOT VERIFIED` / `NEEDS DECISION` / `NEEDS ACTION` in English, at the start of lines as written, with every body in Japanese. "None" was written as `なし` (Japanese). The deployer's checks were prefixed with `deployer:` as leader.md asks.
 - About 3 minutes from the request to the reply to the human. One observation, so it cannot be said the body never drifts into English; it held in the case most likely to drift (an English request, English roles, English exchanges between agents).
 
+### 6.1x Starting a team with `npm run team` (2026-10-29, C62)
+
+- **Linux** (Docker `node:24-bookworm-slim`, Node 24, Debian's tmux, the repository copied in and `npm ci`; `claude` replaced by a stub that answers `--version` and otherwise runs the shim from `--mcp-config`, so the Mailbox really attaches to a Hub in the same container):
+  1. Outside tmux, `--roles leader,deployer` chose `tmux`: it built `dist/`, started the Hub in window `hub` of the detached session `agent-hub`, then `app.leader` and `app.deployer` in their own windows, each reported `attached`, and the UI URL was printed. The stub saw the expected arguments (`--append-system-prompt-file …/leader.md`, `--model haiku` only for the deployer, `--add-dir /tmp/agent-hub` last) and `HUB_ROLE` / `HUB_MAILBOX` / `HUB_TOKEN`, with the project as its folder.
+  2. Run again: the connected `app.leader` was skipped.
+  3. With tmux hidden from PATH it fell back to `print`, printed `cd /app && npm run team -- agent --role reviewer --project /app --from-team`, and running that by hand attached within the wait.
+  4. A `claude` that exits 3 at once: reported `ended before attaching (exit code 3, 0 seconds)` without waiting for the limit, exit code 1.
+  5. No `claude` on PATH: stopped before starting any role (`spawnSync claude ENOENT`).
+  - `git fetch` failed in the container (no credentials) and was reported as a note without stopping, as in C58.
+  - **Not checked on Linux**: a real `claude` session (the container has no logged-in Claude Code), the development channel's dialog inside a tmux window.
+- **Windows** (Windows 11, PowerShell 7, Windows Terminal, Node 26, Claude Code 2.1.312, the compose Hub; a real `claude` reached through nvm's `claude.exe` → `claude.cmd`): `./tools/dev/start-team.ps1 -Roles reviewer` built `dist/`, opened a tab `agent-hub.reviewer`, and after the development channel's dialog was answered it reported `attached`, then the UI URL, exit code 0.
+  - The first try opened no visible tab: the opener was started with Node's `windowsHide: true`, `wt.exe` passed the hidden flag on, and the role ran in an invisible console under `wt.exe` (no attach, since nobody could answer the dialog). Fixed by not hiding the opener; noted here because it fails silently.
+  - The console-window opener (`window`, used when there is no `wt.exe`) ran a command with spaces in its paths (`…\Author Software\…
+ode.exe`, an output file `window out.txt`) in a new window, in the given folder.
+  - `npm run team -- --tabs bogus` from PowerShell 7 reached the script (npm's `--` is passed through).
+
 ### 6.2 Unverified
 
 1. **Windows-specific**: path notation, line endings. That publishing in Docker Desktop is loopback only was confirmed (§6.1l).
@@ -971,6 +994,8 @@ Requested vcp's C142 from the UI to vcp.leader (seq 69). leader → deployer (#7
 
 6. **Whether `StopFailure` fires while waiting for automatic resume after a usage limit**: it was not registered in §6.1q. It was registered in `tools/hooks/settings.json` in C38 (2026-10-26). The next time the limit is hit, record whether an Event (`error: "rate_limit"` and the like) arrives, and the interval until `quota_auto_resume_fired`.
 7. **Whether `/clear` changes the hook's `session_id`**: the shim keeps declaring the `CLAUDE_CODE_SESSION_ID` from its start at attach (§6.1c). If `/clear` changes only the hook's `session_id`, the Event's session and the Attachment's session drift apart. The UI excludes from the human's move only "questions and permission waits issued by another session before the current connection" (C41), so questions after `/clear` are counted. Check with the hook input before and after `/clear` whether it changes, and whether it affects resolving the Event's Mailbox (the first means of §3.4).
+
+8. **Starting a team on macOS (C62)**: the Terminal.app opener (`osascript … do script`) is covered only by a unit test of the command it builds; it has not been run on a Mac. Nor has a real `claude` session on Linux been started by `npm run team` (§6.1x used a stub). Check: on a Mac, `npm run team -- --roles leader,deployer`, and see that a window per role opens in the project folder and attaches.
 
 ## 7. Relation to MCP Events (SEP-3415)
 

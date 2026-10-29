@@ -16,7 +16,8 @@
     "probe": "node tools/probe/probe.mjs",
     "docs:check": "node --import tsx src/docs-check/main.ts",
     "docs:index": "node --import tsx src/docs-check/push-index.ts",
-    "ui:check": "node tools/dev/ui-check.mjs"
+    "ui:check": "node tools/dev/ui-check.mjs",
+    "team": "node --import tsx src/team/main.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",

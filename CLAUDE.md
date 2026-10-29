@@ -66,7 +66,7 @@ Sessions in this repository are responsible for the delivery layer (Hub, shim, h
 Doing so would mean judging without that project's CLAUDE.md, conventions and records, and the knowledge gained would pile up here instead (2026-10-26, a lesson from doing vcp's review and filing here).
 
 - Look only at the Hub's API (Messages, Events, Mailboxes) and what it shows about delivery. Improvements to the Hub you find go into this repository's roadmap.
-- The other project's planning (the order of items), reviews, filing, commits and pushes are requested of that project's leader. Reviews go to the other team's reviewer (`start-team.ps1 -Roles leader,deployer,reviewer -Project <folder>`). Do not read the other repository's code and judge it here.
+- The other project's planning (the order of items), reviews, filing, commits and pushes are requested of that project's leader. Reviews go to the other team's reviewer (`npm run team -- --roles leader,deployer,reviewer --project <folder>`). Do not read the other repository's code and judge it here.
 - Relaying the human's words to the other leader is fine. Send only when the human says to send.
 - When the human's request crosses this line, point it out before acting and show how to route it to the other leader / reviewer. Act only if the human asks again knowing that.
 

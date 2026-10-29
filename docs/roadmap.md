@@ -536,9 +536,11 @@ What the current startup scripts provide: checking that the role is in `roles.js
 
 An idea (to decide at implementation, with the reasons written in design.md): move starting to a Node script (`npm run team -- …`) so the OS differences are in one place. The means of opening tabs differ per OS (Windows Terminal, tmux, macOS Terminal and so on), so when tabs cannot be opened, fall back to printing each role's start command for the human to open by hand.
 
+Progress (2026-10-29): `npm run team` (`src/team/`) replaces the PowerShell scripts, which remain as wrappers; how and why are in design.md §3.8 and §5. Linux was checked in a container with a stub `claude` that runs the shim, Windows with a real `claude` (design.md §6.1x). Not checked: macOS, and a real `claude` session on Linux (design.md §6.2-8).
+
 #### Done when
 - [ ] A team can be started on macOS and Linux, including the checks, warnings, waiting for attach and the UI URL above. Windows can do the same as now
-- [ ] The way of starting (the script's language, how tabs are opened and the fallback when they cannot be) and the reasons are written in design.md
+- [x] The way of starting (the script's language, how tabs are opened and the fallback when they cannot be) and the reasons are written in design.md
 - [ ] Actually start it on Linux (WSL or a container) and Windows to check, and record it in design.md §6. If macOS cannot be checked, write that it is unverified
-- [ ] Fix the README's startup steps per OS
-- [ ] `npm test` passes
+- [x] Fix the README's startup steps per OS
+- [x] `npm test` passes

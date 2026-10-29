@@ -35,9 +35,9 @@ Prerequisites: Node.js 24 or later, and the `claude` CLI working in a terminal (
 
 ### 1. Setup
 
-```powershell
+```sh
 npm install
-Copy-Item .env.example .env   # set HUB_TOKEN to a random value of 16+ characters (.env.example shows how to generate one)
+cp .env.example .env          # PowerShell: Copy-Item .env.example .env. Set HUB_TOKEN to a random value of 16+ characters (.env.example shows how to generate one)
 npm run build                 # build the shim into dist/
 ```
 
@@ -48,7 +48,7 @@ npm run hub
 ```
 
 It prints `[hub] UI: http://127.0.0.1:7777/?token=…`; open that URL in the browser.
-The token is moved into a cookie and removed from the URL. When started with `start-team.ps1`, the same URL is also printed on the last line (whether the Hub was already running or runs in compose; see "Try a round trip between roles with two agents" below). Data is appended to `data/hub.jsonl` (messages that have been handed over are deleted after 24 hours; see "Message retention and deletion" below).
+The token is moved into a cookie and removed from the URL. When started with `npm run team`, the same URL is also printed on the last line (whether the Hub was already running or runs in compose; see "Try a round trip between roles with two agents" below). Data is appended to `data/hub.jsonl` (messages that have been handed over are deleted after 24 hours; see "Message retention and deletion" below).
 
 #### Run it resident in Docker (instead of starting it directly)
 
@@ -128,7 +128,7 @@ The shim saves arriving images in `agent-hub/<Mailbox name>/` under the OS's tem
 
 - The location can be changed with `HUB_FILES_DIR` (a folder per Mailbox name is made under it).
 - At startup, images older than 24 hours are deleted.
-- The location is outside the working folder, so `Read` may ask for permission. `tools/dev/start-agent.ps1` allows it at startup with `--add-dir` (the `HUB_FILES_DIR` folder if set). If you start `claude` by hand, add `claude --add-dir "<location>"`.
+- The location is outside the working folder, so `Read` may ask for permission. `npm run team` (and `npm run team -- agent`) allows it at startup with `--add-dir` (the `HUB_FILES_DIR` folder if set). If you start `claude` by hand, add `claude --add-dir "<location>"`.
 
 ### Show question waits, permission waits and turn ends in the browser (hooks)
 
@@ -137,7 +137,7 @@ Claude Code's HTTP hooks send `AskUserQuestion`, permission waits and turn ends 
 1. Copy the `hooks` of [tools/hooks/settings.json](tools/hooks/settings.json) into this repository's `.claude/settings.local.json` (not committed).
    To use them in other repositories too, copy them into `~/.claude/settings.json`. If you changed the port, change `7777` in `url` too.
    Passing them with `--settings` misbehaved in 2.1.301 (design.md §6.1f), so do not.
-2. The hook's `Authorization` is built from the environment variable `HUB_TOKEN`. `tools/dev/start-agent.ps1` passes the value from `.env`, so nothing is needed. If you start `claude` by hand, set `$env:HUB_TOKEN` first.
+2. The hook's `Authorization` is built from the environment variable `HUB_TOKEN`. `npm run team` passes the value from `.env`, so nothing is needed. If you start `claude` by hand, set `HUB_TOKEN` in its environment first (PowerShell: `$env:HUB_TOKEN = …`; sh: `export HUB_TOKEN=…`).
    In that case the token is visible from the session's Bash and so on too. Treat it like `.env`.
    `PostToolUse` / `PostToolUseFailure` are sent for every tool, to learn that a permission wait was cleared (the Hub records only the one right after a permission wait and discards the rest; a few ms each; design.md §6.1s). If you copied the older settings (`matcher: AskUserQuestion`), remove the `matcher` and add `PostToolUseFailure`. Also add `PostModelSwitch` (to show the last model and effort seen on the card; C61).
    `SessionStart` works **only as a command hook** (per the official hooks docs; with an HTTP hook no Event arrived; design.md §6.1v). Copy it in the shape of `tools/hooks/settings.json`: `"command": "node", "args": ["${CLAUDE_PROJECT_DIR}/tools/hooks/post-event.mjs", "--no-git"]`. Keep `--no-git` (a fast path that does not call git and sends the input as is; C61). `${CLAUDE_PROJECT_DIR}/tools/hooks/post-event.mjs` points at this repository's script. When copying it to another project's team, point the path at this repository's script (the same constraint as Stop in `settings.command.json`; design.md §3.11).
@@ -197,33 +197,45 @@ The Hub is infrastructure for connecting, and does not keep messages for long. W
 ### Try a round trip between roles with two agents (leader / deployer)
 
 A test that passes a request and report around by role address in the order user → leader → deployer → leader → user.
-For the role's description, the `description` in `roles.json` goes into the shim's instructions ("Role definitions (roles.json)" below). For leader / deployer / reviewer, detailed operating instructions (message headings and so on) live in [tools/dev/roles/](tools/dev/roles/), and `start-agent.ps1` adds them to the system prompt too. A role that is in `roles.json` but not in roles/ works from its description alone.
+For the role's description, the `description` in `roles.json` goes into the shim's instructions ("Role definitions (roles.json)" below). For leader / deployer / reviewer, detailed operating instructions (message headings and so on) live in [tools/dev/roles/](tools/dev/roles/), and `npm run team` adds them to the system prompt too. A role that is in `roles.json` but not in roles/ works from its description alone.
 
-```powershell
-npm run hub                                   # terminal A
-./tools/dev/start-agent.ps1 -Role leader      # terminal B (Mailbox = agent-hub.leader, the default model)
-./tools/dev/start-agent.ps1 -Role deployer    # terminal C (Mailbox = agent-hub.deployer, haiku)
+Start a team with `npm run team` (the same on Windows, macOS and Linux). It starts the Hub if it is stopped, then starts the chosen roles one by one, each in a tab of its own.
+
+```sh
+npm run team                                      # choose roles from roles.json by number (e.g. 1,2; all for every role)
+npm run team -- --roles leader,deployer           # name them instead of choosing
+npm run team -- agent --role deployer             # one role in this terminal (Mailbox = agent-hub.deployer, haiku)
 ```
 
-To start them together, use `start-team.ps1`. It starts the Hub if it is stopped, then starts the chosen roles one by one in Windows Terminal tabs (separate windows if there is no wt).
+How tabs are opened depends on the OS (`--tabs` overrides it):
+
+| Where | Tabs open in | Notes |
+|---|---|---|
+| Inside tmux (any OS) | new windows of the current tmux session (`tmux`) | |
+| Windows | Windows Terminal tabs (`wt`); separate console windows if there is no `wt.exe` (`window`) | |
+| macOS | Terminal.app windows (`terminal`) | Not yet checked on a real Mac (design.md §6.2) |
+| Linux, outside tmux | a detached tmux session `agent-hub` (`tmux`) | Watch it with `tmux attach -t agent-hub` from another terminal |
+| None of the above | nothing is opened (`print`) | Each role's command is printed in order; run each in a terminal of your own while the script waits |
+
+On Windows, the PowerShell scripts keep working with the same parameters as before; they are wrappers around `npm run team`:
 
 ```powershell
-./tools/dev/start-team.ps1                          # choose roles from roles.json by number (e.g. 1,2; all for every role)
-./tools/dev/start-team.ps1 -Roles leader,deployer   # name them instead of choosing
+./tools/dev/start-team.ps1 -Roles leader,deployer   # = npm run team -- --roles leader,deployer
+./tools/dev/start-agent.ps1 -Role leader            # = npm run team -- agent --role leader
 ```
 
-- Both scripts take `-Project <folder>` to choose the project to work in (agent-hub if omitted). See "Using it in other repositories" below.
-- After starting each one, it waits until that role's Mailbox attaches to the Hub before going on (limit `-AttachTimeout`, default 60 seconds). Answer the development channel's warning dialog in each tab as it opens.
-- Connected roles are skipped (restarting would cut off the current session by takeover). To restart, use `-Force`.
+- Both take `--project <folder>` (`-Project`) to choose the project to work in (agent-hub if omitted; a relative path is from the folder you typed the command in). See "Using it in other repositories" below.
+- After starting each one, it waits until that role's Mailbox attaches to the Hub before going on (limit `--attach-timeout`, default 60 seconds). Answer the development channel's warning dialog in each tab as it opens (with a detached tmux session, attach to it first).
+- Connected roles are skipped (restarting would cut off the current session by takeover). To restart, use `--force`.
   It remembers the `attachmentId` of the Attachment before starting, and says "attached" only once an Attachment with a different id appears. Even if the previous session's Attachment lingers until its lease expires, that is not read as success. If none appears within the limit, it warns of a failure and finally exits with code 1 (roadmap C33).
-- Roles not in `roles.json` are stopped before starting. If `dist/` is older than `src/`, it builds first (skip with `-NoBuild`).
-- Before starting, it checks the following (roadmap C56-C58; the contents are in `tools/dev/team-checks.ps1`).
-  - If `claude --version` does not pass (NVM blocking it with NVM4306, an exe being replaced by a self-update and so on), it prints the head of the output and ends without starting any role.
-  - If the hook settings are missing, it warns and adds the command to put them back (a one-liner to copy them if there is no `.claude/settings.local.json`; if there is one, it does not overwrite it and tells you to add them by hand).
+- Roles not in `roles.json` are stopped before starting. If `dist/` is older than `src/`, it builds first (skip with `--no-build`).
+- Before starting, it checks the following (roadmap C56-C58; the contents are in `src/team/checks.ts`).
+  - If `claude --version` does not pass (NVM blocking it with NVM4306, an exe being replaced by a self-update and so on), it prints the head of the output and ends without starting any role (it prefers `claude.exe` to `claude.cmd` on Windows).
+  - If the hook settings are missing, it warns and adds the command to put them back (a one-liner to copy them, for PowerShell on Windows and sh elsewhere, if there is no `.claude/settings.local.json`; if there is one, it does not overwrite it and tells you to add them by hand).
   - In the `-Project` folder it runs `git fetch` (without prompting for credentials, up to 15 seconds), then warns if the HEAD is detached, behind its upstream, or has no upstream. It does not stop. This keeps the team from running on an old version of a submodule.
-- If a tab's `claude` ends before attaching, it fails without waiting for the limit and prints the exit code and the reason (the output of `claude --version`). `start-agent.ps1` writes the ending to `agent-hub-start/<Mailbox>.json` under the OS's temporary folder, and the script reads it.
-- At the end, the warnings and failures above are gathered under `--- まとめ ---` ("summary") and `UI: http://127.0.0.1:<port>/?token=…` is printed. If the token does not match the Hub, it says so instead of the URL.
-- The attach check uses `HUB_TOKEN` from `.env`. Tabs open in the same shell that started the script (`pwsh` / `powershell`).
+- If a tab's `claude` ends before attaching, it fails without waiting for the limit and prints the exit code and the reason (the output of `claude --version`). The role's `agent` writes the ending to `agent-hub-start/<Mailbox>.json` under the OS's temporary folder, and `team` reads it. A tab whose `claude` failed stays open until you press Enter, so the reason can be read.
+- At the end, the warnings and failures above are gathered under `--- summary ---` and `UI: http://127.0.0.1:<port>/?token=…` is printed. If the token does not match the Hub, it says so instead of the URL.
+- The attach check uses `HUB_TOKEN` from `.env` (an environment variable wins).
 
 1. Confirm that `agent-hub.leader` and `agent-hub.deployer` show as connected, with their roles, on the left of the browser.
 2. From the browser, send a `request` to `role:leader`. The body is a work request (e.g. "create `tmp/hello.txt`").
@@ -235,8 +247,8 @@ To start them together, use `start-team.ps1`. It starts the Hub if it is stopped
 - The instruction to keep the leader's terminal answers short is in the role description too. The output style (`/output-style concise`) is saved in `.claude/settings.local.json` and affects every session in the same folder, so it is not used. Passing it with `--settings` at startup misbehaved in 2.1.301 (design.md §6.1f).
 - The two sessions work in the same folder, so the deployer's changes are visible to the leader with `git diff`.
 - Approve the deployer's file edits in terminal C.
-- The permission mode is passed as `claude --permission-mode <value>` only when you add `-PermissionMode <value>`. If omitted nothing is passed and Claude Code starts with its default. If your account makes auto the default, permission waits hardly appear.
-  To try permission waits, add `-PermissionMode default` (e.g. `./tools/dev/start-agent.ps1 -Role deployer -PermissionMode default`; adding it to `start-team.ps1` passes it to every role). To change it by hand after starting, switch that tab to `manual` with Shift+Tab (the 2.1.306 switcher has no `default`; `manual` corresponds to it; the hook's `permission_mode` says `default`; design.md §6.1o, roadmap C29).
+- The permission mode is passed as `claude --permission-mode <value>` only when you add `--permission-mode <value>` (`-PermissionMode`). If omitted nothing is passed and Claude Code starts with its default. If your account makes auto the default, permission waits hardly appear.
+  To try permission waits, add `--permission-mode default` (e.g. `npm run team -- agent --role deployer --permission-mode default`; adding it to a team start passes it to every role). To change it by hand after starting, switch that tab to `manual` with Shift+Tab (the 2.1.306 switcher has no `default`; `manual` corresponds to it; the hook's `permission_mode` says `default`; design.md §6.1o, roadmap C29).
 
 ### Request work from roadmap items (Items)
 
@@ -300,13 +312,14 @@ HUB_LANGUAGE=ja
 
 Start agents **at that project's root**. The `CLAUDE.md` they read, the hooks, the scope of permissions and `git diff` are all decided by the folder they start in (design.md §3.3).
 
-```powershell
-./tools/dev/start-agent.ps1 -Role deployer -Project C:\work\cairn            # Mailbox = cairn.deployer
-./tools/dev/start-team.ps1 -Roles leader,deployer -Project C:\work\cairn     # cairn.leader and cairn.deployer
+```sh
+npm run team -- agent --role deployer --project ~/work/cairn          # Mailbox = cairn.deployer
+npm run team -- --roles leader,deployer --project ~/work/cairn       # cairn.leader and cairn.deployer
+./tools/dev/start-team.ps1 -Roles leader,deployer -Project C:\work\cairn   # the same on Windows PowerShell
 ```
 
-- The scripts move into the `-Project` folder before starting `claude`. The shim points at agent-hub's `dist/` by absolute path (the MCP configuration is written to `agent-hub-mcp.json` under the OS's temporary folder).
-- The default Mailbox name is `<folder name>.<role>`. A Mailbox name is unique across the Hub, so the same role in different projects gives different Mailboxes. Change it with `-Mailbox`.
+- `claude` is started in the `--project` folder. The shim points at agent-hub's `dist/` by absolute path (the MCP configuration is written to `agent-hub-mcp.json` under the OS's temporary folder).
+- The default Mailbox name is `<folder name>.<role>`. A Mailbox name is unique across the Hub, so the same role in different projects gives different Mailboxes. Change it with `--mailbox` (only for one role started with `agent`).
 - A `role:deployer` message sent by an agent reaches only the deployer of the sender's own project. To reach another project, address `mailbox:cairn.deployer`. From the browser, it reaches every project if the project selector above says `All projects`, or only the selected project if one is selected (design.md §9-7).
 - The target repository's `.claude/settings.local.json` has no hooks, so copy the `hooks` of `tools/hooks/settings.json` into `~/.claude/settings.json`. If they are nowhere, the script warns (it does not stop the start).
 - The browser's card shows `Project: <folder name>` (the full path appears on hover). Attaching to the same Mailbox from a different folder than last time shows the warning `Attached from a different folder (was …)` (it is not refused).
@@ -370,7 +383,7 @@ npm run ui:check  # checks the card states scene by scene with a Hub on another 
 | [docs/roadmap.md](docs/roadmap.md) | Phases and acceptance criteria (P0 → P2), open items (`C<n>`; the rules for writing them are at the top) |
 | [docs/plan-p0.md](docs/plan-p0.md) | P0's technology choices, layout and commit-sized steps |
 | [tools/probe/README.md](tools/probe/README.md) | Steps for checking unverified items (design.md §6.2) on a real machine |
-| [tools/dev/roles/](tools/dev/roles/) | Operating instructions for leader / deployer / reviewer (message formats). `start-agent.ps1` adds them to the system prompt |
+| [tools/dev/roles/](tools/dev/roles/) | Operating instructions for leader / deployer / reviewer (message formats). `npm run team` adds them to the system prompt |
 | [CLAUDE.md](CLAUDE.md) | Working rules for implementing agents |
 | [LICENSE](LICENSE) | MIT |
 
