@@ -527,11 +527,13 @@ GitHub で公開する (2026-10-29、ユーザーが決定。告知はしない)
 GitHub の private リポジトリを public にする (2026-10-29、ユーザーが決定。告知はしない)。public にする操作は人が行う。ライセンスは MIT (同日、ユーザーが決定)。
 
 #### 完了条件
-- [ ] `LICENSE` (MIT) を置き、`package.json` の `license` を `MIT` にする
-- [ ] git の履歴全体を走査し、トークン・`.env`・`data/`・`logs/` の中身が一度も入っていないことを確かめ、方法と結果を報告する。見つかったら止めて報告する
-- [ ] 文書とスクリプトから個人のパス (`C:/Users/<名前>/…` など) を除く (例 `docs/plan-p0.md`)
+- [x] `LICENSE` (MIT) を置き、`package.json` の `license` を `MIT` にする
+- [x] git の履歴全体を走査し、トークン・`.env`・`data/`・`logs/` の中身が一度も入っていないことを確かめ、方法と結果を報告する。見つかったら止めて報告する
+- [x] 文書とスクリプトから個人のパス (`C:/Users/<名前>/…` など) を除く (例 `docs/plan-p0.md`)
 - [ ] 文書に出てくるほかの私的なプロジェクト (vcp・cite-bridge など) の名前の箇所を一覧にして報告する。残すか直すかは人が決める
-- [ ] `npm test` と `npm run docs:check` が通る
+- [x] `npm test` と `npm run docs:check` が通る
+
+2026-10-29 の走査 (全 157 コミット、`git log --all`): 一度でも足されたファイルのうち `.env*`・`data/`・`logs/`・`roles.json`・`*.sqlite`・`*.log`・`*.jsonl` は `.env.example` だけ。今の `.env` の `HUB_TOKEN` の値は pickaxe (`-S`) と全リビジョンの `git grep` で 0 件。`token`/`Bearer`/`secret` に続く 16 文字以上の値と既知の鍵の形式 (`sk-ant-`・`ghp_`・`github_pat_`・`AKIA`・`tvly-`・`xox[bp]-`) を追加の行から探し、出たのは試験用の `test-token-0123456789` だけ。個人のパスは `docs/plan-p0.md` の 1 か所で、`<agent-hub の絶対パス>` に置き換えた (試験の `/home/x/…` などは架空)。
 
 ### C64. 台帳と返事の型を、英語の語彙でも読めるようにする
 

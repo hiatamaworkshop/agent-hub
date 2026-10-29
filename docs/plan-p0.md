@@ -37,7 +37,7 @@ tools/probe/   §6.2 の実機検証用プローブ (本実装ではない)
 // ~/.claude.json の mcpServers (P0 の確認は agent-hub 自身で行うので、最初はプロジェクトの .mcp.json でもよい)
 "agent-hub": {
   "command": "node",
-  "args": ["C:/Users/kazuh/Desktop/Various/programming/DockerFiles/agent-hub/dist/shim/main.js"]
+  "args": ["<agent-hub の絶対パス>/dist/shim/main.js"]
 }
 ```
 
