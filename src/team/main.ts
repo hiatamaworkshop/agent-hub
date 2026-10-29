@@ -33,7 +33,15 @@ async function runHub(): Promise<number> {
 }
 
 async function main(argv: string[]): Promise<number> {
-  const p = parse(argv)
+  let p: ReturnType<typeof parse>
+  try {
+    p = parse(argv)
+  } catch (e) {
+    // Only a mistake in the command line gets the usage text; other failures print just their message
+    console.error(e instanceof Error ? e.message : String(e))
+    console.error(USAGE)
+    return 1
+  }
   if (p.command === 'help') { console.log(USAGE); return 0 }
   if (p.command === 'hub') return runHub()
   if (p.command === 'agent') {
@@ -48,5 +56,5 @@ async function main(argv: string[]): Promise<number> {
 
 main(process.argv.slice(2)).then(
   (code) => { process.exitCode = code },
-  (e: unknown) => { console.error(e instanceof Error ? e.message : String(e)); console.error(USAGE); process.exitCode = 1 },
+  (e: unknown) => { console.error(e instanceof Error ? e.message : String(e)); process.exitCode = 1 },
 )

@@ -62,7 +62,9 @@ const HEADING = /^(#{1,6})\s/
 // 語彙は日本語と英語の 2 組 (design.md §3.15 の対応表)。1 つの台帳に混ざっていても行ごとに読む。
 // 字下げしていても状態の行として読む (決定と取り違えないため)。字下げは checkRoadmap が error にする
 const STATUS_LINE = /^\s*(?:状態\s*[:：]|status\s*:)/i
-const STATUS_VALUE = /^(?:状態: (提案|保留|ブロック)|Status: (proposed|held|blocked))(?:\((.+)\))?$/
+// 見出しの後ろに離れて現れた状態の行を探す方。本文の `status: …` を拾わないよう、英語は `Status:` の大文字だけ
+const STRAY_STATUS_LINE = /^\s*(?:状態\s*[:：]|Status\s*:)/
+const STATUS_VALUE =/^(?:状態: (提案|保留|ブロック)|Status: (proposed|held|blocked))(?:\((.+)\))?$/
 const CONDITIONS_HEADING = /^#### (?:完了条件|Done when)\s*$/
 const CHECKBOX = /^\s*[-*] \[( |x|X)\] /
 const REF = /^\s*[-*] \[( |x|X)\] C(\d+)\b/
@@ -268,7 +270,7 @@ export function checkRoadmap(text: string): RoadmapProblem[] {
     }
     if (st.present && /^\s/.test(sec.body[0]!.text)) err(sec.body[0]!.no, '状態の行は字下げしない')
     for (const l of sec.body.slice(st.present ? 1 : 0)) {
-      if (STATUS_LINE.test(l.text)) err(l.no, '状態の行は見出しの直後に 1 行だけ書く')
+      if (STRAY_STATUS_LINE.test(l.text)) err(l.no, '状態の行は見出しの直後に 1 行だけ書く')
     }
   }
 
@@ -287,7 +289,7 @@ export function checkRoadmap(text: string): RoadmapProblem[] {
     if (it.status === 'blocked' && !it.conditions) err(it.line, `${it.id}: ブロックは決定の項目 (完了条件を持つ) だけ。決まっていない項目は保留(C<n> の後)`)
     if (it.status === 'held' && !it.statusReason) err(it.line + 1, `${it.id}: 保留には再開の条件を書く`)
     if (it.status === 'decided' && !badStatus.has(it.line)) {
-      if (!it.conditions) err(it.line, `${it.id}: 決定の項目には \`#### 完了条件\` が要る (未決なら \`状態: 提案\` を書く)`)
+      if (!it.conditions) err(it.line, `${it.id}: 決定の項目には \`#### 完了条件\` が要る (未決なら \`状態: 提案\` か \`Status: proposed\` を書く。英語の台帳では \`#### Done when\`)`)
       else if (it.conditions.total === 0) err(it.line, `${it.id}: \`#### 完了条件\` にチェックボックスがない`)
       else if (it.conditions.done === it.conditions.total) {
         warn(it.line, `${it.id}: 完了条件が全部埋まっている。節を消し、フェーズの行を \`[x] ${it.id}\` にして記録を書く`)
@@ -296,12 +298,12 @@ export function checkRoadmap(text: string): RoadmapProblem[] {
     // 決定の項目 (状態の行がないものと、ブロック) は予定に載る (design.md §3.15)。見出しがなければ下で 1 度だけ言う
     const decided = it.status === 'decided' || it.status === 'blocked'
     if (plan && decided && !badStatus.has(it.line) && !plan.some((p) => p.id === it.id)) {
-      err(it.line, `${it.id}: 決定の項目が \`## 予定\` にない`)
+      err(it.line, `${it.id}: 決定の項目が \`## 予定\` (英語の台帳では \`## Plan\`) にない`)
     }
   }
 
   const planRead = readPlan(contentLines(text))
-  if (items.length > 0 && !plan) err(1, '項目があるのに `## 予定` がない (決定の項目を取りかかる順に `- [ ] C<n>` で並べる)')
+  if (items.length > 0 && !plan) err(1, '項目があるのに `## 予定` (英語の台帳では `## Plan`) がない (決定の項目を取りかかる順に `- [ ] C<n>` で並べる)')
   if (planRead.headings.length > 1) err(planRead.headings[1]!.no, '`## 予定` が 2 つ以上ある。1 つにまとめる')
   for (const s of planRead.stray) err(s.no, '予定の行は `- [ ] C<n>` の形にする (完了や却下は並べない)')
   const planAt = new Map<string, PlanEntry>()

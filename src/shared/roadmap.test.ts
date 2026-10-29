@@ -250,12 +250,12 @@ describe('checkRoadmap', () => {
 
   it('項目があるのに `## 予定` がない', () => {
     const text = ['### C1. a', '#### 完了条件', '- [ ] x'].join('\n')
-    assert.deepEqual(messages(text), [['error', 1, '項目があるのに `## 予定` がない (決定の項目を取りかかる順に `- [ ] C<n>` で並べる)']])
+    assert.deepEqual(messages(text), [['error', 1, '項目があるのに `## 予定` (英語の台帳では `## Plan`) がない (決定の項目を取りかかる順に `- [ ] C<n>` で並べる)']])
   })
 
   it('決定の項目 (状態の行がないものと、ブロック) が予定にない。ブロックは決定として載せる', () => {
     const text = ['### C1. a', '#### 完了条件', '- [ ] x', '### C2. b', '状態: ブロック(C1 の後)', '#### 完了条件', '- [ ] y', '## 予定', '- [ ] C1'].join('\n')
-    assert.deepEqual(messages(text), [['error', 4, 'C2: 決定の項目が `## 予定` にない']])
+    assert.deepEqual(messages(text), [['error', 4, 'C2: 決定の項目が `## 予定` (英語の台帳では `## Plan`) にない']])
     const ok = ['### C1. a', '#### 完了条件', '- [ ] x', '### C2. b', '状態: ブロック(C1 の後)', '#### 完了条件', '- [ ] y', '## 予定', '- [ ] C1', '- [ ] C2'].join('\n')
     assert.deepEqual(checkRoadmap(ok), [])
   })
@@ -330,5 +330,12 @@ describe('checkRoadmap', () => {
   it('リポジトリの roadmap.md は規則どおり', () => {
     const text = readFileSync(new URL('../../docs/roadmap.md', import.meta.url), 'utf8')
     assert.deepEqual(checkRoadmap(text).filter((p) => p.level === 'error'), [])
+  })
+})
+
+describe('status line vocabulary', () => {
+  it('a lowercase `status:` in the body is prose, not a second status line', () => {
+    const text = ['### C1. a', '#### Done when', '- [ ] x', 'status: see notes', '## Plan', '- [ ] C1'].join('\n')
+    assert.ok(!checkRoadmap(text).some((p) => p.message.startsWith('状態の行は見出しの直後')))
   })
 })

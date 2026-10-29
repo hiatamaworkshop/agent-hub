@@ -57,8 +57,18 @@ export function launchFor(opener: Exclude<Opener, 'print'>, title: string, cwd: 
   }
 }
 
+// wt would split the command at a ';' in any of its arguments. Returns the reason to refuse, or null
+export function wtSeparatorError(parts: string[]): string | null {
+  const bad = parts.find((a) => a.includes(';'))
+  return bad === undefined ? null : `Windows Terminal reads ';' as a command separator, so it cannot open a tab for "${bad}". Use --tabs window, or a folder name without ';'`
+}
+
 // Open the tab. Returns an error message, or null when the opener ran
 export function openTab(opener: Exclude<Opener, 'print'>, title: string, cwd: string, argv: string[], env: NodeJS.ProcessEnv = process.env): string | null {
+  if (opener === 'wt') {
+    const refused = wtSeparatorError([title, cwd, ...argv])
+    if (refused) return refused
+  }
   const insideTmux = Boolean(env.TMUX)
   const tmuxSessionExists = opener === 'tmux' && !insideTmux
     && spawnSync('tmux', ['has-session', '-t', TMUX_SESSION], { stdio: 'ignore' }).status === 0

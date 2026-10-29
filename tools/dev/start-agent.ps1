@@ -6,7 +6,8 @@ param(
   [string]$Project,
   [string]$Model,
   [string]$Mailbox,
-  [string]$PermissionMode
+  [string]$PermissionMode,
+  [switch]$FromTeam
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,6 +17,7 @@ if ($Project) { $a += @('--project', (Resolve-Path -LiteralPath $Project).Path) 
 if ($Model) { $a += @('--model', $Model) }
 if ($Mailbox) { $a += @('--mailbox', $Mailbox) }
 if ($PermissionMode) { $a += @('--permission-mode', $PermissionMode) }
+if ($FromTeam) { $a += '--from-team' }
 # tsx is resolved from the current folder, so run from the agent-hub root (claude itself starts in the project)
 Push-Location $root
 try { & node --import tsx src/team/main.ts @a } finally { Pop-Location }

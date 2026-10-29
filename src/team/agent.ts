@@ -51,17 +51,25 @@ export async function runAgent(o: AgentOptions): Promise<number> {
 
   // A role missing from the roles file is refused by the Hub (400 unknown_role) and the shim would only retry. Stop before claude.
   // Without the file nothing is checked (the Hub does not check role names either). Case-sensitive, like the Hub
-  const rolesFile = hubRolesFile()
-  const known = readRoleNames(rolesFile)
-  if (known && !known.includes(o.role)) return fail(`Role ${o.role} is not in ${rolesFile} (valid roles: ${known.join(', ')})`)
+  // Anything that throws before claude starts (a bad roles file, an unwritable folder) goes through fail(), so the reason
+  // reaches the status file and the tab stays open when started by `team`
+  let mcpConfig: string
+  let filesDir: string
+  try {
+    const rolesFile = hubRolesFile()
+    const known = readRoleNames(rolesFile)
+    if (known && !known.includes(o.role)) return await fail(`Role ${o.role} is not in ${rolesFile} (valid roles: ${known.join(', ')})`)
 
-  // The shim is pointed at agent-hub's dist/ by absolute path (tools/dev/mcp.json is relative to CLAUDE_PROJECT_DIR and only works inside agent-hub).
-  // The content depends only on where agent-hub is, so roles started at the same time write the same file
-  const mcpConfig = join(tmpdir(), 'agent-hub-mcp.json')
-  writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { 'agent-hub': { command: 'node', args: [join(ROOT, 'dist', 'shim', 'main.js')] } } }, null, 2))
-  // Where attached images are saved (the shim's default, or HUB_FILES_DIR). Created first: passing a missing folder is unverified
-  const filesDir = process.env.HUB_FILES_DIR?.trim() || join(tmpdir(), 'agent-hub')
-  mkdirSync(filesDir, { recursive: true })
+    // The shim is pointed at agent-hub's dist/ by absolute path (tools/dev/mcp.json is relative to CLAUDE_PROJECT_DIR and only works inside agent-hub).
+    // The content depends only on where agent-hub is, so roles started at the same time write the same file
+    mcpConfig = join(tmpdir(), 'agent-hub-mcp.json')
+    writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { 'agent-hub': { command: 'node', args: [join(ROOT, 'dist', 'shim', 'main.js')] } } }, null, 2))
+    // Where attached images are saved (the shim's default, or HUB_FILES_DIR). Created first: passing a missing folder is unverified
+    filesDir = process.env.HUB_FILES_DIR?.trim() || join(tmpdir(), 'agent-hub')
+    mkdirSync(filesDir, { recursive: true })
+  } catch (e) {
+    return fail(`Could not prepare to start claude: ${e instanceof Error ? e.message : String(e)}`)
+  }
 
   const warning = hookWarning(o.projectDir, ROOT)
   if (warning) console.warn(`WARNING: ${warning}`)

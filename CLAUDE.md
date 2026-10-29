@@ -23,7 +23,7 @@ When you add sections or change their numbers, fix this map in the same commit.
   - §3.15 Showing the backlog, and requesting work from roadmap items — backlog badges, card states (the order of Needs you / Working / Waiting on others / Stopped), the reply format and its heading colors, the rules for writing items (C numbers), the plan list and how to answer about the plan (`## Plan`, four tiers), the English vocabulary and the mapping table of reply-format headings, handling updates during implementation, where the index lives (`docs:index`) and `meta.item`, a project is a value (the conditions for making it an entity)
   - §3.16 The roadmap is the source of truth for progress; replies are delivery signals — the delivery and progress layers, sorting requests without items, rejected `[-] C<n>`, judging "reflected" (concept)
   - §4 Security / §5 Notes on design decisions (reasons for technology choices)
-  - §6 Unverified items — the verification records of the real behavior of Channels, hooks and Docker (6.1-6.1w), unverified (6.2). **Facts of the specification start here**
+  - §6 Unverified items — the verification records of the real behavior of Channels, hooks and Docker (6.1-6.1x), unverified (6.2). **Facts of the specification start here**
   - §8 Relation to existing mechanisms / §9 Open questions (decided ones carry the decision and date)
 - [docs/protocol.md](docs/protocol.md) (about 450 lines)
   - §1 Common (authentication, names, error format) / §2 Data model (Mailbox, Role, Attachment, Event, Message)

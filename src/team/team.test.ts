@@ -8,7 +8,7 @@ import { claudeCommand, hookWarning, spawnArgs } from './checks.js'
 import { envSetting, hubRolesFile } from './env.js'
 import { parse } from './options.js'
 import { commandLine, quoteForPlatform } from './quote.js'
-import { detectOpener, launchFor } from './tabs.js'
+import { detectOpener, launchFor, wtSeparatorError } from './tabs.js'
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'agent-hub-team-'))
 
@@ -109,4 +109,9 @@ test('hook warning: found, missing with a command per OS, and an existing settin
   mkdirSync(join(home, '.claude'))
   writeFileSync(join(home, '.claude', 'settings.json'), '{"hooks":{"Stop":[{"url":"http://127.0.0.1:7777/events"}]}}')
   assert.equal(hookWarning(project, '/hub', 'linux', home), null)
+})
+
+test('wt: an argument with ; is refused because wt would split the command there', () => {
+  assert.equal(wtSeparatorError(['agent-hub', 'C:\work\a', 'node', '--role', 'leader']), null)
+  assert.match(wtSeparatorError(['t', 'C:\work\a;b', 'node']) ?? '', /a;b/)
 })
