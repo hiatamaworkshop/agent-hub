@@ -592,17 +592,32 @@ try {
   const reset = () => evaluate("$('resetFilter').click()")
   await evaluate("$('filterBtn').click()") // Filter ▾ を開き、欄を作らせる
   await sleep(200)
-  // a. 既定では何も隠さず、Reset も出ない
-  const dflt = await evaluate("({ off: document.querySelectorAll('#list .off').length, noise: FILTER.noise, resetShown: !$('resetFilter').hidden })")
-  verify('絞り込みの既定では何も隠さず、Reset は出ない (C59)', dflt.off === 0 && dflt.noise === false && !dflt.resetShown, dflt)
-  // b. Noise: 通知の Event だけが隠れ、質問・許可待ちと Message は隠れない
+  // a. 保存がなければ Noise は on: 通知の Event だけが隠れ、Noise のチップが出て、Reset は既定と同じなので出ない
+  await evaluate("['agent-hub.filter.mailboxes', 'agent-hub.filter.kinds', 'agent-hub.filter.noise'].forEach((k) => localStorage.removeItem(k))")
+  await reload()
+  await evaluate("$('filterBtn').click()")
+  await sleep(200)
+  const dflt = await evaluate(`(() => {
+    const off = [...document.querySelectorAll('#list .off')]
+    return { noise: FILTER.noise, resetShown: !$('resetFilter').hidden, chips: [...document.querySelectorAll('#chips .fchip')].map((c) => c.textContent), evt: off.filter((b) => b.classList.contains('evt')).map((b) => b.querySelector('.kind').textContent), msg: off.filter((b) => b.classList.contains('msg')).length, waitingOff: off.filter((b) => b.classList.contains('waiting')).length }
+  })()`)
+  verify('保存がなければ Noise は on: 通知の Event だけが隠れ、Noise のチップが出て、Reset は出ない (C59)', dflt.noise === true && !dflt.resetShown && JSON.stringify(dflt.chips) === JSON.stringify(['Hide noise×']) && dflt.evt.length >= 1 && dflt.evt.every((k) => k === 'notification') && dflt.msg === 0 && dflt.waitingOff === 0, dflt)
+  // b. Noise のチップの × で off になり、何も隠れず、Reset が出る。on に戻すと通知だけがまた隠れる
+  const chipX = (text) => evaluate(`(() => {
+    const c = [...document.querySelectorAll('#chips .fchip')].find((x) => x.textContent.startsWith(${JSON.stringify(text)}))
+    if (!c) return false
+    c.querySelector('button').click()
+    return true
+  })()`)
+  await chipX('Hide noise')
+  const noiseOff = await evaluate("({ off: document.querySelectorAll('#list .off').length, noise: FILTER.noise, resetShown: !$('resetFilter').hidden, stored: localStorage.getItem('agent-hub.filter.noise') })")
+  verify('Noise のチップの × で通知も見え、Reset が出る (保存は off) (C59)', noiseOff.off === 0 && noiseOff.noise === false && noiseOff.resetShown && noiseOff.stored === '0', noiseOff)
   await fnoise(true)
   const noise = await evaluate(`(() => {
     const off = [...document.querySelectorAll('#list .off')]
     return { evt: off.filter((b) => b.classList.contains('evt')).map((b) => b.querySelector('.kind').textContent), msg: off.filter((b) => b.classList.contains('msg')).length, waitingOff: off.filter((b) => b.classList.contains('waiting')).length }
   })()`)
   verify('Noise: 通知の Event だけを隠し、質問・許可待ちと Message は隠さない (C59)', noise.evt.length >= 1 && noise.evt.every((k) => k === 'notification') && noise.msg === 0 && noise.waitingOff === 0, noise)
-  await fnoise(false)
   // c. Mailbox: 選んだ Mailbox と、待ちのあるカードだけ残る。未選択の Mailbox の Message は隠れるが、人宛ての request と質問は隠れない
   await fcheck('fMailbox', 'demo.leader', true)
   const onlyLeader = await cardNames()
@@ -612,20 +627,20 @@ try {
   verify('Mailbox: 未選択の Mailbox の Message は隠れ、人宛ての request と質問は隠れない (C59)', mbMsg.oldHidden === true && mbMsg.youReqShown === false && mbMsg.waitsShown, mbMsg)
   await reset()
   // Reset: 全部外れ、チップも消え、保存も空に戻る
-  const back = await evaluate("({ off: document.querySelectorAll('#list .off').length, mailboxes: FILTER.mailboxes.size, kinds: FILTER.kinds.size, noise: FILTER.noise, chips: $('chips').childElementCount, stored: localStorage.getItem('agent-hub.filter.kinds'), resetShown: !$('resetFilter').hidden })")
+  const back = await evaluate("({ offKinds: [...document.querySelectorAll('#list .off')].map((b) => b.querySelector('.kind').textContent), mailboxes: FILTER.mailboxes.size, kinds: FILTER.kinds.size, noise: FILTER.noise, chips: [...document.querySelectorAll('#chips .fchip')].map((c) => c.textContent), stored: localStorage.getItem('agent-hub.filter.kinds'), resetShown: !$('resetFilter').hidden })")
   const cardsBack = (await cardNames()).includes('demo.old')
-  verify('Reset: 全部外れ、チップも消え、保存も空に戻る (C59)', back.off === 0 && back.mailboxes === 0 && back.kinds === 0 && !back.noise && back.chips === 0 && back.stored === '[]' && !back.resetShown && cardsBack, { back, cardsBack })
+  verify('Reset: 既定 (Noise on、ほかは外れる) に戻り、チップは Noise だけになり、Reset は出ない (C59)', back.offKinds.length > 0 && back.offKinds.every((k) => k === 'notification') && back.mailboxes === 0 && back.kinds === 0 && back.noise && JSON.stringify(back.chips) === JSON.stringify(['Hide noise×']) && back.stored === '[]' && !back.resetShown && cardsBack, { back, cardsBack })
   // d. Kind: reply を隠す。隠れた Message を指すバッジは、隠れた旨を出す。チップの × で 1 つ外れる
   await fcheck('fKind', 'reply', true)
-  const kindOff = await evaluate("({ allMsgReply: [...document.querySelectorAll('#list .off')].every((b) => b.classList.contains('msg') && b.querySelector('.kind').textContent === 'reply'), count: document.querySelectorAll('#list .msg.off').length })")
+  const kindOff = await evaluate("({ allMsgReply: [...document.querySelectorAll('#list .msg.off')].every((b) => b.querySelector('.kind').textContent === 'reply'), count: document.querySelectorAll('#list .msg.off').length })")
   verify('Kind: reply を隠す (ほかの Message は残る) (C59)', kindOff.allMsgReply && kindOff.count > 0, kindOff)
   const chipText = await evaluate("[...document.querySelectorAll('#chips .fchip')].map((c) => c.textContent)")
-  verify('有効な絞り込みは、× 付きのチップで並ぶ (C59)', JSON.stringify(chipText) === JSON.stringify(['Hide reply×']), chipText)
+  verify('有効な絞り込みは、× 付きのチップで並ぶ (Noise の既定を含む) (C59)', JSON.stringify(chipText) === JSON.stringify(['Hide reply×', 'Hide noise×']), chipText)
   const replySeq = await seqOf('CHANGED: …')
   const hiddenStatus = await evaluate(`(() => { jumpTo({ count: 1, oldestAt: null, oldestSeq: ${replySeq}, eventId: null }); return $('status').textContent })()`)
   verify('隠れた返信を指すバッジは、Kind で隠れていると出し、スレッドは動かさない (C59)', hiddenStatus.includes('hidden by the Kind filter') && hiddenStatus.includes('Reset'), hiddenStatus)
-  await evaluate("document.querySelector('#chips .fchip button').click()")
-  verify('チップの × で Kind が外れ、隠れたものが戻る (C59)', (await evaluate("document.querySelectorAll('#list .off').length")) === 0)
+  await chipX('Hide reply')
+  verify('チップの × で Kind が外れ、隠れた返信が戻る (通知は既定の Noise で隠れたまま) (C59)', (await evaluate("[...document.querySelectorAll('#list .off')].every((b) => b.classList.contains('evt') && b.querySelector('.kind').textContent === 'notification')")) && (await evaluate("document.querySelectorAll('#list .msg.off').length")) === 0)
   // e. 全部の軸を掛けても、待ちは隠れない
   await fcheck('fMailbox', 'demo.leader', true)
   for (const label of ['request', 'reply', 'notice', 'turn end', 'turn failed', 'answered', 'approved', 'notification', 'boundary']) await fcheck('fKind', label, true)
@@ -649,8 +664,8 @@ try {
   verify('Compact: 畳んだ件数と Expand をスレッド操作バーに出し、待ちは畳まない (C59)', /older items compacted/.test(fold1.text) && fold1.expand && fold1.bar && fold1.waitsFolded === 0, fold1)
   await evaluate("$('expand').click()")
   await sleep(200)
-  const fold2 = await evaluate("({ bar: $('hiddenInfo').hidden, flagged: [...msgBoxes.values(), ...evtBoxes.values()].filter((b) => b.dataset.compacted === '1').length })")
-  verify('Expand で畳みが開き、スレッド操作バーの行が消える (C59)', fold2.bar && fold2.flagged === 0, fold2)
+  const fold2 = await evaluate("({ text: $('hiddenText').textContent, expand: $('expand').hidden, flagged: [...msgBoxes.values(), ...evtBoxes.values()].filter((b) => b.dataset.compacted === '1').length })")
+  verify('Expand で畳みが開き、畳んだ件数と Expand がバーから消える (隠れた件数は既定の Noise のまま残る) (C59)', !/compacted/.test(fold2.text) && fold2.expand && fold2.flagged === 0, fold2)
   await evaluate("try { localStorage.removeItem('agent-hub.keep') } catch (e) {}")
 
   // g. 保存は軸ごと。読むとき、今ない Mailbox と決まっていない種類は黙って落とし、保存も直す
@@ -658,7 +673,14 @@ try {
   await reload()
   const loaded = JSON.parse(await evaluate("JSON.stringify({ m: [...FILTER.mailboxes], k: [...FILTER.kinds], n: FILTER.noise, stored: localStorage.getItem('agent-hub.filter.mailboxes') })"))
   verify('保存された絞り込みは軸ごとに戻り、今ない Mailbox と決まっていない種類は黙って落とす (C59)', loaded.m.join() === 'demo.leader' && loaded.k.join() === 'reply' && loaded.n === true && loaded.stored === '["demo.leader"]', loaded)
+  // 保存された off は、再読み込みのあとも off のまま
+  await chipX('Hide noise')
+  await reload()
+  const offKept = await evaluate("FILTER.noise === false && localStorage.getItem('agent-hub.filter.noise') === '0' && !$('fNoise').checked")
+  verify('保存された Noise の off は、再読み込みのあとも off のまま (C59)', offKept === true)
   await reset()
+  const resetHidden = await evaluate("$('resetFilter').hidden && FILTER.noise === true")
+  verify('Reset のあと、既定 (Noise on) で Reset は出ない (C59)', resetHidden === true)
   await evaluate("try { ['agent-hub.filter.mailboxes', 'agent-hub.filter.kinds', 'agent-hub.filter.noise'].forEach((k) => localStorage.removeItem(k)) } catch (e) {}")
 
   // 時刻の表示 (C31): 今日は時刻だけ、前日は日付つき

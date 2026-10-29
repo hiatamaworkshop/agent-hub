@@ -129,9 +129,12 @@ SEP はクライアント側に購読状態の正本を置くが、agent-hub で
 - スレッドの絞り込み (C59、2026-10-29): プロジェクト・Mailbox・種類・通知・最新 N 件 (Compact) を、軸ごとの述語で決める 1 つの仕組み (`public/index.html` の `FILTER`・`AXES`・`hiddenBy`)。`Filter ▾` (軸の欄を開くポップオーバー)・`Compact`・`Reset`、有効な軸のチップ (× で 1 つ外す)、隠れた件数と畳んだ件数 (と Expand) を、スレッド操作バーの 1 か所に出す。作法は次のとおり。
   - **隠すだけで消さない。** Hub・未読・配信には影響させない。畳みは印 (`data-compacted`) を付けるだけで、DOM からは外さない (プロジェクトの絞り込みと同じ)。
   - **待ちは隠さない。** 質問・許可待ち・人宛ての request・人が動く番の通知 (`QUOTA_NEEDS_YOU` の usage limit) は、どの軸の組み合わせでも隠れず、畳みもしない。プロジェクトだけは従来どおりで、ほかのプロジェクトの待ちは `N waiting in other projects` に数える。完了条件の「どの軸の組み合わせでも」をプロジェクトにも及ぼすかは、C59 の実装後に人の確認を待つ (§9 未決事項)。
-  - **軸。** Mailbox (複数選択。送り手か宛先の Mailbox の Message、Event の Mailbox、選んだ Mailbox のカードと待ちのあるカード)、Kind (Message の `kind` と Event の種類を隠す集合。質問・許可待ちは並べない)、Noise (通知系の Event。含めるものは `NOISE_KINDS` の既定 `notification` で、設定は C60。既定では off)、Recent (最新 N 件。畳みの印)。`show(item)` は軸の積で、どれか 1 つで外れれば隠す。軸を足すには述語を 1 つ足し、ポップオーバーの欄を 1 つ足す。
+  - **軸。** Mailbox (複数選択。送り手か宛先の Mailbox の Message、Event の Mailbox、選んだ Mailbox のカードと待ちのあるカード)、Kind (Message の `kind` と Event の種類を隠す集合。質問・許可待ちは並べない)、Noise (通知系の Event。含めるものは `NOISE_KINDS` の既定 `notification` で、設定は C60。既定は on)、Recent (最新 N 件。畳みの印)。`show(item)` は軸の積で、どれか 1 つで外れれば隠す。軸を足すには述語を 1 つ足し、ポップオーバーの欄を 1 つ足す。
   - **バッジ。** 溜まりのバッジは見えているカードだけから数える。バッジの飛び先が絞り込みで隠れていれば、隠した軸の名前を出して開かない (C48 と同じ)。畳んだだけのものは開く。
-  - **保存は軸ごと。** `agent-hub.filter.mailboxes`・`agent-hub.filter.kinds`・`agent-hub.filter.noise` (localStorage)。Compact の件数は `agent-hub.keep`、プロジェクトは `agent-hub.project`。読むときに、決まっていない種類は黙って落とし、Mailbox は一覧が届いてから今ないものを落とす。
+  - **既定の状態。** Noise は on (通知の Event を隠す)、ほかの軸は外れている (Project は All projects、Mailbox と Kind は空、Compact は開いている)。保存がなければこの状態で始まる。
+  - **Reset は既定に戻す** (全部 off ではない)。Noise を on に戻し、ほかの軸は外し、畳みを開く。初めて開いたページと同じ状態になるため。Noise のチップの × は Noise だけを off にする (通知を見るため)。
+  - **Reset とチップの出し方。** Noise のチップは Noise が on のとき (既定を含む) 出る。Reset は既定と違うとき (ほかの軸が有効、または Noise が off、または畳みがあるとき) だけ出し、既定のときは出さない。隠れた件数 (`N hidden`) は既定の Noise のとおりに数える。
+  - **保存は軸ごと。** `agent-hub.filter.mailboxes`・`agent-hub.filter.kinds`・`agent-hub.filter.noise` (localStorage。noise は `1` / `0`、保存がなければ既定の on)。保存された off は、再読み込みのあとも off のまま。Compact の件数は `agent-hub.keep`、プロジェクトは `agent-hub.project`。読むときに、決まっていない種類は黙って落とし、Mailbox は一覧が届いてから今ないものを落とす。
   - **送り先の候補は絞り込みに従わない。** 宛先の候補はプロジェクトだけで決める (見えていない Mailbox を選んで送らないよう、表示の絞り込みで送る先は変えない)。
 - Mailbox の削除: 接続していない Mailbox のカードにだけ Delete を出す (確認のあと `DELETE /mailboxes/:name`)。カードの選択は起こさない。409 (その間に attach された) と、削除に対応しない古い Hub の 404 は #err に出し、カードは外さずに一覧を取り直す。`mailbox.deleted` を受けた他のタブも一覧を取り直す。
 - Mailbox のカードの未読数: 新着 (`message`) と ack (`mailbox.acked`) で一覧を取り直し、ポーリングはしない。`effectiveSubscriptions` や `unread` を欠く古い Hub の応答では、購読は空、未読の項目は出さない (カード全体は描く)。

@@ -317,8 +317,8 @@
 - [x] C59 スレッドの絞り込みを 1 つのモジュールにまとめ、Compact も軸の 1 つにする (2026-10-29、leader の依頼)
   - 絞り込みを `FILTER`・`AXES`・`hiddenBy` の 1 つのモジュールにし、Project・Mailbox (複数選択)・Kind (Message の `kind` と Event の種類)・Noise (既定は `notification`)・Recent (Compact の印) の 5 軸を、述語の積で決める。Compact は DOM から外さず `data-compacted` の印を付け、同じ述語で隠す。stub は消し、`Filter ▾`・チップ (× で 1 つ外す)・`Reset`・隠れた件数と畳んだ件数 (と Expand) をスレッド操作バーの 1 か所に出す。軸ごとの保存は localStorage (`agent-hub.filter.*`)、読むときに決まっていない種類と今ない Mailbox を黙って落とす
   - 作法は design.md §3.2 に書いた。待ち (質問・許可待ち・人宛ての request・usage limit の通知) は、プロジェクトを除く軸の組み合わせでは隠れず、畳まれもしない。プロジェクトは従来どおり (他プロジェクトの待ちは隠し、`N waiting in other projects` に数える)。完了条件の「どの組み合わせでも」をプロジェクトに及ぼすかは design.md §9-10 で人の判断を待つ
-  - 挙動の変更 2 点 (完了条件の「挙動を変えない」の範囲外として報告): Compact は待ちを畳まなくなった (待ちは隠さない作法を Recent にも及ぼしたため)。Noise の既定は off で、通知を隠すのは人が選んだとき
-  - 試験: `npm test` 337 件が通る。`npm run ui:check` は 69 件が合格。C59 で足したのは Noise (通知だけ隠れ、待ちは残る)、Mailbox (選んだものと待ちのカード。人宛て request と質問は残る)、Kind (× で外れる。隠れた返信のバッジは `hidden by the Kind filter` と出し、開かない)、全軸を掛けても待ちは隠れない、Compact の件数と Expand、Reset、保存の読み直しの場面
+  - 挙動の変更 2 点 (完了条件の「挙動を変えない」の範囲外として報告): Compact は待ちを畳まなくなった (待ちは隠さない作法を Recent にも及ぼしたため)。Noise の既定は on (保存がなければ通知を隠す。leader の決定、2026-10-29、863538b の後で変更)
+  - 試験: `npm test` 337 件が通る。`npm run ui:check` は 72 件が合格。C59 で足したのは Noise (通知だけ隠れ、待ちは残る)、Mailbox (選んだものと待ちのカード。人宛て request と質問は残る)、Kind (× で外れる。隠れた返信のバッジは `hidden by the Kind filter` と出し、開かない)、全軸を掛けても待ちは隠れない、Compact の件数と Expand、Reset、保存の読み直しの場面
 
 ## 項目
 

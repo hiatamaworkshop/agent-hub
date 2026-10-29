@@ -262,7 +262,7 @@
         </div>
       </span>
       <span id="chips" class="chips"></span>
-      <button type="button" id="resetFilter" class="linkbtn" hidden title="Clear every filter and show the compacted messages again">Reset</button>
+      <button type="button" id="resetFilter" class="linkbtn" hidden title="Return to the defaults: Noise on, other filters cleared, compacted messages shown again">Reset</button>
       <span id="hiddenInfo" hidden><span id="hiddenText"></span> <button type="button" id="expand" class="linkbtn" hidden title="Show the compacted messages again">Expand</button></span>
       <button type="button" id="elsewhere" class="linkbtn" hidden title="Sessions in other projects are waiting for a person (question or permission). Click to show all projects."></button>
       <span id="relay" title="Messages from a Mailbox not yet forwarded to a Mailbox you forwarded to before"></span>
@@ -1465,7 +1465,8 @@ let projects = new Map() // キー → { key, path, label }
 // 軸は FILTER の 1 つずつ。どの軸で隠すかは hiddenBy(view) が決める (どれも通せば null)。隠すだけで消さず、Hub・未読・配信には影響させない。
 // 待ち (質問・許可待ち・人宛ての request・人が動く番の通知) は、プロジェクトを除くどの軸でも隠さない。プロジェクトは従来どおり
 // (ほかのプロジェクトの待ちは #elsewhere に数える)。Recent (最新 N 件) は Compact が付ける印 (data-compacted) で、畳んだものは同じ述語で隠す。
-const FILTER = { project: '', mailboxes: new Set(), kinds: new Set(), noise: false } // project: 選んでいるプロジェクトのキー。'' は All projects
+// 既定は Noise on (通知を隠す)。保存された値があればそれに従う。project: 選んでいるプロジェクトのキー。'' は All projects
+const FILTER = { project: '', mailboxes: new Set(), kinds: new Set(), noise: true }
 const FILTER_KEYS = { mailboxes: 'agent-hub.filter.mailboxes', kinds: 'agent-hub.filter.kinds', noise: 'agent-hub.filter.noise' }
 // 隠せる種類 (Message の kind と Event の種類)。質問・許可待ちは待ちなので並べない
 const KIND_OPTIONS = [
@@ -1530,17 +1531,22 @@ function toggleIn(set, value, on) {
   persistFilters()
   applyFilter()
 }
-// Reset: 軸をすべて外し、畳みを開く。プロジェクトも All projects に戻る
+// Reset: 既定の状態に戻す (Noise は on、ほかの軸は外す、畳みは開く)。プロジェクトも All projects に戻る。
+// 初めて開いたページと同じ状態にする (全部 off では、ユーザーが始めない状態になるため)
 function resetFilters() {
   unfold()
   FILTER.mailboxes.clear()
   FILTER.kinds.clear()
-  FILTER.noise = false
+  FILTER.noise = true
   persistFilters()
   if (FILTER.project) chooseProject('')
   else applyFilter()
 }
-// 有効な軸をチップで出す。× で 1 つ外す。Reset は有効なものがあるときだけ出す
+// 既定の状態か。Reset を出すかどうかを決める (既定と違う軸があるとき、または Noise が off のとき出す)
+function atDefault() {
+  return !FILTER.project && !FILTER.mailboxes.size && !FILTER.kinds.size && FILTER.noise && !allBoxes().some((b) => b.dataset.compacted === '1')
+}
+// 有効な軸をチップで出す。× で 1 つ外す。Reset は既定と違うときだけ出す (atDefault)
 function renderChips() {
   const box = $('chips')
   box.textContent = ''
@@ -1560,7 +1566,7 @@ function renderChips() {
   for (const k of KIND_OPTIONS) if (FILTER.kinds.has(k.key)) chip(`Hide ${k.label}`, () => toggleIn(FILTER.kinds, k.key, false))
   if (FILTER.noise) chip('Hide noise', () => { FILTER.noise = false; persistFilters(); applyFilter() })
   if (allBoxes().some((b) => b.dataset.compacted === '1')) chip('Compacted', unfold)
-  $('resetFilter').hidden = box.childElementCount === 0
+  $('resetFilter').hidden = atDefault()
 }
 // ポップオーバーの欄。Mailbox は今の一覧から、種類は決まった一覧から作り、チェックは今の値をそのまま映す
 function renderFilterFields() {
@@ -1601,7 +1607,11 @@ function loadFilters() {
   FILTER.mailboxes = new Set(readList(FILTER_KEYS.mailboxes))
   const known = new Set(KIND_OPTIONS.map((k) => k.key))
   FILTER.kinds = new Set(readList(FILTER_KEYS.kinds).filter((k) => known.has(k)))
-  try { FILTER.noise = localStorage.getItem(FILTER_KEYS.noise) === '1' } catch {}
+  // 保存がなければ既定の on。保存された off は、再読み込みのあとも off のまま
+  try {
+    const saved = localStorage.getItem(FILTER_KEYS.noise)
+    if (saved !== null) FILTER.noise = saved === '1'
+  } catch {}
 }
 // Mailbox の一覧が届いたら、今ない名前は黙って落とす (届く前は残す)
 function pruneMailboxFilter() {
