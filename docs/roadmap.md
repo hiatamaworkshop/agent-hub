@@ -645,27 +645,29 @@ Idea:
 
 First step: check the official docs for `Stop` hooks returning `decision: "block"` (the input's `stop_hook_active`, how `reason` reaches the model, whether `type: "http"` can block or only `command`), record it in design.md §6, and confirm on a real session. Then write the done-when conditions and remove the status.
 
-### C77. Let agents tag their messages with an item and a parent
+### C77. Let agents tag their messages with an item
 
 Raised 2026-10-30 (discussion with the human about a view of where messages are stopped when a leader runs several deployers in parallel; that view is C78). Only the UI sets `meta.item`, on a request a human builds from a roadmap item. `post_message` takes `kind`, `body`, `to?`, `reply_to?` and no meta, so a leader's requests to deployers carry the item only as text in `GOAL`, which the Hub does not read. The edges that multiply with parallel work are exactly the ones without an item.
 
 Decisions (2026-10-30, user):
-- Restrained first: agents can set only `item` and `parent`, as two dedicated `post_message` arguments, not an open `meta` argument. Adding another key later means adding another argument on purpose.
+- Restrained first: agents can set only `item`, as a dedicated `post_message` argument, not an open `meta` argument. Adding another key later means adding another argument on purpose.
 - Inheritance happens in the shim, not the Hub. The Hub keeps interpreting only `meta.files`. The shim holds no state (design.md §3.1), so for a reply it reads the original Message from the Hub at send time instead of remembering what it delivered.
+- Reviewed the same day (user): `parent` (the Message being handled when this one was sent) was dropped. C78 draws edges from `backlog.outgoing`, so nothing reads it yet, and it is self-reported and ambiguous when an agent handles several Messages at once. Add it when a use appears.
 
 Shape:
-- `item` is an ID such as `C71`. The shim builds `meta.item` as `{ id, project, source: null, promise: null }`, with `project` from its Mailbox. `parent` is the id of the Message the agent was handling when it sent this one; the shim stores it as `meta.parent`.
-- A reply (`reply_to`) without `item` gets the original's `meta.item.id` and `project`, if it has one. An explicit `item` wins.
+- `item` is an ID such as `C71`. The shim builds `meta.item` as `{ id, project, source: null, promise: null }`, with `project` from its Mailbox.
+- A reply (`reply_to`) without `item` gets the original's `meta.item.id` and `project`, if it has one. An explicit `item` wins. The Hub today only lists history by seq (`GET /messages?after=`) and the agent knows only the id, so the Hub gets `GET /messages/:id`: it returns the stored Message and interprets nothing.
 - Labels on the edges of C78 are derived by the UI from the Messages it holds, not added to `backlog` by the Hub.
-- Item cards (requested / reported, promise changes) keep meaning the human's request: requests from agents do not become an item's latest request.
+- Item cards (requested / reported, promise changes) keep meaning the human's request: requests from agents do not become an item's latest request. A human's unedited forward copies `meta` and takes the forwarder as `from` (protocol.md §2), so a forwarded agent request must not count as the human's either.
 
 #### Done when
-- [ ] `post_message` accepts `item?` and `parent?`; the shim validates them (an ID of the form `C<n>`, a Message id) and builds `meta.item` / `meta.parent` as above; a bad value is rejected with an error the agent can read. Covered by `npm test`.
-- [ ] A reply without `item` inherits the original's item through a read from the Hub at send time; the shim keeps no record of delivered Messages. Covered by `npm test`.
-- [ ] The Hub's handling of `meta` is unchanged (only `files` is interpreted; a test shows `item` and `parent` pass through untouched).
-- [ ] Item cards ignore requests whose sender is not the human, checked with `npm run ui:check`.
+- [ ] `post_message` accepts `item?`; the shim validates it (an ID of the form `C<n>`) and builds `meta.item` as above; a bad value is rejected with an error the agent can read. Covered by `npm test`.
+- [ ] The Hub serves `GET /messages/:id` (same token; 404 `message_not_found` for an unknown or deleted id) without interpreting `meta`. Covered by `npm test`.
+- [ ] A reply without `item` inherits the original's item through `GET /messages/:id` at send time; the shim keeps no record of delivered Messages. Covered by `npm test`.
+- [ ] The Hub's handling of `meta` is unchanged (only `files` is interpreted; a test shows `item` from an agent passes through untouched).
+- [ ] Item cards count only requests the human wrote: not from a Mailbox, and not an unedited forward (`forwardedFrom`). Checked with `npm run ui:check`.
 - [ ] `tools/dev/roles/leader.md` says to pass `item` when `GOAL` starts with `C<n>`.
-- [ ] protocol.md (§2 `meta.item` / `meta.parent`, §5 `post_message`) and design.md (§3.15, where `meta.item` is decided) are updated in the same change; `npm test` passes.
+- [ ] protocol.md (§2 `meta.item`, §3 `GET /messages/:id`, §5 `post_message`) and design.md (§3.15, where `meta.item` is decided) are updated in the same change; `npm test` passes.
 
 ### C78. A second tab showing where messages are stopped
 Status: held(after C77)
@@ -682,3 +684,5 @@ Operations (2026-10-30, user: lean to the safe side). The places where work stop
 - C47 (a consult button: a Forward with a fixed covering note) is the same shape with the address and note fixed; it can be added later as a shortcut on top of this.
 
 Open: tree or graph layout, how the tab is switched, and how parallel requests to one party show (they close together on one reply, design.md §3.15). Once C77 is done, decide these and write the done-when conditions.
+- Leaning to a view switched inside the page rather than a second browser tab: a second page would open a second SSE connection and show `N waiting` in two tab titles and favicons.
+- Dragging should not be the only way: keyboard and touch cannot drag, and `ui:check` (headless Chrome) tests drags poorly. A click alternative (a "Forward to…" menu filling the same draft) from the start.
