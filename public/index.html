@@ -315,6 +315,9 @@
 </dialog>
 <script>
 'use strict'
+// タブのアイコン (C70)。何も待っていないときの絵はここだけで変える (SVG の data URI かパス。空文字ならブラウザの既定)。
+// 作業中・人の番の絵は描画コード (hubSvg・badgeIcon) が --st-working・--st-you から描く
+const TAB_ICON_IDLE = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="#6b7280" stroke="#6b7280" stroke-width="2" stroke-linecap="round"><line x1="16" y1="16" x2="16" y2="4"/><line x1="16" y1="16" x2="26.4" y2="10"/><line x1="16" y1="16" x2="26.4" y2="22"/><line x1="16" y1="16" x2="16" y2="28"/><line x1="16" y1="16" x2="5.6" y2="22"/><line x1="16" y1="16" x2="5.6" y2="10"/><circle cx="16" cy="4" r="3" stroke="none"/><circle cx="26.4" cy="10" r="3" stroke="none"/><circle cx="26.4" cy="22" r="3" stroke="none"/><circle cx="16" cy="28" r="3" stroke="none"/><circle cx="5.6" cy="22" r="3" stroke="none"/><circle cx="5.6" cy="10" r="3" stroke="none"/><circle cx="16" cy="16" r="5.5" stroke="none"/></svg>')
 const $ = (id) => document.getElementById(id)
 const seen = new Map() // id → Message
 let lastSeq = 0 // 描画済みの最大 seq。再接続後に取り直す起点 (render() だけが更新する)
@@ -2041,12 +2044,17 @@ function tabWaitingOf(mb) {
   const st = stateOf(mb)
   return st && st.key === 'you' ? 1 : 0
 }
-// サイドバー: 表示中のプロジェクトの合計。タブ: 全プロジェクトの Needs you の件数 (tabWaitingOf)
+// サイドバー: 表示中のプロジェクトの合計。タブ: 全プロジェクトの人の番の件数 (tabWaitingOf)と、作業中のカードがあるか (tabWorking。カードの信号と同じ signalOf)
 let tabWaiting = 0
+let tabWorking = false
+let tabStopped = 0 // Stopped は人の番だが、タイトルの件数 (Needs you) には足さない。アイコンのバッジにだけ足す
 function renderBacklog() {
   backlogChips($('backlog'), sumLayers(mailboxList.filter(visibleCard)))
   const you = mailboxList.reduce((sum, mb) => sum + tabWaitingOf(mb), 0)
-  if (you !== tabWaiting) { tabWaiting = you; showTabUnread() }
+  const sig = mailboxList.map((mb) => signalOf(stateOf(mb)))
+  const stopped = mailboxList.filter((mb) => { const st = stateOf(mb); return st && st.key === 'stopped' }).length
+  const working = sig.includes('working')
+  if (you !== tabWaiting || stopped !== tabStopped || working !== tabWorking) { tabWaiting = you; tabStopped = stopped; tabWorking = working; showTabUnread() }
 }
 setInterval(() => {
   document.querySelectorAll('.bl').forEach(paintChip)
@@ -2614,29 +2622,51 @@ function setIcon(url) { // url が null のときは元の状態へ戻す
     else iconLink.setAttribute('href', iconOrig)
   } catch {}
 }
-function badgeIcon(label, color = '#b3261e') {
+// タブの色はカードと同じ CSS 変数 (--st-you・--st-working) を描くたびに読む。変えるのは :root の変数だけ (C70)
+const cssColor = (name, fallback) => {
+  try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback } catch { return fallback }
+}
+function hubSvg(color) {
+  const spokes = [[16, 4], [26.4, 10], [26.4, 22], [16, 28], [5.6, 22], [5.6, 10]]
+  const lines = spokes.map(([x, y]) => `<line x1="16" y1="16" x2="${x}" y2="${y}"/>`).join('')
+  const nodes = spokes.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="3" stroke="none"/>`).join('')
+  return 'data:image/svg+xml,' + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="${color}" stroke="${color}" stroke-width="2" stroke-linecap="round">${lines}${nodes}<circle cx="16" cy="16" r="5.5" stroke="none"/></svg>`)
+}
+function badgeIcon(label, color) {
   const c = document.createElement('canvas')
   c.width = c.height = 32
   const g = c.getContext('2d')
   g.fillStyle = color
-  g.beginPath(); g.arc(16, 16, 16, 0, Math.PI * 2); g.fill()
+  g.strokeStyle = '#ffffff'
+  g.lineWidth = 3
+  g.beginPath(); g.arc(16, 16, 14, 0, Math.PI * 2); g.fill(); g.stroke()
   g.fillStyle = '#ffffff'
   g.font = `bold ${label.length > 1 ? 14 : 20}px system-ui, sans-serif`
   g.textAlign = 'center'; g.textBaseline = 'middle'
   g.fillText(label, 16, 17)
   return c.toDataURL('image/png')
 }
-// タイトルには Needs you の件数 (tabWaiting。全プロジェクトの質問待ち・許可待ち・未接続の相手を待つカード) も出す。favicon はタブの未読を優先し、なければその数を琥珀色で
+// タイトルには Needs you の件数 (tabWaiting。全プロジェクトの質問待ち・許可待ち・未接続の相手を待つカード。Stopped は数えない) も出す。
+// favicon はカードと同じ 2 つの信号 (C70): 人の番 (tabWaiting と、非表示の間の新着 tabUnread の合計) は琥珀色の件数バッジ、
+// 作業中だけなら作業中の色の hub、何もなければ idle の hub。点滅しない
 function showTabUnread() {
   const cap = (n) => (n > 99 ? '99+' : String(n))
   const title = `${tabUnread > 0 ? `(${cap(tabUnread)}) ` : ''}${tabWaiting > 0 ? `${tabWaiting} waiting · ` : ''}agent-hub`
   try { document.title = title } catch {}
-  try { setIcon(tabUnread > 0 ? badgeIcon(cap(tabUnread)) : tabWaiting > 0 ? badgeIcon(cap(tabWaiting), '#c27a00') : null) } catch {}
+  try {
+    const human = tabUnread + tabWaiting + tabStopped
+    setIcon(human > 0 ? badgeIcon(cap(human), cssColor('--st-you', '#c27a00'))
+      : tabWorking ? hubSvg(cssColor('--st-working', '#2f5fd0'))
+      : TAB_ICON_IDLE || null)
+  } catch {}
 }
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => showTabUnread())
 function countTabUnread() { tabUnread++; showTabUnread() }
 function clearTabUnread() { if (tabUnread === 0) return; tabUnread = 0; showTabUnread() }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) clearTabUnread() })
 window.addEventListener('focus', clearTabUnread)
+showTabUnread()
 
 // Mailbox 一覧の取り直し。失敗しても止めず、少し待って数回まで試す (SSE が開き直したときは試し直す)。
 // 表示は #err に出し、成功したら消す (送信のエラーは消さない)

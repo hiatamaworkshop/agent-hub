@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C70
 - [ ] C72
 - [ ] C74
 
@@ -349,10 +348,13 @@ In the order they will be taken up. Only items without a status line and blocked
   - Item cards (`itemRequests` in `public/index.html`) count only requests from a `user` sender that are not unedited forwards. `ui:check` posts a later request with the same item from a Mailbox and forwards it unedited, and the card still shows the human's earlier request and its promise diff.
   - `tools/dev/roles/leader.md` tells the leader to pass `item` when `GOAL` starts with `C<n>`. protocol.md (§2, §3, §5) and design.md §3.15 (decision 3) are updated.
   - Checked: `npm test` 364 pass (new: `GET /messages/:id` x2 in `src/hub/app.test.ts`; `item` to `meta.item` with six bad values rejected, reply inheritance, explicit item wins, and no item when the original has none, in `src/shim/shim.test.ts`); `npm run ui:check` 88 pass; `npm run docs:check` no errors. Not checked: a real leader session passing `item` end to end.
+- [x] C70 Give the browser tab a hub icon that shows the same two signals as the cards (2026-10-30, requested by the user)
+  - `public/index.html`: `TAB_ICON_IDLE` at the top of the script holds the idle hub icon (SVG data URI; empty gives the browser default). The tab draws the amber count badge (`--st-you`) with a white outline when the human is awaited (Needs you, Stopped, plus new arrivals while the tab is hidden, summed), the hub in `--st-working` when only someone is working (same `signalOf` as the cards), and the idle hub otherwise. Colors are read from the CSS variables at draw time (and redrawn when the color scheme changes). No blinking. The title count (`N waiting`) is unchanged and does not count Stopped.
+  - Checked: `npm test` 364 pass; `npm run ui:check` all pass (the existing scenes for the tab title still hold). Not checked: the icon was not looked at by eye in a real tab strip (light and dark), and `ui:check` has no scene for the icon itself.
 - [x] C71 Express "working" and "waiting on the human" on cards, with colors that are easy to change (2026-10-30, requested by the user)
   - Cards: frames and state lines read only `--st-you` (amber: Needs you, Stopped), `--st-working` (blue: Working, Waiting on others) and `--st-ring` (3px), set in the top CSS block; dark mode redefines the two colors. Working and Waiting on others pulse over about 2 s; `prefers-reduced-motion` gives a steady ring. A change between signals flashes for 1.5 s (Idle: green, no frame); the first render and unchanged re-renders do not flash. An agent's unread messages are not a signal: a connected card with only unread messages says plain `Working` with no frame, pulse or flash (decided 2026-10-30).
   - Checked with `npm run ui:check` (87 pass): first render no flash and Idle has no frame; Idle to Working flashes and pulses; Working to Idle flashes green with no frame; an unchanged re-render does not flash; to Needs you, no pulse and the amber frame; reduced motion gives a steady ring and no flash; unread only gives no frame, pulse or flash; Stopped has the same amber frame as Needs you. `npm test` 360 pass; `npm run docs:check` no errors. `docs/usage.md` says what the cards show for the two signals and where to recolor them.
-  - Not checked: dark mode and the feel of the pulse were not looked at by eye (dark mode is by the CSS block only). The tab (C70) is not changed.
+  - Not checked: dark mode and the feel of the pulse were not looked at by eye (dark mode is by the CSS block only).
   - Left open (2026-10-30): a card with only unread messages still says `Working` (muted) while it has no frame, so text and frame differ slightly. Renaming it (e.g. `Unread`) touches several `ui:check` scenes; not decided, kept as is.
 - [x] C69 Check and fill in the Hub's hooks per event, for other projects too (2026-10-29, requested by the user)
   - Found when vcp's cards showed effort but no model: vcp's `settings.local.json` was copied before C61 and had no `SessionStart` / `PostModelSwitch`, and the start check passed because any `/events` counted. Copying `tools/hooks/settings.json` into another project also breaks `SessionStart`, whose `${CLAUDE_PROJECT_DIR}` then points at that project. Done with a published user in mind, not as a fix to vcp only.
@@ -558,23 +560,6 @@ Related: it becomes the destination for having another agent or vendor double-ch
 Status: held(after C59)
 
 C59's Noise treats notification-type Events as fixed. Let a human configure what Noise includes (per Event kind). Where the setting lives is decided by looking at what C59's implementation showed: per browser in `localStorage` like the other filters, or shared in the Hub's configuration file (C74). C74 does not decide this. Once decided, remove the status and write the done-when conditions.
-
-### C70. Give the browser tab a hub icon that shows the same two signals as the cards
-
-Raised 2026-10-30 while using the Hub from another project. The tab has no static icon (`public/index.html` has no `<link rel="icon">`); only a number badge for unread messages / Needs you (`badgeIcon`, red for unread, amber for waiting) replaces it, and it goes back to the browser default when nothing is pending. Decided 2026-10-30: what matters is two signals, "someone is working" and "waiting on the human", and the tab and the cards express them the same way (C71 defines the two signals and their colors). No blinking in the favicon. The idle icon is a hub (a central node with spokes), drawn as an inline SVG.
-
-- Waiting on the human (Needs you, Stopped, and new arrivals for the human while the tab is hidden): the amber count badge replaces the icon (new arrivals no longer have their own red; they count as waiting on the human).
-- Working only (someone is working, nobody waits on the human): the hub icon drawn in the working color.
-- Nothing: the plain hub icon.
-- One block near the top of the script holds what a person would edit: the idle icon (an SVG data URI or a path; empty for the browser default). Colors come from the same CSS variables the cards use (`--st-you`, `--st-working` from C71), read at draw time, so recoloring is one place.
-- A white outline around the badge so it reads on light and dark tab strips.
-
-#### Done when
-- [ ] `public/index.html` has a hub-like SVG idle icon that shows when nothing is pending.
-- [ ] While someone is working and nobody waits on the human, the icon is drawn in the working color; while the human is awaited, the amber count badge shows (it takes priority over working). Neither blinks.
-- [ ] The tab colors are read from the same variables as the cards (`--st-you`, `--st-working`); the idle icon is changed in one block without touching the drawing code.
-- [ ] The badge has a white outline.
-- [ ] `npm test` and `npm run ui:check` pass.
 
 ### C72. Start the page on the project the team was started for
 
