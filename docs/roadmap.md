@@ -19,6 +19,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C85
 
 (Items with a status line are listed under "Items".)
 
@@ -607,7 +608,8 @@ Status: proposed
 
 Raised 2026-10-30 in an outside discussion (a session not on the team, comparing kanary relay, mcp_agent_mail and the CLI relays). Not decided; C80 to C85 are its remarks, filed as proposals for the user to sort.
 Thesis of the remark: the target is not another communication tool but GitHub-centred OSS maintainer conventions with the human-made chaos removed. Points to write as one section of design.md (likely next to §1.1):
-- A working definition: development turns intent into changes that are verified, reversible and traceable to their origin, and the scarcest resource is human attention. A convention is judged by whether it lowers human attention per accepted change without lowering assurance.
+- The thesis (agreed with the user, 2026-10-30): the question is not whether a human or an AI decides, but how the system keeps moving forward. The history of development is kept, in the repository (git, the ledger's closed lines, §6, §9). Approvals and warnings that would become formalities or be ignored do not stop the flow; they are recorded outside it with the time and a pointer back, and when a problem appears later, the first step is to match it against that record and its timing. C85 is the first case; C83 and C84 are to be reconsidered as records rather than gates.
+  This replaces the remark's first wording ("development turns intent into changes that are verified, reversible and traceable; a convention is judged by whether it lowers human attention per accepted change"), which would count removing the human's decision points (§1.1) as progress.
 - A guarantee only means something together with its input envelope ("this behaviour for inputs in this range"). Trust breaks when an input leaves the envelope and nobody notices; so: widen the envelope, state its boundary, and never let out-of-envelope input pass silently. Tests are recorded angles of input.
 - OSS trust sits on people (a maintainer knows a contributor); agents are replaced and carry no reputation, so trust must sit on evidence (fingerprinted acceptance, §3.11). This is why agent-hub refines rather than copies OSS conventions.
 - Sort conventions explicitly: drop the ones that buffer ego and social friction; strengthen the ones against agent failure modes (drift between report and change, sycophancy, scope overreach, forgetting).
@@ -636,7 +638,16 @@ Raised 2026-10-30 in an outside discussion (see C80). With hundreds of tests, ag
 Idea: hold "test set T passed on tree hash H, for input envelope E" as a fingerprinted claim. Agents verify only the delta from it; the full set runs at the gates (before a human accepts, before an item closes). The claim becomes invalid when H's inputs change or when a new use falls outside E (the second cannot be caught by hashes, so E must be written down). The Hub may announce invalidation as a notice and hold new requests (like "main is red").
 The Hub does not read host files, so hashing and running belong to the shim, a hook or CI; the Hub holds only the claim and its valid / invalid state (the same split as §9's open question on who derives the git diff). Open: the unit of T (a test directory, or an item's done-when conditions; the latter links the ledger and the tests). Watch for flaky tests and undeclared dependencies (derive dependencies rather than declare them; run the full set on a schedule to catch a poisoned cache).
 
-### C85. Warn when the running Claude Code is outside the verified envelope
-Status: proposed
+### C85. Record a start's warnings locally, including a Claude Code outside the verified envelope
 
-Raised 2026-10-30 in an outside discussion (see C80). design.md §6.1 is already a record of guarantees with envelopes (version, OS, model). Use it: warn when the running Claude Code version is newer than the last one verified in §6.1 (the auto-update that broke `claude.cmd` during C2's test is a real case), in the same spirit as C58's stale-checkout warning (warn, do not stop). Later, each §6.1 record could name the upstream guarantees it depends on, so one breaking marks its dependents for re-verification (the citation check of §3.11).
+Raised 2026-10-30 in an outside discussion (see C80); decided the same day by the user, on C80's thesis. A warning that would be ignored neither stops a start nor nags: it becomes a line in a local record, matched against `git log` by time and HEAD when something breaks later. design.md §6.1 is the envelope: the highest Claude Code version named in its headings (2.1.310 today; 2.1.301 to 2.1.314 came out in 14 days) is the last verified one. Recording it in §6.1 widens the envelope.
+- Writer: the team starter (`npm run team`, start-agent). It already runs `claude --version` before starting (`testClaudeCli`; the output is dropped on success) and collects C58's warnings, which today only reach the console. The Hub is not involved.
+- Recorded: only what git does not keep, i.e. the environment and the warnings shown at a start. Not recorded: changes and decisions (git, the ledger's `[x]` / `[-]` lines, §9), rejected proposals (`[-] C<n>`), review findings that were not adopted (an agent would be writing about itself; revisit after C82).
+- Dropped from the first proposal: marking §6.1 records that depend on one another for re-verification.
+
+#### Done when
+- [ ] `npm run team` and start-agent append one JSONL line to a local file under agent-hub's `logs/` (gitignored) when a start has warnings. The Hub is not involved
+- [ ] The line has the time, project, HEAD sha, role / Mailbox, the `claude --version` output, the last verified version with its design.md §6.1 section, and the warning texts (C58's and this item's)
+- [ ] A Claude Code version newer than the highest version named in design.md §6.1 headings is a warning. The start is not stopped
+- [ ] usage.md says where the file is and how to read it against `git log` when something breaks. design.md says what is recorded and what is not (changes and decisions are left to git), and that sessions started by hand are not covered
+- [ ] Unit tests for the version comparison and the line format
