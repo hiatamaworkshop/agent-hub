@@ -664,6 +664,7 @@ Operations (2026-10-30, user: lean to the safe side). The places where work stop
 - Drops address a Mailbox only at first; role addresses (`role:reviewer`) can come later.
 - C47 (a consult button: a Forward with a fixed covering note) is the same shape with the address and note fixed; it can be added later as a shortcut on top of this.
 
-Open: tree or graph layout, how the tab is switched, and how parallel requests to one party show (they close together on one reply, design.md §3.15). Once C77 is done, decide these and write the done-when conditions.
-- Leaning to a view switched inside the page rather than a second browser tab: a second page would open a second SSE connection and show `N waiting` in two tab titles and favicons.
+Decided (2026-10-30, user): the view is switched inside the page, not opened as a second browser tab (a second page would open a second SSE connection and show `N waiting` in two tab titles and favicons). The switch between the map and the messages is a toggle in the page header, at the top right: the header holds only the title and the connection state, and it is the only free space on the page.
+
+Open: tree or graph layout, and how parallel requests to one party show (they close together on one reply, design.md §3.15). Decide these and write the done-when conditions.
 - Dragging should not be the only way: keyboard and touch cannot drag, and `ui:check` (headless Chrome) tests drags poorly. A click alternative (a "Forward to…" menu filling the same draft) from the start.
