@@ -21,6 +21,7 @@ In the order they will be taken up. Only items without a status line and blocked
 
 - [ ] C72
 - [ ] C74
+- [ ] C76
 
 (Items with a status line are listed under "Items".)
 
@@ -623,17 +624,50 @@ Idea: the Hub serves its upload limits and retention through C74's endpoint (rea
 
 Once C74's endpoint exists, write the done-when conditions and change the status.
 
-### C76. Do not let a turn end while a handed request has no reply
-Status: proposed
+### C76. One health check button that pings Mailboxes holding a request with no reply
 
-Raised 2026-10-30. Whether a result reaches the browser depends on the agent calling `post_message`; the Hub does not carry terminal output (no automatic forwarding, no processing). On 2026-10-30 `agent-hub.leader` received the deployer's report (#312), wrote its report only in the terminal and ended the turn; the browser got nothing until the human asked. The existing safety nets only help a human notice afterwards: the card's `Stopped, no reply` and the `turn.end` Event carrying `last_assistant_message`. The role text and the delivery notice already ask for a reply, and it was still missed, so more wording is not the fix.
+Raised 2026-10-30. Whether a result reaches the browser depends on the agent calling `post_message`; the Hub does not carry terminal output (no automatic forwarding, no processing). On 2026-10-30 `agent-hub.leader` received the deployer's report, wrote its report only in the terminal and ended the turn, twice (#312 for C71; #324 for C70, leaving the human's #322 unreplied). The existing safety nets only help a human notice afterwards: the card's `Stopped, no reply` and the `turn.end` Event carrying `last_assistant_message`. The role text and the delivery notice already ask for a reply, and it was still missed, so more wording is not the fix.
+
+Direction (2026-10-30, user): not a `Stop` hook. Blocking a turn end is a Claude Code feature, so it would leave the same hole for other vendors' agents (design.md §3.7, §3.9), and hooks have been hard to get right before. The obligation "a handed request gets a reply" is checked on the Hub's side of the protocol, through normal delivery, so it works for any agent. In the end this is a timer (a watcher that pings, C79), and a setting that allows sending without a human's Send will come with it. Start with a human-pressed health check that only saves the human from asking "what is happening with this?".
+
+Decisions (2026-10-30, user):
+- One Health check button for the whole page, not a button per card: scanning every Mailbox is cheap. It sits in the free space of the page header, at the top right (with C78's view toggle). A human presses it (design.md §2 unchanged). No timer yet.
+- Mind token use: when nothing is wrong the agent must not overreact. The cue tells it to send only what it already has (its pending reply, or one line on why it cannot), and not to re-check, re-run tests or re-read files.
+
+Shape:
+- Pressing it scans all Mailboxes in all projects (the same `backlog` the cards use) and picks those in `Stopped, no reply`: a handed request with no reply and the turn ended. Working, Waiting on others and Idle Mailboxes are skipped, so a working agent is not interrupted.
+- To each picked Mailbox it sends one `kind: notice` from `user:browser`, naming its oldest unreplied request (`backlog.awaitingReply.oldestSeq` and its id). The body is a fixed template in one block of `public/index.html` (changeable in one place): `Health check: #<seq> has no reply in the Hub. If you have its result, send it now with post_message (kind=reply, reply_to=<id>). If you cannot finish it, reply with one line saying why. Do not re-check or re-run anything for this.`
+- The button shows how many Mailboxes it would ping (`Health check (2)`) and is disabled at 0, so pressing it when all is well sends nothing.
+- No Hub change: each cue is an ordinary `POST /messages`. A `notice` asks for no reply of its own, so it adds no new open request; the owed reply closes #<seq> as today.
+
+#### Done when
+- [ ] The page header has one Health check button at the top right, showing the number of `Stopped, no reply` Mailboxes across all projects and disabled at 0. Checked with `npm run ui:check`.
+- [ ] Pressing it sends one `notice` from `user:browser` to each of those Mailboxes, naming that Mailbox's oldest unreplied request's `#<seq>` and id with the fixed template, and nothing to Mailboxes in other states; the template lives in one block near the top of the script. Checked with `npm run ui:check`.
+- [ ] The Hub is unchanged; the notice adds no open request, and the agent's reply to the original closes the card as today. Checked with `npm run ui:check`.
+- [ ] `docs/usage.md` says what the button sends and to whom; `npm test` passes.
+
+
+### C79. A watcher that nudges on a timer
+Status: held(after C76)
+
+Raised 2026-10-30 as the second step of C76. A separate, non-LLM program and ordinary API client with its own Mailbox (e.g. `hub.watcher`), not code in the Hub: the Hub stays address-and-delivery only and never writes text itself; nudges are visibly from the watcher, and stopping it stops them. Every interval it reads `backlog` (the same derivation as the cards) and sends C76's cue (what the Health check button sends) to a Mailbox that holds a handed request with no reply and has shown no activity for T. Skips: a Mailbox waiting on others, and a request already nudged (one per request). Vendor signals (Claude's `turn.end`) may only make it faster, never required.
+
+Open: the opt-in setting that allows sending without a human's Send, and the boundary it needs in design.md §2; how "no activity" is judged without vendor hooks (last Message sent, last `inbox` call, attachment heartbeat); how it is run (`npm run watcher`, a second compose service). Decide after using C76's button for a while.
+Direction (2026-10-30, user): not a `Stop` hook. Blocking a turn end is a Claude Code feature, so it would leave the same hole for other vendors' agents (design.md §3.7, §3.9), and hooks have been hard to get right before. Instead the obligation "a handed request gets a reply" is enforced on the Hub's side of the protocol, by a watcher: a timer-like participant that pings periodically. Behavior may be rough at first; tuning comes after.
 
 Idea:
-- The `Stop` hook asks the Hub whether this Mailbox holds a handed request with no reply, and if so returns `{"decision":"block","reason":"Reply to #<seq> with post_message (kind=reply, reply_to=<id>) before ending the turn"}`, so the agent itself replies. Nothing is forwarded for it; the reply stays the agent's own words.
-- Never block when `stop_hook_active` is true (one nudge per stop, no loops), when the Mailbox is waiting on others (it issued a request whose reply has not come), when background tasks are running (C43), or when the Hub cannot be reached (fail open, as `post-event.mjs` does).
-- The decision reuses what the Hub already derives for card states (`backlog`), through one small read-only answer, so the UI and the hook agree.
+- The watcher is a separate, non-LLM program and an ordinary API client with its own Mailbox (e.g. `hub.watcher`), not code inside the Hub. The Hub stays address-and-delivery only and never writes text itself; nudges are visibly from the watcher. Stopping the watcher stops the nudges.
+- Every interval it reads `backlog` (the same derivation the cards use, so the UI and the watcher agree). When a Mailbox holds a handed request with no reply and has shown no activity for T, it sends that Mailbox one `notice` with `reply_to` the request: "#<seq> has no reply; answer with post_message (kind=reply, reply_to=<id>)". The reply stays the agent's own words; nothing is forwarded for it.
+- It goes through normal delivery, so it works for any agent: a Channels session starts a turn on it, a polling agent gets it on the next `inbox`.
+- Skips: a Mailbox that is waiting on others (its own request has no reply yet), and a request already nudged (one nudge per request, no loops). Interval, T and the skips are the watcher's settings.
+- Vendor-specific signals (Claude's `turn.end`) may only make it faster (nudge soon after the turn ends instead of after T); they are never required.
 
-First step: check the official docs for `Stop` hooks returning `decision: "block"` (the input's `stop_hook_active`, how `reason` reaches the model, whether `type: "http"` can block or only `command`), record it in design.md §6, and confirm on a real session. Then write the done-when conditions and remove the status.
+Open:
+- Whether a nudge that wakes an agent fits the non-goals (design.md §2: no running agents automatically, no forwarding without a human's Send). It carries no content and goes only to the party that owes the reply, but it is a message no human pressed Send for; decide and write the boundary in design.md §2 / §3.
+- Whether to start with a human-pressed step first (a "Nudge" button on the `Stopped, no reply` card filling the same fixed notice) and add the timer as an opt-in after.
+- How "no activity" is judged without vendor hooks (last Message sent, last `inbox` call, attachment heartbeat), and how the watcher is run (`npm run watcher`, a second compose service).
+
+Once these are decided, write the done-when conditions and remove the status.
 
 ### C78. A second tab showing where messages are stopped
 Status: held(after C77)
