@@ -1085,6 +1085,23 @@ The structure (Hub + an MCP per session + a browser) is standard; what is unique
   - Weakness: no authentication.
 - **Candidates to take in**: reservations before work (extending §3.11's SCOPE to a declaration made in advance), the distinction between "read" and "received", honest names for ACK states.
 
+### 8.5 Re-survey of 2026-10-30 (from search listings only; READMEs and code not read)
+
+Found by web search; what is written comes from the listing pages' summaries and is unverified. None changes §8.3 / §8.4: the structure is common, and none of them has the policy of a human pressing Send.
+
+| Mechanism | Summary (as listed) | Overlap with agent-hub |
+|---|---|---|
+| **Switchboard** (rodcoppi/switchboard-mcp) | A local MCP hub for Claude Code agents to talk to each other. Starts each agent in a tmux session, nudges the terminal, and has a web dashboard | Hub + MCP + browser, and starting agents (like `npm run team`) |
+| **Agent Hub MCP** (gilbarbara/agent-hub-mcp) | Communication, context sharing and task coordination between Claude Code agents across projects. Web dashboard, REST API with SSE | Almost the same structure, including across projects. Holds shared context, which the Hub does not (§3.14) |
+| **chat-mcp** (thiagovictorino) | Channels for Claude Code instances, runs in Docker, a web UI for watching conversations | Topics and resident in Docker |
+| **claude-ipc-broker** | Sessions message each other; both a Claude orchestrator and a human can give orders from the dashboard | The human's console. The closest of the new ones to §2's human-in-the-loop |
+| **claude-code-relay** / **cross-agent_mcp** | Relays between Claude Code sessions over MCP (the former without stealing window focus; the latter also Codex) | Delivery only |
+| **Agent Mail Rooms** | A paid, remote MCP endpoint for coordinating Codex agents with shared state | Hosted relative of mcp_agent_mail |
+| **Executive**, **c9s**, **CCDash**, **RCFlow** | Dashboards / orchestrators for many Claude Code (and Codex, OpenCode) sessions: c9s in the terminal, the others on the web | State display (P1), like Agent View. Not message passing |
+| **A2A protocol** (Agent2Agent) | A standard for agents to talk across vendors. Tasks pause in `input-required` (more input needed) or `auth-required` (authentication needed) | The vocabulary for "waiting on the human": a question ≈ `input-required`; a permission wait is near `auth-required` but not the same. Not used for local coding sessions as far as found. A candidate to map to, like MCP Events (§7) |
+
+Observation: delivery, addresses and dashboards are converging, so the difference stays in §1.1's own layers (records, conventions, the human's decision points), not in features.
+
 ## 9. Open questions (design)
 
 1. **The takeover policy**: exclusive (the newer wins; provisional), or allow several attaches at once (deliver to all / deliver to one of them).
