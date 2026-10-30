@@ -19,6 +19,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C75
 
 (Items with a status line are listed under "Items".)
 
@@ -572,7 +573,6 @@ Status: held(after C59)
 C59's Noise treats notification-type Events as fixed. Let a human configure what Noise includes (per Event kind). Where the setting lives is decided by looking at what C59's implementation showed: per browser in `localStorage` like the other filters, or shared in the Hub's configuration file (C74). C74 does not decide this. Once decided, remove the status and write the done-when conditions.
 
 ### C75. The page reads the Hub's limits and retention instead of its own copies
-Status: held(after C74)
 
 Raised 2026-10-30 in the C74 review. Two places in `public/index.html` copy values the Hub owns:
 - Image limits: the page's `MAX_IMAGE_BYTES` / `MAX_IMAGES` (20 MB, 4) repeat the Hub's `MAX_UPLOAD_BYTES` / `MAX_FILES_PER_MESSAGE` (`src/hub/files.ts`, whose error text also says "20 MB"), and the shim's `MAX_FETCH_BYTES` (25 MB, `src/shim/files.ts`) must stay at least the Hub's limit. These are security limits and stay constants; only the copies go.
@@ -580,29 +580,21 @@ Raised 2026-10-30 in the C74 review. Two places in `public/index.html` copy valu
 
 Idea: the Hub serves its upload limits and retention through C74's endpoint (read-only, not settings); the page's pre-check uses them, and the stale threshold is capped at the retention period. A check that the shim's fetch limit is not below the Hub's upload limit is added to `npm test`.
 
-Once C74's endpoint exists, write the done-when conditions and change the status.
+Decided 2026-10-30 (C74's `GET /config` exists). The Hub's own values come back next to the configurable ones, read-only: they are facts about this Hub, not settings, and are not read from `hub.config.json`. When an older Hub does not send them, the page skips its pre-check and leaves it to the Hub's error, so no copy remains in the page.
+
+#### Done when
+- [ ] `GET /config` also returns the Hub's upload limits (`MAX_UPLOAD_BYTES`, `MAX_FILES_PER_MESSAGE`) and `HUB_READ_RETENTION_HOURS`, apart from the configurable values; they cannot be set through `hub.config.json`. protocol.md is updated. Covered by `npm test`.
+- [ ] The page's image pre-check uses those values; `MAX_IMAGE_BYTES` / `MAX_IMAGES` are removed from `public/index.html`; without them the page skips the pre-check. Checked with `npm run ui:check`.
+- [ ] The stale hand-over threshold is the smaller of `STALE_HANDED_HOURS` (12) and the retention period. `npm run ui:check` has a scene with retention below 12 hours.
+- [ ] `npm test` fails if the shim's `MAX_FETCH_BYTES` is below the Hub's `MAX_UPLOAD_BYTES`.
+- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
 
 ### C79. A watcher that nudges on a timer
-Status: held(after C76)
+Status: held(decide after using C76's Health check button for a while)
 
 Raised 2026-10-30 as the second step of C76. A separate, non-LLM program and ordinary API client with its own Mailbox (e.g. `hub.watcher`), not code in the Hub: the Hub stays address-and-delivery only and never writes text itself; nudges are visibly from the watcher, and stopping it stops them. Every interval it reads `backlog` (the same derivation as the cards) and sends C76's cue (what the Health check button sends) to a Mailbox that holds a handed request with no reply and has shown no activity for T. Skips: a Mailbox waiting on others, and a request already nudged (one per request). Vendor signals (Claude's `turn.end`) may only make it faster, never required.
 
 Open: the opt-in setting that allows sending without a human's Send, and the boundary it needs in design.md §2; how "no activity" is judged without vendor hooks (last Message sent, last `inbox` call, attachment heartbeat); how it is run (`npm run watcher`, a second compose service). Decide after using C76's button for a while.
-Direction (2026-10-30, user): not a `Stop` hook. Blocking a turn end is a Claude Code feature, so it would leave the same hole for other vendors' agents (design.md §3.7, §3.9), and hooks have been hard to get right before. Instead the obligation "a handed request gets a reply" is enforced on the Hub's side of the protocol, by a watcher: a timer-like participant that pings periodically. Behavior may be rough at first; tuning comes after.
-
-Idea:
-- The watcher is a separate, non-LLM program and an ordinary API client with its own Mailbox (e.g. `hub.watcher`), not code inside the Hub. The Hub stays address-and-delivery only and never writes text itself; nudges are visibly from the watcher. Stopping the watcher stops the nudges.
-- Every interval it reads `backlog` (the same derivation the cards use, so the UI and the watcher agree). When a Mailbox holds a handed request with no reply and has shown no activity for T, it sends that Mailbox one `notice` with `reply_to` the request: "#<seq> has no reply; answer with post_message (kind=reply, reply_to=<id>)". The reply stays the agent's own words; nothing is forwarded for it.
-- It goes through normal delivery, so it works for any agent: a Channels session starts a turn on it, a polling agent gets it on the next `inbox`.
-- Skips: a Mailbox that is waiting on others (its own request has no reply yet), and a request already nudged (one nudge per request, no loops). Interval, T and the skips are the watcher's settings.
-- Vendor-specific signals (Claude's `turn.end`) may only make it faster (nudge soon after the turn ends instead of after T); they are never required.
-
-Open:
-- Whether a nudge that wakes an agent fits the non-goals (design.md §2: no running agents automatically, no forwarding without a human's Send). It carries no content and goes only to the party that owes the reply, but it is a message no human pressed Send for; decide and write the boundary in design.md §2 / §3.
-- Whether to start with a human-pressed step first (a "Nudge" button on the `Stopped, no reply` card filling the same fixed notice) and add the timer as an opt-in after.
-- How "no activity" is judged without vendor hooks (last Message sent, last `inbox` call, attachment heartbeat), and how the watcher is run (`npm run watcher`, a second compose service).
-
-Once these are decided, write the done-when conditions and remove the status.
 
 ### C78. A second tab showing where messages are stopped
 Status: held(after C77)
