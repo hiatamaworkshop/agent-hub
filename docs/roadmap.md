@@ -22,6 +22,7 @@ In the order they will be taken up. Only items without a status line and blocked
 - [ ] C70
 - [ ] C72
 - [ ] C74
+- [ ] C77
 
 (Items with a status line are listed under "Items".)
 
@@ -643,3 +644,34 @@ Idea:
 - The decision reuses what the Hub already derives for card states (`backlog`), through one small read-only answer, so the UI and the hook agree.
 
 First step: check the official docs for `Stop` hooks returning `decision: "block"` (the input's `stop_hook_active`, how `reason` reaches the model, whether `type: "http"` can block or only `command`), record it in design.md §6, and confirm on a real session. Then write the done-when conditions and remove the status.
+
+### C77. Let agents tag their messages with an item and a parent
+
+Raised 2026-10-30 (discussion with the human about a view of where messages are stopped when a leader runs several deployers in parallel; that view is C78). Only the UI sets `meta.item`, on a request a human builds from a roadmap item. `post_message` takes `kind`, `body`, `to?`, `reply_to?` and no meta, so a leader's requests to deployers carry the item only as text in `GOAL`, which the Hub does not read. The edges that multiply with parallel work are exactly the ones without an item.
+
+Decisions (2026-10-30, user):
+- Restrained first: agents can set only `item` and `parent`, as two dedicated `post_message` arguments, not an open `meta` argument. Adding another key later means adding another argument on purpose.
+- Inheritance happens in the shim, not the Hub. The Hub keeps interpreting only `meta.files`. The shim holds no state (design.md §3.1), so for a reply it reads the original Message from the Hub at send time instead of remembering what it delivered.
+
+Shape:
+- `item` is an ID such as `C71`. The shim builds `meta.item` as `{ id, project, source: null, promise: null }`, with `project` from its Mailbox. `parent` is the id of the Message the agent was handling when it sent this one; the shim stores it as `meta.parent`.
+- A reply (`reply_to`) without `item` gets the original's `meta.item.id` and `project`, if it has one. An explicit `item` wins.
+- Labels on the edges of C78 are derived by the UI from the Messages it holds, not added to `backlog` by the Hub.
+- Item cards (requested / reported, promise changes) keep meaning the human's request: requests from agents do not become an item's latest request.
+
+#### Done when
+- [ ] `post_message` accepts `item?` and `parent?`; the shim validates them (an ID of the form `C<n>`, a Message id) and builds `meta.item` / `meta.parent` as above; a bad value is rejected with an error the agent can read. Covered by `npm test`.
+- [ ] A reply without `item` inherits the original's item through a read from the Hub at send time; the shim keeps no record of delivered Messages. Covered by `npm test`.
+- [ ] The Hub's handling of `meta` is unchanged (only `files` is interpreted; a test shows `item` and `parent` pass through untouched).
+- [ ] Item cards ignore requests whose sender is not the human, checked with `npm run ui:check`.
+- [ ] `tools/dev/roles/leader.md` says to pass `item` when `GOAL` starts with `C<n>`.
+- [ ] protocol.md (§2 `meta.item` / `meta.parent`, §5 `post_message`) and design.md (§3.15, where `meta.item` is decided) are updated in the same change; `npm test` passes.
+
+### C78. A second tab showing where messages are stopped
+Status: held(after C77)
+
+Raised 2026-10-30. With several deployers in parallel the thread interleaves and filtering by Mailbox hides the others. Thread history (flat time order, reply trees, Gmail conversations, Slack threads, Zulip topics) shows trade-offs, not a fix, so instead of reshaping the thread, add a view that answers a different question: not what was said, but whose move it is.
+
+Idea: the cards shown another way. Nodes are Mailboxes (plus the human), with the card states the UI already derives; edges are the open requests in `backlog.outgoing.to` (count and oldest time per address) and the human's Needs you; edge labels are items from C77. No change to the Hub. It shows the same whole as the main page, not a split (design.md §3.2 keeps projects out of tabs so a wait in another project is not missed), so Needs you must appear here too.
+
+Open: tree or graph layout, how the tab is switched, and how parallel requests to one party show (they close together on one reply, design.md §3.15). Once C77 is done, decide these and write the done-when conditions.
