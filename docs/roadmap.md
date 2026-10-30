@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C72
 - [ ] C74
 - [ ] C76
 
@@ -352,6 +351,10 @@ In the order they will be taken up. Only items without a status line and blocked
 - [x] C70 Give the browser tab a hub icon that shows the same two signals as the cards (2026-10-30, requested by the user)
   - `public/index.html`: `TAB_ICON_IDLE` at the top of the script holds the idle hub icon (SVG data URI; empty gives the browser default). The tab draws the amber count badge (`--st-you`) with a white outline when the human is awaited (Needs you, Stopped, plus new arrivals while the tab is hidden, summed), the hub in `--st-working` when only someone is working (same `signalOf` as the cards), and the idle hub otherwise. Colors are read from the CSS variables at draw time (and redrawn when the color scheme changes). No blinking. The title count (`N waiting`) is unchanged and does not count Stopped.
   - Checked: `npm test` 364 pass; `npm run ui:check` all pass (the existing scenes for the tab title still hold). Not checked: the icon was not looked at by eye in a real tab strip (light and dark), and `ui:check` has no scene for the icon itself.
+- [x] C72 Start the page on the project the team was started for (2026-10-30, requested by the user)
+  - `npm run team` / `hub-team` prints `UI: <hub>/?token=...#project=<key>` (`uiUrl` in `src/team/team.ts`; the key is the page's `projectKey` of the team's folder, URL-encoded). The project is in the #fragment, not `&project=`, because the Hub's `GET /?token=` redirects to `/` and drops other query parameters; a fragment survives the redirect and never reaches the server. The page also reads a `project` query parameter. The Hub is unchanged.
+  - The page (`takeUrlProject` in `public/index.html`) uses the value only when it exactly matches the first project list, then saves it; an unknown value is ignored (nothing stored, the stored value is restored as before); it is held as a string and never rendered. It removes `project` from the address bar as soon as it is read.
+  - Checked: `npm test` 365 pass (new: `uiUrl` normalizes, encodes markup and quotes); `npm run ui:check` all pass (new scenes: parameter wins over stored and is saved and removed from the URL; a markup-bearing unknown parameter is ignored, not stored and not rendered; no parameter restores stored); `npm run docs:check` no errors. Not checked: a real `npm run team` run printing the URL (only `uiUrl` is tested).
 - [x] C71 Express "working" and "waiting on the human" on cards, with colors that are easy to change (2026-10-30, requested by the user)
   - Cards: frames and state lines read only `--st-you` (amber: Needs you, Stopped), `--st-working` (blue: Working, Waiting on others) and `--st-ring` (3px), set in the top CSS block; dark mode redefines the two colors. Working and Waiting on others pulse over about 2 s; `prefers-reduced-motion` gives a steady ring. A change between signals flashes for 1.5 s (Idle: green, no frame); the first render and unchanged re-renders do not flash. An agent's unread messages are not a signal: a connected card with only unread messages says plain `Working` with no frame, pulse or flash (decided 2026-10-30).
   - Checked with `npm run ui:check` (87 pass): first render no flash and Idle has no frame; Idle to Working flashes and pulses; Working to Idle flashes green with no frame; an unchanged re-render does not flash; to Needs you, no pulse and the amber frame; reduced motion gives a steady ring and no flash; unread only gives no frame, pulse or flash; Stopped has the same amber frame as Needs you. `npm test` 360 pass; `npm run docs:check` no errors. `docs/usage.md` says what the cards show for the two signals and where to recolor them.
@@ -561,35 +564,6 @@ Related: it becomes the destination for having another agent or vendor double-ch
 Status: held(after C59)
 
 C59's Noise treats notification-type Events as fixed. Let a human configure what Noise includes (per Event kind). Where the setting lives is decided by looking at what C59's implementation showed: per browser in `localStorage` like the other filters, or shared in the Hub's configuration file (C74). C74 does not decide this. Once decided, remove the status and write the done-when conditions.
-
-### C72. Start the page on the project the team was started for
-
-Raised 2026-10-30. The page restores the last selected project from `localStorage` (`agent-hub.project`, `readProject` / `saveProject`), and the URL that `npm run team` prints (`UI: <hub>/?token=...`, `src/team/team.ts`) carries no project. So starting a team for one repository opens the page on whichever project was selected last (seen: a team for agent-hub opened on vcp).
-
-Idea:
-- The printed URL gets `&project=<the project value the page uses for the team's folder>`.
-- On load, a valid `project` parameter wins over the saved value and is then saved as the new last selection. Without it, restoring the last selection is unchanged.
-- Treat both the parameter and the stored value as untrusted input. Use one as a selection only when it exactly matches a project the Hub's list returned; otherwise ignore it and fall back (parameter, then stored value, then the default). Never put either into `innerHTML`, a selector string or an API path unvalidated; never store a value that did not match the list. After use, remove `project` from the address bar (`history.replaceState`) so a reload or a shared screenshot does not carry it. The token is not touched by this item.
-
-#### Done when
-- [ ] The URL printed by `npm run team` / `hub-team` includes the team's project, URL-encoded.
-- [ ] Opening it selects that project regardless of the last saved selection, and saves it as the last selection.
-- [ ] A `project` parameter or stored value that is not in the Hub's project list is ignored (no error, no stored value, falls back as above); a value containing markup or quotes is never rendered as HTML.
-- [ ] A URL without `project` restores the last selection as before; `project` is removed from the address bar after use.
-- [ ] `npm run ui:check` covers: parameter wins over stored, unknown parameter ignored, no parameter restores stored. `npm test` passes.
-
-### C73. Keep the project dropdown manageable when projects pile up
-Status: held(after C74)
-
-Raised 2026-10-30. The project list is the union of the `project` values of Mailboxes and roadmap indexes (design.md §3.15, "A project is a value"), so it has no order and a project disappears only when its last Mailbox and index are deleted by hand. With many projects the dropdown gets hard to use.
-
-Idea:
-- Order by recent activity (the latest attach or message of that project), most recent first. Computed from existing times; no new state.
-- Projects with no activity for N days (default 30) go under a collapsed "Older" group. They are only hidden from the top, not deleted. N is `projects.olderDays` in the Hub's configuration file (C74), not a constant in the page.
-- Each entry shows how many things wait on the human and how many Mailboxes are connected.
-- A "remove this project" action that deletes its Mailboxes and indexes through the existing deletions, after a confirmation saying how many of each go. The project stays a value (no entity).
-
-Waits for C74, which builds the configuration file with this value as its first user. Not decided: whether the remove action is wanted at all.
 
 ### C74. A read-only configuration file for the Hub and the page
 

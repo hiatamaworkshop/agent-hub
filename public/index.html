@@ -1653,6 +1653,22 @@ document.addEventListener('mousedown', (e) => { if (!e.target.closest('.filterwr
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeFilter() })
 
 // 前回の選択は、最初の一覧が届いてから効かせる (一覧を取れないうちに全部を隠さないため)
+// npm run team が表示する URL の project (C72)。Hub は ?token= を cookie に移して / へ飛ばし、ほかの query を落とすため、project は #fragment で届く
+// (query でも読む)。未検証の入力なので、文字列としてしか持たず、最初の一覧に完全一致したときだけ選択に使う。読んだらアドレスバーから消す
+let urlProject = takeUrlProject()
+function takeUrlProject() {
+  try {
+    const u = new URL(location.href)
+    const hash = new URLSearchParams(u.hash.slice(1))
+    const v = hash.get('project') ?? u.searchParams.get('project')
+    if (hash.has('project') || u.searchParams.has('project')) {
+      hash.delete('project'); u.searchParams.delete('project')
+      const rest = hash.toString()
+      history.replaceState(null, '', u.pathname + u.search + (rest ? '#' + rest : ''))
+    }
+    return v || ''
+  } catch { return '' }
+}
 let savedProject = readProject()
 function readProject() { try { return localStorage.getItem(PROJECT_KEY) || '' } catch { return '' } }
 function saveProject(v) { try { localStorage.setItem(PROJECT_KEY, v) } catch {} }
@@ -1705,7 +1721,8 @@ function buildProjects() {
   for (const p of projects.values()) if (names.get(p.label) > 1) p.label = p.path
   const settled = mailboxesLoaded && indexesSettled
   if (settled && savedProject !== null) {
-    if (projects.has(savedProject)) { FILTER.project = savedProject; autoTo = true }
+    if (urlProject && projects.has(urlProject)) { FILTER.project = urlProject; saveProject(urlProject); autoTo = true }
+    else if (projects.has(savedProject)) { FILTER.project = savedProject; autoTo = true }
     savedProject = null
   }
   if (settled && FILTER.project && !projects.has(FILTER.project)) { FILTER.project = ''; saveProject('') }

@@ -563,6 +563,26 @@ try {
     await sleep(1000)
   }
   await evaluate("try { localStorage.removeItem('agent-hub.sidebar') } catch (e) {}")
+  // 起動時のプロジェクト (C72): URL の #project= は保存値より優先され、保存される。知らない値は無視し、保存もしない。何もなければ保存値を戻す。読んだら URL から消す
+  {
+    const keys = JSON.parse(await evaluate('JSON.stringify([...projects.keys()])'))
+    const [a, b] = keys
+    const open = async (hash, stored) => {
+      await evaluate(stored === null ? "localStorage.removeItem('agent-hub.project')" : `localStorage.setItem('agent-hub.project', ${JSON.stringify(stored)})`)
+      await cdp('Page.navigate', { url: `${HUB}/?token=${TOKEN}${hash}` })
+      await sleep(1500)
+      return JSON.parse(await evaluate("JSON.stringify({ sel: $('project').value, filter: FILTER.project, stored: localStorage.getItem('agent-hub.project'), hash: location.hash, search: location.search })"))
+    }
+    const win = await open(`#project=${encodeURIComponent(b)}`, a)
+    verify('起動時のプロジェクト: URL の project は保存値に勝ち、保存される。読んだら URL から消える (C72)', keys.length >= 2 && win.filter === b && win.sel === b && win.stored === b && win.hash === '' && win.search === '', { keys, win })
+    const bad = '"><img src=x onerror=alert(1)>'
+    const unknown = await open(`#project=${encodeURIComponent(bad)}`, a)
+    const noXss = await evaluate("document.querySelectorAll('img[src=x]').length === 0")
+    verify('起動時のプロジェクト: 一覧にない project は無視し、保存もせず、保存値に戻る。マークアップは描かれない (C72)', unknown.filter === a && unknown.stored === a && unknown.hash === '' && noXss, { unknown, noXss })
+    const none = await open('', b)
+    verify('起動時のプロジェクト: project がなければ保存値を戻す (C72)', none.filter === b && none.stored === b, { none })
+    await evaluate("localStorage.removeItem('agent-hub.project')")
+  }
   await reload()
   const w0 = await sideW()
   await dragBy(100)

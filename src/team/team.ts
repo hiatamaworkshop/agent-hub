@@ -201,18 +201,26 @@ export async function runTeam(o: TeamOptions): Promise<number> {
     for (const n of notes) console.log(`note: ${n}`)
     for (const f of failed) console.log(`failed: ${f}`)
   }
-  await printUiUrl(hubUrl, token)
+  await printUiUrl(hubUrl, token, o.projectDir)
   if (failed.length) return 1
   console.log('Done')
   return 0
 }
 
 // Print the UI's URL only when the token gets through to the Hub
-async function printUiUrl(hubUrl: string, token: string): Promise<void> {
+// The page's project value for a folder (the same normalization as `projectKey` in public/index.html).
+// It goes in the #fragment: the Hub redirects `/?token=` to `/` and drops the other query parameters, and a fragment is kept across the redirect (C72)
+export function uiUrl(hubUrl: string, token: string, projectDir: string): string {
+  const s = projectDir.replace(/[\\/]+/g, '/').replace(/(.)\/$/, '$1')
+  const key = /^[a-z]:/i.test(s) ? s.toLowerCase() : s
+  return `${hubUrl}/?token=${token}#project=${encodeURIComponent(key)}`
+}
+
+async function printUiUrl(hubUrl: string, token: string, projectDir: string): Promise<void> {
   if (!token) { console.log('No HUB_TOKEN, so the UI URL cannot be built (check .env)'); return }
   try {
     const r = await fetch(`${hubUrl}/mailboxes`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3000) })
-    if (r.ok) { console.log(`UI: ${hubUrl}/?token=${token}`); return }
+    if (r.ok) { console.log(`UI: ${uiUrl(hubUrl, token, projectDir)}`); return }
     if (r.status === 401) { console.warn('WARNING: HUB_TOKEN in .env does not match the Hub. The UI URL is in the Hub\'s log (with compose: docker compose logs hub)'); return }
     console.warn(`WARNING: the Hub answered ${r.status}, so the UI URL cannot be checked`)
   } catch {

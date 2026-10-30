@@ -9,6 +9,7 @@ import { hookTemplate, runHooks } from './hooks.js'
 import { envSetting, hubRolesFile, ROOT } from './env.js'
 import { parse } from './options.js'
 import { commandLine, quoteForPlatform } from './quote.js'
+import { uiUrl } from './team.js'
 import { detectOpener, launchFor, wtSeparatorError } from './tabs.js'
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'agent-hub-team-'))
@@ -151,4 +152,9 @@ test('hooks: the template points at agent-hub by absolute path, and --write adds
 test('wt: an argument with ; is refused because wt would split the command there', () => {
   assert.equal(wtSeparatorError(['agent-hub', 'C:\work\a', 'node', '--role', 'leader']), null)
   assert.match(wtSeparatorError(['t', 'C:\work\a;b', 'node']) ?? '', /a;b/)
+})
+
+test('uiUrl: the project goes in the fragment, normalized like the page and URL-encoded (C72)', () => {
+  assert.equal(uiUrl('http://127.0.0.1:7777', 'tok', 'C:\\Users\\a\\my hub\\'),'http://127.0.0.1:7777/?token=tok#project=c%3A%2Fusers%2Fa%2Fmy%20hub')
+  assert.equal(uiUrl('http://127.0.0.1:7777', 'tok', '/home/a/x"<b>'), 'http://127.0.0.1:7777/?token=tok#project=%2Fhome%2Fa%2Fx%22%3Cb%3E')
 })
