@@ -601,3 +601,42 @@ Decided (2026-10-30, user): the view is switched inside the page, not opened as 
 
 Open: tree or graph layout, and how parallel requests to one party show (they close together on one reply, design.md §3.15). Decide these and write the done-when conditions.
 - Dragging should not be the only way: keyboard and touch cannot drag, and `ui:check` (headless Chrome) tests drags poorly. A click alternative (a "Forward to…" menu filling the same draft) from the start.
+
+### C80. Write down the working conventions agent-hub stands for
+Status: proposed
+
+Raised 2026-10-30 in an outside discussion (a session not on the team, comparing kanary relay, mcp_agent_mail and the CLI relays). Not decided; C80 to C85 are its remarks, filed as proposals for the user to sort.
+Thesis of the remark: the target is not another communication tool but GitHub-centred OSS maintainer conventions with the human-made chaos removed. Points to write as one section of design.md (likely next to §1.1):
+- A working definition: development turns intent into changes that are verified, reversible and traceable to their origin, and the scarcest resource is human attention. A convention is judged by whether it lowers human attention per accepted change without lowering assurance.
+- A guarantee only means something together with its input envelope ("this behaviour for inputs in this range"). Trust breaks when an input leaves the envelope and nobody notices; so: widen the envelope, state its boundary, and never let out-of-envelope input pass silently. Tests are recorded angles of input.
+- OSS trust sits on people (a maintainer knows a contributor); agents are replaced and carry no reputation, so trust must sit on evidence (fingerprinted acceptance, §3.11). This is why agent-hub refines rather than copies OSS conventions.
+- Sort conventions explicitly: drop the ones that buffer ego and social friction; strengthen the ones against agent failure modes (drift between report and change, sycophancy, scope overreach, forgetting).
+- Name "what is not written in the repository did not happen" as the top principle (§3.16 already says it for progress).
+- Candidates not filed separately: trust as a widening envelope per role × model with acceptance records (a human still decides permissions); a "direction first" reply shape at the start of work (the correction in §6.1n); a fixed path from incidents in §6.1 to new test or verification angles; scope declared before work (C18).
+
+### C81. Tie commits to items and requests with commit trailers
+Status: proposed
+
+Raised 2026-10-30 in an outside discussion (see C80). OSS uses `Signed-off-by` and `Fixes #123`; agents do not write them unless asked. Make trailers such as `Item: C42` and `Hub-Request: m_123` part of the conventions, so "reflected" (C22) can be derived from `git log` instead of from replies. Open: who checks it (a commit hook in the project, or `docs:check`), and whether the Hub ever needs to see it (it does not read host files, §3.8).
+
+### C82. Objections and review findings carry a failure scenario
+Status: proposed
+
+Raised 2026-10-30 in an outside discussion (see C80). Borrowed from the Apache rule that a -1 needs a reason: a finding or objection names the input or state that breaks (an angle at the edge of the envelope, C80) and, where possible, an alternative. One without it is a NOTE, not an ERROR (§3.11's two levels). Against sycophancy and against long lists of weak findings. Related: C45 (reviewer conventions), C47.
+
+### C83. Approval levels by reversibility
+Status: proposed
+
+Raised 2026-10-30 in an outside discussion (see C80). Apache's lazy consensus leaves silence ambiguous. Split decisions by whether they can be undone: reversible ones (a doc wording, a local change on a branch) may be accepted after a stated window without objection; irreversible ones (push, publishing, deleting data, changing a promise) need an explicit human acceptance. Must stay inside §2 (no automatic forwarding, no autonomous orchestration): the window only marks something as "no objection", it never sends or merges.
+
+### C84. A checkpoint claim: a test set passed on a tree, within an envelope
+Status: proposed
+
+Raised 2026-10-30 in an outside discussion (see C80). With hundreds of tests, agents should not rerun all of them every turn. Prior art: result caches keyed by input hashes (Bazel, Gradle, Turborepo), affected-only runs (`nx affected`, `jest --changedSince`), and merge queues that run the full set once at the gate (bors, "Not Rocket Science Rule").
+Idea: hold "test set T passed on tree hash H, for input envelope E" as a fingerprinted claim. Agents verify only the delta from it; the full set runs at the gates (before a human accepts, before an item closes). The claim becomes invalid when H's inputs change or when a new use falls outside E (the second cannot be caught by hashes, so E must be written down). The Hub may announce invalidation as a notice and hold new requests (like "main is red").
+The Hub does not read host files, so hashing and running belong to the shim, a hook or CI; the Hub holds only the claim and its valid / invalid state (the same split as §9's open question on who derives the git diff). Open: the unit of T (a test directory, or an item's done-when conditions; the latter links the ledger and the tests). Watch for flaky tests and undeclared dependencies (derive dependencies rather than declare them; run the full set on a schedule to catch a poisoned cache).
+
+### C85. Warn when the running Claude Code is outside the verified envelope
+Status: proposed
+
+Raised 2026-10-30 in an outside discussion (see C80). design.md §6.1 is already a record of guarantees with envelopes (version, OS, model). Use it: warn when the running Claude Code version is newer than the last one verified in §6.1 (the auto-update that broke `claude.cmd` during C2's test is a real case), in the same spirit as C58's stale-checkout warning (warn, do not stop). Later, each §6.1 record could name the upstream guarantees it depends on, so one breaking marks its dependents for re-verification (the citation check of §3.11).
