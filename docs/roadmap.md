@@ -399,6 +399,9 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked (design.md §6.1x): Linux in a container with a stub `claude` that runs the shim (tmux tabs, Hub start, attach, skipping connected roles, the print fallback, fast failure, no `claude`); Windows with a real `claude` through `start-team.ps1` (attached), and the console-window fallback.
   - Closed with macOS and a real `claude` session on Linux unchecked, as the user decided (recorded in design.md §6.2-8). A first Windows try opened the tab hidden (`windowsHide`), fixed before closing.
   - `npm test` 357 pass, `npm run docs:check` no errors. The UI did not change.
+- [-] C81 Tie commits to items and requests with commit trailers (rejected 2026-10-30, item IDs are already in commit subjects, 53 of 193 this month; Hub-Request ids dangle once Messages are deleted, design.md §3.14; nothing reads trailers, as C22 derives "reflected" from the index)
+- [-] C83 Approval levels by reversibility (rejected 2026-10-30, accepting after a silent window is deciding by timeout, against design.md §2; the reversibility split already exists as commit freely / push on the user's word and is a point of C80; recording instead of gating is C80's thesis)
+- [-] C84 A checkpoint claim: a test set passed on a tree, within an envelope (rejected 2026-10-30, no need here as `npm test` takes about 12 s; a claim held by the Hub is knowledge, §3.14, and holding requests on it is orchestration, §2; hashing is solved per project by existing tools; "affected tests while working, the full set before reporting" is a point of C80)
 
 ## Items
 
@@ -606,37 +609,21 @@ Open: tree or graph layout, and how parallel requests to one party show (they cl
 ### C80. Write down the working conventions agent-hub stands for
 Status: proposed
 
-Raised 2026-10-30 in an outside discussion (a session not on the team, comparing kanary relay, mcp_agent_mail and the CLI relays). Not decided; C80 to C85 are its remarks, filed as proposals for the user to sort.
-Thesis of the remark: the target is not another communication tool but GitHub-centred OSS maintainer conventions with the human-made chaos removed. Points to write as one section of design.md (likely next to §1.1):
-- The thesis (agreed with the user, 2026-10-30): the question is not whether a human or an AI decides, but how the system keeps moving forward. The history of development is kept, in the repository (git, the ledger's closed lines, §6, §9). Approvals and warnings that would become formalities or be ignored do not stop the flow; they are recorded outside it with the time and a pointer back, and when a problem appears later, the first step is to match it against that record and its timing. C85 is the first case; C83 and C84 are to be reconsidered as records rather than gates.
-  This replaces the remark's first wording ("development turns intent into changes that are verified, reversible and traceable; a convention is judged by whether it lowers human attention per accepted change"), which would count removing the human's decision points (§1.1) as progress.
-- A guarantee only means something together with its input envelope ("this behaviour for inputs in this range"). Trust breaks when an input leaves the envelope and nobody notices; so: widen the envelope, state its boundary, and never let out-of-envelope input pass silently. Tests are recorded angles of input.
-- OSS trust sits on people (a maintainer knows a contributor); agents are replaced and carry no reputation, so trust must sit on evidence (fingerprinted acceptance, §3.11). This is why agent-hub refines rather than copies OSS conventions.
-- Sort conventions explicitly: drop the ones that buffer ego and social friction; strengthen the ones against agent failure modes (drift between report and change, sycophancy, scope overreach, forgetting).
-- Name "what is not written in the repository did not happen" as the top principle (§3.16 already says it for progress).
-- Candidates not filed separately: trust as a widening envelope per role × model with acceptance records (a human still decides permissions); a "direction first" reply shape at the start of work (the correction in §6.1n); a fixed path from incidents in §6.1 to new test or verification angles; scope declared before work (C18).
-
-### C81. Tie commits to items and requests with commit trailers
-Status: proposed
-
-Raised 2026-10-30 in an outside discussion (see C80). OSS uses `Signed-off-by` and `Fixes #123`; agents do not write them unless asked. Make trailers such as `Item: C42` and `Hub-Request: m_123` part of the conventions, so "reflected" (C22) can be derived from `git log` instead of from replies. Open: who checks it (a commit hook in the project, or `docs:check`), and whether the Hub ever needs to see it (it does not read host files, §3.8).
+Raised 2026-10-30 in an outside discussion (a session not on the team, comparing kanary relay, mcp_agent_mail and the CLI relays), whose remarks were filed as C80 to C85. Sorted with the user the same day: C85 decided; C81, C83 and C84 rejected (their usable parts are points below); C82 stays proposed.
+The remark's framing: the target is not another communication tool but GitHub-centred OSS maintainer conventions with the human-made chaos removed. Points to write as one section of design.md (likely next to §1.1):
+- The thesis (agreed with the user, 2026-10-30): the question is not whether a human or an AI decides, but how the system keeps moving forward. The history of development is kept in the repository (git, the ledger's closed lines, §6, §9), not in the Hub. Approvals and warnings that would become formalities or be ignored do not stop the flow; they are recorded outside it with the time and a pointer back, only for what git does not keep, and a later problem is first matched against that record and its timing. C85 is the first case.
+  The remark's first wording ("a convention is judged by whether it lowers human attention per accepted change") was dropped: it would count removing the human's decision points (§1.1) as progress.
+- A guarantee means something only together with its input envelope ("this behaviour for inputs in this range"): widen the envelope, state its boundary, and do not let input outside it pass unrecorded. §6.1's version / OS / model, §3.11's "state the coverage honestly" and C58 are already envelopes.
+- OSS trust sits on people (a maintainer knows a contributor); agents are replaced and carry no reputation, so trust sits on evidence (§3.11).
+- Sort conventions by what they do, not by where they came from: some that look social carry assurance (a second reviewer). Strengthen the ones against agent failure modes (drift between report and change, sycophancy, scope overreach, forgetting).
+- "What is not written in the repository did not happen" as the top principle (§3.16 says it for progress).
+- Conventions to include: decisions split by reversibility (a local commit proceeds; push, publishing, deleting data and changing a promise wait for the human's word; from C83). Affected tests while working, the full set before reporting done (from C84). Incidents in §6 become new verification angles. A "direction first" reply at the start of work (the correction in §6.1n).
 
 ### C82. Objections and review findings carry a failure scenario
 Status: proposed
 
-Raised 2026-10-30 in an outside discussion (see C80). Borrowed from the Apache rule that a -1 needs a reason: a finding or objection names the input or state that breaks (an angle at the edge of the envelope, C80) and, where possible, an alternative. One without it is a NOTE, not an ERROR (§3.11's two levels). Against sycophancy and against long lists of weak findings. Related: C45 (reviewer conventions), C47.
-
-### C83. Approval levels by reversibility
-Status: proposed
-
-Raised 2026-10-30 in an outside discussion (see C80). Apache's lazy consensus leaves silence ambiguous. Split decisions by whether they can be undone: reversible ones (a doc wording, a local change on a branch) may be accepted after a stated window without objection; irreversible ones (push, publishing, deleting data, changing a promise) need an explicit human acceptance. Must stay inside §2 (no automatic forwarding, no autonomous orchestration): the window only marks something as "no objection", it never sends or merges.
-
-### C84. A checkpoint claim: a test set passed on a tree, within an envelope
-Status: proposed
-
-Raised 2026-10-30 in an outside discussion (see C80). With hundreds of tests, agents should not rerun all of them every turn. Prior art: result caches keyed by input hashes (Bazel, Gradle, Turborepo), affected-only runs (`nx affected`, `jest --changedSince`), and merge queues that run the full set once at the gate (bors, "Not Rocket Science Rule").
-Idea: hold "test set T passed on tree hash H, for input envelope E" as a fingerprinted claim. Agents verify only the delta from it; the full set runs at the gates (before a human accepts, before an item closes). The claim becomes invalid when H's inputs change or when a new use falls outside E (the second cannot be caught by hashes, so E must be written down). The Hub may announce invalidation as a notice and hold new requests (like "main is red").
-The Hub does not read host files, so hashing and running belong to the shim, a hook or CI; the Hub holds only the claim and its valid / invalid state (the same split as §9's open question on who derives the git diff). Open: the unit of T (a test directory, or an item's done-when conditions; the latter links the ledger and the tests). Watch for flaky tests and undeclared dependencies (derive dependencies rather than declare them; run the full set on a schedule to catch a poisoned cache).
+Raised 2026-10-30 in an outside discussion (see C80). Borrowed from the Apache rule that a -1 needs a reason: a finding or objection names the input or state that breaks (an angle at the edge of the envelope, C80) and, where possible, an alternative. Against long lists of weak findings. Related: C45 (reviewer conventions), C47.
+Discussed 2026-10-30: `tools/dev/roles/reviewer.md` already asks each finding for `checked against:` (the source of truth it disagrees with), not for what breaks; the change would add `breaks when:`. A finding without one is kept as a NOTE (§3.11's two levels), not dropped: a higher cost of objecting would otherwise mean fewer objections, that is, more sycophancy. Claude Code's own code review asks each finding for a failure scenario (concrete inputs or state → wrong result).
 
 ### C85. Record a start's warnings locally, including a Claude Code outside the verified envelope
 
