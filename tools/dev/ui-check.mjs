@@ -335,6 +335,28 @@ try {
     const before = { seq: (await api('GET', '/messages?after=0&limit=1000')).messages.at(-1).seq, dep: await awaiting('demo.deployer') }
     const label = await evaluate("({ text: $('health').textContent, disabled: $('health').disabled, left: $('health').getBoundingClientRect().left > innerWidth / 2 })")
     verify('Health check: ヘッダー右上のボタンに Stopped, no reply の数が出て、1 件以上で押せる (C76)', stopped.length >= 2 && stopped.includes('demo.deployer') && stopped.includes('demo.old') && label.text === `Health check (${stopped.length})` && !label.disabled && label.left, { stopped, label })
+    // N=0: 一覧を空にして描き直し、戻す。押せず、琥珀にしない
+    const zero = await evaluate("(() => { const keep = mailboxList; mailboxList = []; renderHealth(); const r = { text: $('health').textContent, disabled: $('health').disabled, color: getComputedStyle($('health')).color, you: getComputedStyle(document.documentElement).getPropertyValue('--st-you').trim() }; mailboxList = keep; renderHealth(); return r })()")
+    verify('Health check: 0 件のときは押せず、琥珀にならない (C76)', zero.text === 'Health check (0)' && zero.disabled && zero.color !== 'rgb(154, 91, 0)' && zero.color !== zero.you, zero)
+    const hdr = await evaluate("document.querySelector('header').getBoundingClientRect().height")
+    verify('ページのヘッダーの高さは 32px 以下 (C76)', hdr <= 32, { hdr })
+    // ボタンの色 (N>0): --st-you を読む。タブの絵: Stopped があれば PNG の件数バッジ、作業中だけなら作業中の色の hub、何もなければ idle の hub
+    const btn = await evaluate("(() => { const probe = document.createElement('span'); probe.style.color = 'var(--st-you)'; document.body.append(probe); const you = getComputedStyle(probe).color; probe.remove(); return { color: getComputedStyle($('health')).color, you } })()")
+    verify('Health check: 1 件以上のとき、ボタンは --st-you の琥珀 (C76)', btn.color === btn.you, btn)
+    const icon = () => evaluate("(() => { const l = [...document.querySelectorAll('link[rel~=icon]')]; return { n: l.length, href: l[0] && l[0].href, type: l[0] && l[0].type } })()")
+    const live = await icon()
+    verify('タブの絵: Stopped があるとき、hub ではなく PNG の件数バッジ (C70)', live.n === 1 && live.href.startsWith('data:image/png') && live.type === 'image/png', { n: live.n, type: live.type, href: (live.href || '').slice(0, 30) })
+    // 3 つの枝を、ページの変数を差し替えて 1 つずつ。戻して描き直す
+    const branch = async (w, st, un, wk) => {
+      await evaluate(`(() => { tabWaiting = ${w}; tabStopped = ${st}; tabUnread = ${un}; tabWorking = ${wk}; showTabUnread() })()`)
+      return icon()
+    }
+    const workingIcon = await branch(0, 0, 0, true)
+    const idleIcon = await branch(0, 0, 0, false)
+    const idleHref = await evaluate('TAB_ICON_IDLE')
+    const badgeIcon2 = await branch(0, 1, 0, true)
+    verify('タブの絵: 作業中だけなら作業中の色の hub、何もなければ idle の hub、待ちがあれば作業中でも件数バッジ (C70)', workingIcon.href.startsWith('data:image/svg+xml') && workingIcon.href !== idleHref && idleIcon.href === idleHref && badgeIcon2.href.startsWith('data:image/png') && workingIcon.n === 1 && idleIcon.n === 1, { workingIcon: (workingIcon.href || '').slice(0, 30), idleSame: idleIcon.href === idleHref, badge: (badgeIcon2.href || '').slice(0, 30) })
+    await evaluate('renderBacklog(); (() => { const s = stoppedMailboxes().length; tabWaiting = -1; renderBacklog() })()')
     await evaluate("$('health').click()")
     await sleep(1500)
     const after = (await api('GET', `/messages?after=${before.seq}&limit=1000`)).messages
