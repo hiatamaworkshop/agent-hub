@@ -168,7 +168,7 @@
   .compose { display: flex; gap: 8px; align-items: flex-end; }
   .compose textarea { flex: 1 1 auto; min-width: 0; }
   .compose button[type=submit] { flex: none; }
-  #err:empty, #warn:empty, #hint:empty, #status:empty { display: none; }
+  #err:empty, #warn:empty, #cfgWarn:empty, #hint:empty, #status:empty { display: none; }
   #status { color: var(--reply); font-size: 12px; }
   /* 1 段目の右端に Commands。ヒントは 1 行に収め、長いときは省略する */
   #attach { margin-left: auto; }
@@ -199,7 +199,7 @@
   textarea { width: 100%; min-height: 44px; max-height: 40vh; resize: vertical; }
   button[type=submit] { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; padding: 5px 16px; }
   #replyInfo { font-size: 12px; color: var(--muted); }
-  #err, #warn { color: var(--warn); font-size: 12px; }
+  #err, #warn, #cfgWarn { color: var(--warn); font-size: 12px; }
   /* カスタムコマンドの管理ダイアログ */
   dialog#cmdDialog { width: min(640px, 92vw); max-height: 85vh; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg); }
   dialog#cmdDialog::backdrop { background: rgba(0, 0, 0, .35); }
@@ -284,7 +284,7 @@
         <span id="replyInfo"></span>
         <span id="hint"></span>
         <span id="status"></span>
-        <span id="err"></span><span id="warn"></span>
+        <span id="err"></span><span id="warn"></span><span id="cfgWarn"></span>
         <button type="button" id="attach" class="linkbtn" title="Attach images (PNG, JPEG, GIF, WebP)">Attach</button>
         <input type="file" id="filePick" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
         <button type="button" id="cmds" class="linkbtn" title="Define custom commands for the message box">Commands</button>
@@ -2119,6 +2119,22 @@ setInterval(() => {
 // --- roadmap の項目のカード (design.md §3.15) ---
 // 索引はホストのスクリプト (npm run docs:index) が Hub に送ったもの。request は meta.item で項目を指し、
 // 依頼中 / 報告済はその request への返信の有無、約束の変更は送った時点の指紋 (meta.item.promise) と今の指紋の違いで出す
+// hub.config.json の値 (C74)。Hub が検証したものを GET /config で受け取り、数としてだけ使う (innerHTML・セレクタ・パス・CSS には入れない)。
+// 取れない・形が違うときは既定。警告は #cfgWarn に textContent で出す
+const CONFIG_DEFAULTS = { projects: { olderDays: 30 } }
+let hubConfig = CONFIG_DEFAULTS
+async function loadConfig() {
+  try {
+    const r = await api('/config')
+    const days = r && r.config && r.config.projects && r.config.projects.olderDays
+    hubConfig = { projects: { olderDays: Number.isInteger(days) && days >= 1 && days <= 3650 ? days : CONFIG_DEFAULTS.projects.olderDays } }
+    const warnings = Array.isArray(r && r.warnings) ? r.warnings.filter((w) => typeof w === 'string') : []
+    $('cfgWarn').textContent = warnings.length ? `hub.config.json: ${warnings.length} warning${warnings.length === 1 ? '' : 's'}` : ''
+    $('cfgWarn').title = warnings.join('\n')
+  } catch {
+    hubConfig = CONFIG_DEFAULTS // 404 は /config を持たない古い Hub。ほかの失敗でも既定のまま動く
+  }
+}
 let indexList = []
 async function loadIndexes() {
   try {
@@ -2774,6 +2790,7 @@ function connect() {
     refreshMailboxes()
   })
   // Hub の側の最新の Event (backlog.lastEvent) も変わるので、一覧も取り直す
+    loadConfig()
   es.addEventListener('event.deleted', (e) => {
     removeEvents(JSON.parse(e.data).ids || [])
     refreshMailboxes()

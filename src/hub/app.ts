@@ -12,6 +12,7 @@ import { SettingsError, SettingsStore } from './settings.js'
 import { FileError, FileStore, MAX_UPLOAD_BYTES, resolveMeta } from './files.js'
 import { IndexStore, MAX_INDEX_BYTES, indexInputSchema } from './indexes.js'
 import { readFile } from 'node:fs/promises'
+import { defaultConfig, type ConfigResult } from './config.js'
 
 export interface AppOptions {
   hub: Hub
@@ -25,6 +26,8 @@ export interface AppOptions {
   files?: FileStore
   // roadmap の項目の索引。省略時は /indexes を公開しない
   indexes?: IndexStore
+  // hub.config.json の検証済みの値。省略時はすべて既定
+  config?: ConfigResult
 }
 
 const BROWSER: Sender = { type: 'user', id: 'browser', role: null }
@@ -193,6 +196,11 @@ export function createApp(opts: AppOptions) {
   app.get('/mailboxes', (c) => c.json({ mailboxes: hub.describeMailboxes() }))
   // UI が、Mailbox のまだないプロジェクトでも role 宛てを選べるようにする (design.md §3.15 の「プロジェクトは値」)
   app.get('/roles', (c) => c.json({ roles: hub.listRoles() }))
+  // hub.config.json の検証済みの値と警告 (読み取りだけ。書く API はない。protocol.md §3)
+  app.get('/config', (c) => {
+    const r = opts.config ?? defaultConfig()
+    return c.json({ config: r.config, warnings: r.warnings })
+  })
 
   // 接続中の Mailbox は 409 (mailbox_attached) で残す。未知の名前は 404
   app.delete('/mailboxes/:name', (c) => {

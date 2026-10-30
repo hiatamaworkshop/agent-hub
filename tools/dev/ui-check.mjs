@@ -335,6 +335,20 @@ try {
     const before = { seq: (await api('GET', '/messages?after=0&limit=1000')).messages.at(-1).seq, dep: await awaiting('demo.deployer') }
     const label = await evaluate("({ text: $('health').textContent, disabled: $('health').disabled, left: $('health').getBoundingClientRect().left > innerWidth / 2 })")
     verify('Health check: ヘッダー右上のボタンに Stopped, no reply の数が出て、1 件以上で押せる (C76)', stopped.length >= 2 && stopped.includes('demo.deployer') && stopped.includes('demo.old') && label.text === `Health check (${stopped.length})` && !label.disabled && label.left, { stopped, label })
+    // hub.config.json (C74): ページは /config の値を数としてだけ使い、警告は textContent で出す。api を差し替えて確かめ、戻す
+    const cfg = await evaluate(`(async () => {
+      const real = api
+      api = async () => ({ config: { projects: { olderDays: 7 } }, warnings: ['x <img src=x onerror=alert(1)> bad', 'y'] })
+      await loadConfig()
+      const shown = { days: hubConfig.projects.olderDays, text: $('cfgWarn').textContent, title: $('cfgWarn').title, imgs: document.querySelectorAll('#cfgWarn img').length }
+      api = async () => ({ config: { projects: { olderDays: '7; drop' } }, warnings: [] })
+      await loadConfig()
+      const bad = { days: hubConfig.projects.olderDays, text: $('cfgWarn').textContent }
+      api = real
+      await loadConfig()
+      return { shown, bad, real: { days: hubConfig.projects.olderDays, text: $('cfgWarn').textContent } }
+    })()`)
+    verify('設定: ページは /config の値を数として使い、警告は文字列で出す。形の違う値は既定 (C74)', cfg.shown.days === 7 && cfg.shown.text === 'hub.config.json: 2 warnings' && cfg.shown.title.includes('<img') && cfg.shown.imgs === 0 && cfg.bad.days === 30 && cfg.bad.text === '' && cfg.real.days === 30 && cfg.real.text === '', cfg)
     // N=0: 一覧を空にして描き直し、戻す。押せず、琥珀にしない
     const zero = await evaluate("(() => { const keep = mailboxList; mailboxList = []; renderHealth(); const r = { text: $('health').textContent, disabled: $('health').disabled, color: getComputedStyle($('health')).color, you: getComputedStyle(document.documentElement).getPropertyValue('--st-you').trim() }; mailboxList = keep; renderHealth(); return r })()")
     verify('Health check: 0 件のときは押せず、琥珀にならない (C76)', zero.text === 'Health check (0)' && zero.disabled && zero.color !== 'rgb(154, 91, 0)' && zero.color !== zero.you, zero)

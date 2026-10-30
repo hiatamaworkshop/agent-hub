@@ -7,6 +7,7 @@ import { createApp } from './app.js'
 import { FileStore } from './files.js'
 import { Hub } from './hub.js'
 import { IndexStore } from './indexes.js'
+import { loadConfig } from './config.js'
 import { loadRoles, RolesError, type Roles } from './roles.js'
 import { SettingsStore } from './settings.js'
 import { Store } from './store.js'
@@ -80,6 +81,13 @@ try {
 }
 if (roles) console.log(`[hub] roles: ${rolesFile} (${roles.size} 件)`)
 
+// hub.config.json (C74)。なくても壊れていても止まらない。値ごとに既定へ戻し、理由を起動ログに出す (UI にも警告で出る)
+const configFile = resolve(process.env.HUB_CONFIG_FILE ?? join(ROOT, 'hub.config.json'))
+const configResult = loadConfig(configFile)
+if (configResult.file) console.log(`[hub] config: ${configFile}`)
+else if (!configResult.warnings.length) console.log(`[hub] config: ${configFile} がないので、すべて既定`)
+for (const w of configResult.warnings) console.warn(`[hub] config: ${w}`)
+
 const store = new Store({
   file: join(dataDir, 'hub.jsonl'),
   roleSubscriptions: (role) => roles?.get(role)?.subscribe ?? [],
@@ -100,6 +108,7 @@ const app = createApp({
   settings,
   files,
   indexes,
+  config: configResult,
   uiHtml: async () => {
     try {
       return await readFile(join(ROOT, 'public', 'index.html'), 'utf8')

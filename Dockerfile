@@ -12,7 +12,8 @@ ENV NODE_ENV=production \
     HUB_HOST=0.0.0.0 \
     HUB_PORT=7777 \
     HUB_DATA_DIR=/data \
-    HUB_ROLES_FILE=/host/roles.json
+    HUB_ROLES_FILE=/host/roles.json \
+    HUB_CONFIG_FILE=/host/hub.config.json
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist

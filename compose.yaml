@@ -6,13 +6,14 @@ services:
     restart: unless-stopped
     init: true
     env_file: .env
-    # .env の HUB_HOST / HUB_DATA_DIR / HUB_ROLES_FILE は直接起動向けなので、コンテナ内の値で上書きする
+    # .env の HUB_HOST / HUB_DATA_DIR / HUB_ROLES_FILE / HUB_CONFIG_FILE は直接起動向けなので、コンテナ内の値で上書きする
     environment:
       HUB_HOST: 0.0.0.0
       # コンテナ内も同じポートで listen する (ログの UI の URL がホストから開けるものになる)
       HUB_PORT: ${HUB_PORT:-7777}
       HUB_DATA_DIR: /data
       HUB_ROLES_FILE: /host/roles.json
+      HUB_CONFIG_FILE: /host/hub.config.json
     ports:
       # 127.0.0.1: を外すと全インターフェースに公開される。外さないこと
       - "127.0.0.1:${HUB_PORT:-7777}:${HUB_PORT:-7777}"

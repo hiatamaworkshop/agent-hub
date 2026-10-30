@@ -8,6 +8,8 @@ dist/
 !.env.example
 # role 定義は環境ごとの設定。見本は roles.example.json (コミットする)
 /roles.json
+# Hub とページの設定 (読み取り専用)。見本は hub.config.example.json (コミットする)
+/hub.config.json
 
 # ランタイムのログ・データ (イベントログ、未読キュー、SQLite など)
 logs/

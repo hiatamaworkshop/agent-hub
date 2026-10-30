@@ -2,7 +2,7 @@
 
 Reference for running agent-hub day to day. The first start (setup, Hub, one session, a round trip) is in the [README](../README.md).
 
-Sections: [Reading the cards](#reading-the-cards-in-the-browser-state-and-backlog) · [Custom commands](#custom-commands) · [Pasting images](#pasting-images) · [Hooks](#show-question-waits-permission-waits-and-turn-ends-in-the-browser-hooks) · [Forward](#carry-an-agents-output-to-another-agent-forward) · [Subscriptions](#subscribing-once-per-mailbox-is-enough) · [Takeover](#replacing-an-agent-takeover) · [Deleting Mailboxes](#deleting-mailboxes-you-no-longer-use) · [Retention](#message-retention-and-deletion) · [Teams](#try-a-round-trip-between-roles-with-two-agents-leader--deployer) · [Items](#request-work-from-roadmap-items-items) · [roles.json](#role-definitions-rolesjson) · [HUB_LANGUAGE](#the-language-agents-write-to-the-human-in-hub_language) · [inbox](#using-it-with-agents-other-than-claude-code-inbox) · [curl](#using-curl-notes-for-windows) · [Development](#development)
+Sections: [Reading the cards](#reading-the-cards-in-the-browser-state-and-backlog) · [Custom commands](#custom-commands) · [Pasting images](#pasting-images) · [Hooks](#show-question-waits-permission-waits-and-turn-ends-in-the-browser-hooks) · [Forward](#carry-an-agents-output-to-another-agent-forward) · [Subscriptions](#subscribing-once-per-mailbox-is-enough) · [Takeover](#replacing-an-agent-takeover) · [Deleting Mailboxes](#deleting-mailboxes-you-no-longer-use) · [Retention](#message-retention-and-deletion) · [Teams](#try-a-round-trip-between-roles-with-two-agents-leader--deployer) · [Items](#request-work-from-roadmap-items-items) · [roles.json](#role-definitions-rolesjson) · [hub.config.json](#hub-settings-hubconfigjson) · [HUB_LANGUAGE](#the-language-agents-write-to-the-human-in-hub_language) · [inbox](#using-it-with-agents-other-than-claude-code-inbox) · [curl](#using-curl-notes-for-windows) · [Development](#development)
 
 ## Reading the cards in the browser (state and backlog)
 
@@ -225,6 +225,24 @@ npm run hub                               # read only at startup; restart after 
 - If the file's shape is wrong, the Hub does not start; it prints the file name and where the problem is and stops (it does not silently fall back to defaults).
 - Topics of the default subscriptions cannot be removed with `unsubscribe`. To remove one, delete it from `roles.json` and restart the Hub.
 - To use a file elsewhere, set `HUB_ROLES_FILE` (default `roles.json` at the repository root).
+
+## Hub settings (hub.config.json)
+
+A read-only configuration file for the Hub and the page (roadmap C74). Settings not tied to a deployment (thresholds the page uses) go here; deployment values (`HUB_TOKEN`, host, port, directories, retention, unread limits) stay in `.env`, so no value has two sources.
+
+```powershell
+Copy-Item hub.config.example.json hub.config.json   # for your environment; hub.config.json is not committed
+```
+
+- The Hub reads it once at startup and never writes it. A change needs a restart. There is no API to change it; `GET /config` (behind the token) only returns the validated values and warnings to the page. To use a file elsewhere, set `HUB_CONFIG_FILE` (default `hub.config.json` at the repository root). In Docker it is read through the existing `./:/host:ro` mount (`HUB_CONFIG_FILE=/host/hub.config.json` is set by `compose.yaml`).
+- A missing file means all defaults (one line in the startup log). A file that is not JSON also means all defaults and the Hub still starts. Each value is checked by type and range: a bad value falls back to its default and an unknown key is ignored, and both are named in the Hub's startup log and shown in the page as `hub.config.json: N warnings` (hover for the text) next to the error area.
+- Keys (JSON has no comments, so they are described here):
+
+| Key | Default | Range | Meaning |
+|---|---|---|---|
+| `projects.olderDays` | `30` | integer, 1 to 3650 | Days after which a project counts as older in the project list (roadmap C73 uses it) |
+
+- Not here: protocol constants, security limits (index size, image size and count), low-value UI constants, and colors (the CSS block at the top of `public/index.html`).
 
 ## The language agents write to the human in (HUB_LANGUAGE)
 

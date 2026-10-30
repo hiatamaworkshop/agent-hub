@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C74
 
 (Items with a status line are listed under "Items".)
 
@@ -350,6 +349,10 @@ In the order they will be taken up. Only items without a status line and blocked
 - [x] C70 Give the browser tab a hub icon that shows the same two signals as the cards (2026-10-30, requested by the user)
   - `public/index.html`: `TAB_ICON_IDLE` at the top of the script holds the idle hub icon (SVG data URI; empty gives the browser default). The tab draws the amber count badge (`--st-you`) with a white outline when the human is awaited (Needs you, Stopped, plus new arrivals while the tab is hidden, summed), the hub in `--st-working` when only someone is working (same `signalOf` as the cards), and the idle hub otherwise. Colors are read from the CSS variables at draw time (and redrawn when the color scheme changes). No blinking. The title count (`N waiting`) is unchanged and does not count Stopped.
   - Checked: `npm test` 364 pass; `npm run ui:check` all pass (the existing scenes for the tab title still hold). Not checked: the icon was not looked at by eye in a real tab strip (light and dark), and `ui:check` has no scene for the icon itself.
+- [x] C74 A read-only configuration file for the Hub and the page (2026-10-30, requested by the user)
+  - `src/hub/config.ts` reads `hub.config.json` (or `HUB_CONFIG_FILE`) once at startup (`main.ts`); `GET /config` (behind the token, GET only) returns the validated values and warnings; the page loads them in `loadConfig` and uses `projects.olderDays` as a number only, showing warnings with `textContent` in `#cfgWarn`. First key: `projects.olderDays` (default 30, integer 1 to 3650). `hub.config.example.json` is committed, `/hub.config.json` is in `.gitignore`, `compose.yaml` and the `Dockerfile` set `HUB_CONFIG_FILE=/host/hub.config.json` (the existing `./:/host:ro` mount; no new mount). The shim, `npm run team`, hooks and `.env` values are unchanged.
+  - Checked: `npm test` 383 pass (new `src/hub/config.test.ts`: missing file, non-JSON, directory, valid value, six bad `olderDays` values, range ends, unknown keys including `constructor` / `__proto__`, defaults not mutated, `GET /config` 401 without token / values and warnings / defaults / no write method); `npm run ui:check` all pass (new: the page takes the value as a number, rejects a non-number, shows warnings as text without rendering markup); `npm run docs:check` no errors. With Docker 29.9.2, `docker compose up` on another port and project name with a bad `hub.config.json` showed both warnings in the container log and in `GET /config`, so the mount is read.
+  - Not checked: the warning's look in a browser by eye; a missing-file `docker compose up` (the missing-file path is covered by unit tests only). C75 and C73 are unchanged.
 - [x] C76 One health check button that pings Mailboxes holding a request with no reply (2026-10-30, requested by the user)
   - `public/index.html`: a `Health check (N)` button at the top right of the page header (N = Mailboxes in `Stopped, no reply` across all projects, from the same `stateOf` / `backlog` the cards use; disabled at 0). Pressing it sends one `notice` from `user:browser` (ordinary `POST /messages`) to each such Mailbox, with `HEALTH_CHECK_TEMPLATE` (one constant near the top of the script) naming `backlog.awaitingReply.oldestSeq` and that request's id. No timer; a human presses it. The Hub (`src/`) and protocol are unchanged.
   - Checked with `npm run ui:check` (new scenes): the button shows the count at the top right and is enabled; the notices go only to the Stopped Mailboxes (`demo.deployer`, `demo.old`), one each, from `user:browser`, with the exact template, the oldest unreplied `#<seq>` and its id; the notice leaves `awaitingReply.count` unchanged and a reply to the original closes it as before; the count follows the backlog. `npm test` 365 pass; `npm run docs:check` no errors. `docs/usage.md` says what the button sends and to whom.
@@ -567,28 +570,6 @@ Related: it becomes the destination for having another agent or vendor double-ch
 Status: held(after C59)
 
 C59's Noise treats notification-type Events as fixed. Let a human configure what Noise includes (per Event kind). Where the setting lives is decided by looking at what C59's implementation showed: per browser in `localStorage` like the other filters, or shared in the Hub's configuration file (C74). C74 does not decide this. Once decided, remove the status and write the done-when conditions.
-
-### C74. A read-only configuration file for the Hub and the page
-
-Raised 2026-10-30 (survey while filing C73; reviewed the same day). The human prefers a configuration file to constants in code. Settings today are in four places: environment variables (`.env`; the Hub reads 11 `HUB_*`, while `HUB_MAILBOX`, `HUB_ROLE` and `HUB_FILES_DIR` are read by the shim, `npm run team` and hooks), `roles.json`, `HUB_DATA_DIR/settings.json` (custom commands written by the UI through `PUT /settings`, plus a hand-edited `defaultTo`), and the browser's `localStorage` (per-browser preferences).
-
-Why not extend `data/settings.json`: in Docker it sits in the named volume `hub-data`, out of reach for hand editing; it is state the UI rewrites (the whole file is re-serialized on save, and one broken command makes the whole file 500 `settings_invalid`); and configuration already has a precedent in the repository root (`roles.json`, and the consult item's fixed texts "in the repository's configuration").
-
-Shape:
-- `hub.config.json` at the repository root, ignored by git like `/roles.json`, with a committed `hub.config.example.json`. The path can be overridden with `HUB_CONFIG_FILE`. In Docker it is read through the existing `./:/host:ro` mount.
-- The Hub reads it once at startup (like `roles.json`; a change needs a restart) and never writes it. No write API, so holding the browser token does not let anyone change thresholds.
-- Validation is per value: a value of the wrong type, out of range, or an unknown key falls back to the default (or is ignored) and is reported in the Hub's startup log and as a warning in the UI. A broken or missing file means all defaults; the Hub still starts.
-- The Hub serves the validated values to the page (for example `GET /config`, behind the same token). The page uses them as data only (never `innerHTML`, never a selector, path or stylesheet text).
-- Scope: the Hub and the page. The shim, `npm run team` and hooks keep their environment variables. `HUB_TOKEN` and other deployment values (host, port, directories) stay in `.env`; retention and unread limits stay in `.env` too, so no value has two sources.
-- Not moved: protocol constants (`MESSAGE_KINDS`, `EVENT_KINDS`, `META_MAX_BYTES`), security limits (`MAX_INDEX_BYTES`, `MAX_COMMANDS`, the image size and count), and low-value UI constants (`FLASH_MS`, `SIDE_*`, `KEEP_DEFAULT`, which `localStorage` already overrides after the first use). Colors stay in the CSS block of C71 for now; if they move later, only `#rrggbb` values, light and dark pairs, applied with `style.setProperty`.
-- First user: `projects.olderDays` for C73. Other values move when their own items need them (C60 decides Noise's place itself; C75 reads the Hub's limits).
-
-#### Done when
-- [ ] The Hub reads `hub.config.json` (or `HUB_CONFIG_FILE`) once at startup; a missing or non-JSON file gives all defaults and a log line, and the Hub starts.
-- [ ] Each value is validated by type and range; a bad value or unknown key falls back to the default or is ignored, and is named in the startup log and in a UI warning. Covered by `npm test`.
-- [ ] The page gets the validated values from the Hub behind the token and uses them only as data; the Hub has no write API for them.
-- [ ] `hub.config.example.json` is committed with `projects.olderDays` (default 30) and comments in `docs/usage.md`; `/hub.config.json` is in `.gitignore`; the Docker setup reads it through the existing mount (checked with `docker compose up`).
-- [ ] design.md (where configuration lives, §3.8 / §3.14) and protocol.md (the new endpoint) are updated in the same change.
 
 ### C75. The page reads the Hub's limits and retention instead of its own copies
 Status: held(after C74)
