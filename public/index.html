@@ -29,6 +29,7 @@
   header { flex: none; display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
   header h1 { font-size: 15px; margin: 0; }
   #conn { font-size: 12px; color: var(--muted); }
+  #health { margin-left: auto; }
   #conn.ok::before { content: "● "; color: var(--reply); }
   #conn.ng::before { content: "● "; color: var(--warn); }
   /* grid の行は中身の高さに伸ばさず、残りの高さを行に割り当てる (min-height: 0 でスクロールさせる) */
@@ -234,7 +235,7 @@
 </style>
 </head>
 <body>
-<header><h1>agent-hub</h1><span id="conn" class="ng">Disconnected</span></header>
+<header><h1>agent-hub</h1><span id="conn" class="ng">Disconnected</span><button type="button" id="health" disabled title="Send one notice to each Mailbox in Stopped, no reply (all projects), naming its oldest request with no reply. Mailboxes in other states get nothing.">Health check (0)</button></header>
 <div id="auth">
   <p>Not authenticated. Open the <code>http://127.0.0.1:&lt;port&gt;/?token=…</code> URL shown in the Hub's console when it started.</p>
 </div>
@@ -318,6 +319,8 @@
 // タブのアイコン (C70)。何も待っていないときの絵はここだけで変える (SVG の data URI かパス。空文字ならブラウザの既定)。
 // 作業中・人の番の絵は描画コード (hubSvg・badgeIcon) が --st-working・--st-you から描く
 const TAB_ICON_IDLE = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="#6b7280" stroke="#6b7280" stroke-width="2" stroke-linecap="round"><line x1="16" y1="16" x2="16" y2="4"/><line x1="16" y1="16" x2="26.4" y2="10"/><line x1="16" y1="16" x2="26.4" y2="22"/><line x1="16" y1="16" x2="16" y2="28"/><line x1="16" y1="16" x2="5.6" y2="22"/><line x1="16" y1="16" x2="5.6" y2="10"/><circle cx="16" cy="4" r="3" stroke="none"/><circle cx="26.4" cy="10" r="3" stroke="none"/><circle cx="26.4" cy="22" r="3" stroke="none"/><circle cx="16" cy="28" r="3" stroke="none"/><circle cx="5.6" cy="22" r="3" stroke="none"/><circle cx="5.6" cy="10" r="3" stroke="none"/><circle cx="16" cy="16" r="5.5" stroke="none"/></svg>')
+// Health check (C76) の定型文。Stopped, no reply の Mailbox へ、いちばん古い返信のない依頼を指して送る。#<seq> と <id> を埋める
+const HEALTH_CHECK_TEMPLATE = 'Health check: #<seq> has no reply in the Hub. If you have its result, send it now with post_message (kind=reply, reply_to=<id>). If you cannot finish it, reply with one line saying why. Do not re-check or re-run anything for this.'
 const $ = (id) => document.getElementById(id)
 const seen = new Map() // id → Message
 let lastSeq = 0 // 描画済みの最大 seq。再接続後に取り直す起点 (render() だけが更新する)
@@ -2064,9 +2067,41 @@ function tabWaitingOf(mb) {
 // サイドバー: 表示中のプロジェクトの合計。タブ: 全プロジェクトの人の番の件数 (tabWaitingOf)と、作業中のカードがあるか (tabWorking。カードの信号と同じ signalOf)
 let tabWaiting = 0
 let tabWorking = false
+// Health check の対象: Stopped, no reply の Mailbox (全プロジェクト。カードと同じ backlog・stateOf)
+const stoppedMailboxes = () => mailboxList.filter((mb) => { const st = stateOf(mb); return st && st.key === 'stopped' && mb.backlog && mb.backlog.awaitingReply.oldestSeq != null })
+let healthBusy = false
+function renderHealth() {
+  const n = stoppedMailboxes().length
+  $('health').textContent = `Health check (${n})`
+  $('health').disabled = n === 0 || healthBusy
+}
+$('health').onclick = async () => {
+  if (healthBusy) return
+  healthBusy = true
+  renderHealth()
+  let sent = 0
+  try {
+    for (const mb of stoppedMailboxes()) {
+      const seq = mb.backlog.awaitingReply.oldestSeq
+      const req = bySeq(seq) || (await api(`/messages?after=${seq - 1}&limit=1`)).messages.find((m) => m.seq === seq)
+      if (!req) continue
+      const body = HEALTH_CHECK_TEMPLATE.replace('<seq>', seq).replace('<id>', req.id)
+      const { recipients: _r, ...m } = await api('/messages', { method: 'POST', body: JSON.stringify({ kind: 'notice', body, to: { type: 'mailbox', id: mb.name } }) })
+      render(m)
+      sent++
+    }
+    setStatus(`Health check sent to ${sent} Mailbox${sent === 1 ? '' : 'es'}`)
+  } catch (e) {
+    setStatus(`Health check failed: ${e.message}`)
+  } finally {
+    healthBusy = false
+    renderHealth()
+  }
+}
 let tabStopped = 0 // Stopped は人の番だが、タイトルの件数 (Needs you) には足さない。アイコンのバッジにだけ足す
 function renderBacklog() {
   backlogChips($('backlog'), sumLayers(mailboxList.filter(visibleCard)))
+  renderHealth()
   const you = mailboxList.reduce((sum, mb) => sum + tabWaitingOf(mb), 0)
   const sig = mailboxList.map((mb) => signalOf(stateOf(mb)))
   const stopped = mailboxList.filter((mb) => { const st = stateOf(mb); return st && st.key === 'stopped' }).length

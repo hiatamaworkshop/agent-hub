@@ -327,6 +327,35 @@ try {
   }
   const evaluate = async (expression) => (await cdp('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })).result.value
   const seqOf = async (body) => (await api('GET', '/messages?after=0&limit=1000')).messages.findLast((m) => m.body === body).seq
+
+  // Health check (C76): Stopped, no reply の Mailbox だけに、いちばん古い返信のない依頼を指す notice を 1 通ずつ送る。依頼は増やさない
+  {
+    const awaiting = async (name) => (await api('GET', '/mailboxes')).mailboxes.find((m) => m.name === name).backlog.awaitingReply
+    const stopped = JSON.parse(await evaluate("JSON.stringify(stoppedMailboxes().map((m) => m.name).sort())"))
+    const before = { seq: (await api('GET', '/messages?after=0&limit=1000')).messages.at(-1).seq, dep: await awaiting('demo.deployer') }
+    const label = await evaluate("({ text: $('health').textContent, disabled: $('health').disabled, left: $('health').getBoundingClientRect().left > innerWidth / 2 })")
+    verify('Health check: ヘッダー右上のボタンに Stopped, no reply の数が出て、1 件以上で押せる (C76)', stopped.length >= 2 && stopped.includes('demo.deployer') && stopped.includes('demo.old') && label.text === `Health check (${stopped.length})` && !label.disabled && label.left, { stopped, label })
+    await evaluate("$('health').click()")
+    await sleep(1500)
+    const after = (await api('GET', `/messages?after=${before.seq}&limit=1000`)).messages
+    const notes = after.filter((m) => m.kind === 'notice' && m.body.startsWith('Health check:'))
+    const targets = notes.map((m) => m.to.id).sort()
+    const named = await Promise.all(notes.map(async (m) => {
+      const aw = await api('GET', '/mailboxes').then((r) => r.mailboxes.find((x) => x.name === m.to.id).backlog.awaitingReply)
+      const req = (await api('GET', `/messages?after=${aw.oldestSeq - 1}&limit=1`)).messages[0]
+      return m.from.type === 'user' && m.from.id === 'browser' && m.body === `Health check: #${aw.oldestSeq} has no reply in the Hub. If you have its result, send it now with post_message (kind=reply, reply_to=${req.id}). If you cannot finish it, reply with one line saying why. Do not re-check or re-run anything for this.`
+    }))
+    verify('Health check: Stopped, no reply の Mailbox にだけ、user:browser の notice を 1 通ずつ。最も古い依頼の #seq と id を定型文で指す (C76)', JSON.stringify(targets) === JSON.stringify(stopped) && named.every(Boolean), { stopped, targets, named })
+    const depAfter = await awaiting('demo.deployer')
+    const closes = (await api('GET', '/messages?after=0&limit=1000')).messages.find((m) => m.seq === before.dep.oldestSeq)
+    await ackAll(dep.attachmentId)
+    await api('POST', '/messages', { kind: 'reply', replyTo: closes.id, body: 'Health check への返信' }, { 'x-hub-attachment': dep.attachmentId })
+    const depClosed = await awaiting('demo.deployer')
+    verify('Health check: notice は返信待ちを増やさず、元の依頼への返信で通常どおり閉じる (C76)', depAfter.count === before.dep.count && depClosed.count < before.dep.count && depClosed.oldestSeq !== before.dep.oldestSeq, { before: before.dep, depAfter, depClosed })
+    await sleep(500)
+    const label2 = await evaluate("$('health').textContent")
+    verify('Health check: 数は backlog に追従する (C76)', label2 === `Health check (${(await evaluate("stoppedMailboxes().length"))})`, { label2 })
+  }
   // 畳んだ (Compact の印の付いた) 項目。ページ側の式を文字列で持つ
   const COMPACTED = "[...msgBoxes.values(), ...evtBoxes.values()].filter((b) => b.dataset.compacted === '1')"
   // バッジ (カードの名前と層) を実際に押し、強調された行と表示範囲を読む

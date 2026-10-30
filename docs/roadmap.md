@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C76
 - [ ] C74
 
 (Items with a status line are listed under "Items".)
@@ -351,6 +350,10 @@ In the order they will be taken up. Only items without a status line and blocked
 - [x] C70 Give the browser tab a hub icon that shows the same two signals as the cards (2026-10-30, requested by the user)
   - `public/index.html`: `TAB_ICON_IDLE` at the top of the script holds the idle hub icon (SVG data URI; empty gives the browser default). The tab draws the amber count badge (`--st-you`) with a white outline when the human is awaited (Needs you, Stopped, plus new arrivals while the tab is hidden, summed), the hub in `--st-working` when only someone is working (same `signalOf` as the cards), and the idle hub otherwise. Colors are read from the CSS variables at draw time (and redrawn when the color scheme changes). No blinking. The title count (`N waiting`) is unchanged and does not count Stopped.
   - Checked: `npm test` 364 pass; `npm run ui:check` all pass (the existing scenes for the tab title still hold). Not checked: the icon was not looked at by eye in a real tab strip (light and dark), and `ui:check` has no scene for the icon itself.
+- [x] C76 One health check button that pings Mailboxes holding a request with no reply (2026-10-30, requested by the user)
+  - `public/index.html`: a `Health check (N)` button at the top right of the page header (N = Mailboxes in `Stopped, no reply` across all projects, from the same `stateOf` / `backlog` the cards use; disabled at 0). Pressing it sends one `notice` from `user:browser` (ordinary `POST /messages`) to each such Mailbox, with `HEALTH_CHECK_TEMPLATE` (one constant near the top of the script) naming `backlog.awaitingReply.oldestSeq` and that request's id. No timer; a human presses it. The Hub (`src/`) and protocol are unchanged.
+  - Checked with `npm run ui:check` (new scenes): the button shows the count at the top right and is enabled; the notices go only to the Stopped Mailboxes (`demo.deployer`, `demo.old`), one each, from `user:browser`, with the exact template, the oldest unreplied `#<seq>` and its id; the notice leaves `awaitingReply.count` unchanged and a reply to the original closes it as before; the count follows the backlog. `npm test` 365 pass; `npm run docs:check` no errors. `docs/usage.md` says what the button sends and to whom.
+  - Not checked: a real agent acting on the notice. C79 stays `held(after C76)`: it is held on a decision after using the button, not blocked, so the ledger rules do not change it.
 - [x] C72 Start the page on the project the team was started for (2026-10-30, requested by the user)
   - `npm run team` / `hub-team` prints `UI: <hub>/?token=...#project=<key>` (`uiUrl` in `src/team/team.ts`; the key is the page's `projectKey` of the team's folder, URL-encoded). The project is in the #fragment, not `&project=`, because the Hub's `GET /?token=` redirects to `/` and drops other query parameters; a fragment survives the redirect and never reaches the server. The page also reads a `project` query parameter. The Hub is unchanged.
   - The page (`takeUrlProject` in `public/index.html`) uses the value only when it exactly matches the first project list, then saves it; an unknown value is ignored (nothing stored, the stored value is restored as before); it is held as a string and never rendered. It removes `project` from the address bar as soon as it is read.
@@ -597,29 +600,6 @@ Raised 2026-10-30 in the C74 review. Two places in `public/index.html` copy valu
 Idea: the Hub serves its upload limits and retention through C74's endpoint (read-only, not settings); the page's pre-check uses them, and the stale threshold is capped at the retention period. A check that the shim's fetch limit is not below the Hub's upload limit is added to `npm test`.
 
 Once C74's endpoint exists, write the done-when conditions and change the status.
-
-### C76. One health check button that pings Mailboxes holding a request with no reply
-
-Raised 2026-10-30. Whether a result reaches the browser depends on the agent calling `post_message`; the Hub does not carry terminal output (no automatic forwarding, no processing). On 2026-10-30 `agent-hub.leader` received the deployer's report, wrote its report only in the terminal and ended the turn, twice (#312 for C71; #324 for C70, leaving the human's #322 unreplied). The existing safety nets only help a human notice afterwards: the card's `Stopped, no reply` and the `turn.end` Event carrying `last_assistant_message`. The role text and the delivery notice already ask for a reply, and it was still missed, so more wording is not the fix.
-
-Direction (2026-10-30, user): not a `Stop` hook. Blocking a turn end is a Claude Code feature, so it would leave the same hole for other vendors' agents (design.md §3.7, §3.9), and hooks have been hard to get right before. The obligation "a handed request gets a reply" is checked on the Hub's side of the protocol, through normal delivery, so it works for any agent. In the end this is a timer (a watcher that pings, C79), and a setting that allows sending without a human's Send will come with it. Start with a human-pressed health check that only saves the human from asking "what is happening with this?".
-
-Decisions (2026-10-30, user):
-- One Health check button for the whole page, not a button per card: scanning every Mailbox is cheap. It sits in the free space of the page header, at the top right (with C78's view toggle). A human presses it (design.md §2 unchanged). No timer yet.
-- Mind token use: when nothing is wrong the agent must not overreact. The cue tells it to send only what it already has (its pending reply, or one line on why it cannot), and not to re-check, re-run tests or re-read files.
-
-Shape:
-- Pressing it scans all Mailboxes in all projects (the same `backlog` the cards use) and picks those in `Stopped, no reply`: a handed request with no reply and the turn ended. Working, Waiting on others and Idle Mailboxes are skipped, so a working agent is not interrupted.
-- To each picked Mailbox it sends one `kind: notice` from `user:browser`, naming its oldest unreplied request (`backlog.awaitingReply.oldestSeq` and its id). The body is a fixed template in one block of `public/index.html` (changeable in one place): `Health check: #<seq> has no reply in the Hub. If you have its result, send it now with post_message (kind=reply, reply_to=<id>). If you cannot finish it, reply with one line saying why. Do not re-check or re-run anything for this.`
-- The button shows how many Mailboxes it would ping (`Health check (2)`) and is disabled at 0, so pressing it when all is well sends nothing.
-- No Hub change: each cue is an ordinary `POST /messages`. A `notice` asks for no reply of its own, so it adds no new open request; the owed reply closes #<seq> as today.
-
-#### Done when
-- [ ] The page header has one Health check button at the top right, showing the number of `Stopped, no reply` Mailboxes across all projects and disabled at 0. Checked with `npm run ui:check`.
-- [ ] Pressing it sends one `notice` from `user:browser` to each of those Mailboxes, naming that Mailbox's oldest unreplied request's `#<seq>` and id with the fixed template, and nothing to Mailboxes in other states; the template lives in one block near the top of the script. Checked with `npm run ui:check`.
-- [ ] The Hub is unchanged; the notice adds no open request, and the agent's reply to the original closes the card as today. Checked with `npm run ui:check`.
-- [ ] `docs/usage.md` says what the button sends and to whom; `npm test` passes.
-
 
 ### C79. A watcher that nudges on a timer
 Status: held(after C76)
