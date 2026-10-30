@@ -357,19 +357,32 @@ try {
     // ボタンの色 (N>0): --st-you を読む。タブの絵: Stopped があれば PNG の件数バッジ、作業中だけなら作業中の色の hub、何もなければ idle の hub
     const btn = await evaluate("(() => { const probe = document.createElement('span'); probe.style.color = 'var(--st-you)'; document.body.append(probe); const you = getComputedStyle(probe).color; probe.remove(); return { color: getComputedStyle($('health')).color, you } })()")
     verify('Health check: 1 件以上のとき、ボタンは --st-you の琥珀 (C76)', btn.color === btn.you, btn)
-    const icon = () => evaluate("(() => { const l = [...document.querySelectorAll('link[rel~=icon]')]; return { n: l.length, href: l[0] && l[0].href, type: l[0] && l[0].type } })()")
-    const live = await icon()
-    verify('タブの絵: Stopped があるとき、hub ではなく PNG の件数バッジ (C70)', live.n === 1 && live.href.startsWith('data:image/png') && live.type === 'image/png', { n: live.n, type: live.type, href: (live.href || '').slice(0, 30) })
+    // 絵は blob: の URL (CSP の img-src 'self' blob: で読める)。href だけでなく、実際に読めることを Image の onload と securitypolicyviolation で確かめる
+    await evaluate("window.__csp = []; document.addEventListener('securitypolicyviolation', (e) => window.__csp.push(e.violatedDirective + ' ' + e.blockedURI.slice(0, 30)))")
+    const snap = () => evaluate("(() => { const l = [...document.querySelectorAll('link[rel~=icon]')]; return { n: l.length, href: l[0] && l[0].href, type: l[0] && l[0].type } })()")
+    const icon = async (prevHref) => {
+      for (let i = 0; i < 30; i++) {
+        const r = await snap()
+        if (r.href && r.href !== prevHref) return r
+        await sleep(100)
+      }
+      return snap()
+    }
+    const loads = (href) => evaluate(`new Promise((resolve) => { const im = new Image(); im.onload = () => resolve(true); im.onerror = () => resolve(false); im.src = ${JSON.stringify(href)} })`)
+    const live = await icon('')
+    verify('タブの絵: Stopped があるとき、hub ではなく PNG の件数バッジ (blob: で、読み込める) (C70)', live.n === 1 && live.href.startsWith('blob:') && live.type === 'image/png' && (await loads(live.href)), { n: live.n, type: live.type, href: (live.href || '').slice(0, 30) })
     // 3 つの枝を、ページの変数を差し替えて 1 つずつ。戻して描き直す
     const branch = async (w, st, un, wk) => {
+      const before = (await snap()).href
       await evaluate(`(() => { tabWaiting = ${w}; tabStopped = ${st}; tabUnread = ${un}; tabWorking = ${wk}; showTabUnread() })()`)
-      return icon()
+      const r = await icon(before)
+      return { ...r, loads: await loads(r.href) }
     }
     const workingIcon = await branch(0, 0, 0, true)
     const idleIcon = await branch(0, 0, 0, false)
-    const idleHref = await evaluate('TAB_ICON_IDLE')
     const badgeIcon2 = await branch(0, 1, 0, true)
-    verify('タブの絵: 作業中だけなら作業中の色の hub、何もなければ idle の hub、待ちがあれば作業中でも件数バッジ (C70)', workingIcon.href.startsWith('data:image/svg+xml') && workingIcon.href !== idleHref && idleIcon.href === idleHref && badgeIcon2.href.startsWith('data:image/png') && workingIcon.n === 1 && idleIcon.n === 1, { workingIcon: (workingIcon.href || '').slice(0, 30), idleSame: idleIcon.href === idleHref, badge: (badgeIcon2.href || '').slice(0, 30) })
+    const violations = await evaluate('window.__csp')
+    verify('タブの絵: 作業中だけなら作業中の色の hub (SVG)、何もなければ idle の hub (SVG)、待ちがあれば作業中でも件数バッジ (PNG)。どれも読み込め、CSP に止められない (C70)', workingIcon.type === 'image/svg+xml' && idleIcon.type === 'image/svg+xml' && badgeIcon2.type === 'image/png' && workingIcon.href !== idleIcon.href && workingIcon.n === 1 && idleIcon.n === 1 && badgeIcon2.n === 1 && workingIcon.loads && idleIcon.loads && badgeIcon2.loads && violations.length === 0, { workingIcon: { type: workingIcon.type, loads: workingIcon.loads }, idleIcon: { type: idleIcon.type, loads: idleIcon.loads }, badgeIcon2: { type: badgeIcon2.type, loads: badgeIcon2.loads }, violations })
     await evaluate('renderBacklog(); (() => { const s = stoppedMailboxes().length; tabWaiting = -1; renderBacklog() })()')
     await evaluate("$('health').click()")
     await sleep(1500)
