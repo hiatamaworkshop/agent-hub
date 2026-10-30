@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C75
 
 (Items with a status line are listed under "Items".)
 
@@ -350,6 +349,11 @@ In the order they will be taken up. Only items without a status line and blocked
 - [x] C70 Give the browser tab a hub icon that shows the same two signals as the cards (2026-10-30, requested by the user)
   - `public/index.html`: `TAB_ICON_IDLE` at the top of the script holds the idle hub icon (SVG text, turned into a `blob:` URL because the page's CSP blocks `data:` images; empty gives the browser default). The tab draws the amber count badge (`--st-you`) with a white outline when the human is awaited (Needs you, Stopped, plus new arrivals while the tab is hidden, summed), the hub in `--st-working` when only someone is working (same `signalOf` as the cards), and the idle hub otherwise. Colors are read from the CSS variables at draw time (and redrawn when the color scheme changes). No blinking. The title count (`N waiting`) is unchanged and does not count Stopped.
   - Checked: `npm test` 364 pass; `npm run ui:check` all pass (the existing scenes for the tab title still hold). Not checked: the icon was not looked at by eye in a real tab strip (light and dark), and `ui:check` has no scene for the icon itself.
+- [x] C75 The page reads the Hub's limits and retention instead of its own copies (2026-10-30, requested by the user)
+  - `GET /config` now also returns `limits` = `{ maxUploadBytes, maxFilesPerMessage, readRetentionHours }` (`MAX_UPLOAD_BYTES`, `MAX_FILES_PER_MESSAGE`, the effective `HUB_READ_RETENTION_HOURS`; `main.ts` passes the retention to `createApp`). They are constants and an `.env` value, not read from `hub.config.json`; a `limits` key in that file is an unknown key and ignored. protocol.md, usage.md and design.md say so.
+  - `public/index.html`: `MAX_IMAGE_BYTES` / `MAX_IMAGES` are gone; the image pre-check uses `hubLimits` (type and range checked, `null` when absent or invalid, in which case the check is skipped). `staleHandedHours()` = min(`STALE_HANDED_HOURS` 12, retention) when retention is a positive number, else 12 (unknown or 0 = not deleted).
+  - Checked: `npm test` 386 pass (new: `limits` values and default retention, `limits` not settable from the config file, shim `MAX_FETCH_BYTES >= MAX_UPLOAD_BYTES`); `npm run ui:check` all pass (new scenes: pre-check refuses an oversize image and a second image under the Hub's values; no values, bad types and a failed fetch skip the check; retention 6 h makes an 8 h old hand-over not `Working` while 24 h, 0 and unknown keep 12 h; the real test Hub returns 20 MB, 4 and its retention 0); `npm run docs:check` no errors.
+  - Not checked: an older Hub without `limits` against a real browser (simulated by stubbing the response).
 - [x] C74 A read-only configuration file for the Hub and the page (2026-10-30, requested by the user)
   - `src/hub/config.ts` reads `hub.config.json` (or `HUB_CONFIG_FILE`) once at startup (`main.ts`); `GET /config` (behind the token, GET only) returns the validated values and warnings; the page loads them in `loadConfig` and uses `projects.olderDays` as a number only, showing warnings with `textContent` in `#cfgWarn`. First key: `projects.olderDays` (default 30, integer 1 to 3650). `hub.config.example.json` is committed, `/hub.config.json` is in `.gitignore`, `compose.yaml` and the `Dockerfile` set `HUB_CONFIG_FILE=/host/hub.config.json` (the existing `./:/host:ro` mount; no new mount). The shim, `npm run team`, hooks and `.env` values are unchanged.
   - Checked: `npm test` 383 pass (new `src/hub/config.test.ts`: missing file, non-JSON, directory, valid value, six bad `olderDays` values, range ends, unknown keys including `constructor` / `__proto__`, defaults not mutated, `GET /config` 401 without token / values and warnings / defaults / no write method); `npm run ui:check` all pass (new: the page takes the value as a number, rejects a non-number, shows warnings as text without rendering markup); `npm run docs:check` no errors. With Docker 29.9.2, `docker compose up` on another port and project name with a bad `hub.config.json` showed both warnings in the container log and in `GET /config`, so the mount is read.
@@ -571,23 +575,6 @@ Related: it becomes the destination for having another agent or vendor double-ch
 Status: held(after C59)
 
 C59's Noise treats notification-type Events as fixed. Let a human configure what Noise includes (per Event kind). Where the setting lives is decided by looking at what C59's implementation showed: per browser in `localStorage` like the other filters, or shared in the Hub's configuration file (C74). C74 does not decide this. Once decided, remove the status and write the done-when conditions.
-
-### C75. The page reads the Hub's limits and retention instead of its own copies
-
-Raised 2026-10-30 in the C74 review. Two places in `public/index.html` copy values the Hub owns:
-- Image limits: the page's `MAX_IMAGE_BYTES` / `MAX_IMAGES` (20 MB, 4) repeat the Hub's `MAX_UPLOAD_BYTES` / `MAX_FILES_PER_MESSAGE` (`src/hub/files.ts`, whose error text also says "20 MB"), and the shim's `MAX_FETCH_BYTES` (25 MB, `src/shim/files.ts`) must stay at least the Hub's limit. These are security limits and stay constants; only the copies go.
-- `STALE_HANDED_HOURS` (12) exists because hook Events disappear with retention, so it assumes `HUB_READ_RETENTION_HOURS` (default 24) is longer. With retention set below 12 hours, a hand-over whose turn-end Event was already deleted could still show as Working until 12 hours pass (inferred from the code, not observed).
-
-Idea: the Hub serves its upload limits and retention through C74's endpoint (read-only, not settings); the page's pre-check uses them, and the stale threshold is capped at the retention period. A check that the shim's fetch limit is not below the Hub's upload limit is added to `npm test`.
-
-Decided 2026-10-30 (C74's `GET /config` exists). The Hub's own values come back next to the configurable ones, read-only: they are facts about this Hub, not settings, and are not read from `hub.config.json`. When an older Hub does not send them, the page skips its pre-check and leaves it to the Hub's error, so no copy remains in the page.
-
-#### Done when
-- [ ] `GET /config` also returns the Hub's upload limits (`MAX_UPLOAD_BYTES`, `MAX_FILES_PER_MESSAGE`) and `HUB_READ_RETENTION_HOURS`, apart from the configurable values; they cannot be set through `hub.config.json`. protocol.md is updated. Covered by `npm test`.
-- [ ] The page's image pre-check uses those values; `MAX_IMAGE_BYTES` / `MAX_IMAGES` are removed from `public/index.html`; without them the page skips the pre-check. Checked with `npm run ui:check`.
-- [ ] The stale hand-over threshold is the smaller of `STALE_HANDED_HOURS` (12) and the retention period. `npm run ui:check` has a scene with retention below 12 hours.
-- [ ] `npm test` fails if the shim's `MAX_FETCH_BYTES` is below the Hub's `MAX_UPLOAD_BYTES`.
-- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
 
 ### C79. A watcher that nudges on a timer
 Status: held(decide after using C76's Health check button for a while)

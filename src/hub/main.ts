@@ -109,6 +109,7 @@ const app = createApp({
   files,
   indexes,
   config: configResult,
+  readRetentionHours,
   uiHtml: async () => {
     try {
       return await readFile(join(ROOT, 'public', 'index.html'), 'utf8')

@@ -416,8 +416,7 @@ function colorIndex(key) {
 // 画像の添付。送るまでは本文欄の上のサムネイルに置き、送信時に POST /files で保存して id を meta.files に入れる
 const FILE_ID_RE = /^f_[0-9a-f]{32}$/
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024
-const MAX_IMAGES = 4
+// 画像の上限は Hub のもの (GET /config の limits。hubLimits)。ページに写しは持たない。取れていなければ事前の確認はせず、Hub のエラーに任せる
 let attachments = [] // { file, url } 送るまでブラウザに置く
 let sending = false
 
@@ -507,12 +506,12 @@ function addFiles(list) {
       setErr('Only PNG, JPEG, GIF and WebP images can be attached.')
       continue
     }
-    if (file.size > MAX_IMAGE_BYTES) {
-      setErr('Images must be 20 MB or smaller.')
+    if (hubLimits.maxUploadBytes !== null && file.size > hubLimits.maxUploadBytes) {
+      setErr(`Images must be ${formatBytes(hubLimits.maxUploadBytes)} or smaller.`)
       continue
     }
-    if (attachments.length >= MAX_IMAGES) {
-      setErr('At most 4 images per message.')
+    if (hubLimits.maxFilesPerMessage !== null && attachments.length >= hubLimits.maxFilesPerMessage) {
+      setErr(`At most ${hubLimits.maxFilesPerMessage} image${hubLimits.maxFilesPerMessage === 1 ? '' : 's'} per message.`)
       continue
     }
     attachments.push({ file, url: URL.createObjectURL(file) })
@@ -1874,7 +1873,12 @@ const STATES = [
   { key: 'offline', label: 'Offline', title: 'No session is attached.' },
 ]
 // hook の Event が保存期間で消えると、ターン終了が分からない。それより古い受け渡しは作業中とみなさない (時間)
+// ただし保存期間 (hubLimits.readRetentionHours) がそれより短ければ、保存期間まで。保存期間が分からない・0 (消さない) なら 12
 const STALE_HANDED_HOURS = 12
+const staleHandedHours = () => {
+  const r = hubLimits.readRetentionHours
+  return r !== null && r > 0 ? Math.min(STALE_HANDED_HOURS, r) : STALE_HANDED_HOURS
+}
 // バックグラウンドの処理を待ってターンを終えたとき、Working とみなす上限 (分)。処理が終われば完了通知で次のターンが
 // 始まるので、それより長く何も来なければ、終わらない処理 (開発用のサーバーなど) か通知を受けない作りとみなし、Stopped に戻す (C43)
 const BACKGROUND_MAX_MINUTES = 60
@@ -1899,7 +1903,7 @@ function stateOf(mb) {
   if (!b || !('outgoing' in b)) return null // 古い Hub (材料がない)。状態を出さない
   const end = lastTurnEndOf(mb)
   const handed = b.lastHanded
-  const fresh = handed && Date.now() - Date.parse(handed.ts) < STALE_HANDED_HOURS * 3600000
+  const fresh = handed && Date.now() - Date.parse(handed.ts) < staleHandedHours() * 3600000
   const handedWorking = handed && (end ? Date.parse(handed.ts) > Date.parse(end.ts) : fresh)
   // 接続中の未読は、渡す直前 (Channels) か、inbox で取りに来るのを待っている (ほかのクライアント)。どちらもエージェントの番。
   // ただし信号は人の番だけ (C71、2026-10-30 の決定)。未読だけのときは Working と書くが、枠も脈打ちも光りもない (quiet)。渡した後の Working は信号
@@ -2123,6 +2127,10 @@ setInterval(() => {
 // 取れない・形が違うときは既定。警告は #cfgWarn に textContent で出す
 const CONFIG_DEFAULTS = { projects: { olderDays: 30 } }
 let hubConfig = CONFIG_DEFAULTS
+// Hub の事実 (設定ではない。GET /config の limits)。型と範囲を確かめ、外れた・ないものは null (使わない)
+const noLimits = () => ({ maxUploadBytes: null, maxFilesPerMessage: null, readRetentionHours: null })
+const limitOf = (v, min, max, int) => (typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max && (!int || Number.isInteger(v)) ? v : null)
+let hubLimits = noLimits()
 async function loadConfig() {
   try {
     const r = await api('/config')
@@ -2131,7 +2139,15 @@ async function loadConfig() {
     const warnings = Array.isArray(r && r.warnings) ? r.warnings.filter((w) => typeof w === 'string') : []
     $('cfgWarn').textContent = warnings.length ? `hub.config.json: ${warnings.length} warning${warnings.length === 1 ? '' : 's'}` : ''
     $('cfgWarn').title = warnings.join('\n')
+    const l = (r && r.limits) || {}
+    hubLimits = {
+      maxUploadBytes: limitOf(l.maxUploadBytes, 1, 2 ** 31, true),
+      maxFilesPerMessage: limitOf(l.maxFilesPerMessage, 1, 100, true),
+      readRetentionHours: limitOf(l.readRetentionHours, 0, 87600, false),
+    }
+    if (mailboxList.length) renderMailboxes(mailboxList) // 保存期間で、作業中とみなす上限が変わる
   } catch {
+    hubLimits = noLimits()
     hubConfig = CONFIG_DEFAULTS // 404 は /config を持たない古い Hub。ほかの失敗でも既定のまま動く
   }
 }

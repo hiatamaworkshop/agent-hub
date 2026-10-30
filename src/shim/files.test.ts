@@ -3,15 +3,15 @@ import { createServer } from 'node:http'
 import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { after, before, describe, it } from 'node:test'
+import { after, before, describe, it, test } from 'node:test'
 import { serve, type ServerType } from '@hono/node-server'
 import sharp from 'sharp'
 import { createApp } from '../hub/app.js'
-import { FileStore } from '../hub/files.js'
+import { FileStore, MAX_UPLOAD_BYTES } from '../hub/files.js'
 import { Hub } from '../hub/hub.js'
 import { Store } from '../hub/store.js'
 import type { Message } from '../shared/types.js'
-import { resolveFiles, sweepFiles, type FileContext } from './files.js'
+import { MAX_FETCH_BYTES, resolveFiles, sweepFiles, type FileContext } from './files.js'
 
 const TOKEN = 'test-token-0123456789'
 const dirs: string[] = []
@@ -164,4 +164,8 @@ describe('sweepFiles: 起動時の掃除', () => {
   it('保存先がなくても失敗せず 0 を返す', async () => {
     assert.equal(await sweepFiles(join(tmpdir(), `does-not-exist-${Date.now()}`)), 0)
   })
+})
+
+test('the shim can fetch any image the Hub accepts: MAX_FETCH_BYTES is not below MAX_UPLOAD_BYTES (C75)', () => {
+  assert.ok(MAX_FETCH_BYTES >= MAX_UPLOAD_BYTES, `shim ${MAX_FETCH_BYTES} < hub ${MAX_UPLOAD_BYTES}`)
 })

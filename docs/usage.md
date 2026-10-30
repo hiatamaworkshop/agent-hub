@@ -242,6 +242,7 @@ Copy-Item hub.config.example.json hub.config.json   # for your environment; hub.
 |---|---|---|---|
 | `projects.olderDays` | `30` | integer, 1 to 3650 | Days after which a project counts as older in the project list (roadmap C73 uses it) |
 
+- The Hub's own facts come back from `GET /config` as `limits` but are not settings and cannot be set in this file: the image limits (`MAX_UPLOAD_BYTES` 20 MB, `MAX_FILES_PER_MESSAGE` 4) and the effective `HUB_READ_RETENTION_HOURS`. The page checks images against these before sending (without them it skips the check and leaves it to the Hub's error), and treats a hand-over older than the smaller of 12 hours and the retention period as no longer `Working` (the turn-end Event may already be deleted). The shim's fetch limit must stay at least the Hub's upload limit; `npm test` checks it.
 - Not here: protocol constants, security limits (index size, image size and count), low-value UI constants, and colors (the CSS block at the top of `public/index.html`).
 
 ## The language agents write to the human in (HUB_LANGUAGE)

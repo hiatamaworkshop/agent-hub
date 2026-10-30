@@ -9,7 +9,7 @@ import { Auth, COOKIE_NAME, type AuthEnv } from './auth.js'
 import { Hub, HubError } from './hub.js'
 import { pump } from './sse.js'
 import { SettingsError, SettingsStore } from './settings.js'
-import { FileError, FileStore, MAX_UPLOAD_BYTES, resolveMeta } from './files.js'
+import { FileError, FileStore, MAX_FILES_PER_MESSAGE, MAX_UPLOAD_BYTES, resolveMeta } from './files.js'
 import { IndexStore, MAX_INDEX_BYTES, indexInputSchema } from './indexes.js'
 import { readFile } from 'node:fs/promises'
 import { defaultConfig, type ConfigResult } from './config.js'
@@ -28,6 +28,8 @@ export interface AppOptions {
   indexes?: IndexStore
   // hub.config.json の検証済みの値。省略時はすべて既定
   config?: ConfigResult
+  // 渡し終えた Message と Event の保存期間 (時間。0 は自動では消さない)。GET /config の事実として返す。省略時は既定の 24
+  readRetentionHours?: number
 }
 
 const BROWSER: Sender = { type: 'user', id: 'browser', role: null }
@@ -199,7 +201,9 @@ export function createApp(opts: AppOptions) {
   // hub.config.json の検証済みの値と警告 (読み取りだけ。書く API はない。protocol.md §3)
   app.get('/config', (c) => {
     const r = opts.config ?? defaultConfig()
-    return c.json({ config: r.config, warnings: r.warnings })
+    // limits は設定ではなく、この Hub の事実 (定数と実効値)。hub.config.json からは読まず、変えられない (C75)
+    const limits = { maxUploadBytes: MAX_UPLOAD_BYTES, maxFilesPerMessage: MAX_FILES_PER_MESSAGE, readRetentionHours: opts.readRetentionHours ?? 24 }
+    return c.json({ config: r.config, warnings: r.warnings, limits })
   })
 
   // 接続中の Mailbox は 409 (mailbox_attached) で残す。未知の名前は 404

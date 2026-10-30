@@ -349,6 +349,39 @@ try {
       return { shown, bad, real: { days: hubConfig.projects.olderDays, text: $('cfgWarn').textContent } }
     })()`)
     verify('設定: ページは /config の値を数として使い、警告は文字列で出す。形の違う値は既定 (C74)', cfg.shown.days === 7 && cfg.shown.text === 'hub.config.json: 2 warnings' && cfg.shown.title.includes('<img') && cfg.shown.imgs === 0 && cfg.bad.days === 30 && cfg.bad.text === '' && cfg.real.days === 30 && cfg.real.text === '', cfg)
+    // Hub の上限と保存期間 (C75): GET /config の limits を型と範囲を確かめて使う。api を差し替えて確かめ、戻す
+    const lim = await evaluate(`(async () => {
+      const real = api
+      const withLimits = async (limits) => { api = async () => ({ config: { projects: { olderDays: 30 } }, warnings: [], ...(limits === undefined ? {} : { limits }) }); await loadConfig() }
+      const png = (n) => new File([new Uint8Array(n)], 'a.png', { type: 'image/png' })
+      const tryAdd = (files) => { attachments = []; $('err').textContent = ''; addFiles(files); const r = { n: attachments.length, err: $('err').textContent }; attachments = []; renderTray(); $('err').textContent = ''; return r }
+      // 保存期間の未読だけの mailbox は使わず、渡して 8 時間たち、ターン終了の Event がない Mailbox を作る
+      const fake = () => ({ name: 'fake.stale', attachment: { id: 'a' }, backlog: { unread: { count: 0 }, outgoing: { count: 0 }, awaitingReply: { count: 0 }, lastHanded: { ts: new Date(Date.now() - 8 * 3600000).toISOString(), seq: 1 } } })
+      const out = {}
+      await withLimits({ maxUploadBytes: 1000, maxFilesPerMessage: 1, readRetentionHours: 6 })
+      out.set = { limits: hubLimits, big: tryAdd([png(2000)]), two: tryAdd([png(10), png(10)]), ok: tryAdd([png(10)]) }
+      out.stale6 = { hours: staleHandedHours(), key: (stateOf(fake()) || {}).key }
+      await withLimits({ maxUploadBytes: 1000, maxFilesPerMessage: 1, readRetentionHours: 24 })
+      out.stale24 = { hours: staleHandedHours(), key: (stateOf(fake()) || {}).key }
+      await withLimits({ maxUploadBytes: 1000, maxFilesPerMessage: 1, readRetentionHours: 0 })
+      out.stale0 = staleHandedHours()
+      await withLimits({ maxUploadBytes: '1000', maxFilesPerMessage: -1, readRetentionHours: 'x' })
+      out.badTypes = { limits: hubLimits, hours: staleHandedHours() }
+      await withLimits(undefined)
+      out.absent = { limits: hubLimits, big: tryAdd([png(2000)]), five: tryAdd([png(10), png(10), png(10), png(10), png(10)]), hours: staleHandedHours() }
+      api = async () => { throw new Error('boom') }
+      await loadConfig()
+      out.failed = { limits: hubLimits, hours: staleHandedHours() }
+      api = real
+      await loadConfig()
+      out.real = hubLimits
+      return out
+    })()`)
+    const none = { maxUploadBytes: null, maxFilesPerMessage: null, readRetentionHours: null }
+    verify('Hub の上限: 画像の事前確認は /config の値を使い、超えれば Hub に送る前に断る (C75)', JSON.stringify(lim.set.limits) === JSON.stringify({ maxUploadBytes: 1000, maxFilesPerMessage: 1, readRetentionHours: 6 }) && lim.set.big.n === 0 && lim.set.big.err.includes('smaller') && lim.set.two.n === 1 && lim.set.two.err === 'At most 1 image per message.' && lim.set.ok.n === 1 && lim.set.ok.err === '', lim.set)
+    verify('Hub の上限: 値がない (古い Hub・取得失敗) か型が外れているときは事前確認をせず、Hub のエラーに任せる (C75)', JSON.stringify(lim.absent.limits) === JSON.stringify(none) && lim.absent.big.n === 1 && lim.absent.five.n === 5 && JSON.stringify(lim.badTypes.limits) === JSON.stringify(none) && JSON.stringify(lim.failed.limits) === JSON.stringify(none), lim)
+    verify('Hub の上限: 作業中とみなす上限は min(12 時間, 保存期間)。6 時間なら 8 時間前の受け渡しは作業中でない。24 時間なら 12 時間のまま。分からない・0 でも 12 (C75)', lim.stale6.hours === 6 && lim.stale6.key !== 'working' && lim.stale24.hours === 12 && lim.stale24.key === 'working' && lim.stale0 === 12 && lim.badTypes.hours === 12 && lim.absent.hours === 12 && lim.failed.hours === 12, lim)
+    verify('Hub の上限: 実際の Hub の /config から、上限 (20 MB・4 枚) と保存期間 (この Hub は HUB_READ_RETENTION_HOURS=0) を受け取る (C75)', lim.real.maxUploadBytes === 20 * 1024 * 1024 && lim.real.maxFilesPerMessage === 4 && lim.real.readRetentionHours === 0, lim.real)
     // N=0: 一覧を空にして描き直し、戻す。押せず、琥珀にしない
     const zero = await evaluate("(() => { const keep = mailboxList; mailboxList = []; renderHealth(); const r = { text: $('health').textContent, disabled: $('health').disabled, color: getComputedStyle($('health')).color, you: getComputedStyle(document.documentElement).getPropertyValue('--st-you').trim() }; mailboxList = keep; renderHealth(); return r })()")
     verify('Health check: 0 件のときは押せず、琥珀にならない (C76)', zero.text === 'Health check (0)' && zero.disabled && zero.color !== 'rgb(154, 91, 0)' && zero.color !== zero.you, zero)

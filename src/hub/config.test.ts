@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
 import { createApp } from './app.js'
 import { DEFAULT_CONFIG, loadConfig, parseConfig } from './config.js'
+import { MAX_FILES_PER_MESSAGE, MAX_UPLOAD_BYTES } from './files.js'
 import { Hub } from './hub.js'
 import { Store } from './store.js'
 
@@ -112,7 +113,23 @@ describe('GET /config', () => {
 
   it('設定を渡さなければ既定を返す', async () => {
     const body = (await (await make().request('/config', { headers: auth })).json()) as { config: unknown; warnings: string[] }
-    assert.deepEqual(body, { config: DEFAULT_CONFIG, warnings: [] })
+    assert.deepEqual(body.config, DEFAULT_CONFIG)
+    assert.deepEqual(body.warnings, [])
+  })
+
+  it('limits: この Hub の上限と保存期間の実効値を返す (設定ではない。C75)', async () => {
+    const app = createApp({ hub: new Hub(new Store()), token: TOKEN, uiHtml: async () => '<html></html>', readRetentionHours: 6 })
+    const body = (await (await app.request('/config', { headers: auth })).json()) as { limits: unknown }
+    assert.deepEqual(body.limits, { maxUploadBytes: MAX_UPLOAD_BYTES, maxFilesPerMessage: MAX_FILES_PER_MESSAGE, readRetentionHours: 6 })
+    const dflt = (await (await make().request('/config', { headers: auth })).json()) as { limits: { readRetentionHours: number } }
+    assert.equal(dflt.limits.readRetentionHours, 24)
+  })
+
+  it('limits は hub.config.json から変えられない (キーとして書いても未知の項目で無視)', async () => {
+    const app = createApp({ hub: new Hub(new Store()), token: TOKEN, uiHtml: async () => '<html></html>', config: parseConfig('{"limits": {"maxUploadBytes": 1}, "projects": {"maxUploadBytes": 1}}') })
+    const body = (await (await app.request('/config', { headers: auth })).json()) as { limits: { maxUploadBytes: number }; warnings: string[] }
+    assert.equal(body.limits.maxUploadBytes, MAX_UPLOAD_BYTES)
+    assert.equal(body.warnings.length, 2)
   })
 
   it('書く API はない (PUT / POST / DELETE は 404 か 405)', async () => {
