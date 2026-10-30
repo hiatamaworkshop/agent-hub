@@ -493,6 +493,10 @@ try {
   // 依頼のあとで完了条件の文言が変わった状態を作る (送った指紋と文言が今と違う)
   await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'demo.deployer' }, body: 'GOAL: C1 一つ目', meta: { item: { id: 'C1', project: cwd, source: 'docs/roadmap.md', promise: 'deadbeef', conditions: ['古い文言'] } } })
   const reqSeq = await seqOf('GOAL: C1 一つ目')
+  // あとから来た、人が書いたのではない同じ項目の request (エージェントの request と、その無編集の転送)。項目のカードの「最新の request」にならない (C77)
+  const itemAgent = await api('POST', '/mailboxes/demo.itemagent/attach', { client: 'claude-code', role: 'leader', cwd, sessionId: 's-item-agent' })
+  const agentReq = await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'demo.deployer' }, body: 'GOAL: C1 from an agent', meta: { item: { id: 'C1', project: cwd, source: null, promise: null } } }, { 'x-hub-attachment': itemAgent.attachmentId })
+  await api('POST', `/messages/${agentReq.id}/forward`, { to: { type: 'mailbox', id: 'demo.deployer' } })
   await sleep(1500)
   const clickCard = (id) => evaluate(`(() => {
     const c = [...document.querySelectorAll('#items .item')].find((x) => x.querySelector('.id').textContent === ${JSON.stringify(id)})
@@ -517,6 +521,7 @@ try {
   await sleep(300)
   const m1 = await modalState()
   verify('モーダル: 題・完了条件の 1 行ずつの [x] / [ ]・依頼の状態・約束の差分を出す (C54)', m1.open && m1.title === 'C1. 一つ目' && JSON.stringify(m1.conds) === JSON.stringify(['[x] 一つ目', '[ ] 二つ目']) && m1.req.startsWith(`Requested: request #${reqSeq}`) && m1.diff !== null && m1.diff.includes(`Done-when changed since #${reqSeq}`) && m1.diff.includes('- 古い文言') && m1.diff.includes('+ 一つ目'), m1)
+  verify('Item cards count only requests the human wrote: an agent request and its unedited forward do not replace the latest request (C77)', m1.req.startsWith(`Requested: request #${reqSeq}`) && m1.diff !== null && m1.diff.includes(`since #${reqSeq}`), { req: m1.req, diff: m1.diff })
   verify('モーダル: エディタで開くリンクは vscode://file/<project>/<source>:<line> (C54)', m1.href === editorHref(cwd, 'docs/roadmap.md', 3), { href: m1.href, want: editorHref(cwd, 'docs/roadmap.md', 3) })
   await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
   await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })

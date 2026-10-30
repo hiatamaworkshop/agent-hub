@@ -11,7 +11,7 @@ import {
   type CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import { ADDRESS_TYPES, MESSAGE_KINDS, type Address, type Mailbox, type Message } from '../shared/types.js'
+import { ADDRESS_TYPES, MESSAGE_KINDS, normalizeProjectPath, type Address, type Mailbox, type Message } from '../shared/types.js'
 import { ALWAYS_LOAD_META, CHANNEL_CAPABILITY, pushSkippedNotice, pushToChannel } from './channel.js'
 import { instructionsFor, routeFor, type Route } from './instructions.js'
 import { loadConfig } from './config.js'
@@ -69,6 +69,21 @@ function parseAddress(s: string): Address {
   return { type: type as Address['type'], id: s.slice(i + 1) }
 }
 
+// 送る Message の meta.item (C77)。明示の item が先。reply で省いたら、送る時点で Hub から元の Message を読んで id と project を写す
+// (shim は届けた Message を覚えない)。元がない・項目がない・読めないときは付けない (reply 自体は Hub が検証する)
+async function itemFor(id: string | undefined, replyTo: string | undefined): Promise<Record<string, unknown> | undefined> {
+  if (id) return { id, project: normalizeProjectPath(cfg.cwd), source: null, promise: null }
+  if (!replyTo) return undefined
+  try {
+    const orig = await hub.request<Message>('GET', `/messages/${encodeURIComponent(replyTo)}`)
+    const it = orig.meta?.item as { id?: unknown; project?: unknown } | undefined
+    if (it && typeof it.id === 'string' && typeof it.project === 'string') return { id: it.id, project: it.project, source: null, promise: null }
+  } catch (e) {
+    log(`reply の元の項目を読めなかった: ${e instanceof Error ? e.message : String(e)}`)
+  }
+  return undefined
+}
+
 const tools = [
   {
     name: 'post_message',
@@ -81,6 +96,7 @@ const tools = [
         body: { type: 'string', description: '本文' },
         to: { type: 'string', description: '宛先。mailbox:<名前> / role:<名前> / topic:<名前> / user:browser。role:<名前> は自分と同じプロジェクト (作業フォルダ) の Mailbox にだけ届く。ほかのプロジェクトには mailbox:<名前> で送る。reply では省略可' },
         reply_to: { type: 'string', description: '返信元のメッセージ id (kind=reply では必須)' },
+        item: { type: 'string', description: 'roadmap の項目 ID (C<n> の形。例: C77)。項目の作業の request / reply に付ける。reply で省くと、元のメッセージの項目を引き継ぐ' },
       },
       required: ['kind', 'body'],
     },
@@ -123,6 +139,7 @@ const postArgs = z.object({
   body: z.string().min(1),
   to: z.string().optional(),
   reply_to: z.string().optional(),
+  item: z.string().regex(/^C[1-9][0-9]*$/, 'item は roadmap の項目 ID (C<n> の形。例: C77)').optional(),
 })
 const topicArgs = z.object({ topic: z.string().min(1) })
 const inboxArgs = z.object({
@@ -150,11 +167,13 @@ server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolRes
       case 'post_message': {
         if (!hub.attachment) throw new Error(`Hub に接続していない (${hub.state}${hub.lastError ? `: ${hub.lastError}` : ''})`)
         const a = postArgs.parse(args)
+        const item = await itemFor(a.item, a.reply_to)
         const m = await hub.request<Message & { recipients: string[]; unattached?: string[] }>('POST', '/messages', {
           kind: a.kind,
           body: a.body,
           ...(a.to ? { to: parseAddress(a.to) } : {}),
           ...(a.reply_to ? { replyTo: a.reply_to } : {}),
+          ...(item ? { meta: { item } } : {}),
         })
         const to = `${m.to.type}:${m.to.id}`
         const out: Record<string, unknown> = { id: m.id, seq: m.seq, to }

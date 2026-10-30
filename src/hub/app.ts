@@ -159,6 +159,13 @@ export function createApp(opts: AppOptions) {
 
   app.post('/messages/purge', (c) => c.json(hub.purgeNow()))
 
+  // 保存された Message をそのまま返す (meta は解釈しない)。shim が reply の元の項目を読むのに使う (C77)
+  app.get('/messages/:id', (c) => {
+    const m = hub.store.getMessage(c.req.param('id'))
+    if (!m) throw new HubError(404, 'message_not_found', `message ${c.req.param('id')} がない`)
+    return c.json(m)
+  })
+
   app.get('/messages', (c) => {
     const after = intParam(c.req.query('after'), 0, 0, Number.MAX_SAFE_INTEGER)
     const limit = intParam(c.req.query('limit'), 100, 1, 1000)

@@ -22,7 +22,6 @@ In the order they will be taken up. Only items without a status line and blocked
 - [ ] C70
 - [ ] C72
 - [ ] C74
-- [ ] C77
 
 (Items with a status line are listed under "Items".)
 
@@ -344,6 +343,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C77 Let agents tag their messages with an item (2026-10-30, requested by the user)
+  - `post_message` takes `item?` (`^C[1-9][0-9]*$`; a bad value is a tool error naming `item`, and nothing is sent). The shim builds `meta.item` as `{ id, project, source: null, promise: null }` with `project` from its working folder (the same value its Mailbox attaches with). A reply without `item` reads the original through `GET /messages/:id` at send time and copies its `meta.item.id` and `project`; an explicit `item` wins; no item on the original, or an unreadable original, sends no item. The shim keeps no record of delivered Messages. `parent` is not adopted (decided 2026-10-30).
+  - The Hub serves `GET /messages/:id` (same token; 404 `message_not_found` for an unknown or deleted id) and returns the stored Message as is. Its handling of `meta` is unchanged: a test posts a `meta.item` with an extra key and reads it back untouched.
+  - Item cards (`itemRequests` in `public/index.html`) count only requests from a `user` sender that are not unedited forwards. `ui:check` posts a later request with the same item from a Mailbox and forwards it unedited, and the card still shows the human's earlier request and its promise diff.
+  - `tools/dev/roles/leader.md` tells the leader to pass `item` when `GOAL` starts with `C<n>`. protocol.md (§2, §3, §5) and design.md §3.15 (decision 3) are updated.
+  - Checked: `npm test` 364 pass (new: `GET /messages/:id` x2 in `src/hub/app.test.ts`; `item` to `meta.item` with six bad values rejected, reply inheritance, explicit item wins, and no item when the original has none, in `src/shim/shim.test.ts`); `npm run ui:check` 88 pass; `npm run docs:check` no errors. Not checked: a real leader session passing `item` end to end.
 - [x] C71 Express "working" and "waiting on the human" on cards, with colors that are easy to change (2026-10-30, requested by the user)
   - Cards: frames and state lines read only `--st-you` (amber: Needs you, Stopped), `--st-working` (blue: Working, Waiting on others) and `--st-ring` (3px), set in the top CSS block; dark mode redefines the two colors. Working and Waiting on others pulse over about 2 s; `prefers-reduced-motion` gives a steady ring. A change between signals flashes for 1.5 s (Idle: green, no frame); the first render and unchanged re-renders do not flash. An agent's unread messages are not a signal: a connected card with only unread messages says plain `Working` with no frame, pulse or flash (decided 2026-10-30).
   - Checked with `npm run ui:check` (87 pass): first render no flash and Idle has no frame; Idle to Working flashes and pulses; Working to Idle flashes green with no frame; an unchanged re-render does not flash; to Needs you, no pulse and the amber frame; reduced motion gives a steady ring and no flash; unread only gives no frame, pulse or flash; Stopped has the same amber frame as Needs you. `npm test` 360 pass; `npm run docs:check` no errors. `docs/usage.md` says what the cards show for the two signals and where to recolor them.
@@ -644,30 +649,6 @@ Idea:
 - The decision reuses what the Hub already derives for card states (`backlog`), through one small read-only answer, so the UI and the hook agree.
 
 First step: check the official docs for `Stop` hooks returning `decision: "block"` (the input's `stop_hook_active`, how `reason` reaches the model, whether `type: "http"` can block or only `command`), record it in design.md §6, and confirm on a real session. Then write the done-when conditions and remove the status.
-
-### C77. Let agents tag their messages with an item
-
-Raised 2026-10-30 (discussion with the human about a view of where messages are stopped when a leader runs several deployers in parallel; that view is C78). Only the UI sets `meta.item`, on a request a human builds from a roadmap item. `post_message` takes `kind`, `body`, `to?`, `reply_to?` and no meta, so a leader's requests to deployers carry the item only as text in `GOAL`, which the Hub does not read. The edges that multiply with parallel work are exactly the ones without an item.
-
-Decisions (2026-10-30, user):
-- Restrained first: agents can set only `item`, as a dedicated `post_message` argument, not an open `meta` argument. Adding another key later means adding another argument on purpose.
-- Inheritance happens in the shim, not the Hub. The Hub keeps interpreting only `meta.files`. The shim holds no state (design.md §3.1), so for a reply it reads the original Message from the Hub at send time instead of remembering what it delivered.
-- Reviewed the same day (user): `parent` (the Message being handled when this one was sent) was dropped. C78 draws edges from `backlog.outgoing`, so nothing reads it yet, and it is self-reported and ambiguous when an agent handles several Messages at once. Add it when a use appears.
-
-Shape:
-- `item` is an ID such as `C71`. The shim builds `meta.item` as `{ id, project, source: null, promise: null }`, with `project` from its Mailbox.
-- A reply (`reply_to`) without `item` gets the original's `meta.item.id` and `project`, if it has one. An explicit `item` wins. The Hub today only lists history by seq (`GET /messages?after=`) and the agent knows only the id, so the Hub gets `GET /messages/:id`: it returns the stored Message and interprets nothing.
-- Labels on the edges of C78 are derived by the UI from the Messages it holds, not added to `backlog` by the Hub.
-- Item cards (requested / reported, promise changes) keep meaning the human's request: requests from agents do not become an item's latest request. A human's unedited forward copies `meta` and takes the forwarder as `from` (protocol.md §2), so a forwarded agent request must not count as the human's either.
-
-#### Done when
-- [ ] `post_message` accepts `item?`; the shim validates it (an ID of the form `C<n>`) and builds `meta.item` as above; a bad value is rejected with an error the agent can read. Covered by `npm test`.
-- [ ] The Hub serves `GET /messages/:id` (same token; 404 `message_not_found` for an unknown or deleted id) without interpreting `meta`. Covered by `npm test`.
-- [ ] A reply without `item` inherits the original's item through `GET /messages/:id` at send time; the shim keeps no record of delivered Messages. Covered by `npm test`.
-- [ ] The Hub's handling of `meta` is unchanged (only `files` is interpreted; a test shows `item` from an agent passes through untouched).
-- [ ] Item cards count only requests the human wrote: not from a Mailbox, and not an unedited forward (`forwardedFrom`). Checked with `npm run ui:check`.
-- [ ] `tools/dev/roles/leader.md` says to pass `item` when `GOAL` starts with `C<n>`.
-- [ ] protocol.md (§2 `meta.item`, §3 `GET /messages/:id`, §5 `post_message`) and design.md (§3.15, where `meta.item` is decided) are updated in the same change; `npm test` passes.
 
 ### C78. A second tab showing where messages are stopped
 Status: held(after C77)

@@ -203,6 +203,30 @@ describe('GET /messages', () => {
   })
 })
 
+describe('GET /messages/:id', () => {
+  it('保存された Message をそのまま返し、meta は解釈しない (item は素通し)', async () => {
+    const { app, hub } = setup()
+    const item = { id: 'C77', project: 'c:/proj', source: null, promise: null, extra: { n: 1 } }
+    const posted = (await (await post(app, { ...notice, meta: { item } }, bearer)).json()) as Message
+    const res = await app.request(`/messages/${posted.id}`, { headers: bearer })
+    assert.equal(res.status, 200)
+    const got = (await res.json()) as Message
+    assert.deepEqual(got, hub.store.getMessage(posted.id))
+    assert.deepEqual(got.meta, { item })
+    assert.equal((await app.request(`/messages/${posted.id}`)).status, 401)
+  })
+
+  it('知らない id と消した id は 404 message_not_found', async () => {
+    const { app, hub } = setup()
+    const res = await app.request('/messages/m_none', { headers: bearer })
+    assert.equal(res.status, 404)
+    assert.equal(((await res.json()) as { error: string }).error, 'message_not_found')
+    const m = (await (await post(app, notice, bearer)).json()) as Message
+    hub.deleteMessage(m.id)
+    assert.equal((await app.request(`/messages/${m.id}`, { headers: bearer })).status, 404)
+  })
+})
+
 describe('GET /mailboxes/:name/inbox', () => {
   const browser = { type: 'user', id: 'browser', role: null } as const
   const inbox = async (app: ReturnType<typeof setup>['app'], q = '') => {

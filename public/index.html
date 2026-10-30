@@ -2117,6 +2117,8 @@ function itemRequests() {
   const latest = new Map()
   for (const m of seen.values()) {
     if (m.replyTo) replied.add(m.replyTo)
+    // 項目のカードは人の request だけを数える。Mailbox (エージェント) の request と、無編集の転送 (meta を写し、from は転送した人) は除く
+    if (m.from.type !== 'user' || m.forwardedFrom) continue
     const it = m.kind === 'request' && m.meta && m.meta.item
     if (!it || typeof it.id !== 'string' || typeof it.project !== 'string') continue
     const k = itemKey(it.project, it.id)

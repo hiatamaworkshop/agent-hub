@@ -107,6 +107,7 @@ describe('shim と Hub の結合', () => {
     )
     const env = { ...(process.env as Record<string, string>), HUB_URL: hubUrl, HUB_TOKEN: TOKEN, HUB_MAILBOX: 'test-mb', CLAUDE_CODE_SESSION_ID: 'sess-1', HUB_FILES_DIR: join(tmpDir, 'shim-files') }
     delete env.HUB_ROLE
+    env.CLAUDE_PROJECT_DIR = ROOT // meta.item.project の期待値を環境に依らず決める
     await client.connect(new StdioClientTransport({ command: process.execPath, args: ['--import', 'tsx', 'src/shim/main.ts'], cwd: ROOT, env, stderr: 'pipe' }))
   })
 
@@ -240,6 +241,41 @@ describe('shim と Hub の結合', () => {
     const n = await until(() => notifications.find((x) => x.meta.id === m.id))
     assert.equal(n.content, 'old image')
     assert.deepEqual(JSON.parse(n.meta.meta!), { files: [{ id: gone, error: 'expired' }] })
+  })
+
+  it('post_message の item は meta.item になり、形の違う値は読めるエラーで断る (C77)', async () => {
+    const project = normalizeProjectPath(ROOT)
+    const r = await call('post_message', { kind: 'request', body: 'do C77', to: 'topic:nobody', item: 'C77' })
+    assert.equal(r.isError, false, r.text)
+    assert.deepEqual(hub.store.listMessages().at(-1)!.meta, { item: { id: 'C77', project, source: null, promise: null } })
+    const plain = await call('post_message', { kind: 'notice', body: 'no item', to: 'topic:nobody' })
+    assert.equal(plain.isError, false, plain.text)
+    assert.equal(hub.store.listMessages().at(-1)!.meta, undefined)
+    const before = hub.store.lastSeq
+    for (const bad of ['77', 'c77', 'C', 'C0', 'C7x', ' C7']) {
+      const e = await call('post_message', { kind: 'notice', body: 'x', to: 'topic:nobody', item: bad })
+      assert.equal(e.isError, true, bad)
+      assert.match(e.text, /item/)
+    }
+    assert.equal(hub.store.lastSeq, before, '断った item では送らない')
+  })
+
+  it('item のない reply は送る時点で元の Message の item を引き継ぎ、明示の item が先 (C77)', async () => {
+    const human = { type: 'user', id: 'browser', role: null } as const
+    const tagged = hub.postMessage(
+      { kind: 'request', to: { type: 'topic', id: 'nobody' }, body: 'q', meta: { item: { id: 'C5', project: 'c:/other', source: 'docs/roadmap.md', promise: 'p' } } },
+      human,
+    )
+    const inherited = await call('post_message', { kind: 'reply', reply_to: tagged.id, body: 'a' })
+    assert.equal(inherited.isError, false, inherited.text)
+    assert.deepEqual(hub.store.listMessages().at(-1)!.meta, { item: { id: 'C5', project: 'c:/other', source: null, promise: null } })
+    const explicit = await call('post_message', { kind: 'reply', reply_to: tagged.id, body: 'a', item: 'C9' })
+    assert.equal(explicit.isError, false, explicit.text)
+    assert.equal((hub.store.listMessages().at(-1)!.meta!.item as { id: string }).id, 'C9')
+    // 元に項目がなければ付けない
+    const untagged = hub.postMessage({ kind: 'request', to: { type: 'topic', id: 'nobody' }, body: 'q2' }, human)
+    assert.equal((await call('post_message', { kind: 'reply', reply_to: untagged.id, body: 'a' })).isError, false)
+    assert.equal(hub.store.listMessages().at(-1)!.meta, undefined)
   })
 
   it('shim が終了すると (kill でも) detach し、Mailbox は残る', async () => {

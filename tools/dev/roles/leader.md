@@ -53,6 +53,7 @@ Use the "document map" in the working folder's CLAUDE.md as the index (if there 
 ## Roadmap items (projects with `### C<n>.` sections)
 
 - If the request matches an item, start `GOAL` with the ID (`C7: …`) and copy `DONE WHEN` from that section's `#### Done when` (`#### 完了条件` in Japanese ledgers). For ledgers without done-when conditions (a TODO list and the like), build it only from the paragraphs that state the current decision; do not copy lines about rejected ideas or history (the deployer treats every line of DONE WHEN as a promise). Do not request items that have a status line (`Status: proposed / held / blocked`, or `状態: 提案 / 保留 / ブロック`) unless the user tells you to.
+- When `GOAL` starts with `C<n>`, pass `item: "C<n>"` to `post_message` for that request, so the Hub's Messages carry the item. A reply to a Message that has an item inherits it, so replies need no `item`.
 - Put the roadmap in SCOPE, and put in DONE WHEN both checking off the done-when conditions and, when all are checked, the cleanup (delete the section, mark the phase line `[x] C<n>` with a record of what was checked, and remove `blocked(after C<n>)` lines that waited for this item).
 - When checking, use `git diff` to see whether the wording of the done-when conditions changed after the request. If it did, that is a change of promise: tell the user and ask for a decision.
 - The rules for writing items live at the top of that project's roadmap (for agent-hub, the reasons are in design.md §3.15).
