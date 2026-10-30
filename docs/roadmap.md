@@ -674,4 +674,11 @@ Raised 2026-10-30. With several deployers in parallel the thread interleaves and
 
 Idea: the cards shown another way. Nodes are Mailboxes (plus the human), with the card states the UI already derives; edges are the open requests in `backlog.outgoing.to` (count and oldest time per address) and the human's Needs you; edge labels are items from C77. No change to the Hub. It shows the same whole as the main page, not a split (design.md §3.2 keeps projects out of tabs so a wait in another project is not missed), so Needs you must appear here too.
 
+Operations (2026-10-30, user: lean to the safe side). The places where work stops are clickable and can be handed on, as a wrapper of the existing Forward (`POST /messages/:id/forward` takes only `to`); still no change to the Hub.
+- Clicking a stopped point expands its Message in place, with the thread's rendering of one Message (as badges jump to the oldest counted line today).
+- Dragging a Message onto a node fills a Forward draft (that Message, addressed to that node's Mailbox) and stops there; a human presses Send (design.md §2). A wrong drop sends nothing, and the covering note can still be written (sent as a separate message first, as the Forward composer does).
+- Questions and permission waits are hook Events, not Messages: they expand but cannot be dragged, and the view shows this so it does not look broken. They are answered in the terminal.
+- Drops address a Mailbox only at first; role addresses (`role:reviewer`) can come later.
+- C47 (a consult button: a Forward with a fixed covering note) is the same shape with the address and note fixed; it can be added later as a shortcut on top of this.
+
 Open: tree or graph layout, how the tab is switched, and how parallel requests to one party show (they close together on one reply, design.md §3.15). Once C77 is done, decide these and write the done-when conditions.
