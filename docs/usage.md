@@ -286,7 +286,7 @@ When following a running team through the API (the same when an agent watches it
 
 ## Start warnings (logs/start-warnings.jsonl)
 
-When `npm run team`, or `agent` started on its own, has warnings (a Claude Code newer than the last verified one, a stale checkout, hooks missing), one JSON line is appended to `logs/start-warnings.jsonl` in agent-hub. The file is gitignored. A start with no warnings writes nothing, so a missing line means no warning was raised. A start by hand (Claude Code run directly) is not covered.
+When `npm run team`, or `agent` started on its own, has warnings (a Claude Code newer than the last verified one, a stale checkout, hooks missing; for `agent` on its own also a `claude --version` that does not pass, which `team` stops on instead), one JSON line is appended to `logs/start-warnings.jsonl` in agent-hub. The file is gitignored. A start with no warnings writes nothing, so a missing line means no warning was raised. A start by hand (Claude Code run directly) is not covered.
 
 Each line has `time` (UTC, ISO), `project` (the target folder), `head` (its HEAD, `null` if it is not a git repository), `roles` and `mailboxes`, `claudeVersion` (the first line of `claude --version`), `lastVerified` and `verifiedSection` (the highest Claude Code version named in the headings of design.md §6.1, and its section; `verifiedNote` says why it is unknown), and `warnings` (the texts shown at the start).
 

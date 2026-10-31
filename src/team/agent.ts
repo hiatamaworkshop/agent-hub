@@ -79,6 +79,8 @@ export async function runAgent(o: AgentOptions): Promise<number> {
   // Only when started on its own; `team` has already checked and recorded them (C58, C85)
   if (!o.fromTeam) {
     const cli = checkClaudeCli(cmd)
+    // Unlike `team`, a claude that does not run does not stop the start (the spawn below fails and reports it), but it is recorded
+    if (cli.problem) notes.push(`claude does not run: ${cli.problem}`)
     const version = checkClaudeVersion(cli.output)
     if (version.warning) notes.push(version.warning)
     notes.push(...await checkoutWarnings(o.projectDir))

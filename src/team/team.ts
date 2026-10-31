@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { connect } from 'node:net'
 import { basename, join } from 'node:path'
-import { defaultMailboxName } from '../shared/types.js'
+import { defaultMailboxName, normalizeProjectPath } from '../shared/types.js'
 import { clearStartStatus } from './agent.js'
 import { checkClaudeCli, checkoutWarnings, hookWarning, startStatusPath } from './checks.js'
 import { envSetting, hubRolesFile, readRoleNames, ROOT } from './env.js'
@@ -219,14 +219,13 @@ export async function runTeam(o: TeamOptions): Promise<number> {
   return 0
 }
 
-// Print the UI's URL only when the token gets through to the Hub
-// The page's project value for a folder (the same normalization as `projectKey` in public/index.html).
+// The page's project value for a folder (normalizeProjectPath, the same as `projectKey` in public/index.html).
 // It goes in the #fragment: the Hub redirects `/?token=` to `/` and drops the other query parameters, and a fragment is kept across the redirect (C72)
 export function uiUrl(hubUrl: string, token: string, projectDir: string): string {
-  const s = projectDir.replace(/[\\/]+/g, '/').replace(/(.)\/$/, '$1')
-  const key = /^[a-z]:/i.test(s) ? s.toLowerCase() : s
-  return `${hubUrl}/?token=${token}#project=${encodeURIComponent(key)}`
+  return `${hubUrl}/?token=${token}#project=${encodeURIComponent(normalizeProjectPath(projectDir))}`
 }
+
+// Print the UI's URL only when the token gets through to the Hub
 
 async function printUiUrl(hubUrl: string, token: string, projectDir: string): Promise<void> {
   if (!token) { console.log('No HUB_TOKEN, so the UI URL cannot be built (check .env)'); return }
