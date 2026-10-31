@@ -2009,7 +2009,8 @@ let mapOn = false // 地図を出しているか (ヘッダーの切り替え)
 const mapOpen = new Set() // 展開しているチップ (辺の key)
 const mapMsgCache = new Map() // seq → Message。手元の thread にない開いた request を 1 件ずつ取り直したもの
 const mapFetching = new Set() // 取り直し中の seq
-const mapMissing = new Set() // 取り直せなかった seq (消えた・保存期間外・失敗)。失敗は再試行しない
+const mapMissing = new Set() // Hub の返事で消えていたと分かった seq (保存期間外や削除)。取り直さない
+const mapFailed = new Set() // 取り直しが通信・HTTP のエラーで失敗した seq (C92)。地図を開いたときと SSE をつなぎ直したときに取り直す
 let mapDragMsg = null // ドラッグ中のチップの Message
 let mapMenu = null // フォーカスのある「Forward to…」の選択 (開いている間は地図を描き直さない)
 let mapDirty = false // 操作の間に来た描き直しの要求。操作が終わったとき 1 回だけ描く
@@ -2720,6 +2721,7 @@ const MAP_COLUMNS = ['Human', 'leader', 'other roles', 'no role']
 const mapColumnOf = (mb) => (mb.role === 'leader' ? 1 : mb.role ? 2 : 3)
 function setMapView(on) {
   mapOn = on
+  if (on) mapFailed.clear() // 地図を開いたら、前に失敗した取り直しをもう一度 (C92)
   const t = $('mapToggle')
   t.textContent = on ? 'Messages' : 'Map'
   t.setAttribute('aria-pressed', String(on))
@@ -2760,7 +2762,7 @@ function renderMap(model) {
     if (!recv) continue // 受け手が地図にない (プロジェクトや Mailbox の絞り込みで隠れている)
     recv.el.querySelector('.mapchips').append(mapChip(e))
     const send = nodes.get(e.from)
-    if (send) pairs.push({ from: send, to: recv, kind: e.kind })
+    if (send) pairs.push({ from: send, to: recv, kind: e.kind, human: e.to === HUMAN_KEY })
   }
   drawMapArrows(canvas, pairs)
   ensureRequests(model.edges)
@@ -2809,7 +2811,7 @@ function mapChip(e) {
   c.title = (e.kind === 'event' ? 'Waiting for a person in its terminal: not draggable. ' : 'Open request. Drag it onto a Mailbox, or use Forward to…. ') + (e.ts ? time(e.ts) : 'Not loaded in this page yet')
   const head = el('div', 'mapchiphead')
   head.append(el('span', 'mapchiplabel', label), el('span', 'mapchipfrom', `from ${e.from}`))
-  if (e.kind === 'request' && !e.msg) head.append(el('span', 'mapchipnote', mapMissing.has(e.seq) ? 'not on the Hub' : 'loading…'))
+  if (e.kind === 'request' && !e.msg) head.append(el('span', 'mapchipnote', mapMissing.has(e.seq) ? 'not on the Hub' : mapFailed.has(e.seq) ? 'could not load' : 'loading…'))
   c.append(head)
   c.onclick = (ev) => {
     if (ev.target.closest('.mapexp, select, button')) return
@@ -2833,20 +2835,34 @@ function mapChip(e) {
     sel.title = 'Forward this request to a Mailbox (fills the draft; Send is still yours)'
     sel.setAttribute('aria-label', `Forward ${label} to`)
     sel.append(option('', 'Forward to…'))
-    for (const mb of [...mailboxList].sort((a, b) => a.name.localeCompare(b.name))) if (mb.name !== e.to) sel.append(option(mb.name, mb.name))
-    // 開いている間はフォーカスがある (選ぶ・Escape・外側を押すと外れる)。そのとき延ばした描き直しを 1 回描く
-    sel.onfocus = () => { mapMenu = sel }
-    sel.onblur = () => { if (mapMenu === sel) mapMenu = null; flushMap() }
-    // Escape は開いた選択を閉じる。ブラウザによって keydown か keyup のどちらが選択に届くので、両方で外す
-    const escape = (ev) => { if (ev.key === 'Escape') sel.blur() }
-    sel.onkeydown = escape
-    sel.onkeyup = escape
-    sel.onchange = () => {
+    // 候補は宛先の一覧 (#to) と同じもの。fillForwardDraft はそこにないものを下書きにしないので、ここで外す (C92)
+    const destinations = new Set([...$('to').options].map((o) => o.value))
+    for (const mb of [...mailboxList].sort((a, b) => a.name.localeCompare(b.name))) if (mb.name !== e.to && destinations.has(`mailbox:${mb.name}`)) sel.append(option(mb.name, mb.name))
+    // 選んだ値を下書きにするのは、選んだとき (Enter・クリック・マウスで選ぶ) だけ。矢印キーで動かしても下書きにしない (C92)
+    const choose = () => {
       mapMenu = null
-      if (sel.value) fillForwardDraft(e.msg, sel.value)
+      if (sel.value) { sel.dataset.filled = sel.value; fillForwardDraft(e.msg, sel.value) }
       flushMap()
     }
-    c.append(sel)
+    // 開いている間はフォーカスがある (選ぶ・Escape・外側を押すと外れる)。そのとき延ばした描き直しを 1 回描く
+    sel.onfocus = () => { mapMenu = sel }
+    sel.onblur = () => {
+      if (mapMenu === sel) mapMenu = null
+      // 選ばずに動かしたままフォーカスが離れたら、表示を空に戻す (下書きは作っていないので、表示だけ合わせる)
+      if (sel.value !== (sel.dataset.filled || '')) sel.value = ''
+      flushMap()
+    }
+    // 閉じた選択では矢印キーで値が動き、change が出る。キーで動かしたときは選んだことにしない。
+    // 選ぶのは Enter (閉じた選択では今の値を選ぶ) か、change が出たとき (クリック・開いた選択での確定)。Escape は閉じる
+    let navKey = false
+    sel.onkeydown = (ev) => {
+      if (ev.key === 'Escape') { sel.blur(); return }
+      if (ev.key === 'Enter') { if (sel.value) choose(); return }
+      if (ev.key.startsWith('Arrow') || ev.key === 'Home' || ev.key === 'End' || ev.key === 'PageUp' || ev.key === 'PageDown' || ev.key.length === 1) navKey = true
+    }
+    sel.onkeyup = (ev) => { if (ev.key === 'Escape') sel.blur(); navKey = false }
+    sel.onchange = () => { if (!navKey) choose() }
+    if (sel.options.length > 1) c.append(sel) // 行き先がなければ出さない
   }
   if (open) {
     const ex = el('div', 'mapexp')
@@ -2854,7 +2870,7 @@ function mapChip(e) {
       if (e.event) ex.append(eventBody(e.event))
       else ex.append(el('div', 'note', 'Not loaded in this page. The full Event is in the thread.'))
     } else if (e.msg) ex.append(buildMsgBox(e.msg))
-    else ex.append(el('div', 'note', mapMissing.has(e.seq) ? 'This Message is no longer on the Hub.' : 'Loading…'))
+    else ex.append(el('div', 'note', mapMissing.has(e.seq) ? 'This Message is no longer on the Hub.' : mapFailed.has(e.seq) ? 'Could not load this Message. It is fetched again when the map opens or the connection returns.' : 'Loading…'))
     c.append(ex)
   }
   return c
@@ -2872,15 +2888,16 @@ function fillForwardDraft(m, name) {
 // 手元にない開いた request を 1 件ずつ取り直す (Health check と同じ取り方)。失敗・消えたものは再試行しない
 function ensureRequests(edges) {
   for (const e of edges) {
-    if (e.kind !== 'request' || e.msg || mapFetching.has(e.seq) || mapMissing.has(e.seq)) continue
+    if (e.kind !== 'request' || e.msg || mapFetching.has(e.seq) || mapMissing.has(e.seq) || mapFailed.has(e.seq)) continue
     mapFetching.add(e.seq)
     api(`/messages?after=${e.seq - 1}&limit=1`)
       .then((r) => {
         const m = (r.messages || []).find((x) => x.seq === e.seq)
         if (m) mapMsgCache.set(e.seq, m)
-        else mapMissing.add(e.seq)
+        else mapMissing.add(e.seq) // Hub が返した一覧に、この seq がない = もうない
       })
-      .catch(() => mapMissing.add(e.seq))
+      // 通信・HTTP のエラーは「消えた」ではない。同じ表示の中では取り直さない (描き直しで繰り返さないため)
+      .catch(() => mapFailed.add(e.seq))
       .finally(() => {
         mapFetching.delete(e.seq)
         requestMapRender()
@@ -2917,7 +2934,8 @@ function drawMapArrows(canvas, pairs) {
     const k = Math.max(30, Math.abs(x2 - x1) / 2)
     const path = document.createElementNS(NS, 'path')
     path.setAttribute('d', `M${x1} ${y1} C${x1 + s * k} ${y1} ${x2 - s * k} ${y2} ${x2} ${y2}`)
-    path.setAttribute('class', `edge ${p.kind === 'event' ? 'evt' : 'req'}${back ? ' back' : ''}`)
+    // 人宛て (C92): 位置は戻りでも、人の列は役割の並びの外なので戻り矢印の点線にしない (Event は自分の点線のまま)
+    path.setAttribute('class', `edge ${p.kind === 'event' ? 'evt' : 'req'}${back && !p.human ? ' back' : ''}`)
     path.setAttribute('marker-end', 'url(#mapHead)')
     svg.append(path)
   }
@@ -3156,6 +3174,8 @@ function connect() {
   const es = new EventSource('/stream')
   es.onopen = () => {
     $('conn').className = 'ok'; $('conn').textContent = 'Connected'
+    mapFailed.clear() // つなぎ直したら、地図の失敗した取り直しをもう一度 (C92)。地図が出ていれば描き直して取り直す
+    requestMapRender()
     // 切れていた間の分を取り直す。開いた時点の lastSeq を起点にする (この接続の新着より前の値)。
     // 最初の接続は loadHistory が受け持つ。取り直しに失敗しても止めず、次に開いたとき取り直す
     // Event は Message の後に挟む (時刻順に入れるので、先に Message があると位置が決まる)。

@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C92
 - [ ] C95
 
 (Items with a status line are listed under "Items".)
@@ -342,6 +341,14 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C92 Small rough edges of the map (2026-10-31, decided by the user)
+  - `public/index.html` `drawMapArrows`: a request or waiting Event addressed to the human is not given the `back` class (it keeps its position, and an Event keeps its own dash); Mailbox-to-Mailbox requests against the role order keep the back arrow. `renderMap` passes `human` on each pair.
+  - `public/index.html` `mapChip`: the "Forward to…" menu lists the Mailboxes that are in the composer's destination list (`#to`), the same list `fillForwardDraft` checks, and no select is shown when none is left. `fillForwardDraft` is unchanged.
+  - `public/index.html` `ensureRequests`: a failed fetch by seq (network or HTTP error) goes into `mapFailed` and shows `could not load`; it is fetched again when the map is opened (`setMapView`) and when the SSE connects again (`connect`), not in a loop while the map redraws. `not on the Hub` (`mapMissing`) is only for a fetch whose list no longer has that seq. The Hub has no 404 for a seq lookup on the list, so "gone" is the Hub's answer without that Message, not a status code (a deviation from the done-when's wording, which is kept as written).
+  - `public/index.html` `mapChip` select: arrow keys and Home/End/PageUp/PageDown or a letter mark the keyboard move, and the change it causes does not fill the draft; Enter fills the current value, and a change without a keyboard move (a click, or a choice in the open list) fills it. A value moved with the keyboard and then left unchosen is reset on blur.
+  - `tools/dev/ui-check.mjs`: six scenes added after the map's drop scene (the human arrows; the destinations and a pick; a failed fetch that is not repeated; a retry on reopening; a gone Message; the arrow keys then Enter). No existing scene changed; the reviewer's attachment is kept in a variable for the human-directed request.
+  - `docs/usage.md` (the map) describes the arrow style to the human, the destination list, the arrow keys, and `could not load` against `not on the Hub`.
+  - Checked: `npm test` 412 pass, 0 fail; `npm run ui:check` 133 ok, 0 NG; the six new scenes run against HEAD's `public/index.html` and five of them fail (the "gone" scene passes on both, as a guard). Not checked: a real SSE disconnect (the reconnect retry is by reading `connect` only); the arrow keys with real key input (the scene dispatches keydown, change and keyup events, not a real popup); how the human arrows look (no visual check).
 - [x] C89 An explicit item on a reply takes the original's project (2026-10-31, decided by the user)
   - `src/shim/main.ts` `itemFor`: a reply that names `item` takes `id` from the argument and `project` from the original Message's `meta.item.project` when it has one; otherwise the shim's `cwd`, as before. A reply without `item` is unchanged (C77). A non-reply keeps `cwd`. The original is read by `originalItem` (`GET /messages/:id`); an unreadable original falls back to `cwd`. No refusal of a disagreeing `item` (decided).
   - `src/shim/shim.test.ts` (new case): a reply from the shim's project naming `item` to a request tagged with `c:/other` is tagged with `c:/other`; a reply to an untagged request is tagged with the shim's project; a non-reply naming `item` uses the shim's project.
@@ -649,22 +656,6 @@ Status: proposed
 
 Found 2026-10-31 in a review of C78. The map's chips come from `backlog.outgoing.to[].seqs`, and `outgoing` counts only what a Mailbox sent (`from.type === 'mailbox'` in `src/hub/store.ts`). A request from the human is not in anyone's `outgoing`, so the most common stop, the human's request to a `leader` that is Stopped, has no chip: the leader's card state shows it, but it cannot be expanded or forwarded from the map. The receiver's `backlog.awaitingReply` and `unread` have only a count and the oldest seq, which is not enough for one chip per request (the reason C78 added `seqs`).
 To decide: where the seqs come from (`seqs` on the receiver's `awaitingReply` and `unread`, or an `outgoing` for the human across its user ids `browser` / `cli`), and how the chip is drawn (an edge from the human node, which runs along the role order, unlike a Mailbox's request to the human).
-
-### C92. Small rough edges of the map
-
-Found 2026-10-31 in the same review of C78 (`a091714`). None breaks the done-when; each is small, and they may be taken together or one by one.
-- Every request and waiting Event addressed to the human is drawn as a dashed back arrow, because the human's column is the leftmost (`drawMapArrows` in `public/index.html`). Needs you reads as a request against the role order, which is not what it is.
-- "Forward to…" lists the Mailboxes of every project, and `fillForwardDraft` then refuses those outside the composer's destination list. The menu could offer only what can be chosen, or say why the others are refused.
-- A Message whose fetch by seq failed once goes into `mapMissing` and is not fetched again until the page is reloaded (`ensureRequests`), so a passing network error leaves "not on the Hub" on the chip.
-- With the "Forward to…" select focused, each arrow key fires `change` (Chrome on a closed select) and fills the Forward draft again.
-Decided 2026-10-31 by the user: fix all four. For the arrows, a request or waiting Event addressed to the human is drawn without the back-arrow style (moving the human out of the role columns was not chosen). The human's own requests on the map are C91, not this item.
-
-#### Done when
-- [ ] Requests and waiting Events addressed to the human are drawn in the forward style (not dashed as a back arrow); requests between Mailboxes against the role order keep the back-arrow style
-- [ ] "Forward to…" lists only the Mailboxes that `fillForwardDraft` accepts (the composer's destination list), so choosing an entry never ends in a refusal
-- [ ] A chip whose fetch by seq failed is fetched again the next time the map is opened (and after the SSE reconnects), and shows "not on the Hub" only after a fetch that says the Message is gone (404), not after a network error
-- [ ] Moving through the "Forward to…" options with the arrow keys does not fill the draft; it is filled once when an option is chosen (Enter or a click)
-- [ ] `ui:check` adds a scene for each of the four, and the existing scenes are unchanged; `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
 ### C95. Show an opened map chip below the map, not inside its node
 

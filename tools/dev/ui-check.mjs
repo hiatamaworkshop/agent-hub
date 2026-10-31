@@ -1001,9 +1001,10 @@ try {
   const mapCwd = join(work, 'map')
   const mLead = await api('POST', '/mailboxes/map.leader/attach', { client: 'claude-code', role: 'leader', cwd: mapCwd, sessionId: 's-map-lead' })
   const mDep = await api('POST', '/mailboxes/map.deployer/attach', { client: 'claude-code', role: 'deployer', cwd: mapCwd, sessionId: 's-map-dep' })
-  await api('POST', '/mailboxes/map.reviewer/attach', { client: 'claude-code', role: 'reviewer', cwd: mapCwd, sessionId: 's-map-rev' })
+  const mRev = await api('POST', '/mailboxes/map.reviewer/attach', { client: 'claude-code', role: 'reviewer', cwd: mapCwd, sessionId: 's-map-rev' })
   const asMLead = { 'x-hub-attachment': mLead.attachmentId }
   const asMDep = { 'x-hub-attachment': mDep.attachmentId }
+  const asMRev = { 'x-hub-attachment': mRev.attachmentId }
   await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: 'GOAL: C1 を実装する', meta: { item: { id: 'C1', project: mapCwd, source: null, promise: null } } }, asMLead)
   await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: 'GOAL: 手直しを続ける' }, asMLead)
   await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: 'GOAL: もう 1 件' }, asMLead)
@@ -1090,6 +1091,115 @@ try {
   await sleep(1500)
   const dropped = parse(await clickIn(`(() => { const dt = new DataTransfer(); const n = document.querySelector('.mapnode[data-name="map.leader"]'); n.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt })); n.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })); return JSON.stringify({ renders: window.__renders, to: document.getElementById('to').value, info: document.getElementById('replyInfo').textContent, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length, connected: window.__chip.isConnected }) })()`))
   verify('チップを落とすと Forward の下書きができ、途中の描き直しは 1 回にまとまる (送らない) (C78)', dropped.renders === 1 && dropped.to === 'mailbox:map.leader' && /^Forwarding #\d+ unchanged/.test(dropped.info) && dropped.chips === chipsDrop + 1 && !dropped.connected, { dropped, chipsDrop })
+  // 人宛ての辺 (C92): 人宛ての request と質問は戻り矢印の点線で描かない。戻り矢印は役割の並びに逆らう deployer → leader の 1 本だけ。
+  // 送り手は reviewer: deployer が人に返すと、leader から deployer への依頼が閉じて後の場面の chip が消えるため (C28)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'user', id: 'browser' }, body: 'GOAL: 人に報告する' }, asMRev)
+  await sleep(1500)
+  const arrows = parse(await clickIn(`JSON.stringify({
+    backs: document.querySelectorAll('.mapsvg path.back').length,
+    evtBack: document.querySelectorAll('.mapsvg path.evt.back').length,
+    evt: document.querySelectorAll('.mapsvg path.evt').length,
+    humanReq: document.querySelectorAll('.mapnode.human .mapchip.request').length,
+  })`))
+  verify('人宛ての request と質問の辺は戻り矢印の点線で描かれない。戻り矢印は deployer → leader の 1 本だけ (C92)', arrows.backs === 1 && arrows.evtBack === 0 && arrows.evt >= 1 && arrows.humanReq >= 1, arrows)
+
+  // Forward to… の場面には、deployer が返していない依頼が要る (deployer が leader に返すと、leader からの依頼は閉じる。C28)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: 'GOAL: 新しい依頼 (C92)' }, asMLead)
+  await sleep(1500)
+
+  // Forward to… (C92): 候補は宛先の一覧 (#to) にある Mailbox だけ。ほかのプロジェクトの Mailbox は出ず、出るものを選べば下書きになる
+  const prevProject = await evaluate('FILTER.project')
+  await evaluate("chooseProject(projectKey(mailboxList.find((m) => m.name === 'map.leader').project))")
+  await sleep(1000)
+  const menu = parse(await clickIn(`JSON.stringify((() => {
+    const s = document.querySelector('.mapnode[data-name="map.deployer"] select.mapfwd')
+    return { offered: [...s.options].map((o) => o.value).filter((v) => v !== ''), to: [...document.getElementById('to').options].map((o) => o.value), other: mailboxList.some((m) => m.name === 'oth.leader') }
+  })())`))
+  const pickFirst = menu.offered[0]
+  const picked = parse(await clickIn(`(() => {
+    const s = document.querySelector('.mapnode[data-name="map.deployer"] select.mapfwd')
+    s.value = ${JSON.stringify(pickFirst)}
+    s.dispatchEvent(new Event('change'))
+    return JSON.stringify({ to: document.getElementById('to').value })
+  })()`))
+  verify('Forward to… は宛先の一覧にある Mailbox だけを出す。ほかのプロジェクトの Mailbox (oth.leader) は出ず、出るものを選べば下書きになる (C92)', menu.other && menu.offered.includes('map.leader') && !menu.offered.includes('oth.leader') && menu.offered.every((v) => menu.to.includes(`mailbox:${v}`)) && picked.to === `mailbox:${pickFirst}`, { menu, pickFirst, picked })
+  await evaluate(`chooseProject(${JSON.stringify(prevProject)})`)
+  await sleep(1000)
+
+  // 取り直し (C92): 手元にない開いた request の取り直しが通信で失敗しても「消えた」とは言わず、地図を開き直すと取り直す。Hub が一覧に出さないときだけ「消えた」
+  const lostSeq = (await api('GET', '/messages?after=0&limit=1000')).messages.find((m) => m.body === 'GOAL: 新しい依頼 (C92)').seq
+  await clickIn(`(() => {
+    window.__mapFetch = { mode: 'fail', calls: 0, match: '/messages?after=${lostSeq - 1}&limit=1' }
+    if (!window.__mapFetchWrapped) {
+      const real = window.fetch
+      window.fetch = (u, i) => {
+        if (String(u) === window.__mapFetch.match) {
+          window.__mapFetch.calls++
+          if (window.__mapFetch.mode === 'fail') return Promise.reject(new TypeError('Failed to fetch'))
+          if (window.__mapFetch.mode === 'gone') return Promise.resolve(new Response(JSON.stringify({ messages: [] }), { status: 200, headers: { 'content-type': 'application/json' } }))
+        }
+        return real(u, i)
+      }
+      window.__mapFetchWrapped = true
+    }
+  })()`)
+  // 手元の Message を外して、取り直しの場面にする
+  const dropLost = () => clickIn(`(() => { for (const [id, m] of seen) if (m.seq === ${lostSeq}) seen.delete(id); mapMsgCache.delete(${lostSeq}); requestMapRender() })()`)
+  const lostChip = async () =>
+    parse(await clickIn(`JSON.stringify((() => {
+      const c = [...document.querySelectorAll('.mapnode[data-name="map.deployer"] .mapchip')].find((x) => (x.querySelector('.mapchiplabel') || {}).textContent === '#${lostSeq}')
+      return c ? { note: (c.querySelector('.mapchipnote') || {}).textContent || '', calls: window.__mapFetch.calls } : null
+    })())`))
+  await dropLost()
+  await sleep(1500)
+  const failed1 = await lostChip()
+  await clickIn('requestMapRender()')
+  await sleep(1000)
+  const failed2 = await lostChip()
+  verify('取り直しが通信で失敗したら「not on the Hub」でなく could not load と出し、描き直しても取り直しを繰り返さない (C92)', failed1 && failed1.note === 'could not load' && failed2 && failed2.note === 'could not load' && failed2.calls === 1, { failed1, failed2 })
+  await clickIn('window.__mapFetch.mode = "ok"')
+  await clickIn("document.getElementById('mapToggle').click()")
+  await sleep(800)
+  await clickIn("document.getElementById('mapToggle').click()")
+  await sleep(1500)
+  const reopened = await lostChip()
+  verify('地図を開き直すと取り直す。取れたら注記は消え、chip の Message が手元に入る (C92)', reopened && reopened.note === '' && reopened.calls === 2, reopened)
+  await clickIn('window.__mapFetch.mode = "gone"')
+  await dropLost()
+  await sleep(1500)
+  const gone = await lostChip()
+  verify('Hub の一覧に無い (消えた) ときだけ「not on the Hub」と出す (C92)', gone && gone.note === 'not on the Hub', gone)
+  await clickIn('window.__mapFetch.mode = "ok"')
+
+  // 矢印キー (C92): 「Forward to…」を矢印で動かしても下書きにせず、Enter で選んだ 1 件だけ下書きにする (前の場面で消えた chip の代わりに、新しい依頼で選ぶ)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: 'GOAL: 矢印で選ぶ (C92)' }, asMLead)
+  await sleep(1500)
+  const nav = parse(await clickIn(`(() => {
+    const s = document.querySelector('.mapnode[data-name="map.deployer"] select.mapfwd')
+    const toBefore = document.getElementById('to').value, infoBefore = document.getElementById('replyInfo').textContent
+    s.focus()
+    const key = (type, k) => s.dispatchEvent(new KeyboardEvent(type, { key: k, bubbles: true }))
+    const moved = []
+    // 閉じた選択で矢印キーを押すと、ブラウザは値を動かして change を出す。それをそのまま再現する
+    for (const i of [1, 2]) {
+      key('keydown', 'ArrowDown')
+      s.selectedIndex = i
+      s.dispatchEvent(new Event('change', { bubbles: true }))
+      key('keyup', 'ArrowDown')
+      moved.push(s.value)
+    }
+    return JSON.stringify({ toBefore, infoBefore, moved, to: document.getElementById('to').value, info: document.getElementById('replyInfo').textContent })
+  })()`))
+  const entered = parse(await clickIn(`(() => {
+    const s = document.querySelector('.mapnode[data-name="map.deployer"] select.mapfwd')
+    s.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    s.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }))
+    return JSON.stringify({ to: document.getElementById('to').value, info: document.getElementById('replyInfo').textContent })
+  })()`))
+  await clickIn("document.querySelector('.mapnode[data-name=\"map.deployer\"] select.mapfwd').blur()")
+  await sleep(800)
+  verify('Forward to… を矢印キーで動かしても下書きは変わらず、Enter で選んだ 1 件だけ下書きになる (C92)', nav.to === nav.toBefore && nav.info === nav.infoBefore && entered.to === `mailbox:${nav.moved[1]}` && /^Forwarding #\d+ unchanged/.test(entered.info), { nav, entered })
+
   // 配色 (C93): 選んだ配色と OS の設定の組を確かめる。OS の設定は Emulation で変え、選んだ配色は localStorage に覚える
   const setOs = (dark) => cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: dark ? 'dark' : 'light' }] })
   const goPage = async () => {
