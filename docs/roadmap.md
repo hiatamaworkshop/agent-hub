@@ -19,8 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C78
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -341,6 +339,14 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C78 A map in the page showing where messages are stopped (2026-10-31, decided by the user)
+  - Hub: `backlog.outgoing.to[]` entries carry `seqs` (oldest first, counted by the same rule as `count`; protocol.md §3). `src/hub/mailbox.test.ts` checks `seqs` against `count`, including a request closed by the other party's reply that was never handed over; `store.test.ts`'s reference count includes `seqs`.
+  - `teamModel()` gains `edges`: one per open request and receiving Mailbox (or `#human`), with seq, item (`meta.item.id`) and time, plus the human's waiting Events (not draggable). A request's item and time come from the Message in the page, or from a fetch by seq (`ensureRequests`).
+  - The map: a toggle in the header (`#mapToggle`) replaces the thread with `#map` in the same page; the composer and sidebar stay. Columns by role (human, leader, other roles, no role); chips stack at the receiving node; a request against the column order is a dashed back arrow (SVG over the nodes). A chip opens its Message through `buildMsgBox` (split out of `render`). "Forward to…" and a drop onto a Mailbox node call `fillForwardDraft`, which fills the Forward selection and the destination and sends nothing.
+  - `ui:check`: 10 scenes on `map.*` Mailboxes (toggle, columns, one chip per request with a stack, item label, human event not draggable, back arrow, expansion, Forward to… filling the draft without a send, the Forward menu offering Mailboxes only, toggling back). 115 scenes pass; the 105 existing scenes are unchanged.
+  - design.md §3.2 describes the view; usage.md "Seeing where requests wait (the map)"; CLAUDE.md's map lists it.
+  - Checked: `npm test` 398 pass; `npm run ui:check` 115 ok, exit 0; `npm run docs:check` no errors.
+  - Not checked: a real mouse drag onto a node (HTML5 drag is not driven by `ui:check`; the "Forward to…" menu fills the same draft and is what the scene tests). Requests whose address has no receiving Mailbox are not drawn (nowhere to put them). A request from the human to a Mailbox is not a chip (it shows in the receiver's card state). Not seen in a live browser session beyond the headless scenes.
 - [x] C90 Derive the team once into a model that the cards render from (2026-10-31, decided by the user)
   - `public/index.html`: `teamModel()` derives from `mailboxList` (and the Messages and Events at hand) one entry per Mailbox with the card's fields and `waiting`, `signal`, `layers`, `awaitingSeq`, plus `human` (`waiting`, `stopped`, `working`). It touches no DOM and applies no filter. `renderMailboxes()`, `renderElsewhere`, `renderStates`, `renderBacklog`, `renderHealth` and `stoppedMailboxes` read it. The tab title and icon read the tab counts that `renderBacklog` copies from `human` (`tabWaiting`, `tabStopped`, `tabWorking`, unchanged for `ui:check`). `stateOf`, `layersOf` and `humanTurnOf` are called only from inside `teamModel()`. The model's card fields are the same as the old per-render derivations.
   - design.md §3.2 states the layering (data → model → views) and that C78's map is a second view of the same model.
@@ -608,39 +614,6 @@ Raised 2026-10-30 as the second step of C76. A separate, non-LLM program and ord
 
 Open: the opt-in setting that allows sending without a human's Send, and the boundary it needs in design.md §2; how "no activity" is judged without vendor hooks (last Message sent, last `inbox` call, attachment heartbeat); how it is run (`npm run watcher`, a second compose service). Decide after using C76's button for a while.
 
-### C78. A map in the page showing where messages are stopped
-
-Raised 2026-10-30. With several deployers in parallel the thread interleaves and filtering by Mailbox hides the others. Thread history (flat time order, reply trees, Gmail conversations, Slack threads, Zulip topics) shows trade-offs, not a fix, so instead of reshaping the thread, add a view that answers a different question: not what was said, but whose move it is.
-
-Idea: the cards shown another way. Nodes are Mailboxes (plus the human), with the card states the UI already derives; edges are the open requests in `backlog.outgoing.to` (count and oldest time per address) and the human's Needs you; edge labels are items from C77. It shows the same whole as the main page, not a split (design.md §3.2 keeps projects out of tabs so a wait in another project is not missed), so Needs you must appear here too.
-
-Operations (2026-10-30, user: lean to the safe side). The places where work stops are clickable and can be handed on, as a wrapper of the existing Forward (`POST /messages/:id/forward` takes only `to`).
-- Clicking a stopped point expands its Message in place, with the thread's rendering of one Message (as badges jump to the oldest counted line today).
-- Dragging a Message onto a node fills a Forward draft (that Message, addressed to that node's Mailbox) and stops there; a human presses Send (design.md §2). A wrong drop sends nothing, and the covering note can still be written (sent as a separate message first, as the Forward composer does).
-- Questions and permission waits are hook Events, not Messages: they expand but cannot be dragged, and the view shows this so it does not look broken. They are answered in the terminal.
-- Drops address a Mailbox only at first; role addresses (`role:reviewer`) can come later.
-- C47 (a consult button: a Forward with a fixed covering note) is the same shape with the address and note fixed; it can be added later as a shortcut on top of this.
-
-Decided (2026-10-30, user): the view is switched inside the page, not opened as a second browser tab (a second page would open a second SSE connection and show `N waiting` in two tab titles and favicons). The switch between the map and the messages is a toggle in the page header, at the top right: the header holds only the title and the connection state, and it is the only free space on the page.
-
-Decided (2026-10-31, user):
-- Layout: a graph read left to right, with columns fixed by role (the human, then `leader`, then the other roles; Mailboxes without a role last). It does not grow rightward without end, because it shows only the team's structure. A request against that direction (a deployer asking the leader) is drawn as a back arrow. Computing depth from the edges was not taken: back edges make cycles, and the columns would move as requests open and close.
-- Open requests pile up as chips next to the receiving node, since the view answers whose move it is. Parallel requests to one party (closed together by one reply, design.md §3.15) are simply a stack at that node.
-- Dragging is not the only way: keyboard and touch cannot drag, and `ui:check` (headless Chrome) tests drags poorly. A "Forward to…" menu on each chip fills the same draft, from the start.
-- Cards and the map both render from one derived model (C90), not the map from the cards' DOM and not a second derivation that could disagree with the cards.
-- The Hub returns the seq of each open request. `backlog.outgoing.to[]` has only a count, the oldest time and the oldest seq per address (protocol.md §3), which is not enough for one chip per request. Rebuilding open requests in the page from loaded Messages was not taken: it would copy C28's closing rule into the UI and miss requests older than the page has loaded. This is delivery state, within design.md §3.14.
-
-#### Done when
-- [ ] Hub: each `backlog.outgoing.to[]` entry also carries `seqs` (the seqs of that address's open requests, oldest first), judged by the same rule as its `count` (C28). protocol.md §3 is updated, and a test in `src/hub` checks `seqs` against `count`, including a request closed by a later Message from the other party
-- [ ] The model from C90 gains edges: one per open request, from the sender to each receiving Mailbox (or the human), with its seq, item (`meta.item.id`, C77) and time. The human's Needs you are in it too
-- [ ] A toggle at the top right of the page header switches between the messages and the map inside the same page (no second SSE connection). The map follows the same project filter as the cards
-- [ ] The map lays out nodes left to right in columns by role (the human, `leader`, other roles, no role), each node showing its card state with the cards' colors; a request against that direction is a back arrow
-- [ ] Open requests are chips next to the receiving node, one per request, labeled with the item when it has one; several open requests to one node stack there. Questions and permission waits appear but are marked as not draggable (they are answered in the terminal)
-- [ ] Clicking a chip expands its Message in place, with the thread's rendering of one Message
-- [ ] Dropping a chip on a node, or choosing that node in the chip's "Forward to…" menu, fills a Forward draft (that Message, addressed to that node's Mailbox) and sends nothing until a human presses Send. Only Mailbox addresses are offered
-- [ ] `ui:check` adds scenes for: the toggle, one chip per open request at the receiver, a stack of parallel requests, a back arrow, expanding a chip, and "Forward to…" filling the draft without sending
-- [ ] docs/usage.md describes the map and design.md §3.2 the view; `npm test`, `npm run ui:check` and `npm run docs:check` pass
-
 ### C86. A reply to a Message the sender never received
 Status: proposed
 
@@ -666,4 +639,10 @@ Status: proposed
 
 Found 2026-10-31 in the same review. `itemFor` in `src/shim/main.ts` (C77): a reply that omits `item` copies `id` and `project` from the original Message, but a reply that names `item` gets `project` from the shim's own `cwd`. An agent in project A replying with `item: C5` to a request from project B tags it as A's C5. No visible effect yet: the page's item cards count only the human's requests (`itemRequests` in `public/index.html`).
 To decide: on a reply, take `project` from the original when it has one (and only `id` from the argument), or refuse an `item` that disagrees with the original's.
+
+### C91. The human's open requests on the map
+Status: proposed
+
+Found 2026-10-31 in a review of C78. The map's chips come from `backlog.outgoing.to[].seqs`, and `outgoing` counts only what a Mailbox sent (`from.type === 'mailbox'` in `src/hub/store.ts`). A request from the human is not in anyone's `outgoing`, so the most common stop, the human's request to a `leader` that is Stopped, has no chip: the leader's card state shows it, but it cannot be expanded or forwarded from the map. The receiver's `backlog.awaitingReply` and `unread` have only a count and the oldest seq, which is not enough for one chip per request (the reason C78 added `seqs`).
+To decide: where the seqs come from (`seqs` on the receiver's `awaitingReply` and `unread`, or an `outgoing` for the human across its user ids `browser` / `cli`), and how the chip is drawn (an edge from the human node, which runs along the role order, unlike a Mailbox's request to the human).
 

@@ -6,7 +6,7 @@ Use the one-line index below to pick the sections relevant to the question, find
 When you add sections or change their numbers, fix this map in the same commit.
 
 - [README.md](README.md) — the entrance (about 150 lines): goals, status, setup, first round trip, hooks, starting a team, using it in other repositories
-- [docs/usage.md](docs/usage.md) — reference for everyday use: reading card states, custom commands, images, hooks, Forward, takeover, retention, teams in detail, Items, `roles.json`, `HUB_LANGUAGE`, `inbox`, notes on curl, start warnings (`logs/start-warnings.jsonl`), development. Usage changes go here; keep the README short
+- [docs/usage.md](docs/usage.md) — reference for everyday use: reading card states, the map (where requests wait), custom commands, images, hooks, Forward, takeover, retention, teams in detail, Items, `roles.json`, `HUB_LANGUAGE`, `inbox`, notes on curl, start warnings (`logs/start-warnings.jsonl`), development. Usage changes go here; keep the README short
 - [docs/roadmap.md](docs/roadmap.md) — acceptance criteria per phase, known issues, open items (`### C<n>.` sections; how to write them is at the top and in design.md §3.15). **How far things have got** is here. When asked about the implementation plan, use `## Plan` and the four-tier answer of the skill `roadmap-items` (do not read the whole ledger)
 - [docs/design.md](docs/design.md) (about 1,200 lines)
   - §1.1 Positioning — what we own and what we borrow, criteria for continuing

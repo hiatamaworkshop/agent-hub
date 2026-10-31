@@ -189,7 +189,7 @@ describe('Store: 溜まりの材料 (summary)', () => {
   function naive(s: Store, name: string) {
     const mb = s.getMailbox(name)!
     const tally = () => ({ count: 0, oldestAt: null as string | null, oldestSeq: null as number | null })
-    const outgoing = { ...tally(), to: [] as Array<{ type: Address['type']; id: string } & ReturnType<typeof tally>> }
+    const outgoing = { ...tally(), to: [] as Array<{ type: Address['type']; id: string; seqs: number[] } & ReturnType<typeof tally>> }
     const backlog = {
       unread: tally(),
       awaitingReply: tally(),
@@ -217,8 +217,9 @@ describe('Store: 溜まりの材料 (summary)', () => {
         outgoing.oldestAt ??= m.ts
         outgoing.oldestSeq ??= m.seq
         let to = outgoing.to.find((a) => a.type === m.to.type && a.id === m.to.id)
-        if (!to) outgoing.to.push((to = { type: m.to.type, id: m.to.id, count: 0, oldestAt: null, oldestSeq: null }))
+        if (!to) outgoing.to.push((to = { type: m.to.type, id: m.to.id, seqs: [], count: 0, oldestAt: null, oldestSeq: null }))
         to.count++
+        to.seqs.push(m.seq)
         to.oldestAt ??= m.ts
         to.oldestSeq ??= m.seq
       }

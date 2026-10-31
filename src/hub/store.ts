@@ -91,7 +91,8 @@ export interface Tally {
 export interface Outgoing extends Tally {
   // 宛先 (種類と id) ごとの件数と最も古い ts。古い順。UI は Waiting on others の宛先と、人宛ての Needs you (C40) に使う。
   // recipients はその宛先の開いた request を受け取る Mailbox 名 (未接続も含む)。UI が全部未接続なら Needs you にする (C49)
-  to: Array<{ type: Address['type']; id: string; recipients: string[] } & Tally>
+  // seqs はその宛先の開いた request の seq (古い順。count と同じ数え方。C78 の地図が 1 件ずつ出すため)
+  to: Array<{ type: Address['type']; id: string; recipients: string[]; seqs: number[] } & Tally>
 }
 
 export interface Backlog {
@@ -553,8 +554,9 @@ export class Store {
       if (m.from.type === 'mailbox' && m.from.id === name) {
         add(backlog.outgoing, m)
         let to = backlog.outgoing.to.find((a) => a.type === m.to.type && a.id === m.to.id)
-        if (!to) backlog.outgoing.to.push((to = { type: m.to.type, id: m.to.id, recipients: [], count: 0, oldestAt: null, oldestSeq: null }))
+        if (!to) backlog.outgoing.to.push((to = { type: m.to.type, id: m.to.id, recipients: [], seqs: [], count: 0, oldestAt: null, oldestSeq: null }))
         add(to, m)
+        to.seqs.push(m.seq)
         for (const r of this.recipientsOf(m)) if (!to.recipients.includes(r)) to.recipients.push(r)
       }
       if (m.seq <= mb.cursor && this.isRecipient(name, m)) add(backlog.awaitingReply, m)

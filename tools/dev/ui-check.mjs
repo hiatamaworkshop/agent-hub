@@ -973,6 +973,123 @@ try {
   if (!timeOk) failed++
   console.log(`${timeOk ? 'ok' : 'NG'}  今日でない時刻には日付を付ける (C31)`)
   if (!timeOk) console.log(`      ${JSON.stringify(tv)}`)
+
+  // 地図 (C78、design.md §3.2)。前の場面に響かないよう map.* の Mailbox で作る。
+  // 切り替え・列・チップ (1 件ずつ、重なり)・戻り矢印・質問 (動かせない)・展開・Forward to… (下書きだけ、送らない)
+  const MAP_STATE = `JSON.stringify((() => {
+    const chipsIn = (sel) => [...document.querySelectorAll(sel + ' .mapchip')].map((c) => ({
+      label: (c.querySelector('.mapchiplabel') || {}).textContent || '',
+      kind: c.classList.contains('event') ? 'event' : 'request',
+      draggable: c.draggable,
+      select: !!c.querySelector('select.mapfwd'),
+      open: !!c.querySelector('.mapexp'),
+      expanded: (c.querySelector('.mapexp') || {}).textContent || '',
+    }))
+    return {
+      on: !document.getElementById('map').hidden,
+      listHidden: document.getElementById('list').hidden,
+      pressed: document.getElementById('mapToggle').getAttribute('aria-pressed'),
+      cols: [...document.querySelectorAll('.mapcol')].map((c) => ({ head: c.querySelector('.mapcolhead').textContent, nodes: [...c.querySelectorAll('.mapnode')].map((n) => n.dataset.name || 'human') })),
+      deployer: chipsIn('.mapnode[data-name="map.deployer"]'),
+      leader: chipsIn('.mapnode[data-name="map.leader"]'),
+      human: chipsIn('.mapnode.human'),
+      back: document.querySelectorAll('.mapsvg path.back').length,
+    }
+  })())`
+  const mapState = async () => JSON.parse((await cdp('Runtime.evaluate', { expression: MAP_STATE, returnByValue: true })).result.value)
+  const clickIn = (expr) => cdp('Runtime.evaluate', { expression: expr, returnByValue: true })
+  const mapCwd = join(work, 'map')
+  const mLead = await api('POST', '/mailboxes/map.leader/attach', { client: 'claude-code', role: 'leader', cwd: mapCwd, sessionId: 's-map-lead' })
+  const mDep = await api('POST', '/mailboxes/map.deployer/attach', { client: 'claude-code', role: 'deployer', cwd: mapCwd, sessionId: 's-map-dep' })
+  await api('POST', '/mailboxes/map.reviewer/attach', { client: 'claude-code', role: 'reviewer', cwd: mapCwd, sessionId: 's-map-rev' })
+  const asMLead = { 'x-hub-attachment': mLead.attachmentId }
+  const asMDep = { 'x-hub-attachment': mDep.attachmentId }
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: 'GOAL: C1 を実装する', meta: { item: { id: 'C1', project: mapCwd, source: null, promise: null } } }, asMLead)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: 'GOAL: 手直しを続ける' }, asMLead)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: 'GOAL: もう 1 件' }, asMLead)
+  await hook('map.reviewer', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'tu-map', session_id: 's-map-rev' })
+  await sleep(1500)
+
+  await clickIn("document.getElementById('mapToggle').click()")
+  await sleep(1500)
+  let mv = await mapState()
+  verify('地図の切り替え: ヘッダー右の Map で地図に変わり、スレッドは隠れる (C78)', mv.on && mv.listHidden && mv.pressed === 'true', mv)
+  verify('地図の列は 人 → leader → ほかの役割 → 役割なし の順。leader は 2 列目、deployer・reviewer は 3 列目 (C78)', JSON.stringify(mv.cols.map((c) => c.head)) === JSON.stringify(['Human', 'leader', 'other roles', 'no role']) && mv.cols[1].nodes.includes('map.leader') && mv.cols[2].nodes.includes('map.deployer') && mv.cols[2].nodes.includes('map.reviewer'), mv.cols)
+  verify('開いた request は受け手のノードに 1 件ずつ、同じ受け手の複数は重なって並ぶ (C78)', mv.deployer.length === 3 && mv.deployer.every((c) => c.kind === 'request'), { deployer: mv.deployer, DIAG: mv.DIAG })
+  verify('項目のある request はその項目の名で出て、動かせて Forward to… がある (C78)', mv.deployer[0].label.startsWith('C1 ') && mv.deployer[0].draggable && mv.deployer[0].select, mv.deployer[0])
+  verify('質問は人のノードにチップで出るが、動かせず Forward to… もない (C78)', mv.human.some((c) => c.kind === 'event' && !c.draggable && !c.select), mv.human)
+
+  await clickIn("[...document.querySelectorAll('.mapnode[data-name=\"map.deployer\"] .mapchip')].find((c) => c.querySelector('.mapchiplabel').textContent.startsWith('C1 ')).click()")
+  await sleep(800)
+  mv = await mapState()
+  verify('チップを押すと Message が thread と同じ行で展開する (C78)', mv.deployer[0].open && mv.deployer[0].expanded.includes('GOAL: C1 を実装する'), mv.deployer[0])
+
+  const fwdBefore = (await api('GET', '/messages?after=0&limit=1000')).messages.at(-1).seq
+  const fw = JSON.parse((await clickIn(`JSON.stringify((() => {
+    const s = [...document.querySelectorAll('.mapnode[data-name="map.deployer"] select.mapfwd')][1]
+    const offered = [...s.options].map((o) => o.value).filter((v) => v !== '')
+    s.value = 'map.reviewer'
+    s.dispatchEvent(new Event('change'))
+    return { to: document.getElementById('to').value, body: document.getElementById('body').value, info: document.getElementById('replyInfo').textContent, offered }
+  })())`)).result.value)
+  await sleep(800)
+  const fwdAfter = (await api('GET', '/messages?after=0&limit=1000')).messages.at(-1).seq
+  verify('Forward to… は下書きを作るだけ: 宛先はその Mailbox、添え書きは空、Forwarding と出て、Hub には何も送らない (C78)', fw.to === 'mailbox:map.reviewer' && fw.body === '' && /^Forwarding #\d+ unchanged/.test(fw.info) && fwdAfter === fwdBefore, { fw, fwdBefore, fwdAfter })
+  verify('Forward to… の候補は Mailbox の名前だけ (role・topic・人は出ない) (C78)', fw.offered.includes('map.leader') && fw.offered.every((v) => !v.includes(':')), fw.offered)
+
+  await clickIn("document.getElementById('mapToggle').click()")
+  await sleep(800)
+  mv = await mapState()
+  verify('もう一度押すと、スレッドに戻り地図は隠れる (C78)', !mv.on && !mv.listHidden && mv.pressed === 'false', mv)
+
+  // 戻り矢印: deployer の request は、先に出した leader の依頼を閉じる (C28、相手からの後の Message)。だから地図を見る前に出す
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.leader' }, body: 'GOAL: 報告を求める' }, asMDep)
+  await sleep(1000)
+  await clickIn("document.getElementById('mapToggle').click()")
+  await sleep(1500)
+  mv = await mapState()
+  verify('戻り矢印: 役割の並びに逆らう request (deployer → leader) は戻り矢印で描かれる (C78)', mv.back >= 1 && mv.leader.length === 1 && mv.leader[0].label.startsWith('#') && mv.leader[0].kind === 'request', { back: mv.back, leader: mv.leader })
+
+  // 操作の途中の描き直しの延期 (C78): 開いた「Forward to…」とチップのドラッグの間は、SSE の更新で地図の DOM を作り直さず、
+  // 終わったとき 1 回だけ、その時点のデータで描く。描き直しの回数は renderMap を包んで数える
+  await clickIn('window.__renders = 0; if (!window.__wrapped) { const orig = renderMap; renderMap = function (m) { window.__renders++; return orig(m) }; window.__wrapped = true }')
+  const reviewerChips = async () => (await clickIn(`document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length`)).result.value
+  const parse = (r) => JSON.parse(r.result.value)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.reviewer' }, body: 'GOAL: 延期 A' }, asMLead)
+  await sleep(1500)
+  const chipsBefore = await reviewerChips()
+  // headless では窓が前にないと focus の出来事が届かない。前に出し、フォーカスの擬似を入れてから開いた選択を作る
+  await cdp('Page.bringToFront')
+  await cdp('Emulation.setFocusEmulationEnabled', { enabled: true })
+  await clickIn(`(() => { window.__sel = document.querySelector('.mapnode[data-name="map.reviewer"] select.mapfwd'); window.__renders = 0; window.__sel.focus() })()`)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.reviewer' }, body: 'GOAL: 延期 B' }, asMLead)
+  await sleep(2000)
+  const held = parse(await clickIn(`JSON.stringify({ renders: window.__renders, connected: window.__sel.isConnected, focused: document.activeElement === window.__sel, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length })`))
+  verify('Forward to… が開いている間、SSE の更新で地図を描き直さない (開いた選択は残り、数は変わらない) (C78)', held.renders === 0 && held.connected && held.focused && held.chips === chipsBefore, { held, chipsBefore })
+  await clickIn('window.__sel.blur()')
+  await sleep(800)
+  const released = parse(await clickIn(`JSON.stringify({ renders: window.__renders, connected: window.__sel.isConnected, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length })`))
+  verify('Forward to… を閉じると、延ばした分を今のデータで 1 回だけ描く (C78)', released.renders === 1 && !released.connected && released.chips === chipsBefore + 1, { released, chipsBefore })
+
+  // チップのドラッグ: 途中は描き直さず、dragend (取り消し) で 1 回
+  const chipsDrag = await reviewerChips()
+  await clickIn(`(() => { window.__chip = document.querySelector('.mapnode[data-name="map.reviewer"] .mapchip'); window.__renders = 0; window.__chip.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })) })()`)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.reviewer' }, body: 'GOAL: ドラッグ中 C' }, asMLead)
+  await sleep(2000)
+  const dragging = parse(await clickIn(`JSON.stringify({ renders: window.__renders, connected: window.__chip.isConnected, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length })`))
+  verify('チップのドラッグの途中は、SSE の更新で地図を描き直さず、ドラッグを途切れさせない (C78)', dragging.renders === 0 && dragging.connected && dragging.chips === chipsDrag, { dragging, chipsDrag })
+  await clickIn(`window.__chip.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: new DataTransfer() }))`)
+  await sleep(800)
+  const ended = parse(await clickIn(`JSON.stringify({ renders: window.__renders, connected: window.__chip.isConnected, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length })`))
+  verify('ドラッグを取り消す (dragend) と、延ばした分を 1 回だけ描く (C78)', ended.renders === 1 && !ended.connected && ended.chips === chipsDrag + 1, { ended, chipsDrag })
+
+  // ドロップ: 落とすと下書きを作り、そこで 1 回描く。ドロップのあとに届いた分も、その 1 回に含まれる
+  const chipsDrop = await reviewerChips()
+  await clickIn(`(() => { window.__chip = document.querySelector('.mapnode[data-name="map.reviewer"] .mapchip'); window.__renders = 0; window.__chip.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })) })()`)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.reviewer' }, body: 'GOAL: ドロップ中 D' }, asMLead)
+  await sleep(1500)
+  const dropped = parse(await clickIn(`(() => { const dt = new DataTransfer(); const n = document.querySelector('.mapnode[data-name="map.leader"]'); n.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt })); n.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })); return JSON.stringify({ renders: window.__renders, to: document.getElementById('to').value, info: document.getElementById('replyInfo').textContent, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length, connected: window.__chip.isConnected }) })()`))
+  verify('チップを落とすと Forward の下書きができ、途中の描き直しは 1 回にまとまる (送らない) (C78)', dropped.renders === 1 && dropped.to === 'mailbox:map.leader' && /^Forwarding #\d+ unchanged/.test(dropped.info) && dropped.chips === chipsDrop + 1 && !dropped.connected, { dropped, chipsDrop })
 } catch (e) {
   failed++
   console.error(`NG  ${e.message}`)

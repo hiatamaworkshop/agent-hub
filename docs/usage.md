@@ -29,6 +29,17 @@ Each Mailbox card on the left shows, as one state and by the color of its frame,
 - The state is built from hook Events, so it is coarser for sessions without hooks (see "Show question waits, permission waits and turn ends in the browser" below). While stopped by a usage limit it shows `Paused` (needs the `StopFailure` hook). When automatic resume is not continuing or is off, `Needs you` shows `usage limit, press Enter` / `usage limit, auto-resume off` (roadmap C38).
 - A permission wait (`Needs you (permission)`) clears when you allow it and the tool runs (`Last event: approved`). When you deny it in the terminal nothing arrives, so it stays `Needs you` (after a denial Claude Code waits for the human's input; roadmap C30).
 
+## Seeing where requests wait (the map)
+
+- **Map** at the top right of the header switches the thread for a map of the same sessions (roadmap C78). The composer and the sidebar stay as they are, and the map follows the project filter at the top of the sidebar. No second connection is opened.
+- Columns are fixed by role: `You`, then `leader`, then the other roles, then Mailboxes without a role. Each node shows its card state in the cards' colors.
+- Each open request is one chip at the Mailbox that has to answer it (requests that are still waiting for a reply, the same ones that count as Waiting on others). Several to one Mailbox stack. A chip with an item shows the item (`C78 #374`). A request that goes against the column order (a deployer asking the leader) is drawn with a dashed back arrow.
+- Questions and permission waits show as chips at `You`, dashed. They cannot be dragged or forwarded; answer them in the terminal.
+- Click a chip to open its Message in place, with the same Reply, Forward and Delete as in the thread.
+- To forward a request to another Mailbox, drag its chip onto that node, or choose the Mailbox in the chip's **Forward to…** menu. This only fills the Forward draft (the composer shows the address and `Forwarding #…`); nothing is sent until you press Send. Only Mailboxes are offered. A choice replaces the current forward selection.
+- While a **Forward to…** menu is open or a chip is being dragged, the map does not redraw for new data (the menu stays open and the drag is not interrupted). The map redraws once when the menu closes or the drag ends, with the latest data.
+- A chip whose Message is not in the page is loaded by itself when the map opens. If the Hub no longer has it, the chip says so.
+
 ## Custom commands
 
 Under **Commands** in the browser you can name strings you use often. Example: name `cp`, text `commit and push`.

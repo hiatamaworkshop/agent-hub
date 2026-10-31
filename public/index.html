@@ -108,6 +108,36 @@
   .foldbar label { display: flex; gap: 6px; align-items: center; }
   input#keep { width: 72px; font-family: var(--mono); }
   #list { flex: 1 1 0; min-height: 0; overflow: auto; padding: 12px 16px; }
+  /* 地図 (C78、design.md §3.2)。スレッドと入れ替える。列は役割で固定し、矢印は SVG で重ねる */
+  #map { flex: 1 1 0; min-height: 0; overflow: auto; }
+  #mapToggle { font-size: 12px; padding: 1px 8px; line-height: 1.4; }
+  #mapToggle[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .mapcanvas { position: relative; display: flex; gap: 40px; align-items: flex-start; padding: 12px 16px; min-width: max-content; }
+  .mapcol { display: flex; flex-direction: column; gap: 8px; min-width: 200px; }
+  .mapcolhead { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .mapnode { position: relative; z-index: 1; padding: 6px 8px; border: 1px solid var(--line); border-left: 4px solid var(--pc, var(--line)); border-radius: 6px; background: var(--panel); }
+  .mapnode .name { font-weight: 600; font-family: var(--mono); }
+  .mapnode .meta { font-size: 12px; color: var(--muted); }
+  .mapnode.st-you, .mapnode.st-stopped { box-shadow: 0 0 0 var(--st-ring) var(--st-you); }
+  .mapnode.st-working, .mapnode.st-delegated { box-shadow: 0 0 0 var(--st-ring) var(--st-working); }
+  .mapnode.st-offline { opacity: .6; }
+  .mapnode.dropok { outline: 2px dashed var(--accent); }
+  .mapchips { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+  .mapchips:empty { display: none; }
+  .mapchip { font-size: 12px; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px; background: var(--panel); cursor: pointer; }
+  .mapchip.event { border: 1px dashed var(--st-you); cursor: pointer; }
+  .mapchip[draggable="true"] { cursor: grab; }
+  .mapchiphead { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+  .mapchiplabel { font-family: var(--mono); font-weight: 600; }
+  .mapchipfrom, .mapchipnote { font-size: 11px; color: var(--muted); }
+  .mapfwd { font-size: 11px; margin-top: 2px; max-width: 100%; }
+  .mapexp { margin-top: 4px; border-top: 1px solid var(--line); padding-top: 4px; cursor: default; }
+  .mapexp .msg { margin: 0; }
+  .mapsvg { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; overflow: visible; }
+  .mapsvg .edge { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+  .mapsvg .evt { stroke: var(--st-you); stroke-dasharray: 4 3; }
+  .mapsvg .back { stroke-dasharray: 6 4; }
+  .mapsvg .head { fill: var(--accent); }
   /* 絞り込み (design.md §3.2、C59)。Filter ▾ のポップオーバーと、有効な軸のチップ。隠れた件数と畳みもスレッド操作バーの 1 か所に出す */
   .filterwrap { position: relative; }
   .popover { position: absolute; top: calc(100% + 4px); left: 0; z-index: 5; width: min(320px, 90vw); padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: 0 4px 16px rgba(0, 0, 0, .12); display: grid; gap: 6px; }
@@ -236,7 +266,7 @@
 </style>
 </head>
 <body>
-<header><h1>agent-hub</h1><span id="conn" class="ng">Disconnected</span><button type="button" id="health" disabled title="Send one notice to each Mailbox in Stopped, no reply (all projects), naming its oldest request with no reply. Mailboxes in other states get nothing.">Health check (0)</button></header>
+<header><h1>agent-hub</h1><span id="conn" class="ng">Disconnected</span><button type="button" id="health" disabled title="Send one notice to each Mailbox in Stopped, no reply (all projects), naming its oldest request with no reply. Mailboxes in other states get nothing.">Health check (0)</button><button type="button" id="mapToggle" aria-pressed="false" title="Switch between the messages and a map of where each open request is waiting, by whose move it is (the same sessions as the cards, the same project filter)">Map</button></header>
 <div id="auth">
   <p>Not authenticated. Open the <code>http://127.0.0.1:&lt;port&gt;/?token=…</code> URL shown in the Hub's console when it started.</p>
 </div>
@@ -271,6 +301,7 @@
       <span id="relay" title="Messages from a Mailbox not yet forwarded to a Mailbox you forwarded to before"></span>
       <button type="button" id="purge" class="linkbtn" title="Delete from the Hub now, without waiting for the retention period: messages already handed to every recipient, and all detection events. Unread messages and requests awaiting a reply are kept.">Purge read</button>
     </div>
+    <div id="map" hidden></div>
     <div id="list"></div>
     <form id="form">
       <div class="row">
@@ -600,6 +631,17 @@ function render(m) {
   if (m.seq > lastSeq) lastSeq = m.seq
   const list = $('list')
   const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40
+  const box = buildMsgBox(m)
+  setOff(box)
+  list.append(box)
+  msgBoxes.set(m.id, box)
+  scheduleRelay()
+  scheduleItems() // 依頼中 / 報告済が変わりうる
+  if (atBottom) { pinned = true; list.scrollTop = list.scrollHeight }
+  return box
+}
+// 1 件の Message の行 (thread と、地図のチップの展開で同じもの)。並べるのは呼ぶ側 (C78)
+function buildMsgBox(m) {
   const ci = colorIndex(senderKey(m.from))
   const box = el('div', `msg c${ci}`)
   box.dataset.seq = m.seq
@@ -644,12 +686,6 @@ function render(m) {
   head.append(actions)
   box.append(head, bodyOf(m.body))
   renderFiles(box, m.meta)
-  setOff(box)
-  list.append(box)
-  msgBoxes.set(m.id, box)
-  scheduleRelay()
-  scheduleItems() // 依頼中 / 報告済が変わりうる
-  if (atBottom) { pinned = true; list.scrollTop = list.scrollHeight }
   return box
 }
 
@@ -1961,26 +1997,72 @@ function absentTargets(outgoing) {
   }
   return [...new Set(names)].join(', ')
 }
+// --- 地図の状態 (C78)。モデルが読むもの (mapMsgCache) を含め、teamModel() より前に置く ---
+const HUMAN_KEY = '#human' // 地図の人のノードと、人宛ての辺の受け手 (Mailbox 名にならない文字)
+let mapOn = false // 地図を出しているか (ヘッダーの切り替え)
+const mapOpen = new Set() // 展開しているチップ (辺の key)
+const mapMsgCache = new Map() // seq → Message。手元の thread にない開いた request を 1 件ずつ取り直したもの
+const mapFetching = new Set() // 取り直し中の seq
+const mapMissing = new Set() // 取り直せなかった seq (消えた・保存期間外・失敗)。失敗は再試行しない
+let mapDragMsg = null // ドラッグ中のチップの Message
+let mapMenu = null // フォーカスのある「Forward to…」の選択 (開いている間は地図を描き直さない)
+let mapDirty = false // 操作の間に来た描き直しの要求。操作が終わったとき 1 回だけ描く
+// 操作の途中 (Forward to… の開いた選択、チップのドラッグ) は地図の DOM を作り直さない。データ (モデル) は毎回更新され、描き直しだけを延ばす (C78)
+const mapHeld = () => (mapMenu !== null && mapMenu.isConnected) || mapDragMsg !== null
+function requestMapRender(model) {
+  if (!mapOn) return
+  if (mapHeld()) { mapDirty = true; return }
+  mapDirty = false
+  renderMap(model || teamModel())
+}
+// 操作が終わった (選んだ・Escape・外側を押した・ドラッグの終わり・落とした) とき、延ばしたものがあれば 1 回描く
+const flushMap = () => { if (mapDirty) requestMapRender() }
+
 // --- 派生モデル (C90、design.md §3.2) ---
 // データ (mailboxList と、手元の Message・Event・Hub の上限) → teamModel() → 表示 (カード・サイドバー・タブ・Health check)。
 // 1 回の描画で 1 度だけ作り、表示はそこから描く。DOM には触れず、プロジェクトや Noise の絞り込みも持たない (表示が掛ける)。
 // stateOf・layersOf・humanTurnOf は、この派生の中からだけ呼ぶ。
 function teamModel() {
-  const mailboxes = mailboxList.map(mailboxModelOf)
+  const bySeq = new Map() // 手元の Message (thread と取り直したもの) を seq で引く。辺の item と時刻に使う
+  for (const m of seen.values()) bySeq.set(m.seq, m)
+  for (const [seq, m] of mapMsgCache) if (!bySeq.has(seq)) bySeq.set(seq, m)
+  const mailboxes = mailboxList.map((mb) => mailboxModelOf(mb, bySeq))
   const human = { waiting: 0, stopped: 0, working: false } // 人の側: Needs you の件数、Stopped の数、作業中の信号があるか (全プロジェクト)
   for (const mb of mailboxes) {
     human.waiting += mb.waiting
     if (mb.state && mb.state.key === 'stopped') human.stopped++
     if (mb.signal === 'working') human.working = true
   }
-  return { mailboxes, human }
+  // 地図の辺: 開いた request (送り手 → 受け手の Mailbox か人) と、人の手を待つ Event (送り手 → 人)
+  return { mailboxes, human, edges: mailboxes.flatMap((mb) => mb.edges) }
+}
+// 開いた request の辺。request は outgoing.to[].seqs (Hub が数えたもの)、受け手は recipients (人宛ては HUMAN_KEY)。
+// item と時刻は Message から (手元にないものは null のまま。取り直しは地図が行う)。受け手のない宛先は辺にしない (Mailbox がない)
+function edgesOf(mb, bySeq) {
+  const out = []
+  const b = mb.backlog
+  const to = b && b.outgoing && Array.isArray(b.outgoing.to) ? b.outgoing.to : []
+  for (const a of to) {
+    const receivers = a.type === 'user' ? [HUMAN_KEY] : Array.isArray(a.recipients) ? a.recipients : []
+    for (const seq of Array.isArray(a.seqs) ? a.seqs : []) {
+      const msg = bySeq.get(seq) || null
+      for (const r of receivers) out.push({ kind: 'request', from: mb.name, to: r, seq, item: msg && msg.meta && msg.meta.item && typeof msg.meta.item.id === 'string' ? msg.meta.item.id : null, ts: msg ? msg.ts : null, msg })
+    }
+  }
+  // 人の手を待つ Event (質問・許可待ち・通知の usage limit)。humanTurnOf と同じ条件。地図では動かせない (ターミナルで答える)
+  const ev = lastEventOf(mb)
+  if (ev && (WAITING.has(ev.kind) || (ev.kind === 'notification' && QUOTA_NEEDS_YOU.has(eventDetailOf(ev)))) && !staleEvent(mb, ev)) {
+    out.push({ kind: 'event', from: mb.name, to: HUMAN_KEY, seq: null, eventId: ev.id, eventKind: ev.kind, ts: ev.ts, event: evtData.get(ev.id) || null })
+  }
+  return out
 }
 // 1 つの Mailbox の、カードに出すもの全部。値は表示のための形で、表示は文言にするだけ
-function mailboxModelOf(mb) {
+function mailboxModelOf(mb, bySeq) {
   const state = stateOf(mb)
   const humanTurn = humanTurnOf(mb)
   const b = mb.backlog
   return {
+    edges: edgesOf(mb, bySeq),
     name: mb.name,
     role: mb.role,
     project: mb.project,
@@ -2621,8 +2703,220 @@ function renderMailboxes() {
     box.onclick = () => { chooseTo(`mailbox:${mb.name}`); $('body').focus() }
     root.append(box)
   }
+  if (mapOn) requestMapRender(model) // 地図は同じモデルから描く (C78)。操作の途中なら描き直しを延ばす
 }
 
+// --- 地図 (C78、design.md §3.2) ---
+// teamModel() の第二の表示。列は役割で決まる (人 → leader → ほかの役割 → 役割なし)。開いた request は受け手のノードにチップで 1 件ずつ出る。
+// 戻り矢印 = 送り手が受け手より右の列 (役割の並びに逆らう依頼)。カードと同じプロジェクト・Mailbox の絞り込みを掛ける。
+// 操作は転送の下書きだけ (チップを Mailbox のノードへ落とす、または「Forward to…」)。送るのは人 (Send)。
+const MAP_COLUMNS = ['Human', 'leader', 'other roles', 'no role']
+const mapColumnOf = (mb) => (mb.role === 'leader' ? 1 : mb.role ? 2 : 3)
+function setMapView(on) {
+  mapOn = on
+  const t = $('mapToggle')
+  t.textContent = on ? 'Messages' : 'Map'
+  t.setAttribute('aria-pressed', String(on))
+  $('list').hidden = on
+  $('map').hidden = !on
+  document.querySelector('section > .foldbar').style.display = on ? 'none' : ''
+  if (!on) { $('map').textContent = ''; mapMenu = null; mapDragMsg = null; mapDirty = false }
+  renderMailboxes()
+}
+$('mapToggle').onclick = () => setMapView(!mapOn)
+window.addEventListener('resize', () => requestMapRender()) // 矢印は描いた時点の位置で描くので、幅が変わったら描き直す
+
+function renderMap(model) {
+  const root = $('map')
+  root.textContent = ''
+  const canvas = el('div', 'mapcanvas')
+  const nodes = new Map() // HUMAN_KEY か Mailbox 名 → { el, col }
+  for (const label of MAP_COLUMNS) {
+    const c = el('div', 'mapcol')
+    c.append(el('div', 'mapcolhead', label))
+    canvas.append(c)
+  }
+  const cols = [...canvas.querySelectorAll('.mapcol')]
+  const human = mapHumanNode(model.human)
+  cols[0].append(human)
+  nodes.set(HUMAN_KEY, { el: human, col: 0 })
+  const shown = model.mailboxes.filter(visibleCard).sort((a, b) => a.name.localeCompare(b.name))
+  for (const mb of shown) {
+    const col = mapColumnOf(mb)
+    const n = mapNodeOf(mb)
+    cols[col].append(n)
+    nodes.set(mb.name, { el: n, col })
+  }
+  root.append(canvas)
+  const pairs = []
+  for (const e of model.edges) {
+    const recv = nodes.get(e.to)
+    if (!recv) continue // 受け手が地図にない (プロジェクトや Mailbox の絞り込みで隠れている)
+    recv.el.querySelector('.mapchips').append(mapChip(e))
+    const send = nodes.get(e.from)
+    if (send) pairs.push({ from: send, to: recv, kind: e.kind })
+  }
+  drawMapArrows(canvas, pairs)
+  ensureRequests(model.edges)
+}
+function mapHumanNode(h) {
+  const n = el('div', `mapnode human${h.waiting ? ' st-you' : ''}`)
+  n.append(el('div', 'name', 'You'), el('div', 'meta', 'the human'))
+  if (h.waiting) n.append(el('div', 'state st-you', `Needs you ${h.waiting}`))
+  n.append(el('div', 'mapchips'))
+  return n
+}
+function mapNodeOf(mb) {
+  const ci = colorIndex(mb.role ? `role:${mb.role}` : `mailbox:${mb.name}`)
+  const st = mb.state
+  const n = el('div', `mapnode c${ci}${st ? ` st-${frameClass(st)}` : ''}`)
+  n.dataset.name = mb.name
+  const head = el('div')
+  head.append(el('span', `dot${mb.attachment ? ' on' : ''}`), el('span', 'name', mb.name), el('span', `chip c${ci}`, mb.role || mb.name))
+  n.append(head)
+  if (st) {
+    const def = STATES.find((s) => s.key === st.key)
+    n.append(el('div', `state st-${frameClass(st)}`, def ? def.label : st.key))
+  }
+  n.append(el('div', 'mapchips'))
+  // 落とせるのは Mailbox のノードだけ (人のノードは宛先にならない)
+  n.ondragover = (e) => { if (mapDragMsg) { e.preventDefault(); n.classList.add('dropok') } }
+  n.ondragleave = () => n.classList.remove('dropok')
+  n.ondrop = (e) => {
+    e.preventDefault()
+    n.classList.remove('dropok')
+    const m = mapDragMsg
+    mapDragMsg = null
+    if (m) fillForwardDraft(m, mb.name)
+    flushMap() // ドラッグは終わった。延ばした描き直しを 1 回
+  }
+  return n
+}
+// チップ: 開いた request は 1 件ずつ (受け手のノードに並ぶ)。押すと Message を thread と同じ行で展開する。
+// request は Message が手元にあれば動かせて「Forward to…」が使える。Event (質問・許可待ち) は動かせない
+function mapChip(e) {
+  const key = e.kind === 'event' ? `e:${e.eventId}` : `r:${e.seq}:${e.to}`
+  const open = mapOpen.has(key)
+  const label = e.kind === 'event' ? (EVENT_LABEL[e.eventKind] || e.eventKind) : `${e.item ? `${e.item} ` : ''}#${e.seq}`
+  const c = el('div', `mapchip ${e.kind}`)
+  c.dataset.key = key
+  c.title = (e.kind === 'event' ? 'Waiting for a person in its terminal: not draggable. ' : 'Open request. Drag it onto a Mailbox, or use Forward to…. ') + (e.ts ? time(e.ts) : 'Not loaded in this page yet')
+  const head = el('div', 'mapchiphead')
+  head.append(el('span', 'mapchiplabel', label), el('span', 'mapchipfrom', `from ${e.from}`))
+  if (e.kind === 'request' && !e.msg) head.append(el('span', 'mapchipnote', mapMissing.has(e.seq) ? 'not on the Hub' : 'loading…'))
+  c.append(head)
+  c.onclick = (ev) => {
+    if (ev.target.closest('.mapexp, select, button')) return
+    if (open) mapOpen.delete(key)
+    else mapOpen.add(key)
+    requestMapRender()
+  }
+  if (e.kind === 'request' && e.msg) {
+    c.draggable = true
+    c.ondragstart = (ev) => {
+      mapDragMsg = e.msg
+      ev.dataTransfer.setData('text/plain', e.msg.id)
+      ev.dataTransfer.effectAllowed = 'move'
+    }
+    c.ondragend = () => {
+      mapDragMsg = null
+      document.querySelectorAll('.mapnode.dropok').forEach((x) => x.classList.remove('dropok'))
+      flushMap() // ドラッグが終わった (落とした・取り消した)
+    }
+    const sel = el('select', 'mapfwd')
+    sel.title = 'Forward this request to a Mailbox (fills the draft; Send is still yours)'
+    sel.setAttribute('aria-label', `Forward ${label} to`)
+    sel.append(option('', 'Forward to…'))
+    for (const mb of [...mailboxList].sort((a, b) => a.name.localeCompare(b.name))) if (mb.name !== e.to) sel.append(option(mb.name, mb.name))
+    // 開いている間はフォーカスがある (選ぶ・Escape・外側を押すと外れる)。そのとき延ばした描き直しを 1 回描く
+    sel.onfocus = () => { mapMenu = sel }
+    sel.onblur = () => { if (mapMenu === sel) mapMenu = null; flushMap() }
+    // Escape は開いた選択を閉じる。ブラウザによって keydown か keyup のどちらが選択に届くので、両方で外す
+    const escape = (ev) => { if (ev.key === 'Escape') sel.blur() }
+    sel.onkeydown = escape
+    sel.onkeyup = escape
+    sel.onchange = () => {
+      mapMenu = null
+      if (sel.value) fillForwardDraft(e.msg, sel.value)
+      flushMap()
+    }
+    c.append(sel)
+  }
+  if (open) {
+    const ex = el('div', 'mapexp')
+    if (e.kind === 'event') {
+      if (e.event) ex.append(eventBody(e.event))
+      else ex.append(el('div', 'note', 'Not loaded in this page. The full Event is in the thread.'))
+    } else if (e.msg) ex.append(buildMsgBox(e.msg))
+    else ex.append(el('div', 'note', mapMissing.has(e.seq) ? 'This Message is no longer on the Hub.' : 'Loading…'))
+    c.append(ex)
+  }
+  return c
+}
+// 転送の下書き (protocol.md §3)。その Message 1 件を選び直し、宛先をそのノードの Mailbox にする。送るのは人 (Send)
+function fillForwardDraft(m, name) {
+  const value = `mailbox:${name}`
+  // 宛先の一覧は今のプロジェクトの Mailbox だけ。外れるものは下書きにせず、そう伝える
+  if (![...$('to').options].some((o) => o.value === value)) { setStatus(`${name} is not in the destination list for this project. Choose All projects to forward to it.`); return }
+  clearForward()
+  pickForward([m])
+  chooseTo(value)
+  setStatus(`Forward draft: #${m.seq} to ${name}. Nothing is sent until you press Send.`)
+}
+// 手元にない開いた request を 1 件ずつ取り直す (Health check と同じ取り方)。失敗・消えたものは再試行しない
+function ensureRequests(edges) {
+  for (const e of edges) {
+    if (e.kind !== 'request' || e.msg || mapFetching.has(e.seq) || mapMissing.has(e.seq)) continue
+    mapFetching.add(e.seq)
+    api(`/messages?after=${e.seq - 1}&limit=1`)
+      .then((r) => {
+        const m = (r.messages || []).find((x) => x.seq === e.seq)
+        if (m) mapMsgCache.set(e.seq, m)
+        else mapMissing.add(e.seq)
+      })
+      .catch(() => mapMissing.add(e.seq))
+      .finally(() => {
+        mapFetching.delete(e.seq)
+        requestMapRender()
+      })
+  }
+}
+// 矢印: 送り手のノードから受け手のノードへ。受け手が送り手より左 (役割の並びに逆らう) なら戻り矢印 (点線)。Event は一点鎖線
+function drawMapArrows(canvas, pairs) {
+  const NS = 'http://www.w3.org/2000/svg'
+  const svg = document.createElementNS(NS, 'svg')
+  svg.setAttribute('class', 'mapsvg')
+  svg.setAttribute('width', String(canvas.scrollWidth))
+  svg.setAttribute('height', String(canvas.scrollHeight))
+  const defs = document.createElementNS(NS, 'defs')
+  const marker = document.createElementNS(NS, 'marker')
+  for (const [k, v] of Object.entries({ id: 'mapHead', viewBox: '0 0 10 10', refX: '9', refY: '5', markerWidth: '6', markerHeight: '6', orient: 'auto' })) marker.setAttribute(k, v)
+  const head = document.createElementNS(NS, 'path')
+  head.setAttribute('d', 'M0,0 L10,5 L0,10 z')
+  head.setAttribute('class', 'head')
+  marker.append(head)
+  defs.append(marker)
+  svg.append(defs)
+  const base = canvas.getBoundingClientRect()
+  for (const p of pairs) {
+    const a = p.from.el.getBoundingClientRect()
+    const b = p.to.el.getBoundingClientRect()
+    const back = p.from.col > p.to.col
+    const same = p.from.col === p.to.col
+    const x1 = back ? a.left - base.left : a.right - base.left
+    const x2 = back || same ? b.right - base.left : b.left - base.left
+    const y1 = a.top + a.height / 2 - base.top
+    const y2 = b.top + b.height / 2 - base.top
+    const s = x2 >= x1 ? 1 : -1
+    const k = Math.max(30, Math.abs(x2 - x1) / 2)
+    const path = document.createElementNS(NS, 'path')
+    path.setAttribute('d', `M${x1} ${y1} C${x1 + s * k} ${y1} ${x2 - s * k} ${y2} ${x2} ${y2}`)
+    path.setAttribute('class', `edge ${p.kind === 'event' ? 'evt' : 'req'}${back ? ' back' : ''}`)
+    path.setAttribute('marker-end', 'url(#mapHead)')
+    svg.append(path)
+  }
+  canvas.append(svg)
+}
 // 接続していない Mailbox を削除する。確認してから DELETE し、結果にかかわらず一覧を取り直す (消えたカードは取り直しで外れる)。
 // 失敗 (409: その間に attach された / 404: 削除に対応しない古い Hub) は #err に出し、カードは外さない
 // Message の削除 (design.md §3.14)。表示から外すのは Hub の message.deleted を受けたとき (ほかのタブにも届くため)。
