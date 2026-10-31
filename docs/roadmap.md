@@ -631,3 +631,17 @@ Status: proposed
 
 Seen 2026-10-31: with the agent-hub tab behind another tab, its icon stayed idle grey while the deployer was Working, and turned blue when the tab was brought forward. Likely cause, not measured: after an SSE message the page re-reads Mailboxes through `setTimeout` (`refreshMailboxes`, 300 ms), and Chrome throttles timers in hidden tabs, to about once a minute after a while. The icon (C70) exists to be read from the background.
 To decide after measuring: the delay with the tab hidden, then whether to re-read without a timer when hidden, or to update the state from the SSE event itself.
+
+### C88. What the start-warnings record leaves out
+Status: proposed
+
+Found 2026-10-31 in a review of C85 (commits `3559217..08c5c85`). Both are within C85's done-when ("the warning texts shown at the start"), so they are not bugs; they bear on whether the record serves its purpose, matching a later breakage against a start (design.md §1.2, §3.14).
+- Failures after the record is written are not in it. `runTeam` (`src/team/team.ts`) calls `recordStart` before the roles start, so a role that fails to attach shows as `failed:` under `--- summary ---` but not in `logs/start-warnings.jsonl`, and a start with no earlier warnings writes no line at all.
+- `mailboxes` (and `roles`) list every requested role, including connected ones that `team` skips without `--force`, so the line names Mailboxes that were not started.
+To decide: whether to append a second line (or rewrite the line) after the roles start with the failures and the roles actually started, or to keep the record to pre-start warnings and say so in usage.md.
+
+### C89. An explicit item on a reply takes the replier's project
+Status: proposed
+
+Found 2026-10-31 in the same review. `itemFor` in `src/shim/main.ts` (C77): a reply that omits `item` copies `id` and `project` from the original Message, but a reply that names `item` gets `project` from the shim's own `cwd`. An agent in project A replying with `item: C5` to a request from project B tags it as A's C5. No visible effect yet: the page's item cards count only the human's requests (`itemRequests` in `public/index.html`).
+To decide: on a reply, take `project` from the original when it has one (and only `id` from the argument), or refuse an `item` that disagrees with the original's.
