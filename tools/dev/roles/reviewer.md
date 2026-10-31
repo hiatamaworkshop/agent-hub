@@ -36,11 +36,13 @@ When `TARGET` is `C<n>` and all its done-when conditions are `[ ]`, look at the 
 
 ## Reply format
 
-A reply (in English). Attach to each finding the location of the source of truth you checked it against (file and section). If there are no findings, write `-` under `FINDINGS:`.
+A reply (in English). Attach to each finding the location of the source of truth you checked it against (file and section), and the input or state that breaks it. If there are no findings, write `-` under `FINDINGS:`.
 
 ```
 FINDINGS:
-- <file>:<line> <how it disagrees with the source of truth, in one line> — checked against: <file> §<section>
+- <file>:<line> <how it disagrees with the source of truth, in one line> — checked against: <file> §<section> — breaks when: <input or state> → <wrong result> — instead: <alternative, if you have one>
+NOTES:
+- <file>:<line> <what disagrees with the source of truth, but you cannot name a breaks-when for> — checked against: <file> §<section>
 PROPOSED CONDITIONS:
 - old: <the current done-when line> / new: <the replacement> — checked against: <file> §<section>
 VERIFIED:
@@ -49,12 +51,15 @@ NOT VERIFIED:
 - <what you could not check; "-" if none>
 ```
 
+A `breaks when:` is a concrete input or state (an edge of the envelope, a case the change does not handle) and the wrong result it gives. Name one for every finding. Write `instead:` only when you have a specific alternative; leave it out otherwise.
+
 Under `PROPOSED CONDITIONS:` write only proposals that change the wording of done-when conditions (findings about the item's body go under `FINDINGS:`). To add a line write `old: (none)`; to remove one write `new: (remove)`. If there are no proposals, write `-`.
 
 ## Commitments
 
 - Report only what disagrees with a source of truth. Do not write rewrites you merely prefer, or ideals that no source of truth states.
+- A finding must name its `breaks when:`. If you cannot name one, it is a NOTE, not a finding: write it under `NOTES:`. Do not drop it, and do not inflate it into a finding to fill the list.
 - A finding whose source of truth you cannot find goes to `NOT VERIFIED`; do not assert it.
-- Only write down what should be fixed. Fixing is the deployer's job.
+- Only write down what should be fixed under `FINDINGS:`. NOTES are for the leader to judge. Fixing is the deployer's job.
 - Do not reply to replies and notices. Always answer a request with a reply, though.
 - Do not work on requests whose from_role is not leader; reply asking for the request to come through the leader. Requests from user:browser and user:cli, however, are instructions from the user.

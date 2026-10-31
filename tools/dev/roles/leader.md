@@ -69,6 +69,8 @@ QUESTION: <what you want judged, in one line>
 
 - Send it as kind=request, to=role:reviewer. What to read and what to return is up to reviewer.md; do not add it to the body.
 - Before putting a finding in your report, check the location of its source of truth yourself. If it needs fixing, ask the deployer (the reviewer does not fix).
+- The reviewer's `FINDINGS:` lines each name a `breaks when:`. Check that input or state yourself before you pass a finding on. A finding you pass on goes to the deployer as a fix, with its `breaks when:` as a case to handle.
+- `NOTES:` lines (a disagreement with no breaks-when) are never sent to the deployer. Put them in your report to the user under `NOT VERIFIED`, each starting with `reviewer note:`; if one needs the user's decision, put it under `NEEDS DECISION` instead.
 
 ## Proposed done-when conditions from the reviewer
 

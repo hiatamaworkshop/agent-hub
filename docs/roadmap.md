@@ -19,8 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C82
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -341,6 +339,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C82 Objections and review findings carry a failure scenario (2026-10-31, requested by the user)
+  - `tools/dev/roles/reviewer.md`: each finding line names `breaks when: <input or state> → <wrong result>` and, when there is one, `instead:`, keeping `checked against:`. A finding that cannot name a breaks-when goes under a new `NOTES:` heading, apart from `FINDINGS:`. design.md §3.12's reviewer row says the same.
+  - `tools/dev/roles/leader.md`: `FINDINGS:` lines may go to the deployer as fixes, after the leader checks their breaks-when. `NOTES:` lines are never sent to the deployer; they go to the user's report as `NOT VERIFIED` lines prefixed `reviewer note:` (or `NEEDS DECISION` if the user must decide).
+  - design.md §1.2's sycophancy row points at reviewer.md and leader.md (Partly: the reviewer's findings only; objections from other roles are not covered).
+  - Checked: the role files have no duplicate copies (`roles.json` holds descriptions, not these files); no test reads the role files' content (`team.test.ts` writes its own temporary `leader.md`); `npm run docs:check` no errors (28 items); `npm test` passes (397).
+  - Not checked: a real reviewer run that replies in the new format. Objections from roles other than the reviewer are out of scope (a separate item if they come up). The done-when wording is unchanged. No ledger line waited on C82.
 - [x] C85 Record a start's warnings locally, including a Claude Code outside the verified envelope (2026-10-31, requested by the user)
   - `src/team/startlog.ts`: `team` and `agent` started on its own append one JSONL line to `logs/start-warnings.jsonl` when the start has warnings (`team` writes one line for its roles; `agent` started by `team` writes none). It holds the time, project, HEAD, roles and Mailboxes, the `claude --version` output (`checkClaudeCli` in `checks.ts` now returns it), the last verified version with its §6.1 section, and the warning texts. A failed write prints one warning and the start goes on. The Hub is not involved.
   - The last verified version is the highest Claude Code version named after "Claude Code" in the headings of design.md §6.1 (currently 2.1.310, §6.1r; `6.2` and the Docker version in §6.1l are not counted). A newer `claude --version` is a warning; the start is not stopped.
@@ -615,18 +619,6 @@ Decided (2026-10-30, user): the view is switched inside the page, not opened as 
 
 Open: tree or graph layout, and how parallel requests to one party show (they close together on one reply, design.md §3.15). Decide these and write the done-when conditions.
 - Dragging should not be the only way: keyboard and touch cannot drag, and `ui:check` (headless Chrome) tests drags poorly. A click alternative (a "Forward to…" menu filling the same draft) from the start.
-
-### C82. Objections and review findings carry a failure scenario
-
-Raised 2026-10-30 in an outside discussion (C80, now design.md §1.2). Borrowed from the Apache rule that a -1 needs a reason: a finding or objection names the input or state that breaks (an angle at the edge of the envelope, C80) and, where possible, an alternative. Against long lists of weak findings. Related: C45 (reviewer conventions), C47.
-Discussed 2026-10-30: `tools/dev/roles/reviewer.md` already asks each finding for `checked against:` (the source of truth it disagrees with), not for what breaks; the change would add `breaks when:`. A finding without one is kept as a NOTE (§3.11's two levels), not dropped: a higher cost of objecting would otherwise mean fewer objections, that is, more sycophancy. Claude Code's own code review asks each finding for a failure scenario (concrete inputs or state → wrong result).
-Decided by the user 2026-10-31. Scope is the reviewer's findings; objections from other roles are a separate item if they come up. Findings that were not adopted stay unrecorded (design.md §3.14, the question C85 left for after C82).
-
-#### Done when
-- [ ] reviewer.md's finding line adds `breaks when: <input or state> → <wrong result>` and, where it can, `instead: <alternative>`, keeping `checked against:`
-- [ ] A finding that cannot name a breaks-when is not dropped: reviewer.md puts it under a new `NOTES:` heading of the reply, apart from `FINDINGS:`
-- [ ] leader.md: `FINDINGS:` lines may go to the deployer as fixes; `NOTES:` lines go only into the report to the user, not to the deployer
-- [ ] design.md §1.2's sycophancy row points at reviewer.md / leader.md instead of "not enforced yet"; CLAUDE.md map unchanged unless a section is added
 
 ### C86. A reply to a Message the sender never received
 Status: proposed
