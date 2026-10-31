@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C80
 - [ ] C85
 
 (Items with a status line are listed under "Items".)
@@ -342,6 +341,10 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C80 Write down the working conventions agent-hub stands for (2026-10-31, requested by the user)
+  - design.md §1.2 (new, after §1.1): the thesis, the input envelope, trust on evidence, sorting conventions by what they do, and "what is not written in the repository did not happen". A table lists each convention with where it is already enforced, or "not enforced yet". Not enforced yet: publishing and deleting data (no rule in the repository), running the affected tests while working (C84, rejected), a "direction first" reply at the start of work (no rule; §6.1n is a correction that arrived mid-work), an incident becoming a new verification angle (no step does it), and sycophancy (C82, proposed).
+  - CLAUDE.md's document map lists §1.2.
+  - Checked: `npm run docs:check` no errors (28 items). Each row was checked by grep against CLAUDE.md, `tools/dev/roles/*.md`, design.md §3.11, §3.13, §3.15, §3.16 and §6.1n, and `tools/hooks/post-commit-index.sh`. No `blocked(after C80)` or `held(after C80)` line existed. C82 and C85 name C80 only in their text, so their wording is unchanged. Not checked: no test or UI run (docs only).
 - [x] C77 Let agents tag their messages with an item (2026-10-30, requested by the user)
   - `post_message` takes `item?` (`^C[1-9][0-9]*$`; a bad value is a tool error naming `item`, and nothing is sent). The shim builds `meta.item` as `{ id, project, source: null, promise: null }` with `project` from its working folder (the same value its Mailbox attaches with). A reply without `item` reads the original through `GET /messages/:id` at send time and copies its `meta.item.id` and `project`; an explicit `item` wins; no item on the original, or an unreadable original, sends no item. The shim keeps no record of delivered Messages. `parent` is not adopted (decided 2026-10-30).
   - The Hub serves `GET /messages/:id` (same token; 404 `message_not_found` for an unknown or deleted id) and returns the stored Message as is. Its handling of `meta` is unchanged: a test posts a `meta.item` with an extra key and reads it back untouched.
@@ -606,23 +609,6 @@ Decided (2026-10-30, user): the view is switched inside the page, not opened as 
 
 Open: tree or graph layout, and how parallel requests to one party show (they close together on one reply, design.md §3.15). Decide these and write the done-when conditions.
 - Dragging should not be the only way: keyboard and touch cannot drag, and `ui:check` (headless Chrome) tests drags poorly. A click alternative (a "Forward to…" menu filling the same draft) from the start.
-
-### C80. Write down the working conventions agent-hub stands for
-
-Raised 2026-10-30 in an outside discussion (a session not on the team, comparing kanary relay, mcp_agent_mail and the CLI relays), whose remarks were filed as C80 to C85. Sorted with the user the same day: C85 decided; C81, C83 and C84 rejected (their usable parts are points below); C82 stays proposed. Decided by the user 2026-10-31, to be taken before C85 and C82, which both point at it.
-The remark's framing: the target is not another communication tool but GitHub-centred OSS maintainer conventions with the human-made chaos removed. Points to write as one section of design.md (likely next to §1.1):
-- The thesis (agreed with the user, 2026-10-30): the question is not whether a human or an AI decides, but how the system keeps moving forward. The history of development is kept in the repository (git, the ledger's closed lines, §6, §9), not in the Hub. Approvals and warnings that would become formalities or be ignored do not stop the flow; they are recorded outside it with the time and a pointer back, only for what git does not keep, and a later problem is first matched against that record and its timing. C85 is the first case.
-  The remark's first wording ("a convention is judged by whether it lowers human attention per accepted change") was dropped: it would count removing the human's decision points (§1.1) as progress.
-- A guarantee means something only together with its input envelope ("this behaviour for inputs in this range"): widen the envelope, state its boundary, and do not let input outside it pass unrecorded. §6.1's version / OS / model, §3.11's "state the coverage honestly" and C58 are already envelopes.
-- OSS trust sits on people (a maintainer knows a contributor); agents are replaced and carry no reputation, so trust sits on evidence (§3.11).
-- Sort conventions by what they do, not by where they came from: some that look social carry assurance (a second reviewer). Strengthen the ones against agent failure modes (drift between report and change, sycophancy, scope overreach, forgetting).
-- "What is not written in the repository did not happen" as the top principle (§3.16 says it for progress).
-- Conventions to include: decisions split by reversibility (a local commit proceeds; push, publishing, deleting data and changing a promise wait for the human's word; from C83). Affected tests while working, the full set before reporting done (from C84). Incidents in §6 become new verification angles. A "direction first" reply at the start of work (the correction in §6.1n).
-
-#### Done when
-- [ ] design.md has a new §1.2 next to §1.1 stating the thesis, the input envelope, trust on evidence, sorting conventions by what they do, and "what is not written in the repository did not happen"
-- [ ] Each convention listed in C80 points to where it is already enforced (CLAUDE.md, role files, §3.11, §6 …) or is named as not enforced yet
-- [ ] CLAUDE.md's document map lists §1.2; `npm run docs:check` passes
 
 ### C82. Objections and review findings carry a failure scenario
 Status: proposed

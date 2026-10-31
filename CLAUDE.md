@@ -10,6 +10,7 @@ When you add sections or change their numbers, fix this map in the same commit.
 - [docs/roadmap.md](docs/roadmap.md) — acceptance criteria per phase, known issues, open items (`### C<n>.` sections; how to write them is at the top and in design.md §3.15). **How far things have got** is here. When asked about the implementation plan, use `## Plan` and the four-tier answer of the skill `roadmap-items` (do not read the whole ledger)
 - [docs/design.md](docs/design.md) (about 1,110 lines)
   - §1.1 Positioning — what we own and what we borrow, criteria for continuing
+  - §1.2 Working conventions — the thesis, the input envelope, trust on evidence, and where each convention is enforced (or not yet)
   - §2 Requirements / Non-goals — no automatic forwarding, no autonomous orchestration
   - §3.2 Components — the roles of the Hub / shim / hooks / UI, details of the UI's behavior (including thread filtering)
   - §3.3 Mailbox and Attachment — replacement, takeover, leases

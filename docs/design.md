@@ -35,6 +35,34 @@ Direction of the structure (2026-10-16, user):
 
 If practicality were the only goal, adding a UI to something existing (mcp_agent_mail and the like) would be cheaper. We continue with our own because three things are missing from the existing ones: "a human presses", "a role can be an address", and "the sender's attributes are kept apart from the body with `meta`". If these stop being needed, we will consider switching.
 
+### 1.2 Working conventions (2026-10-31, C80)
+
+The working conventions that agent-hub stands for, and where each one is enforced. Where a convention has no check yet, the table says so.
+
+**Thesis** (agreed with the user, 2026-10-30). The question is not whether a human or an AI decides, but how the system keeps moving forward. The history of development is kept in the repository (git, the ledger's closed lines, §6, §9), not in the Hub. Approvals and warnings that would become formalities, or be ignored, do not stop the flow. They are recorded outside it, with the time and a pointer back, and only for what git does not keep. A later problem is first matched against that record by its timing. C85 is the first planned case; it is not built yet.
+The measure is not "less human attention per accepted change": that would count removing the human's decision points (§1.1) as progress.
+
+**Input envelope.** A guarantee means something only together with the input it covers ("this behaviour for inputs in this range"). Widen the envelope when a case is verified, state its boundary, and do not let input outside it pass unrecorded. Already in use: §6 entries name the version, OS and model they were observed with (§6.1c, §6.1v); §3.11 asks for coverage to be stated honestly ("0 waiting for confirmation" covers only work that went through the Hub); C58 warns when a checkout is stale before a start.
+
+**Trust on evidence, not on people.** An OSS maintainer trusts a contributor partly because they know the person. Agents are replaced and carry no reputation, so trust rests on evidence (§3.11). The tools derive facts from the repository (changed files, HEAD). The agent writes only its judgment. An agent does not accept a request it issued itself. The reviewer checks against named sources (`tools/dev/roles/reviewer.md`).
+
+**Sort conventions by what they do, not where they came from.** Some conventions look social but carry assurance: a second reviewer is a check, not courtesy. Each convention is judged by the failure it prevents, and the ones against agent failure modes get the strongest checks.
+
+**What is not written in the repository did not happen.** The top principle. §3.16 applies it to progress: a promise counts as kept when the roadmap shows it, and an agent's self-report is not a fact until the repository does.
+
+**Conventions and their enforcement**
+
+| Convention | Enforced by | Status |
+|---|---|---|
+| Decisions split by reversibility: a local commit proceeds; push, publishing, deleting data and changing a promise wait for the human | Push: CLAUDE.md "Git", `deployer.md` and `leader.md` "Commitments". Changing a promise: §3.15 table; the roadmap header's rule on done-when wording | Partly. Publishing and deleting data have no rule in this repository yet |
+| Affected tests while working; the full set before reporting done | CLAUDE.md "Notes on the development environment" (`npm test`, and `npm run ui:check` for the UI); `leader.md` step 2 runs the tests once itself; `deployer.md` VERIFIED asks for the command and its result | Partly. Running the affected tests while working is not enforced yet |
+| Incidents in §6 become new verification angles | CLAUDE.md "Before implementing" 1 (check §6 first) and "Updating the docs" (what is learned goes to §6) | Partly. Nothing turns an incident into a new angle; the incident entries (§6.1n, §6.1p, §6.1q) are the records |
+| A "direction first" reply at the start of work | Not written as a rule. §6.1n records a correction that arrived during work and how it was passed on | Not enforced yet |
+| Drift between report and change | `deployer.md` `CHANGED` lines; `leader.md` step 2 compares `git status` and `git diff` with SCOPE | Partly. The Hub-side check (§3.11) is concept, not implemented |
+| Sycophancy: an objection given without a reason | §3.11's two checkpoint levels send a judgment about waiting to a human | Not enforced yet. Findings that name a failure scenario are C82 (proposed) |
+| Scope overreach | `deployer.md` "Do not change files outside the request's scope"; `leader.md` step 2 checks SCOPE | Enforced by instruction. The mechanical check is §3.11 (concept) |
+| Forgetting | §3.16: progress lives in the roadmap, not in the Hub's delivery state. `tools/hooks/post-commit-index.sh` (C52) sends the index after a commit that changes the ledger | Partly. An agent's memory across compaction (§3.13) is not enforced |
+
 ## 2. Requirements
 
 | ID | Requirement |
