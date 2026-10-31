@@ -137,8 +137,14 @@
   .mapchiplabel { font-family: var(--mono); font-weight: 600; }
   .mapchipfrom, .mapchipnote { font-size: 11px; color: var(--muted); }
   .mapfwd { font-size: 11px; margin-top: 2px; max-width: 100%; }
-  .mapexp { margin-top: 4px; border-top: 1px solid var(--line); padding-top: 4px; cursor: default; }
-  .mapexp .msg { margin: 0; }
+  .mapchip.open { outline: 2px solid var(--accent); }
+  /* 開いたチップの中身。地図の下に 1 件だけ出す (C95)。幅は地図の幅で止め、高さは決まった分だけ、中は自分でスクロールする */
+  .mappane { margin-top: 8px; width: 100%; box-sizing: border-box; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); padding: 6px 8px; }
+  .mappanehead { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 12px; }
+  .mappanehead .mappanenote { color: var(--muted); }
+  .mappanehead .linkbtn { margin-left: auto; }
+  .mappanebody { max-height: 40vh; overflow: auto; overflow-wrap: anywhere; margin-top: 4px; border-top: 1px solid var(--line); padding-top: 4px; cursor: default; }
+  .mappanebody .msg { margin: 0; }
   .mapsvg { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; overflow: visible; }
   .mapsvg .edge { fill: none; stroke: var(--accent); stroke-width: 1.5; }
   .mapsvg .evt { stroke: var(--st-you); stroke-dasharray: 4 3; }
@@ -2006,7 +2012,8 @@ function absentTargets(outgoing) {
 // --- 地図の状態 (C78)。モデルが読むもの (mapMsgCache) を含め、teamModel() より前に置く ---
 const HUMAN_KEY = '#human' // 地図の人のノードと、人宛ての辺の受け手 (Mailbox 名にならない文字)
 let mapOn = false // 地図を出しているか (ヘッダーの切り替え)
-const mapOpen = new Set() // 展開しているチップ (辺の key)
+let mapOpenKey = null // 開いているチップ (辺の key)。一度に 1 件。中身は地図の下の欄に出す (C95)
+let mapOpenInfo = null // 開いたときの辺の要旨 (seq・項目・送り手・受け手)。辺が閉じたあとも欄に出すため
 const mapMsgCache = new Map() // seq → Message。手元の thread にない開いた request を 1 件ずつ取り直したもの
 const mapFetching = new Set() // 取り直し中の seq
 const mapMissing = new Set() // Hub の返事で消えていたと分かった seq (保存期間外や削除)。取り直さない
@@ -2765,6 +2772,8 @@ function renderMap(model) {
     if (send) pairs.push({ from: send, to: recv, kind: e.kind, human: e.to === HUMAN_KEY })
   }
   drawMapArrows(canvas, pairs)
+  const pane = mapPaneOf(model, nodes)
+  if (pane) root.append(pane)
   ensureRequests(model.edges)
 }
 function mapHumanNode(h) {
@@ -2800,11 +2809,12 @@ function mapNodeOf(mb) {
   }
   return n
 }
-// チップ: 開いた request は 1 件ずつ (受け手のノードに並ぶ)。押すと Message を thread と同じ行で展開する。
+// チップ: 開いた request は 1 件ずつ (受け手のノードに並ぶ)。押すと中身を地図の下の欄に出す (C95)。チップは広がらず、開いたものに印がつく。
 // request は Message が手元にあれば動かせて「Forward to…」が使える。Event (質問・許可待ち) は動かせない
+const mapEdgeKey = (e) => (e.kind === 'event' ? `e:${e.eventId}` : `r:${e.seq}:${e.to}`)
 function mapChip(e) {
-  const key = e.kind === 'event' ? `e:${e.eventId}` : `r:${e.seq}:${e.to}`
-  const open = mapOpen.has(key)
+  const key = mapEdgeKey(e)
+  const open = mapOpenKey === key
   const label = e.kind === 'event' ? (EVENT_LABEL[e.eventKind] || e.eventKind) : `${e.item ? `${e.item} ` : ''}#${e.seq}`
   const c = el('div', `mapchip ${e.kind}`)
   c.dataset.key = key
@@ -2813,10 +2823,11 @@ function mapChip(e) {
   head.append(el('span', 'mapchiplabel', label), el('span', 'mapchipfrom', `from ${e.from}`))
   if (e.kind === 'request' && !e.msg) head.append(el('span', 'mapchipnote', mapMissing.has(e.seq) ? 'not on the Hub' : mapFailed.has(e.seq) ? 'could not load' : 'loading…'))
   c.append(head)
+  c.classList.toggle('open', open)
   c.onclick = (ev) => {
-    if (ev.target.closest('.mapexp, select, button')) return
-    if (open) mapOpen.delete(key)
-    else mapOpen.add(key)
+    if (ev.target.closest('select, button')) return
+    if (open) { mapOpenKey = null; mapOpenInfo = null }
+    else { mapOpenKey = key; mapOpenInfo = { seq: e.seq, item: e.item || null, from: e.from, to: e.to, kind: e.kind, eventKind: e.eventKind || null } }
     requestMapRender()
   }
   if (e.kind === 'request' && e.msg) {
@@ -2864,16 +2875,46 @@ function mapChip(e) {
     sel.onchange = () => { if (!navKey) choose() }
     if (sel.options.length > 1) c.append(sel) // 行き先がなければ出さない
   }
-  if (open) {
-    const ex = el('div', 'mapexp')
-    if (e.kind === 'event') {
-      if (e.event) ex.append(eventBody(e.event))
-      else ex.append(el('div', 'note', 'Not loaded in this page. The full Event is in the thread.'))
-    } else if (e.msg) ex.append(buildMsgBox(e.msg))
-    else ex.append(el('div', 'note', mapMissing.has(e.seq) ? 'This Message is no longer on the Hub.' : mapFailed.has(e.seq) ? 'Could not load this Message. It is fetched again when the map opens or the connection returns.' : 'Loading…'))
-    c.append(ex)
-  }
   return c
+}
+// 開いたチップの中身を、地図の下に 1 件だけ出す (C95)。ノードの大きさや位置は変えない。
+// 辺が閉じたときは欄がそう言う (消えて黙ることはしない)。地図の絞り込みで受け手が隠れたときも、そう言う
+function mapPaneOf(model, nodes) {
+  if (mapOpenKey === null || !mapOpenInfo) return null
+  const info = mapOpenInfo
+  const cur = model.edges.find((x) => mapEdgeKey(x) === mapOpenKey) || null
+  const isEvent = info.kind === 'event'
+  const box = el('div', 'mappane')
+  box.dataset.key = mapOpenKey
+  const head = el('div', 'mappanehead')
+  const fields = [
+    ['seq', isEvent ? '—' : `#${info.seq}`],
+    ['item', info.item || '—'],
+    ['from', info.from],
+    ['to', info.to === HUMAN_KEY ? 'You' : info.to],
+  ]
+  for (const [k, v] of fields) head.append(el('span', 'mappanefield', `${k} ${v}`))
+  if (!cur) {
+    const hidden = !nodes.has(info.to)
+    head.append(el('span', 'mappanenote', hidden ? 'Hidden now by the project or Mailbox filter.' : isEvent ? 'No longer waiting for you: answered in the terminal, or the wait ended.' : 'Closed: this request was answered or closed, so it is no longer on the map.'))
+  }
+  const close = el('button', 'linkbtn', '×')
+  close.type = 'button'
+  close.title = 'Close this Message'
+  close.setAttribute('aria-label', 'Close the opened chip')
+  close.onclick = () => { mapOpenKey = null; mapOpenInfo = null; requestMapRender() }
+  head.append(close)
+  box.append(head)
+  if (cur) {
+    const body = el('div', 'mappanebody')
+    if (cur.kind === 'event') {
+      if (cur.event) body.append(eventBody(cur.event))
+      else body.append(el('div', 'note', 'Not loaded in this page. The full Event is in the thread.'))
+    } else if (cur.msg) body.append(buildMsgBox(cur.msg))
+    else body.append(el('div', 'note', mapMissing.has(info.seq) ? 'This Message is no longer on the Hub.' : mapFailed.has(info.seq) ? 'Could not load this Message. It is fetched again when the map opens or the connection returns.' : 'Loading…'))
+    box.append(body)
+  }
+  return box
 }
 // 転送の下書き (protocol.md §3)。その Message 1 件を選び直し、宛先をそのノードの Mailbox にする。送るのは人 (Send)
 function fillForwardDraft(m, name) {

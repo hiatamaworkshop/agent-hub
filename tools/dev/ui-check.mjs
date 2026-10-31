@@ -982,8 +982,9 @@ try {
       kind: c.classList.contains('event') ? 'event' : 'request',
       draggable: c.draggable,
       select: !!c.querySelector('select.mapfwd'),
-      open: !!c.querySelector('.mapexp'),
-      expanded: (c.querySelector('.mapexp') || {}).textContent || '',
+      // 開いたチップには印がつき、中身は地図の下の欄 (.mappane、C95)
+      open: c.classList.contains('open'),
+      expanded: c.classList.contains('open') ? ((document.querySelector('#map .mappanebody') || {}).textContent || '') : '',
     }))
     return {
       on: !document.getElementById('map').hidden,
@@ -1199,6 +1200,108 @@ try {
   await clickIn("document.querySelector('.mapnode[data-name=\"map.deployer\"] select.mapfwd').blur()")
   await sleep(800)
   verify('Forward to… を矢印キーで動かしても下書きは変わらず、Enter で選んだ 1 件だけ下書きになる (C92)', nav.to === nav.toBefore && nav.info === nav.infoBefore && entered.to === `mailbox:${nav.moved[1]}` && /^Forwarding #\d+ unchanged/.test(entered.info), { nav, entered })
+
+  // 開いたチップの中身は地図の下の欄に出る (C95)。チップは広がらず、地図の幅と節の位置は変わらない
+  const chipOf = (seq) => `[...document.querySelectorAll('#map .mapchip')].find((x) => (x.querySelector('.mapchiplabel') || {}).textContent === '#${seq}')`
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: `GOAL: 長い行 (C95)\n${'あ'.repeat(200)}${'x'.repeat(400)}` }, asMLead)
+  await sleep(1500)
+  const longSeq = (await api('GET', '/messages?after=0&limit=1000')).messages.find((m) => m.body.startsWith('GOAL: 長い行 (C95)')).seq
+  const geom = async () =>
+    parse(await clickIn(`JSON.stringify({
+      canvas: [...document.querySelectorAll('#map .mapcanvas')].map((c) => Math.round(c.getBoundingClientRect().width)),
+      nodes: [...document.querySelectorAll('#map .mapnode')].map((n) => { const r = n.getBoundingClientRect(); return [n.dataset.name || 'human', Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)] }),
+    })`))
+  const paneState = async () =>
+    parse(await clickIn(`JSON.stringify((() => {
+      const p = document.querySelector('#map .mappane')
+      if (!p) return { count: document.querySelectorAll('#map .mappane').length, open: document.querySelectorAll('#map .mapchip.open').length }
+      const b = p.querySelector('.mappanebody')
+      return {
+        count: document.querySelectorAll('#map .mappane').length,
+        open: document.querySelectorAll('#map .mapchip.open').length,
+        head: p.querySelector('.mappanehead').textContent,
+        body: b ? b.textContent : null,
+        paneW: Math.round(p.getBoundingClientRect().width),
+        rootW: Math.round(document.getElementById('map').getBoundingClientRect().width),
+        maxH: b ? getComputedStyle(b).maxHeight : '',
+        scrolls: b ? b.scrollHeight > b.clientHeight : null,
+      }
+    })())`))
+
+  const g0 = await geom()
+  await clickIn(`${chipOf(longSeq)}.click()`)
+  await sleep(800)
+  const g1 = await geom()
+  const p1 = await paneState()
+  verify(
+    '開いたチップの中身は地図の下の欄に出る。長い行でも地図の幅と節の位置は変わらない (C95)',
+    JSON.stringify(g0.canvas) === JSON.stringify(g1.canvas) && JSON.stringify(g0.nodes) === JSON.stringify(g1.nodes) &&
+      p1.count === 1 && p1.open === 1 && p1.head.includes(`#${longSeq}`) && p1.body.includes('長い行') && p1.paneW <= p1.rootW + 1 && p1.maxH !== 'none' && p1.scrolls === true,
+    { g0, g1, p1 },
+  )
+  verify('欄には seq・項目・送り手・受け手の名が出る。項目のない request は項目を「—」で示す (C95)', p1.head.includes('seq #') && p1.head.includes('item —') && p1.head.includes('from map.leader') && p1.head.includes('to map.deployer'), p1.head)
+
+  // 一度に 1 件: 別のチップを開くと欄は入れ替わり、印も移る
+  const other = parse(await clickIn(`JSON.stringify((() => {
+    const c = [...document.querySelectorAll('#map .mapnode[data-name="map.deployer"] .mapchip.request')].find((x) => !x.classList.contains('open') && (x.querySelector('.mapchiplabel') || {}).textContent !== '#${longSeq}')
+    if (!c) return null
+    const label = c.querySelector('.mapchiplabel').textContent
+    c.click()
+    return label
+  })())`))
+  await sleep(800)
+  const p2 = await paneState()
+  verify('一度に 1 件: 別のチップを開くと欄はそれに替わり、印は 1 つだけ移る (C95)', other !== null && p2.count === 1 && p2.open === 1 && !p2.head.includes(`#${longSeq}`) && p2.head.includes(other.replace(/^.*#/, '#')), { other, p2 })
+
+  // 同じチップをもう一度押すと欄は空になる。× でも空になる
+  await clickIn(`[...document.querySelectorAll('#map .mapnode[data-name="map.deployer"] .mapchip')].find((x) => x.classList.contains('open')).click()`)
+  await sleep(800)
+  const p3 = await paneState()
+  await clickIn(`${chipOf(longSeq)}.click()`)
+  await sleep(800)
+  await clickIn(`document.querySelector('#map .mappane .linkbtn').click()`)
+  await sleep(800)
+  const p4 = await paneState()
+  verify('同じチップをもう一度押すと欄が空になり、× でも空になる。印も外れる (C95)', p3.count === 0 && p3.open === 0 && p4.count === 0 && p4.open === 0, { p3, p4 })
+
+  // 再描画で欄は残る (新しいデータ・C78 の延ばした描き直し)。選択を開いている間の更新は、閉じてから 1 回描き直す
+  await clickIn(`${chipOf(longSeq)}.click()`)
+  await sleep(800)
+  const before = await paneState()
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: 'GOAL: 再描き (C95)' }, asMLead)
+  await sleep(1500)
+  const redrawn = await paneState()
+  await clickIn(`(() => { window.__c95 = ${chipOf(longSeq)}; window.__c95.querySelector('select').focus() })()`)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: 'GOAL: 選択中の更新 (C95)' }, asMLead)
+  await sleep(1500)
+  const heldPane = await paneState()
+  await clickIn('window.__c95.querySelector("select").blur()')
+  await sleep(800)
+  const afterBlur = await paneState()
+  verify(
+    '再描画 (新しいデータと、開いた選択を閉じたあとの 1 回の描き直し) でも欄と印は残る (C95)',
+    before.count === 1 && redrawn.count === 1 && redrawn.open === 1 && redrawn.head.includes(`#${longSeq}`) && redrawn.body.includes('長い行') && heldPane.count === 1 && afterBlur.count === 1 && afterBlur.open === 1 && afterBlur.head.includes(`#${longSeq}`),
+    { before, redrawn, heldPane, afterBlur },
+  )
+
+  // 辺が閉じたら、欄がそう言う (消えて黙ることはしない)。送り手は deployer: 返信で leader からの依頼が閉じる (C28)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.leader' }, body: 'GOAL: 閉じさせる (C95)' }, asMDep)
+  await sleep(1500)
+  const closed = await paneState()
+  const closedNote = (await clickIn(`(document.querySelector('#map .mappanenote') || {}).textContent || ''`)).result.value
+  verify('依頼が閉じて地図から出たら、欄はそう言う。chip は消え (印もない)、欄は残る (C95)', closed.count === 1 && closed.open === 0 && closed.head.includes(`#${longSeq}`) && closedNote.startsWith('Closed:'), { closed, closedNote })
+  await clickIn(`document.querySelector('#map .mappane .linkbtn').click()`)
+  await sleep(800)
+
+  // Hub にない・取れなかった Message の注記も欄に出る (C92 の文言のまま)。同じ呼び方で、消えた依頼を開く
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: 'GOAL: 消えた依頼 (C95)' }, asMLead)
+  await sleep(1500)
+  const goneSeq = (await api('GET', '/messages?after=0&limit=1000')).messages.find((m) => m.body.startsWith('GOAL: 消えた依頼 (C95)')).seq
+  await clickIn(`window.__mapFetch.match = '/messages?after=${goneSeq - 1}&limit=1'; window.__mapFetch.mode = 'gone'; for (const [id, m] of seen) if (m.seq === ${goneSeq}) seen.delete(id); mapMsgCache.delete(${goneSeq}); ${chipOf(goneSeq)}.click()`)
+  await sleep(1500)
+  const gonePane = await paneState()
+  await clickIn('window.__mapFetch.mode = "ok"')
+  verify('Hub にもうない Message は、欄に「no longer on the Hub」と出る (C92 の注記と同じ文言) (C95)', gonePane.count === 1 && gonePane.body.includes('This Message is no longer on the Hub.'), gonePane)
 
   // 配色 (C93): 選んだ配色と OS の設定の組を確かめる。OS の設定は Emulation で変え、選んだ配色は localStorage に覚える
   const setOs = (dark) => cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: dark ? 'dark' : 'light' }] })

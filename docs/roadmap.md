@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C95
 - [ ] C96
 
 (Items with a status line are listed under "Items".)
@@ -342,6 +341,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C95 Show an opened map chip below the map, not inside its node (2026-10-31, decided by the user)
+  - `public/index.html`: the open chip is one key (`mapOpenKey`, with `mapOpenInfo` kept after the edge closes), not a set. A chip keeps only the chip and gets an `open` outline. `mapPaneOf` renders the pane below the map (after the canvas, so the canvas and the nodes do not change size): seq, item, sender and receiver; the Message (`buildMsgBox`) or Event (`eventBody`) body with a height cap and its own scroll; a × that empties it. Clicking the same chip again also empties it.
+  - The pane survives redraws (it is rebuilt from the model each time, and the C78 deferred redraw applies). When the edge is no longer open it says `Closed:`; when the receiver is hidden by the project or Mailbox filter it says so. The C92 notes (`not on the Hub`, `could not load`, `Loading…`) now appear in the pane.
+  - `tools/dev/ui-check.mjs`: `MAP_STATE` reads the open state from the chip's class and the body from the pane (the only change to an existing scene's reader). Seven scenes added after the C92 scenes: a long-line request leaves the canvas width and node positions unchanged and fills the pane; the header names seq, item, from and to; one at a time; the same chip and × empty it; a redraw (new data, and a redraw held by an open select) keeps the pane; a closed request says so; a gone Message shows the C92 note in the pane.
+  - `docs/usage.md` (the map) describes the pane, the one-at-a-time rule, the close, and the closed / hidden wording.
+  - Checked: `npm test` 412 pass, 0 fail; `npm run ui:check` 140 ok, 0 NG; `npm run docs:check` 30 items, 0 errors; `npx tsc --noEmit` clean. The seven new scenes fail against HEAD's `public/index.html` (the first one fails on the canvas-width check). Forward to… and dragging from the chip are covered by the existing drag and Forward scenes, which pass unchanged. Not checked: the pane's look at a phone width; a real drag while the pane is open.
 - [x] C92 Small rough edges of the map (2026-10-31, decided by the user)
   - `public/index.html` `drawMapArrows`: a request or waiting Event addressed to the human is not given the `back` class (it keeps its position, and an Event keeps its own dash); Mailbox-to-Mailbox requests against the role order keep the back arrow. `renderMap` passes `human` on each pair.
   - `public/index.html` `mapChip`: the "Forward to…" menu lists the Mailboxes that are in the composer's destination list (`#to`), the same list `fillForwardDraft` checks, and no select is shown when none is left. `fillForwardDraft` is unchanged.
@@ -657,18 +662,6 @@ Status: proposed
 
 Found 2026-10-31 in a review of C78. The map's chips come from `backlog.outgoing.to[].seqs`, and `outgoing` counts only what a Mailbox sent (`from.type === 'mailbox'` in `src/hub/store.ts`). A request from the human is not in anyone's `outgoing`, so the most common stop, the human's request to a `leader` that is Stopped, has no chip: the leader's card state shows it, but it cannot be expanded or forwarded from the map. The receiver's `backlog.awaitingReply` and `unread` have only a count and the oldest seq, which is not enough for one chip per request (the reason C78 added `seqs`).
 To decide: where the seqs come from (`seqs` on the receiver's `awaitingReply` and `unread`, or an `outgoing` for the human across its user ids `browser` / `cli`), and how the chip is drawn (an edge from the human node, which runs along the role order, unlike a Mailbox's request to the human).
-
-### C95. Show an opened map chip below the map, not inside its node
-
-Raised 2026-10-31 by the user, looking at the map during C88's run: opening a chip puts the whole Message (`buildMsgBox`, the thread's rendering) inside the receiver's node (`mapChip` in `public/index.html`). The columns have no width limit and `.mapcanvas` is `min-width: max-content`, so one request with long lines widens its node across the screen, the map scrolls sideways, and the overview the map is for is lost.
-Decided 2026-10-31 by the user: show the opened chip in a detail pane outside the map. Keeping it inside the node with a width and height cap, and jumping to the thread instead, were not chosen. The pane goes below the map, since the map runs sideways by role. C92 (rough edges of the map) is separate and unchanged.
-
-#### Done when
-- [ ] Pressing a chip shows its Message (or its waiting Event) in a pane below the map, one at a time; the node keeps only the chip, so opening it does not change the map's layout (the canvas width and the nodes' positions are the same before and after)
-- [ ] The pane names what it shows (seq, item, sender, receiver) and scrolls on its own; its height is limited so the map stays in view; pressing the same chip again or the pane's close button empties it, and the opened chip is marked in the map
-- [ ] The opened chip survives the map's redraws while it is still open (new data, the deferred redraw of C78); when its request closes or leaves the map, the pane says so instead of disappearing silently
-- [ ] Forward to... and dragging work as before from the chip; a not-loaded or deleted Message shows the same notes as today, in the pane
-- [ ] `ui:check` adds scenes for: opening a request with long lines leaves the canvas width unchanged and fills the pane; one at a time; closing; a redraw keeps the pane; the existing map scenes are changed only where they read the expansion inside the node. docs/usage.md (the map) describes the pane; `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
 ### C96. Who files items, and where a reviewer's findings go
 
