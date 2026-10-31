@@ -629,3 +629,15 @@ Raised 2026-10-30 in an outside discussion (see C80); decided the same day by th
 - [ ] A Claude Code version newer than the highest version named in design.md §6.1 headings is a warning. The start is not stopped
 - [ ] usage.md says where the file is and how to read it against `git log` when something breaks. design.md says what is recorded and what is not (changes and decisions are left to git), and that sessions started by hand are not covered
 - [ ] Unit tests for the version comparison and the line format
+
+### C86. A reply to a Message the sender never received
+Status: proposed
+
+Seen 2026-10-31 in C80's run: the deployer replied to #353 (the user's request to the leader) instead of #354 (the leader's request to the deployer). The Hub accepts any existing `replyTo` (`postMessage` in `src/hub/hub.ts` checks only that it exists) and routes the reply to the original sender, so the report reached the user and #354 stayed without a reply until the C76 health check made the deployer re-send it.
+To decide: refuse such a reply (400, naming the request the sender did receive), or accept it and mark it so the card and the sender see the mismatch. Forwarded Messages (`forwardedSender`) and replies across a takeover of the same Mailbox must stay valid.
+
+### C87. The tab icon lags while the tab is in the background
+Status: proposed
+
+Seen 2026-10-31: with the agent-hub tab behind another tab, its icon stayed idle grey while the deployer was Working, and turned blue when the tab was brought forward. Likely cause, not measured: after an SSE message the page re-reads Mailboxes through `setTimeout` (`refreshMailboxes`, 300 ms), and Chrome throttles timers in hidden tabs, to about once a minute after a while. The icon (C70) exists to be read from the background.
+To decide after measuring: the delay with the tab hidden, then whether to re-read without a timer when hidden, or to update the state from the SSE event itself.
