@@ -554,7 +554,7 @@ describe('受領の確認 (received / unconfirmed)', () => {
     const a = hub.attach('x', { client: 'claude-code' })
     hub.attach('y', { client: 'claude-code' })
     const asX = hub.senderOf(a.attachmentId)
-    const other = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'y' }, body: 'for y' }, user)
+    hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'y' }, body: 'for y' }, user)
     hub.postMessage({ kind: 'request', to: toX, body: 'one' }, user)
     const m2 = hub.postMessage({ kind: 'notice', to: toX, body: 'two' }, user)
     hub.ack(a.attachmentId, m2.seq)
@@ -563,8 +563,8 @@ describe('受領の確認 (received / unconfirmed)', () => {
     hub.postMessage({ kind: 'notice', to: user, body: 'fyi' }, asX)
     assert.equal(hub.store.getMailbox('x')!.received, 0, 'notice では進まない')
 
-    // 自分宛てでない Message への返信でも、送ったことが受け取って動いている目安になる
-    hub.postMessage({ kind: 'reply', replyTo: other.id, body: 'seen' }, asX)
+    // 受け取った Message (渡した m2) への返信で、受領の確認が進む。自分宛てでない Message への返信は C86 で 400 になる
+    hub.postMessage({ kind: 'reply', replyTo: m2.id, body: 'seen' }, asX)
     assert.equal(hub.store.getMailbox('x')!.received, m2.seq, '渡してあった分 (cursor まで)')
     assert.deepEqual(hub.store.unconfirmed('x'), [])
     assert.deepEqual(hub.store.unread('x').map((m) => m.id), [later.id], '渡す前の分は未読のまま')

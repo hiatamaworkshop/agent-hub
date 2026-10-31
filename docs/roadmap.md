@@ -19,6 +19,10 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C89
+- [ ] C88
+- [ ] C92
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -339,6 +343,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C86 Refuse a reply to a Message the sending Mailbox never received or sent (2026-10-31, decided by the user)
+  - `src/hub/hub.ts` `postMessage` → `checkReplyTarget`: a reply from a Mailbox (`from.type === 'mailbox'`) passes only if `store.isRecipient(name, original)` or the original's sender is that Mailbox. Otherwise 400 `reply_not_received`, nothing stored or delivered. The message names the oldest open request that Mailbox received (`store.oldestOpenRequestTo`: id, seq, sender) or says there is none. Human replies are not restricted; forwarded copies go through `forwardMessage`, which is not changed (see NOTES below).
+  - `src/hub/reply-target.test.ts` (new): the C80 case (deployer replying to the user's request to the leader is refused, names the leader's request, saves nothing, received stays 0); no open request; a human reply to another Mailbox's request passes; by name; by role; a forwarded copy received; its own Message; a reply after takeover. `mailbox.test.ts` (receipt by reply) now replies to a message the Mailbox received; `shim.test.ts` (C77 item inheritance) addresses its requests to the shim's Mailbox by name.
+  - `docs/protocol.md` §1 (error codes named in the document) and §3 (`POST /messages`) describe the rule.
+  - Checked: `npm test` 406 pass, 0 fail; `npm run typecheck` clean; `npm run docs:check` 31 items, 0 errors, 0 warnings. Not checked: the refusal through the shim's `post_message` tool in a real session, and the UI (unchanged).
+  - Took the default without an answer (2026-10-31): (1) the two existing test edits accepted; (2) forwardMessage's missing replyTo check not filed.
 - [x] C93 A light / dark / follow-OS theme toggle in the page header (2026-10-31, decided by the user)
   - `public/index.html`: a `Theme:` button after Map cycles auto → light → dark, kept in `localStorage` (`agent-hub.theme`, in `try`). A `<head>` script sets `data-theme` before the first paint; `applyTheme` sets it on a press or an OS change. The dark palette is one `:root[data-theme="dark"]` block (with `color-scheme`); the light palette is `:root`. The tab icon redraws in `applyTheme`, so its colors follow the chosen theme.
   - Checked: `npm test` 398 pass; `npm run ui:check` 127 pass, 0 failures (new scenes: the three states in order with titles; light on a dark OS and dark on a light OS, background and `--st-you`; the choice across a reload; follow tracking an OS change while open; the tab badge's pixel color per choice; `localStorage` blocked, page still works); `npm run docs:check` 32 items, no errors, no warnings. Not checked: the button and palettes looked at by eye in a real browser tab, and a Chrome with a real OS theme change (the OS was emulated through CDP).
@@ -617,31 +627,35 @@ Raised 2026-10-30 as the second step of C76. A separate, non-LLM program and ord
 
 Open: the opt-in setting that allows sending without a human's Send, and the boundary it needs in design.md §2; how "no activity" is judged without vendor hooks (last Message sent, last `inbox` call, attachment heartbeat); how it is run (`npm run watcher`, a second compose service). Decide after using C76's button for a while.
 
-### C86. A reply to a Message the sender never received
-Status: proposed
-
-Seen 2026-10-31 in C80's run: the deployer replied to #353 (the user's request to the leader) instead of #354 (the leader's request to the deployer). The Hub accepts any existing `replyTo` (`postMessage` in `src/hub/hub.ts` checks only that it exists) and routes the reply to the original sender, so the report reached the user and #354 stayed without a reply until the C76 health check made the deployer re-send it.
-To decide: refuse such a reply (400, naming the request the sender did receive), or accept it and mark it so the card and the sender see the mismatch. Forwarded Messages (`forwardedSender`) and replies across a takeover of the same Mailbox must stay valid.
-
 ### C87. The tab icon lags while the tab is in the background
 Status: proposed
 
 Seen 2026-10-31: with the agent-hub tab behind another tab, its icon stayed idle grey while the deployer was Working, and turned blue when the tab was brought forward. Likely cause, not measured: after an SSE message the page re-reads Mailboxes through `setTimeout` (`refreshMailboxes`, 300 ms), and Chrome throttles timers in hidden tabs, to about once a minute after a while. The icon (C70) exists to be read from the background.
+Seen again 2026-10-31 after a Hub restart (C86's run): with the tab in the background, the icon did turn blue when the team started working, so the lag is not every time. A likely difference is how long the tab had been hidden (Chrome's heavier throttling starts after about five minutes hidden), not yet measured.
 To decide after measuring: the delay with the tab hidden, then whether to re-read without a timer when hidden, or to update the state from the SSE event itself.
 
 ### C88. What the start-warnings record leaves out
-Status: proposed
 
 Found 2026-10-31 in a review of C85 (commits `3559217..08c5c85`). Both are within C85's done-when ("the warning texts shown at the start"), so they are not bugs; they bear on whether the record serves its purpose, matching a later breakage against a start (design.md §1.2, §3.14).
 - Failures after the record is written are not in it. `runTeam` (`src/team/team.ts`) calls `recordStart` before the roles start, so a role that fails to attach shows as `failed:` under `--- summary ---` but not in `logs/start-warnings.jsonl`, and a start with no earlier warnings writes no line at all.
 - `mailboxes` (and `roles`) list every requested role, including connected ones that `team` skips without `--force`, so the line names Mailboxes that were not started.
-To decide: whether to append a second line (or rewrite the line) after the roles start with the failures and the roles actually started, or to keep the record to pre-start warnings and say so in usage.md.
+Decided 2026-10-31 by the user: append a result line after the roles start. Keeping the record to pre-start warnings was rejected, since a failed attach is exactly what the record is for. The pre-start line stays where it is, so the warnings are kept even if `team` itself dies before the roles start.
+
+#### Done when
+- [ ] After the roles start, `runTeam` (`src/team/team.ts`) appends one result line to `logs/start-warnings.jsonl` with the roles and Mailboxes actually started, those skipped as already connected, and those that failed with their reason; it is written on every start, with or without warnings, and a write failure still does not stop the start
+- [ ] The pre-start line names only the roles and Mailboxes that will be started (connected ones skipped without `--force` are left out), and the result line can be matched to it (same start time or an id)
+- [ ] `start-agent` (`src/team/agent.ts`) writes the same result line for its one role
+- [ ] Tests in `src/team/startlog.test.ts` cover the result line (started, skipped, failed, no warnings) and the narrowed pre-start line; usage.md (start warnings) and design.md §3.14 describe both lines; `npm test` and `npm run docs:check` pass
 
 ### C89. An explicit item on a reply takes the replier's project
-Status: proposed
 
 Found 2026-10-31 in the same review. `itemFor` in `src/shim/main.ts` (C77): a reply that omits `item` copies `id` and `project` from the original Message, but a reply that names `item` gets `project` from the shim's own `cwd`. An agent in project A replying with `item: C5` to a request from project B tags it as A's C5. No visible effect yet: the page's item cards count only the human's requests (`itemRequests` in `public/index.html`).
-To decide: on a reply, take `project` from the original when it has one (and only `id` from the argument), or refuse an `item` that disagrees with the original's.
+Decided 2026-10-31 by the user: take `project` from the original. Refusing a disagreeing `item` was rejected, since naming the item is still useful and only the project is wrong.
+
+#### Done when
+- [ ] On a reply that names `item`, `itemFor` (`src/shim/main.ts`) uses the argument's `id` and the original Message's `meta.item.project` when the original has one; without one (no item on the original, or the original cannot be read) it falls back to the shim's `cwd` as today
+- [ ] A Message that is not a reply keeps `project` from the shim's `cwd`
+- [ ] Tests cover: a reply from project A naming `item` to a request from project B is tagged with B; a reply to a request without an item uses A; a non-reply uses A; protocol.md §5 (`post_message`'s `item`) says where `project` comes from; `npm test` and `npm run docs:check` pass
 
 ### C91. The human's open requests on the map
 Status: proposed
@@ -650,14 +664,20 @@ Found 2026-10-31 in a review of C78. The map's chips come from `backlog.outgoing
 To decide: where the seqs come from (`seqs` on the receiver's `awaitingReply` and `unread`, or an `outgoing` for the human across its user ids `browser` / `cli`), and how the chip is drawn (an edge from the human node, which runs along the role order, unlike a Mailbox's request to the human).
 
 ### C92. Small rough edges of the map
-Status: proposed
 
 Found 2026-10-31 in the same review of C78 (`a091714`). None breaks the done-when; each is small, and they may be taken together or one by one.
 - Every request and waiting Event addressed to the human is drawn as a dashed back arrow, because the human's column is the leftmost (`drawMapArrows` in `public/index.html`). Needs you reads as a request against the role order, which is not what it is.
 - "Forward to…" lists the Mailboxes of every project, and `fillForwardDraft` then refuses those outside the composer's destination list. The menu could offer only what can be chosen, or say why the others are refused.
 - A Message whose fetch by seq failed once goes into `mapMissing` and is not fetched again until the page is reloaded (`ensureRequests`), so a passing network error leaves "not on the Hub" on the chip.
 - With the "Forward to…" select focused, each arrow key fires `change` (Chrome on a closed select) and fills the Forward draft again.
-To decide: which to fix, and for the arrows, how a request to the human is drawn (no back-arrow style, or the human placed outside the role columns).
+Decided 2026-10-31 by the user: fix all four. For the arrows, a request or waiting Event addressed to the human is drawn without the back-arrow style (moving the human out of the role columns was not chosen). The human's own requests on the map are C91, not this item.
+
+#### Done when
+- [ ] Requests and waiting Events addressed to the human are drawn in the forward style (not dashed as a back arrow); requests between Mailboxes against the role order keep the back-arrow style
+- [ ] "Forward to…" lists only the Mailboxes that `fillForwardDraft` accepts (the composer's destination list), so choosing an entry never ends in a refusal
+- [ ] A chip whose fetch by seq failed is fetched again the next time the map is opened (and after the SSE reconnects), and shows "not on the Hub" only after a fetch that says the Message is gone (404), not after a network error
+- [ ] Moving through the "Forward to…" options with the arrow keys does not fill the draft; it is filled once when an option is chosen (Enter or a click)
+- [ ] `ui:check` adds a scene for each of the four, and the existing scenes are unchanged; `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
 ### C94. A settings button in the page header
 Status: proposed

@@ -497,6 +497,12 @@ export class Store {
     }
   }
 
+  // name が受け取った、まだ閉じていない request の最も古いもの (replyTo を選ぶ案内に使う。C86)。openRequests は seq の昇順
+  oldestOpenRequestTo(name: string): Message | undefined {
+    for (const r of this.openRequests.values()) if (this.isRecipient(name, r)) return r
+    return undefined
+  }
+
   unread(name: string, after?: number, limit = Infinity): Message[] {
     return this.addressed(name, Math.max(after ?? 0, this.must(name).cursor), limit)
   }

@@ -194,11 +194,24 @@ export class Hub {
       // 保存期間で消えた Message もここに来る (design.md §3.14)。to を付ければ送れる
       throw new HubError(400, 'reply_to_not_found', `replyTo ${input.replyTo} がない (消えた Message なら to を指定して送る)`)
     }
+    // Mailbox からの返信は、その Mailbox が受け取った Message か、自分が送った Message への分だけ (C86)。人の返信は制限しない
+    if (original && from.type === 'mailbox') this.checkReplyTarget(from.id, original)
     // to の省略は replyTo があるときだけ許す (schema で検証済み)。元の送り手に返す
     const to = this.scopeRole(input.to ?? { type: original!.from.type, id: original!.from.id }, from)
     // やりとりの Message なら、store が追記と同時に送り手の受領の確認を進める (C39、protocol.md §4)
     const post = () => this.deliver(this.store.appendMessage({ ...input, to, from }))
     return from.type === 'mailbox' ? this.acking(from.id, post) : post()
+  }
+
+  // 返信先の判定 (C86): name が受け取ったか (store の isRecipient)、name が送ったものでなければ 400。何も保存・配信しない。
+  // 案内には name が受け取った、まだ閉じていない request の最も古いもの (id・seq・送り手) を入れ、正しい replyTo で送り直せるようにする
+  private checkReplyTarget(name: string, original: Message): void {
+    if ((original.from.type === 'mailbox' && original.from.id === name) || this.store.isRecipient(name, original)) return
+    const open = this.store.oldestOpenRequestTo(name)
+    const hint = open
+      ? `${name} が受け取っている未返信の依頼で最も古いのは #${open.seq} (id ${open.id}、送り手 ${open.from.type}:${open.from.id})。replyTo にそれを指定して送り直す`
+      : `${name} が受け取っている未返信の依頼はない (返信でなく to を指定して送る)`
+    throw new HubError(400, 'reply_not_received', `replyTo ${original.id} (#${original.seq}) は ${name} が受け取った Message でも、送った Message でもない。${hint}`)
   }
 
   // 無編集転送 (protocol.md §3)。本文・kind・replyTo・meta を元のまま写し、送り手は転送した人にする。

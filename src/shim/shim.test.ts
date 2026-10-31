@@ -263,7 +263,7 @@ describe('shim と Hub の結合', () => {
   it('item のない reply は送る時点で元の Message の item を引き継ぎ、明示の item が先 (C77)', async () => {
     const human = { type: 'user', id: 'browser', role: null } as const
     const tagged = hub.postMessage(
-      { kind: 'request', to: { type: 'topic', id: 'nobody' }, body: 'q', meta: { item: { id: 'C5', project: 'c:/other', source: 'docs/roadmap.md', promise: 'p' } } },
+      { kind: 'request', to: { type: 'mailbox', id: 'test-mb' }, body: 'q', meta:{ item: { id: 'C5', project: 'c:/other', source: 'docs/roadmap.md', promise: 'p' } } },
       human,
     )
     const inherited = await call('post_message', { kind: 'reply', reply_to: tagged.id, body: 'a' })
@@ -273,7 +273,7 @@ describe('shim と Hub の結合', () => {
     assert.equal(explicit.isError, false, explicit.text)
     assert.equal((hub.store.listMessages().at(-1)!.meta!.item as { id: string }).id, 'C9')
     // 元に項目がなければ付けない
-    const untagged = hub.postMessage({ kind: 'request', to: { type: 'topic', id: 'nobody' }, body: 'q2' }, human)
+    const untagged = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'test-mb' }, body: 'q2' }, human)
     assert.equal((await call('post_message', { kind: 'reply', reply_to: untagged.id, body: 'a' })).isError, false)
     assert.equal(hub.store.listMessages().at(-1)!.meta, undefined)
   })
