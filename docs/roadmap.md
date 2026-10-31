@@ -19,6 +19,9 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C97
+- [ ] C98
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -676,3 +679,21 @@ Raised 2026-10-31 by the user: the page will need a settings place sooner or lat
 Candidates seen in the page today: the retention input (`#keep` in the thread's bar), the default of the Noise filter, the width of the sidebar (now set by dragging only), and resetting the per-browser preferences kept in `localStorage`. C93's theme stays a one-press toggle in the header either way.
 To decide: the first contents, and whether a setting moved in leaves its current place.
 
+### C97. Review the uncommitted change before the leader reports an item done
+
+Raised 2026-10-31 by the user, right after C96: C96 has the leader send a review before it reports an item done, with `TARGET` = the commit range. The deployer does not commit and the human commits only after checking the report in the planning session, so the change is never committed at that point. The leader then ends with `NEEDS ACTION` (commit, then the review is requested), and the reviewer is effectively never called.
+Decided 2026-10-31 by the user: the review reads the uncommitted change. The team works in one folder, so the reviewer can read the deployer's change with `git diff HEAD`. The order is: the deployer reports → the leader checks → the reviewer (the uncommitted change) → fixes from checked findings go to the deployer → the leader reports to the human → the human commits. A review stays required only when a reviewer is connected (C96); without one, the report says so in `NOT VERIFIED`.
+
+#### Done when
+- [ ] `tools/dev/roles/reviewer.md`: for `TARGET: C<n>` with at least one `[x]` condition, the reviewer reads the uncommitted change (`git diff HEAD` and untracked files from `git status`) as well as the item's commits, and says in `VERIFIED` which it read. A commit range is still accepted as before
+- [ ] `tools/dev/roles/leader.md` "When to ask": the review is sent as `TARGET: C<n>` after the deployer's report and the leader's own check, and before the report to the human; nothing is committed for it, and the `NEEDS ACTION` (commit first) path is removed. The leader does not send it while the deployer is still working on the same tree
+- [ ] design.md (§3.12, where a review's target is described, and the C96 block in §3.15) and docs/usage.md (teams in detail) say a target can be an uncommitted change and give the order above; `npm test` and `npm run docs:check` pass
+
+### C98. Keep the map pane's scroll position across redraws
+
+Raised 2026-10-31 by the user, in the check of C95: the map is rebuilt from the model on every redraw (`renderMap` in `public/index.html` empties `#map`), so the pane below it is rebuilt too. Reading a long Message in the pane, any new data puts the pane back at its top.
+Decided 2026-10-31 by the user: keep the position while the same chip stays open.
+
+#### Done when
+- [ ] While the same chip stays open, a redraw (new data, and the deferred redraw of C78) keeps the pane body's scroll position; opening another chip starts at its top
+- [ ] `ui:check` adds a scene for each of the two, and the existing scenes are unchanged; `npm test`, `npm run ui:check` and `npm run docs:check` pass
