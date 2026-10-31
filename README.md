@@ -27,7 +27,7 @@ The aim is to keep the human in the loop and remove only the "copy-and-paste hau
 - The `inbox` path has only been checked with the test MCP client, not with a real client other than Claude Code (C3).
 - **Platforms**: developed and checked on Windows 11. `npm run team` is covered by unit tests on every OS, but it has not been run on a real Mac, and a real `claude` session has not been started by it on Linux (C62, design.md §6.2). Reports from those platforms are welcome.
 
-Start reading the design at [docs/design.md](docs/design.md). The Channels and hook specifications were checked against the official docs and on a real machine (design.md §6.1-6.1q). The relation to MCP Events (SEP-3415, Draft) is in design.md §7.
+Start reading the design at [docs/design.md](docs/design.md); the working conventions it stands for (keep moving and record instead of blocking, the input envelope, trust on evidence) and where each is enforced are in design.md §1.2. The Channels and hook specifications were checked against the official docs and on a real machine (design.md §6.1-6.1x). The relation to MCP Events (SEP-3415, Draft) is in design.md §7.
 
 ## Usage
 
@@ -101,7 +101,7 @@ npm run team -- --roles leader,deployer           # name them instead of choosin
 npm run team -- agent --role deployer             # one role in this terminal (Mailbox = agent-hub.deployer)
 ```
 
-Send a `request` to `role:leader` from the browser; it goes user → leader → deployer → leader → user. Tab handling per OS, the checks it makes before starting, `--force`, `--permission-mode` and the reply format are in the [usage guide](docs/usage.md#try-a-round-trip-between-roles-with-two-agents-leader--deployer).
+Send a `request` to `role:leader` from the browser; it goes user → leader → deployer → leader → user. A start with warnings (a Claude Code newer than the last verified one, a stale checkout, missing hooks) is not stopped; it appends one line to `logs/start-warnings.jsonl` ([start warnings](docs/usage.md#start-warnings-logsstart-warningsjsonl)). Tab handling per OS, the checks it makes before starting, `--force`, `--permission-mode` and the reply format are in the [usage guide](docs/usage.md#try-a-round-trip-between-roles-with-two-agents-leader--deployer).
 
 ## Using it in other repositories
 
@@ -134,7 +134,7 @@ claude --dangerously-load-development-channels server:agent-hub
 - Browser: [reading the cards](docs/usage.md#reading-the-cards-in-the-browser-state-and-backlog), [custom commands](docs/usage.md#custom-commands), [pasting images](docs/usage.md#pasting-images), [Forward](docs/usage.md#carry-an-agents-output-to-another-agent-forward)
 - Mailboxes: [subscriptions](docs/usage.md#subscribing-once-per-mailbox-is-enough), [takeover](docs/usage.md#replacing-an-agent-takeover), [deleting](docs/usage.md#deleting-mailboxes-you-no-longer-use), [retention](docs/usage.md#message-retention-and-deletion)
 - Teams and work: [teams in detail](docs/usage.md#try-a-round-trip-between-roles-with-two-agents-leader--deployer), [requesting work from roadmap items](docs/usage.md#request-work-from-roadmap-items-items), [roles.json](docs/usage.md#role-definitions-rolesjson), [`HUB_LANGUAGE`](docs/usage.md#the-language-agents-write-to-the-human-in-hub_language)
-- Other: [agents other than Claude Code (`inbox`)](docs/usage.md#using-it-with-agents-other-than-claude-code-inbox), [curl on Windows](docs/usage.md#using-curl-notes-for-windows), [development](docs/usage.md#development) (`npm test`, `npm run typecheck`, `npm run docs:check`, `npm run ui:check`)
+- Other: [start warnings](docs/usage.md#start-warnings-logsstart-warningsjsonl), [agents other than Claude Code (`inbox`)](docs/usage.md#using-it-with-agents-other-than-claude-code-inbox), [curl on Windows](docs/usage.md#using-curl-notes-for-windows), [development](docs/usage.md#development) (`npm test`, `npm run typecheck`, `npm run docs:check`, `npm run ui:check`)
 
 ## Documents
 
@@ -146,6 +146,6 @@ claude --dangerously-load-development-channels server:agent-hub
 | [docs/roadmap.md](docs/roadmap.md) | Phases and acceptance criteria (P0 → P2), open items (`C<n>`; the rules for writing them are at the top) |
 | [docs/plan-p0.md](docs/plan-p0.md) | P0's technology choices, layout and commit-sized steps |
 | [tools/probe/README.md](tools/probe/README.md) | Steps for checking unverified items (design.md §6.2) on a real machine |
-| [tools/dev/roles/](tools/dev/roles/) | Operating instructions for leader / deployer / reviewer (message formats). `npm run team` adds them to the system prompt |
+| [tools/dev/roles/](tools/dev/roles/) | Operating instructions for leader / deployer / reviewer (message formats; reviewer findings name a `breaks when:`). `npm run team` adds them to the system prompt |
 | [CLAUDE.md](CLAUDE.md) | Working rules for implementing agents |
 | [LICENSE](LICENSE) | MIT |

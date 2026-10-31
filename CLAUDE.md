@@ -5,12 +5,12 @@
 Use the one-line index below to pick the sections relevant to the question, find the heading with `Grep`, and `Read` only that section with offset / limit.
 When you add sections or change their numbers, fix this map in the same commit.
 
-- [README.md](README.md) — the entrance (about 145 lines): goals, status, setup, first round trip, hooks, starting a team, using it in other repositories
-- [docs/usage.md](docs/usage.md) — reference for everyday use: reading card states, custom commands, images, hooks, Forward, takeover, retention, teams in detail, Items, `roles.json`, `HUB_LANGUAGE`, `inbox`, notes on curl, development. Usage changes go here; keep the README short
+- [README.md](README.md) — the entrance (about 150 lines): goals, status, setup, first round trip, hooks, starting a team, using it in other repositories
+- [docs/usage.md](docs/usage.md) — reference for everyday use: reading card states, custom commands, images, hooks, Forward, takeover, retention, teams in detail, Items, `roles.json`, `HUB_LANGUAGE`, `inbox`, notes on curl, start warnings (`logs/start-warnings.jsonl`), development. Usage changes go here; keep the README short
 - [docs/roadmap.md](docs/roadmap.md) — acceptance criteria per phase, known issues, open items (`### C<n>.` sections; how to write them is at the top and in design.md §3.15). **How far things have got** is here. When asked about the implementation plan, use `## Plan` and the four-tier answer of the skill `roadmap-items` (do not read the whole ledger)
-- [docs/design.md](docs/design.md) (about 1,110 lines)
+- [docs/design.md](docs/design.md) (about 1,200 lines)
   - §1.1 Positioning — what we own and what we borrow, criteria for continuing
-  - §1.2 Working conventions — the thesis, the input envelope, trust on evidence, and where each convention is enforced (or not yet)
+  - §1.2 Working conventions — the thesis, the input envelope, trust on evidence, and where each convention is enforced (or not yet; e.g. sycophancy → reviewer `breaks when:`)
   - §2 Requirements / Non-goals — no automatic forwarding, no autonomous orchestration
   - §3.2 Components — the roles of the Hub / shim / hooks / UI, details of the UI's behavior (including thread filtering)
   - §3.3 Mailbox and Attachment — replacement, takeover, leases
@@ -21,7 +21,7 @@ When you add sections or change their numbers, fix this map in the same commit.
   - §3.10 Images / §3.11 The request ledger and checkpoints (concept)
   - §3.12 Document conventions and how to check them — the table of when to read and add what, where NOTES go, the three layers of checking, requesting reviews by target rather than a stretch of conversation (concept)
   - §3.13 Session lifetime and context — who starts and stops sessions, context and cache, the conditions for a disposable leader (concept)
-  - §3.14 What the Hub holds and does not hold; retention — the conditions for deleting Messages automatically, manual deletion, compacting the log
+  - §3.14 What the Hub holds and does not hold; retention — the conditions for deleting Messages automatically, manual deletion, compacting the log, the start-warnings record kept outside the Hub (C85)
   - §3.15 Showing the backlog, and requesting work from roadmap items — backlog badges, card states (the order of Needs you / Working / Waiting on others / Stopped), the reply format and its heading colors, the rules for writing items (C numbers), the plan list and how to answer about the plan (`## Plan`, four tiers), the English vocabulary and the mapping table of reply-format headings, handling updates during implementation, where the index lives (`docs:index`) and `meta.item`, a project is a value (the conditions for making it an entity)
   - §3.16 The roadmap is the source of truth for progress; replies are delivery signals — the delivery and progress layers, sorting requests without items, rejected `[-] C<n>`, judging "reflected" (concept)
   - §4 Security / §5 Notes on design decisions (reasons for technology choices)
