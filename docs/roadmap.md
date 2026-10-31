@@ -19,6 +19,8 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C93
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -645,4 +647,34 @@ Status: proposed
 
 Found 2026-10-31 in a review of C78. The map's chips come from `backlog.outgoing.to[].seqs`, and `outgoing` counts only what a Mailbox sent (`from.type === 'mailbox'` in `src/hub/store.ts`). A request from the human is not in anyone's `outgoing`, so the most common stop, the human's request to a `leader` that is Stopped, has no chip: the leader's card state shows it, but it cannot be expanded or forwarded from the map. The receiver's `backlog.awaitingReply` and `unread` have only a count and the oldest seq, which is not enough for one chip per request (the reason C78 added `seqs`).
 To decide: where the seqs come from (`seqs` on the receiver's `awaitingReply` and `unread`, or an `outgoing` for the human across its user ids `browser` / `cli`), and how the chip is drawn (an edge from the human node, which runs along the role order, unlike a Mailbox's request to the human).
+
+### C92. Small rough edges of the map
+Status: proposed
+
+Found 2026-10-31 in the same review of C78 (`a091714`). None breaks the done-when; each is small, and they may be taken together or one by one.
+- Every request and waiting Event addressed to the human is drawn as a dashed back arrow, because the human's column is the leftmost (`drawMapArrows` in `public/index.html`). Needs you reads as a request against the role order, which is not what it is.
+- "Forward to…" lists the Mailboxes of every project, and `fillForwardDraft` then refuses those outside the composer's destination list. The menu could offer only what can be chosen, or say why the others are refused.
+- A Message whose fetch by seq failed once goes into `mapMissing` and is not fetched again until the page is reloaded (`ensureRequests`), so a passing network error leaves "not on the Hub" on the chip.
+- With the "Forward to…" select focused, each arrow key fires `change` (Chrome on a closed select) and fills the Forward draft again.
+To decide: which to fix, and for the arrows, how a request to the human is drawn (no back-arrow style, or the human placed outside the role columns).
+
+### C93. A light / dark toggle in the page header
+
+Decided 2026-10-31 by the user. Today the page follows the OS only (`@media (prefers-color-scheme: dark)` in `public/index.html`). The header's right side holds Health check and Map (C78, design.md §3.2); the toggle joins them there, and C94's settings button is to be the rightmost when it comes.
+Details chosen when filing, not yet confirmed by the user: three states cycled by one button (follow the OS → light → dark → follow the OS), so the OS default can be reached again; the choice is kept per browser in `localStorage`, as the other page preferences are (it is a viewer's convenience, not Hub state, design.md §3.14).
+
+#### Done when
+- [ ] A button at the right of the header, after Map, cycles the theme through follow the OS, light and dark. Its label or icon shows the current state, and its title says what the next press does
+- [ ] Choosing light shows the light palette even on a dark OS, and dark the dark palette on a light OS; follow the OS behaves as today, including a change of the OS setting while the page is open. The dark palette is defined once and used for both the OS case and the chosen case
+- [ ] The choice survives a reload (`localStorage`, read in a `try`); without storage the page follows the OS
+- [ ] The tab icon (C70) and the other colors read from the CSS variables follow the chosen theme, not only the OS
+- [ ] `ui:check` adds scenes for: the three states in order, the palette under a chosen theme that differs from the emulated OS one, the choice kept across a reload, and the tab icon following the choice; the existing scenes are unchanged
+- [ ] docs/usage.md describes the toggle and design.md §3.2 the header's controls; `npm test`, `npm run ui:check` and `npm run docs:check` pass
+
+### C94. A settings button in the page header
+Status: proposed
+
+Raised 2026-10-31 by the user: the page will need a settings place sooner or later, though what goes in it is not decided. Its place is the rightmost of the header's controls (after C93's toggle). A button that opens an empty panel is not shipped, so the item waits for its first contents.
+Candidates seen in the page today: the retention input (`#keep` in the thread's bar), the default of the Noise filter, the width of the sidebar (now set by dragging only), and resetting the per-browser preferences kept in `localStorage`. C93's theme stays a one-press toggle in the header either way.
+To decide: the first contents, and whether a setting moved in leaves its current place.
 
