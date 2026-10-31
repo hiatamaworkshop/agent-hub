@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C90
 - [ ] C78
 
 (Items with a status line are listed under "Items".)
@@ -342,6 +341,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C90 Derive the team once into a model that the cards render from (2026-10-31, decided by the user)
+  - `public/index.html`: `teamModel()` derives from `mailboxList` (and the Messages and Events at hand) one entry per Mailbox with the card's fields and `waiting`, `signal`, `layers`, `awaitingSeq`, plus `human` (`waiting`, `stopped`, `working`). It touches no DOM and applies no filter. `renderMailboxes()`, `renderElsewhere`, `renderStates`, `renderBacklog`, `renderHealth` and `stoppedMailboxes` read it. The tab title and icon read the tab counts that `renderBacklog` copies from `human` (`tabWaiting`, `tabStopped`, `tabWorking`, unchanged for `ui:check`). `stateOf`, `layersOf` and `humanTurnOf` are called only from inside `teamModel()`. The model's card fields are the same as the old per-render derivations.
+  - design.md §3.2 states the layering (data → model → views) and that C78's map is a second view of the same model.
+  - Checked: `npm run ui:check` 105 scenes ok, exit 0, `tools/dev/ui-check.mjs` not edited; `npm test` 397 pass; `npm run docs:check` no errors.
+  - Not checked: a look by eye in a browser beyond the scenes. The tab's counts are still the copy taken at the last render, as before; a focus change reads that copy, not a fresh derivation. The model is not in its own file and is not unit-tested (not decided, C90's note).
 - [x] C82 Objections and review findings carry a failure scenario (2026-10-31, requested by the user)
   - `tools/dev/roles/reviewer.md`: each finding line names `breaks when: <input or state> → <wrong result>` and, when there is one, `instead:`, keeping `checked against:`. A finding that cannot name a breaks-when goes under a new `NOTES:` heading, apart from `FINDINGS:`. design.md §3.12's reviewer row says the same.
   - `tools/dev/roles/leader.md`: `FINDINGS:` lines may go to the deployer as fixes, after the leader checks their breaks-when. `NOTES:` lines are never sent to the deployer; they go to the user's report as `NOT VERIFIED` lines prefixed `reviewer note:` (or `NEEDS DECISION` if the user must decide).
@@ -605,7 +609,6 @@ Raised 2026-10-30 as the second step of C76. A separate, non-LLM program and ord
 Open: the opt-in setting that allows sending without a human's Send, and the boundary it needs in design.md §2; how "no activity" is judged without vendor hooks (last Message sent, last `inbox` call, attachment heartbeat); how it is run (`npm run watcher`, a second compose service). Decide after using C76's button for a while.
 
 ### C78. A map in the page showing where messages are stopped
-Status: blocked(after C90)
 
 Raised 2026-10-30. With several deployers in parallel the thread interleaves and filtering by Mailbox hides the others. Thread history (flat time order, reply trees, Gmail conversations, Slack threads, Zulip topics) shows trade-offs, not a fix, so instead of reshaping the thread, add a view that answers a different question: not what was said, but whose move it is.
 
@@ -664,13 +667,3 @@ Status: proposed
 Found 2026-10-31 in the same review. `itemFor` in `src/shim/main.ts` (C77): a reply that omits `item` copies `id` and `project` from the original Message, but a reply that names `item` gets `project` from the shim's own `cwd`. An agent in project A replying with `item: C5` to a request from project B tags it as A's C5. No visible effect yet: the page's item cards count only the human's requests (`itemRequests` in `public/index.html`).
 To decide: on a reply, take `project` from the original when it has one (and only `id` from the argument), or refuse an `item` that disagrees with the original's.
 
-### C90. Derive the team once into a model that the cards render from
-
-Decided 2026-10-31 by the user, as the groundwork for C78. Today `stateOf`, `layersOf` and `humanTurnOf` in `public/index.html` already derive without touching the DOM, and the cards, the state chips in the sidebar, the tab title and icon, and Health check each call them. But `renderMailboxes` still derives as it builds the DOM (the connection line, takeover, unconfirmed count, subscriptions, last event). C78's map must show the same states as the cards; drawing it from the cards' DOM would tie the map to the cards' markup, and a second derivation could disagree with the cards (C79's watcher also counts on "the same derivation as the cards"). So split the page into data → model → views: one function builds the model from the data, and each view only renders it.
-Not decided here: moving the model into its own file to unit-test it with `node --test` (the UI is a single HTML file; that change needs its reason in design.md first, CLAUDE.md).
-
-#### Done when
-- [ ] One function in `public/index.html` (e.g. `teamModel()`) builds, from `mailboxList`, the loaded Messages and Events, one entry per Mailbox with everything the card shows (state, backlog layers, human turn, model and effort, project, connection, takeover, unread, unconfirmed, subscriptions, last event) plus an entry for the human. It touches no DOM
-- [ ] The cards, the state chips, the backlog badges in the sidebar, the tab title and icon, and Health check read that model; `stateOf`, `layersOf` and `humanTurnOf` are called only from inside it
-- [ ] No visible change: `npm run ui:check` passes with its existing scenes unchanged
-- [ ] design.md §3.2 states the layering (data → model → views, and that C78's map is a second view of the same model); `npm test` and `npm run docs:check` pass

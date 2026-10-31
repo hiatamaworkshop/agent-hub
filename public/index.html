@@ -807,7 +807,7 @@ async function loadEvents(counts) {
   }
   for (const ev of events) renderEvent(ev, counts)
   // 一覧をまだ取れていなければ描かない ("None yet" で上書きしないため。取れたときに描かれる)
-  if (mailboxList.length) renderMailboxes(mailboxList)
+  if (mailboxList.length) renderMailboxes()
 }
 
 // 畳み (Compact): 古い分は印を付けて、絞り込みの軸 Recent で隠す (DOM からは外さない。seen からも消さない。重複除去と ↩ #seq の解決に使うため)。
@@ -1462,7 +1462,7 @@ async function loadMailboxes() {
   renderItems() // 前回の選択が戻ると Items の絞り込みも変わる
   // 消えた Mailbox を外したときは、履歴を先に描いていても、チップ・Reset・隠れた件数・.off を掛け直す
   if (pruneMailboxFilter()) applyFilter()
-  renderMailboxes(mailboxes)
+  renderMailboxes()
   buildTo(mailboxes)
   applyFilter()
   scheduleRelay() // 未送の判定に B の role を使う
@@ -1524,7 +1524,7 @@ function eventView(ev) {
   }
 }
 function mailboxView(mb) {
-  return { kind: null, names: [mb.name], inProject: mailboxInProject(mb), waiting: tabWaitingOf(mb) > 0 }
+  return { kind: null, names: [mb.name], inProject: mailboxInProject(mb), waiting: mb.waiting > 0 } // mb は teamModel() の 1 件
 }
 function viewOf(box) {
   const view = box.classList.contains('evt') ? eventView(evtData.get(box.dataset.id)) : messageView(seen.get(box.dataset.id))
@@ -1536,7 +1536,7 @@ const setOff = (box) => box.classList.toggle('off', !!hiddenBy(viewOf(box)))
 // すべての軸を掛け直す (描画済みの Message・Event・カード。畳んだ中のものも)。プロジェクトの変更もここで掛ける
 function applyFilter() {
   for (const box of allBoxes()) setOff(box)
-  renderMailboxes(mailboxList)
+  renderMailboxes()
   renderBar()
   if (!$('filterPop').hidden) renderFilterFields()
 }
@@ -1740,10 +1740,10 @@ function buildProjects() {
   sel.value = FILTER.project
 }
 
-// ほかのプロジェクトで人の手を待っている件数。タブのタイトルと同じ数え方 (tabWaitingOf の合計)
-function renderElsewhere() {
+// ほかのプロジェクトで人の手を待っている件数。タブのタイトルと同じ数え方 (モデルの waiting の合計)
+function renderElsewhere(model = teamModel()) {
   const btn = $('elsewhere')
-  const n = FILTER.project ? mailboxList.filter((mb) => !mailboxInProject(mb)).reduce((sum, mb) => sum + tabWaitingOf(mb), 0) : 0
+  const n = FILTER.project ? model.mailboxes.filter((mb) => !mailboxInProject(mb)).reduce((sum, mb) => sum + mb.waiting, 0) : 0
   btn.hidden = n === 0
   btn.textContent = n ? `${n} waiting in other projects` : ''
 }
@@ -1779,7 +1779,7 @@ function lastEventOf(mb) { return latestOf(lastEventByMailbox.get(mb.name), mb.b
 function lastTurnEndOf(mb) { return latestOf(lastTurnEndByMailbox.get(mb.name), mb.backlog && mb.backlog.lastTurnEnd) }
 // 人が動く番。材料は 2 つ: hook の質問・許可待ち (最後の Event が回答前の question / permission) と、Hub で人に出した
 // 返信待ちの request (backlog.outgoing.to の人宛て。C40)。人が返信か次の依頼を送れば Hub が閉じる (C28)。
-// カードの状態 (Needs you)・溜まりのバッジ (You) は、これを使う。タブのタイトル・favicon と、ほかのプロジェクトの待ちの数は tabWaitingOf (これに未接続の 1 件を足す)
+// カードの状態 (Needs you)・溜まりのバッジ (You) は、これを使う。タブのタイトル・favicon と、ほかのプロジェクトの待ちの数は モデルの waiting (これに未接続の 1 件を足す)
 // 今の接続より前に、別のセッションが出した Event は今の状態に数えない (ターミナルを起動し直した・takeover の後は、そこで答えられないため)。
 // 今の接続の後に出たものは、session_id が違っても数える (/clear で変わりうる。design.md §6.2)。接続がないときは、ターミナルが残っているかもしれないので数える
 function staleEvent(mb, ev) {
@@ -1832,11 +1832,11 @@ function layersOf(mb) {
     stuck: addTally(unconfirmed, mb.attachment ? NONE : unread),
   }
 }
-function sumLayers(mailboxes) {
+// モデルの mailboxes (teamModel) の layers を、件数と最も古いものを足し合わせる。表示の絞り込みは呼ぶ側
+function sumLayers(entries) {
   const out = { you: NONE, agent: NONE, stuck: NONE }
-  for (const mb of mailboxes) {
-    const l = layersOf(mb)
-    for (const k of Object.keys(out)) out[k] = addTally(out[k], l[k])
+  for (const mb of entries) {
+    for (const k of Object.keys(out)) out[k] = addTally(out[k], mb.layers[k])
   }
   return out
 }
@@ -1961,6 +1961,48 @@ function absentTargets(outgoing) {
   }
   return [...new Set(names)].join(', ')
 }
+// --- 派生モデル (C90、design.md §3.2) ---
+// データ (mailboxList と、手元の Message・Event・Hub の上限) → teamModel() → 表示 (カード・サイドバー・タブ・Health check)。
+// 1 回の描画で 1 度だけ作り、表示はそこから描く。DOM には触れず、プロジェクトや Noise の絞り込みも持たない (表示が掛ける)。
+// stateOf・layersOf・humanTurnOf は、この派生の中からだけ呼ぶ。
+function teamModel() {
+  const mailboxes = mailboxList.map(mailboxModelOf)
+  const human = { waiting: 0, stopped: 0, working: false } // 人の側: Needs you の件数、Stopped の数、作業中の信号があるか (全プロジェクト)
+  for (const mb of mailboxes) {
+    human.waiting += mb.waiting
+    if (mb.state && mb.state.key === 'stopped') human.stopped++
+    if (mb.signal === 'working') human.working = true
+  }
+  return { mailboxes, human }
+}
+// 1 つの Mailbox の、カードに出すもの全部。値は表示のための形で、表示は文言にするだけ
+function mailboxModelOf(mb) {
+  const state = stateOf(mb)
+  const humanTurn = humanTurnOf(mb)
+  const b = mb.backlog
+  return {
+    name: mb.name,
+    role: mb.role,
+    project: mb.project,
+    attachment: mb.attachment || null, // 接続 (今の Attachment)
+    detached: mb.detached || null, // 最後に切れた Attachment (この Hub の起動中だけ)
+    projectChanged: mb.projectChanged || null,
+    takeover: mb.attachment && mb.takeover ? mb.takeover : null,
+    unread: typeof mb.unread === 'number' ? mb.unread : null, // 古い Hub は null
+    unconfirmed: typeof mb.unconfirmed === 'number' ? mb.unconfirmed : null, // 古い Hub は null
+    subscriptions: subscriptionsOf(mb),
+    lastEvent: lastEventOf(mb),
+    lastSeen: lastSeenOf(mb), // 最後に見えたモデルと effort (C61)
+    state, // カードの状態。古い Hub は null
+    signal: signalOf(state), // 人の番 (you)・作業中 (working)・静か (idle)
+    layers: layersOf(mb), // 溜まりのバッジの 3 層
+    humanTurn,
+    // タブの件数: 人の番の件数。未接続の相手を待つカードの 1 件を足す (C49)
+    waiting: humanTurn.count || (state && state.key === 'you' ? 1 : 0),
+    // Health check が再送する request の seq (Stopped で返信待ちのもの)。なければ null
+    awaitingSeq: b && b.awaitingReply && b.awaitingReply.oldestSeq != null ? b.awaitingReply.oldestSeq : null,
+  }
+}
 function paintState(line) {
   const st = STATES.find((s) => s.key === line.dataset.state)
   const since = line.dataset.since ? Date.parse(line.dataset.since) : NaN
@@ -1983,12 +2025,12 @@ function stateLine(st) {
 }
 // 枠と状態の行の CSS クラス。未読だけ (quiet) は Working と書くが、信号の Working ではない (C71)
 const frameClass = (st) => (st.quiet ? 'unread' : st.key)
-// サイドバーの上: 表示中のプロジェクトで、状態ごとの数 (Idle と Offline は出さない。未読だけは数えない)
+// サイドバーの上: 表示中のプロジェクトで、状態ごとの数 (Idle と Offline は出さない。未読だけは数えない)。モデルの state を数える
 function renderStates(mailboxes) {
   const box = $('states')
   box.textContent = ''
   const n = new Map()
-  for (const mb of mailboxes) { const st = stateOf(mb); if (st && !st.quiet) n.set(st.key, (n.get(st.key) || 0) + 1) }
+  for (const mb of mailboxes) { const st = mb.state; if (st && !st.quiet) n.set(st.key, (n.get(st.key) || 0) + 1) }
   for (const s of STATES) {
     if (s.key === 'idle' || s.key === 'offline' || !n.get(s.key)) continue
     const chip = el('span', `stc state st-${s.key}`, `${s.label} ${n.get(s.key)}`)
@@ -2062,21 +2104,16 @@ function jumpTo(t) {
   box.classList.add('hit')
   setTimeout(() => box.classList.remove('hit'), 3000)
 }
-// タブの件数 (Needs you の人の番) と、ほかのプロジェクトの待ちの件数。humanTurnOf に、未接続の相手を待つカードの 1 件を足す (C49)。You バッジには足さない
-function tabWaitingOf(mb) {
-  const n = humanTurnOf(mb).count
-  if (n) return n
-  const st = stateOf(mb)
-  return st && st.key === 'you' ? 1 : 0
-}
-// サイドバー: 表示中のプロジェクトの合計。タブ: 全プロジェクトの人の番の件数 (tabWaitingOf)と、作業中のカードがあるか (tabWorking。カードの信号と同じ signalOf)
+// タブの件数と信号の写し。renderBacklog がモデルの human から取って置き、タイトル・favicon (showTabUnread) はこれを読む。
+// 前面に戻るなど描き直しなしで呼ばれるため写しを持つ。ui:check がこの変数を差し替えて枝を確かめる
+// tabWaiting: 全プロジェクトの人の番 (Needs you。未接続の相手を待つ 1 件を足す)。tabWorking: 作業中のカードがあるか (カードの信号と同じ signalOf)
 let tabWaiting = 0
 let tabWorking = false
-// Health check の対象: Stopped, no reply の Mailbox (全プロジェクト。カードと同じ backlog・stateOf)
-const stoppedMailboxes = () => mailboxList.filter((mb) => { const st = stateOf(mb); return st && st.key === 'stopped' && mb.backlog && mb.backlog.awaitingReply.oldestSeq != null })
+// Health check の対象: Stopped, no reply の Mailbox (全プロジェクト。モデルの state と awaitingSeq)
+const stoppedMailboxes = (model = teamModel()) => model.mailboxes.filter((mb) => mb.state && mb.state.key === 'stopped' && mb.awaitingSeq !== null)
 let healthBusy = false
-function renderHealth() {
-  const n = stoppedMailboxes().length
+function renderHealth(model = teamModel()) {
+  const n = stoppedMailboxes(model).length
   $('health').textContent = `Health check (${n})`
   $('health').disabled = n === 0 || healthBusy
 }
@@ -2087,7 +2124,7 @@ $('health').onclick = async () => {
   let sent = 0
   try {
     for (const mb of stoppedMailboxes()) {
-      const seq = mb.backlog.awaitingReply.oldestSeq
+      const seq = mb.awaitingSeq
       const req = bySeq(seq) || (await api(`/messages?after=${seq - 1}&limit=1`)).messages.find((m) => m.seq === seq)
       if (!req) continue
       const body = HEALTH_CHECK_TEMPLATE.replace('<seq>', seq).replace('<id>', req.id)
@@ -2104,20 +2141,18 @@ $('health').onclick = async () => {
   }
 }
 let tabStopped = 0 // Stopped は人の番だが、タイトルの件数 (Needs you) には足さない。アイコンのバッジにだけ足す
-function renderBacklog() {
-  backlogChips($('backlog'), sumLayers(mailboxList.filter(visibleCard)))
-  renderHealth()
-  const you = mailboxList.reduce((sum, mb) => sum + tabWaitingOf(mb), 0)
-  const sig = mailboxList.map((mb) => signalOf(stateOf(mb)))
-  const stopped = mailboxList.filter((mb) => { const st = stateOf(mb); return st && st.key === 'stopped' }).length
-  const working = sig.includes('working')
+// サイドバーのバッジ: 表示中のプロジェクトの合計。タブ: モデルの human (全プロジェクト)
+function renderBacklog(model = teamModel()) {
+  backlogChips($('backlog'), sumLayers(model.mailboxes.filter(visibleCard)))
+  renderHealth(model)
+  const { waiting: you, stopped, working } = model.human
   if (you !== tabWaiting || stopped !== tabStopped || working !== tabWorking) { tabWaiting = you; tabStopped = stopped; tabWorking = working; showTabUnread() }
 }
 setInterval(() => {
   document.querySelectorAll('.bl').forEach(paintChip)
   document.querySelectorAll('.mb .state').forEach(paintState)
   const expired = [...document.querySelectorAll('.mb .state[data-until]')].some((l) => Date.now() >= Number(l.dataset.until))
-  if (expired && mailboxList.length) renderMailboxes(mailboxList)
+  if (expired && mailboxList.length) renderMailboxes()
 }, 30000)
 
 // --- roadmap の項目のカード (design.md §3.15) ---
@@ -2145,7 +2180,7 @@ async function loadConfig() {
       maxFilesPerMessage: limitOf(l.maxFilesPerMessage, 1, 100, true),
       readRetentionHours: limitOf(l.readRetentionHours, 0, 87600, false),
     }
-    if (mailboxList.length) renderMailboxes(mailboxList) // 保存期間で、作業中とみなす上限が変わる
+    if (mailboxList.length) renderMailboxes() // 保存期間で、作業中とみなす上限が変わる
   } catch {
     hubLimits = noLimits()
     hubConfig = CONFIG_DEFAULTS // 404 は /config を持たない古い Hub。ほかの失敗でも既定のまま動く
@@ -2476,12 +2511,14 @@ function flashOf(name, sig) {
   flashing.delete(name)
   return null
 }
-function renderMailboxes(all) {
+// カード・サイドバー・タブは、この 1 回の teamModel() から描く (C90)。見た目の絞り込みだけ、ここで掛ける
+function renderMailboxes() {
   const root = $('mailboxes')
   root.textContent = ''
-  renderElsewhere()
-  renderBacklog()
-  const mailboxes = all.filter(visibleCard)
+  const model = teamModel()
+  renderElsewhere(model)
+  renderBacklog(model)
+  const mailboxes = model.mailboxes.filter(visibleCard)
   renderStates(mailboxes)
   const scope = currentProject()
   if (mailboxes.length === 0) {
@@ -2516,13 +2553,13 @@ function renderMailboxes(all) {
     const title = el('div')
     title.append(el('span', `dot${mb.attachment ? ' on' : ''}`), el('span', 'name', mb.name), el('span', `chip c${ci}`, mb.role || mb.name))
     box.append(title)
-    const st = stateOf(mb)
+    const st = mb.state
     if (st) {
       box.classList.add(`st-${frameClass(st)}`)
       box.append(stateLine(st))
     }
     // 信号が変わったときだけ 1.5 秒光らせる (C71)。動きを減らす設定では光らせない (枠は残る)
-    const flash = flashOf(mb.name, signalOf(st))
+    const flash = flashOf(mb.name, mb.signal)
     if (flash && !REDUCED_MOTION.matches) {
       box.classList.add('st-flash', `flash-${flash}`)
       box.addEventListener('animationend', (e) => { if (e.target === box) box.classList.remove('st-flash', `flash-${flash}`) })
@@ -2533,14 +2570,14 @@ function renderMailboxes(all) {
       box.append(d)
     }
     // 最後に見えたモデルと effort (C61)。値がなければ何も出さず、片方だけならその片方だけ
-    const seen = lastSeenOf(mb)
+    const seen = mb.lastSeen
     const shown = [seen.model && shortModel(seen.model), seen.effort].filter(Boolean)
     if (shown.length) {
       const me = el('div', 'meta modeleff', shown.join(' · '))
       me.title = `${seen.model ? `Model: ${seen.model}. ` : ''}${seen.effort ? `Effort: ${seen.effort}. ` : ''}Last seen value, not a guarantee of the current setting. From recent Events only: the model may disappear when its session start or model switch Event ages out.`
       box.append(me)
     }
-    box.append(backlogChips(el('div', 'backlog'), layersOf(mb), true))
+    box.append(backlogChips(el('div', 'backlog'), mb.layers, true))
     // どのリポジトリの Mailbox か。最後に attach した作業フォルダ (古い Hub と、記録より前の Mailbox は返さない)
     if (mb.project) {
       const p = el('div', 'meta', `Project: ${folderName(mb.project)}`)
@@ -2556,22 +2593,22 @@ function renderMailboxes(all) {
     // detached は最後に切れた Attachment (この Hub の起動中だけ)。古い Hub は返さないので Disconnected のまま
     const meta = [mb.attachment ? `Connected (${mb.attachment.client})` : mb.detached ? `Detached ${time(mb.detached.detachedAt)} (${DETACH_LABEL[mb.detached.reason] || mb.detached.reason})` : 'Disconnected']
     // takeover は今の Attachment が旧セッションを切り離して始まったとき (古い Hub は返さない)
-    if (mb.attachment && mb.takeover) meta.push(`took over ${time(mb.takeover.at)}`)
+    if (mb.takeover) meta.push(`took over ${time(mb.takeover.at)}`)
     if (mb.role) meta.push(`role: ${mb.role}`)
     // unread が無い古い Hub では未読の項目を出さない (undefined unread と出さないため)
-    if (typeof mb.unread === 'number') meta.push(`${mb.unread} unread`)
+    if (mb.unread !== null) meta.push(`${mb.unread} unread`)
     box.append(el('div', 'meta', meta.join(' · ')))
     // 渡したが受領の確認 (inbox で取り出す・その後にセッションが request か reply を送る。protocol.md §4) がない件数。古い Hub は返さない。
     // channel なしで起動した Claude Code は通知を黙って捨てるので、増え続けるならセッションに inbox を頼む (design.md §6.1k)
-    if (typeof mb.unconfirmed === 'number' && mb.unconfirmed > 0) {
+    if (mb.unconfirmed !== null && mb.unconfirmed > 0) {
       const u = el('div', 'meta', `${mb.unconfirmed} handed, unconfirmed`)
       u.title = 'Handed to the session, but it has not fetched them with inbox, and it has sent no request or reply since. This is not proof they were lost. If the session seems not to receive messages, ask it to call inbox with unconfirmed: true.'
       box.append(u)
     }
-    const subs = subscriptionsOf(mb)
+    const subs = mb.subscriptions
     if (subs.length) box.append(el('div', 'meta', `Subscribed: ${subs.join(', ')}`))
     // 直近の検知イベント。状態の推定はせず、最後に届いたものをそのまま出す
-    const ev = lastEventOf(mb)
+    const ev = mb.lastEvent
     if (ev) box.append(el('div', `status${WAITING.has(ev.kind) ? ' waiting' : ''}`, `Last event: ${EVENT_LABEL[ev.kind] || ev.kind} · ${time(ev.ts)}`))
     // 接続していない Mailbox だけ削除できる。ボタンの click がカードの選択 (宛先にする) まで届かないようにする
     if (!mb.attachment) {
@@ -2646,7 +2683,7 @@ function removeEvents(ids) {
   for (const [name, ev] of lastEventByMailbox) if (gone.has(ev.id)) lastEventByMailbox.delete(name)
   for (const [name, ev] of lastTurnEndByMailbox) if (gone.has(ev.id)) lastTurnEndByMailbox.delete(name)
   renderBar()
-  if (mailboxList.length) renderMailboxes(mailboxList)
+  if (mailboxList.length) renderMailboxes()
 }
 
 async function deleteMailbox(name) {
@@ -2817,7 +2854,7 @@ function connect() {
   })
   es.addEventListener('event', (e) => {
     renderEvent(JSON.parse(e.data), true)
-    if (mailboxList.length) renderMailboxes(mailboxList)
+    if (mailboxList.length) renderMailboxes()
   })
   // 手で消したときと保存期間の掃除で届く (古い Hub は送らない)。消えた分で未読数・unconfirmed も変わりうる
   es.addEventListener('message.deleted', (e) => {
