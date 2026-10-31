@@ -183,7 +183,7 @@ On Windows, the PowerShell scripts keep working with the same parameters as befo
   - In the `-Project` folder it runs `git fetch` (without prompting for credentials, up to 15 seconds), then warns if the HEAD is detached, behind its upstream, or has no upstream. It does not stop. This keeps the team from running on an old version of a submodule.
 - If a tab's `claude` ends before attaching, it fails without waiting for the limit and prints the exit code and the reason (the output of `claude --version`). The role's `agent` writes the ending to `agent-hub-start/<Mailbox>.json` under the OS's temporary folder, and `team` reads it. A tab whose `claude` failed stays open until you press Enter, so the reason can be read.
 - At the end, the warnings and failures above are gathered under `--- summary ---` and `UI: http://127.0.0.1:<port>/?token=…#project=<folder>` is printed. The page opens on that project (it wins over the last saved selection and becomes the new one); a `project` that is not in the Hub's project list is ignored, and the page removes it from the address bar after reading it. It is a #fragment because the Hub drops other query parameters when it redirects `?token=`. If the token does not match the Hub, it says so instead of the URL.
-- When there were warnings, the same start also appends one line to `logs/start-warnings.jsonl`, so a later breakage can be matched against that start's time and HEAD ("Start warnings" below).
+- Every start appends a result line to `logs/start-warnings.jsonl` (which roles started, were skipped or failed), and a start with warnings also a pre-start line with HEAD, so a later breakage can be matched against that start ("Start warnings" below).
 - The attach check uses `HUB_TOKEN` from `.env` (an environment variable wins).
 
 1. Confirm that `agent-hub.leader` and `agent-hub.deployer` show as connected, with their roles, on the left of the browser.
@@ -303,12 +303,16 @@ When following a running team through the API (the same when an agent watches it
 
 ## Start warnings (logs/start-warnings.jsonl)
 
-When `npm run team`, or `agent` started on its own, has warnings (a Claude Code newer than the last verified one, a stale checkout, hooks missing; for `agent` on its own also a `claude --version` that does not pass, which `team` stops on instead), one JSON line is appended to `logs/start-warnings.jsonl` in agent-hub. The file is gitignored. A start with no warnings writes nothing, so a missing line means no warning was raised. A start by hand (Claude Code run directly) is not covered.
+`npm run team`, and `agent` started on its own, append lines to `logs/start-warnings.jsonl` in agent-hub (gitignored). A start by hand (Claude Code run directly) is not covered.
 
-Each line has `time` (UTC, ISO), `project` (the target folder), `head` (its HEAD, `null` if it is not a git repository), `roles` and `mailboxes`, `claudeVersion` (the first line of `claude --version`), `lastVerified` and `verifiedSection` (the highest Claude Code version named in the headings of design.md §6.1, and its section; `verifiedNote` says why it is unknown), and `warnings` (the texts shown at the start).
+There are two kinds of line, told apart by `kind`:
+- **Result line** (`kind: "result"`): written on every start, with or without warnings, after the roles have started (also when the start stops early). `start` is the start's time, `time` when the result was written (both UTC, ISO), `project` is the target folder, and the outcome lists `started`, `skipped` (a Mailbox already connected, without `--force`) and `failed` (each with `role`, `mailbox` and, for failures, `reason`). `aborted` says why the start stopped before or between roles, or is `null`. A role started by `agent` on its own is `started` once claude is running, and `failed` if claude cannot be started at all. A failed write prints a warning and does not stop the start.
+- **Pre-start line** (`kind: "start"`): written only when the start has warnings, before the roles start. Its `time` is the same as the result's `start`, so the two match. It has `project`, `head` (its HEAD, `null` if it is not a git repository), `roles` and `mailboxes` (only those that will be started; connected ones skipped without `--force` are left out), `claudeVersion` (the first line of `claude --version`), `lastVerified` and `verifiedSection` (the highest Claude Code version named in the headings of design.md §6.1, and its section; `verifiedNote` says why it is unknown), and `warnings` (the texts shown at the start).
+
+A start with no warnings has only a result line; a start with a pre-start line and no result line was killed before it finished.
 
 When something breaks, read it against the history:
-1. Take the time of the breakage and find the last line before it: `Get-Content logs\start-warnings.jsonl -Tail 5` (PowerShell). Its `time` is UTC.
+1. Take the time of the breakage and find the last pre-start line before it, then the result line with the same `start`: `Get-Content logs\start-warnings.jsonl -Tail 5` (PowerShell). The result shows which roles actually started and which failed. Times are UTC.
 2. Check the project at `head`: `git -C <project> log --oneline <head>..HEAD` lists the commits made after that start, and `git -C <project> show --stat <head>` shows what the start was on.
 3. Check `claudeVersion` against `lastVerified`. If the version was newer, that line's warning is the first thing to look at; the behaviour is outside the verified envelope (design.md §1.2, §6.1).
 

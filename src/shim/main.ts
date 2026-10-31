@@ -71,17 +71,24 @@ function parseAddress(s: string): Address {
 
 // 送る Message の meta.item (C77)。明示の item が先。reply で省いたら、送る時点で Hub から元の Message を読んで id と project を写す
 // (shim は届けた Message を覚えない)。元がない・項目がない・読めないときは付けない (reply 自体は Hub が検証する)
-async function itemFor(id: string | undefined, replyTo: string | undefined): Promise<Record<string, unknown> | undefined> {
-  if (id) return { id, project: normalizeProjectPath(cfg.cwd), source: null, promise: null }
-  if (!replyTo) return undefined
+// 返信の元の Message が持つ項目 (meta.item の id と project)。元がない・項目がない・読めないときは undefined (C77)
+async function originalItem(replyTo: string): Promise<{ id: string; project: string } | undefined> {
   try {
     const orig = await hub.request<Message>('GET', `/messages/${encodeURIComponent(replyTo)}`)
     const it = orig.meta?.item as { id?: unknown; project?: unknown } | undefined
-    if (it && typeof it.id === 'string' && typeof it.project === 'string') return { id: it.id, project: it.project, source: null, promise: null }
+    if (it && typeof it.id === 'string' && typeof it.project === 'string') return { id: it.id, project: it.project }
   } catch (e) {
     log(`reply の元の項目を読めなかった: ${e instanceof Error ? e.message : String(e)}`)
   }
   return undefined
+}
+
+// project は、返信で項目を名指したときも元の Message の項目の project を使う (C89)。元に項目がなければ、この shim の cwd
+async function itemFor(id: string | undefined, replyTo: string | undefined): Promise<Record<string, unknown> | undefined> {
+  if (!id && !replyTo) return undefined
+  const orig = replyTo ? await originalItem(replyTo) : undefined
+  if (id) return { id, project: orig?.project ?? normalizeProjectPath(cfg.cwd), source: null, promise: null }
+  return orig && { id: orig.id, project: orig.project, source: null, promise: null }
 }
 
 const tools = [

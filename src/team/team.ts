@@ -8,7 +8,7 @@ import { defaultMailboxName, normalizeProjectPath } from '../shared/types.js'
 import { clearStartStatus } from './agent.js'
 import { checkClaudeCli, checkoutWarnings, hookWarning, startStatusPath } from './checks.js'
 import { envSetting, hubRolesFile, readRoleNames, ROOT } from './env.js'
-import { checkClaudeVersion, recordStart } from './startlog.js'
+import { checkClaudeVersion, emptyOutcome, recordResult, recordStart, splitByConnection, type StartOutcome } from './startlog.js'
 import { ask } from './prompt.js'
 import { commandLine } from './quote.js'
 import { openTab, TMUX_SESSION, type Opener } from './tabs.js'
@@ -77,7 +77,21 @@ function portOpen(port: number): Promise<boolean> {
 
 interface Mailbox { name: string; attachment?: { attachmentId: string } | null }
 
+// A start always leaves its result line (C88), also when it stops early: the outcome is filled in as the start goes, and the finally writes it
 export async function runTeam(o: TeamOptions): Promise<number> {
+  const startTime = new Date().toISOString()
+  const outcome = emptyOutcome()
+  try {
+    return await teamStart(o, startTime, outcome)
+  } catch (e) {
+    outcome.aborted = e instanceof Error ? e.message : String(e)
+    throw e
+  } finally {
+    recordResult(startTime, o.projectDir, outcome)
+  }
+}
+
+async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcome): Promise<number> {
   const port = Number(envSetting('HUB_PORT', '7777'))
   const token = envSetting('HUB_TOKEN', '')
   const hubUrl = `http://127.0.0.1:${port}`
@@ -113,6 +127,7 @@ export async function runTeam(o: TeamOptions): Promise<number> {
   const cli = checkClaudeCli()
   if (cli.problem) {
     console.error(`WARNING: claude does not run, so no role is started: ${cli.problem}`)
+    outcome.aborted = `claude does not run, so no role is started: ${cli.problem}`
     return 1
   }
   const notes: string[] = []
@@ -122,14 +137,21 @@ export async function runTeam(o: TeamOptions): Promise<number> {
   const hw = hookWarning(o.projectDir, ROOT)
   if (hw) note(hw)
   for (const w of await checkoutWarnings(o.projectDir)) note(w)
-  // The start's warnings go to logs/ before the roles start, so they are kept even if a role fails (C85)
+  // The start's warnings go to logs/ before the roles start, so they are kept even if a role fails (C85).
+  // Only the roles that will start are listed: a connected Mailbox is skipped without --force, so it is left out here (C88)
+  const connected = new Set<string>()
+  if (token && !o.force) {
+    for (const role of roles) if (await attachmentId(defaultMailboxName(o.projectDir, role))) connected.add(role)
+  }
+  const toStart = splitByConnection(roles, connected, o.force).start
   await recordStart({
     projectDir: o.projectDir,
-    roles,
-    mailboxes: roles.map((r) => defaultMailboxName(o.projectDir, r)),
+    roles: toStart,
+    mailboxes: toStart.map((r) => defaultMailboxName(o.projectDir, r)),
     claudeVersion: cli.output,
     check: version,
     warnings: notes,
+    time: startTime,
   })
 
   // --- build (the shim is started from dist/)
@@ -163,12 +185,13 @@ export async function runTeam(o: TeamOptions): Promise<number> {
   }
 
   // --- roles, one at a time. The Mailbox name is <project folder>.<role>, as in `agent`
-  const failed: string[] = []
   for (const role of roles) {
     const mailbox = defaultMailboxName(o.projectDir, role)
+    const ref = { role, mailbox }
     const before = token ? await attachmentId(mailbox) : null
     if (before && !o.force) {
       console.log(`${mailbox} is connected, skipping (--force to restart it)`)
+      outcome.skipped.push(ref)
       continue
     }
     // With --force the previous Attachment lingers until its lease ends. Only a new id counts as attached (roadmap C33)
@@ -176,8 +199,8 @@ export async function runTeam(o: TeamOptions): Promise<number> {
     // Remove what the previous start left, so only this start's ending is read (C56)
     clearStartStatus(mailbox)
     const err = start(mailbox, agentSub(role, o.projectDir, o.permissionMode))
-    if (err) { failed.push(`Could not open a tab for ${mailbox}: ${err}`); continue }
-    if (!token) { await sleep(3000); continue }
+    if (err) { outcome.failed.push({ ...ref, reason: `Could not open a tab for ${mailbox}: ${err}` }); continue }
+    if (!token) { outcome.started.push(ref); await sleep(3000); continue }
     const deadline = Date.now() + o.attachTimeoutSec * 1000
     const statusFile = startStatusPath(mailbox)
     let attached = false
@@ -195,26 +218,27 @@ export async function runTeam(o: TeamOptions): Promise<number> {
     }
     if (attached) {
       console.log(`${mailbox} attached`)
+      outcome.started.push(ref)
     } else if (ended) {
       const why = ended.reason ? `. Reason: ${ended.reason}` : '. See its tab for the reason'
       const line = `claude for ${mailbox} ended before attaching (exit code ${ended.exitCode}, ${ended.elapsedSec} seconds)${why}`
       console.warn(`WARNING: ${line}. Moving on`)
-      failed.push(line)
+      outcome.failed.push({ ...ref, reason: line })
     } else {
       // The previous connection may just be lingering, so this is not read as success
       console.warn(`WARNING: ${mailbox} did not newly attach within ${o.attachTimeoutSec} seconds (failure). Check its tab (the first-run warning dialog, a claude startup error and so on). Moving on`)
-      failed.push(`${mailbox} did not attach within ${o.attachTimeoutSec} seconds`)
+      outcome.failed.push({ ...ref, reason: `${mailbox} did not attach within ${o.attachTimeoutSec} seconds` })
     }
   }
 
   // --- summary: warnings and failures gathered here so they are not lost in the tabs (C56-C58), then the UI URL (C55)
-  if (notes.length || failed.length) {
+  if (notes.length || outcome.failed.length) {
     console.log('\n--- summary ---')
     for (const n of notes) console.log(`note: ${n}`)
-    for (const f of failed) console.log(`failed: ${f}`)
+    for (const f of outcome.failed) console.log(`failed: ${f.reason}`)
   }
   await printUiUrl(hubUrl, token, o.projectDir)
-  if (failed.length) return 1
+  if (outcome.failed.length) return 1
   console.log('Done')
   return 0
 }

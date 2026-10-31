@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import {
-  appendStartRecord, buildStartRecord, checkClaudeVersion, compareVersions, lastVerified, parseVersion,
-  recordStart, versionWarning,
+  appendStartRecord, buildResultRecord, buildStartRecord, checkClaudeVersion, compareVersions, emptyOutcome, lastVerified, parseVersion,
+  recordResult, recordStart, splitByConnection, versionWarning,
 } from './startlog.js'
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'agent-hub-startlog-'))
@@ -83,7 +83,8 @@ test('buildStartRecord: the fields, and one JSON line when written', () => {
     check,
     warnings: ['git fetch failed'],
   }, '2026-10-31T00:00:00.000Z', 'abc123')
-  assert.deepEqual(Object.keys(rec), ['time', 'project', 'head', 'roles', 'mailboxes', 'claudeVersion', 'lastVerified', 'verifiedSection', 'verifiedNote', 'warnings'])
+  assert.deepEqual(Object.keys(rec), ['kind', 'time', 'project', 'head', 'roles', 'mailboxes', 'claudeVersion', 'lastVerified', 'verifiedSection', 'verifiedNote', 'warnings'])
+  assert.equal(rec.kind, 'start')
   assert.equal(rec.head, 'abc123')
   assert.deepEqual(rec.warnings, ['git fetch failed'])
   const dir = tmp()
@@ -116,4 +117,70 @@ test('recordStart: writes nothing without warnings, one line with them', async (
   const rec = JSON.parse(readFileSync(file, 'utf8').trim())
   assert.equal(rec.head, null)
   assert.deepEqual(rec.warnings, ['w'])
+})
+
+const T0 = '2026-10-31T01:00:00.000Z'
+const T1 = '2026-10-31T01:00:05.000Z'
+const noCheck = { warning: null, lastVerified: null, verifiedSection: null, verifiedNote: null }
+const readLines = (file: string) => readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>)
+
+test('splitByConnection: a connected role is skipped without --force, and started with it (C88)', () => {
+  const connected = new Set(['deployer'])
+  assert.deepEqual(splitByConnection(['leader', 'deployer'], connected, false), { start: ['leader'], skip: ['deployer'] })
+  assert.deepEqual(splitByConnection(['leader', 'deployer'], connected, true), { start: ['leader', 'deployer'], skip: [] })
+  assert.deepEqual(splitByConnection(['leader'], new Set(), false), { start: ['leader'], skip: [] })
+})
+
+test('pre-start line: lists only the roles that will start, and its time is the start time the result repeats (C88)', async () => {
+  const dir = tmp()
+  const file = join(dir, 'logs', 'start-warnings.jsonl')
+  const { start, skip } = splitByConnection(['leader', 'deployer'], new Set(['deployer']), false)
+  await recordStart({ projectDir: dir, roles: start, mailboxes: start.map((r) => `x.${r}`), claudeVersion: null, check: noCheck, warnings: ['w'], time: T0 }, file)
+  const [pre] = readLines(file)
+  assert.equal(pre!.kind, 'start')
+  assert.equal(pre!.time, T0)
+  assert.deepEqual(pre!.roles, ['leader'], 'the connected deployer is left out')
+  assert.deepEqual(pre!.mailboxes, ['x.leader'])
+  assert.deepEqual(skip, ['deployer'], 'it is skipped, and the result line says so')
+})
+
+test('result line: started, skipped and failed with the reason, and the same start as the pre-start line (C88)', () => {
+  const dir = tmp()
+  const file = join(dir, 'logs', 'start-warnings.jsonl')
+  const outcome = {
+    ...emptyOutcome(),
+    started: [{ role: 'leader', mailbox: 'x.leader' }],
+    skipped: [{ role: 'deployer', mailbox: 'x.deployer' }],
+    failed: [{ role: 'reviewer', mailbox: 'x.reviewer', reason: 'x.reviewer did not attach within 60 seconds' }],
+  }
+  assert.equal(recordResult(T0, dir, outcome, file), null)
+  const [res] = readLines(file)
+  assert.equal(res!.kind, 'result')
+  assert.equal(res!.start, T0, 'matches the pre-start line by its time')
+  assert.equal(typeof res!.time, 'string')
+  assert.equal(res!.project, dir)
+  assert.deepEqual(res!.started, outcome.started)
+  assert.deepEqual(res!.skipped, outcome.skipped)
+  assert.deepEqual(res!.failed, outcome.failed)
+  assert.equal(res!.aborted, null)
+  // The record builder agrees with what is written
+  assert.deepEqual(buildResultRecord(T0, dir, outcome, T1), { ...res, time: T1 })
+})
+
+test('result line: without warnings it is still written, and an aborted start says why (C88)', () => {
+  const dir = tmp()
+  const file = join(dir, 'logs', 'start-warnings.jsonl')
+  recordResult(T0, dir, { ...emptyOutcome(), aborted: 'The Hub did not start in time. Check its tab' }, file)
+  const [res] = readLines(file)
+  assert.equal(res!.kind, 'result')
+  assert.deepEqual(res!.started, [])
+  assert.equal(res!.aborted, 'The Hub did not start in time. Check its tab')
+})
+
+test('result line: a failed write returns the error and does not throw (the start goes on) (C88)', () => {
+  const dir = tmp()
+  const blocker = join(dir, 'file')
+  writeFileSync(blocker, '')
+  const err = recordResult(T0, dir, emptyOutcome(), join(blocker, 'start-warnings.jsonl'))
+  assert.equal(typeof err, 'string')
 })

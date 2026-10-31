@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path'
 import { defaultMailboxName } from '../shared/types.js'
 import { checkClaudeCli, checkoutWarnings, claudeCommand, hookWarning, spawnArgs, startStatusPath, testClaudeCli } from './checks.js'
 import { envSetting, hubRolesFile, readRoleNames, ROOT } from './env.js'
-import { checkClaudeVersion, recordStart } from './startlog.js'
+import { checkClaudeVersion, emptyOutcome, recordResult, recordStart } from './startlog.js'
 import { waitForEnter } from './prompt.js'
 
 export interface AgentOptions {
@@ -39,6 +39,10 @@ export async function runAgent(o: AgentOptions): Promise<number> {
   const mailbox = o.mailbox ?? defaultMailboxName(o.projectDir, o.role)
   const statusFile = startStatusPath(mailbox)
   const startedAt = Date.now()
+  // The start's time: the pre-start line and this start's result line share it (C88). The result is written only when started on its own;
+  // `team` writes the result for the roles it starts
+  const startTime = new Date().toISOString()
+  const ref = { role: o.role, mailbox }
   const writeStatus = (exitCode: number, reason: string | null) => {
     mkdirSync(dirname(statusFile), { recursive: true })
     writeFileSync(statusFile, JSON.stringify({ exitCode, elapsedSec: Math.round((Date.now() - startedAt) / 1000), reason, endedAt: new Date().toISOString() }, null, 2))
@@ -46,6 +50,7 @@ export async function runAgent(o: AgentOptions): Promise<number> {
   const fail = async (reason: string) => {
     console.error(reason)
     writeStatus(1, reason)
+    if (!o.fromTeam) recordResult(startTime, o.projectDir, { ...emptyOutcome(), failed: [{ ...ref, reason }] })
     if (o.fromTeam) await waitForEnter()
     return 1
   }
@@ -84,7 +89,7 @@ export async function runAgent(o: AgentOptions): Promise<number> {
     const version = checkClaudeVersion(cli.output)
     if (version.warning) notes.push(version.warning)
     notes.push(...await checkoutWarnings(o.projectDir))
-    await recordStart({ projectDir: o.projectDir, roles: [o.role], mailboxes: [mailbox], claudeVersion: cli.output, check: version, warnings: notes })
+    await recordStart({ projectDir: o.projectDir, roles: [o.role], mailboxes: [mailbox], claudeVersion: cli.output, check: version, warnings: notes, time: startTime })
   }
   for (const w of notes) console.warn(`WARNING: ${w}`)
 
@@ -97,7 +102,17 @@ export async function runAgent(o: AgentOptions): Promise<number> {
   process.on('SIGINT', ignore)
   const code = await new Promise<number>((done) => {
     const child = spawn(s.file, s.args, { cwd: o.projectDir, env, stdio: 'inherit', shell: s.shell })
-    child.on('error', (e) => { console.error(`cannot start claude: ${e.message}`); done(1) })
+    // The role is started once claude is running; if it cannot be started at all, the result says so (C88)
+    let spawned = false
+    child.on('spawn', () => {
+      spawned = true
+      if (!o.fromTeam) recordResult(startTime, o.projectDir, { ...emptyOutcome(), started: [ref] })
+    })
+    child.on('error', (e) => {
+      console.error(`cannot start claude: ${e.message}`)
+      if (!spawned && !o.fromTeam) recordResult(startTime, o.projectDir, { ...emptyOutcome(), failed: [{ ...ref, reason: `cannot start claude: ${e.message}` }] })
+      done(1)
+    })
     child.on('exit', (c, signal) => done(c ?? (signal ? 1 : 0)))
   })
   process.off('SIGINT', ignore)

@@ -77,7 +77,10 @@ export function checkClaudeVersion(output: string | null, root = ROOT): VersionC
   }
 }
 
+// The pre-start line (written only with warnings) and the result line (written on every start) of one start share `time` (the start's
+// time): the result's `start` is the pre-start line's `time` (C88)
 export interface StartRecord {
+  kind: 'start'
   time: string
   project: string
   head: string | null
@@ -92,16 +95,20 @@ export interface StartRecord {
 
 export interface StartInput {
   projectDir: string
+  // The roles and Mailboxes that will be started (connected ones skipped without --force are not listed; C88)
   roles: string[]
   mailboxes: string[]
   claudeVersion: string | null
   check: VersionCheck
   warnings: string[]
+  // The start's time, which the result line repeats. Defaults to now
+  time?: string
 }
 
 // One record for a start. Pure: the time and HEAD are passed in
 export function buildStartRecord(i: StartInput, time: string, head: string | null): StartRecord {
   return {
+    kind: 'start',
     time,
     project: i.projectDir,
     head,
@@ -120,7 +127,7 @@ export function startLogPath(root = ROOT): string {
 }
 
 // Append one line. Returns the error message on failure instead of throwing: a failed write never stops a start
-export function appendStartRecord(record: StartRecord, file = startLogPath()): string | null {
+export function appendStartRecord(record: StartRecord | ResultRecord, file = startLogPath()): string | null {
   try {
     mkdirSync(dirname(file), { recursive: true })
     appendFileSync(file, `${JSON.stringify(record)}\n`)
@@ -135,7 +142,57 @@ export function appendStartRecord(record: StartRecord, file = startLogPath()): s
 export async function recordStart(i: StartInput, file = startLogPath()): Promise<void> {
   if (i.warnings.length === 0) return
   const head = await runGit(i.projectDir, ['rev-parse', 'HEAD'])
-  const record = buildStartRecord(i, new Date().toISOString(), head.code === 0 && head.out ? head.out : null)
+  const record = buildStartRecord(i, i.time ?? new Date().toISOString(), head.code === 0 && head.out ? head.out : null)
   const err = appendStartRecord(record, file)
   if (err) console.warn(`WARNING: could not write the start record (${file}): ${err}`)
+}
+
+// Which roles a start will start, and which it skips because their Mailbox is already connected (without --force). Pure (C88)
+export function splitByConnection(roles: string[], connected: ReadonlySet<string>, force: boolean): { start: string[]; skip: string[] } {
+  const start: string[] = []
+  const skip: string[] = []
+  for (const role of roles) (!force && connected.has(role) ? skip : start).push(role)
+  return { start, skip }
+}
+
+// What a start did, for its result line. A role is `started` once its tab is open and it attached (or, without a token, once its tab is open:
+// the attach is then not checked); `failed` carries the reason; `aborted` says why the start stopped before or between roles
+export interface RoleRef { role: string; mailbox: string }
+export interface StartOutcome {
+  started: RoleRef[]
+  skipped: RoleRef[]
+  failed: (RoleRef & { reason: string })[]
+  aborted: string | null
+}
+export function emptyOutcome(): StartOutcome {
+  return { started: [], skipped: [], failed: [], aborted: null }
+}
+
+export interface ResultRecord extends StartOutcome {
+  kind: 'result'
+  time: string
+  // The pre-start line's `time` for this start (the same value, so the two match)
+  start: string
+  project: string
+}
+
+// One result record. Pure: the time is passed in
+export function buildResultRecord(start: string, project: string, outcome: StartOutcome, time: string): ResultRecord {
+  return {
+    kind: 'result',
+    time,
+    start,
+    project,
+    started: outcome.started,
+    skipped: outcome.skipped,
+    failed: outcome.failed,
+    aborted: outcome.aborted,
+  }
+}
+
+// Append the result line. Written on every start, with or without warnings. A failed write prints a warning and returns; the start is not stopped
+export function recordResult(start: string, projectDir: string, outcome: StartOutcome, file = startLogPath()): string | null {
+  const err = appendStartRecord(buildResultRecord(start, projectDir, outcome, new Date().toISOString()), file)
+  if (err) console.warn(`WARNING: could not write the start result (${file}): ${err}`)
+  return err
 }

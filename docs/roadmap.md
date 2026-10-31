@@ -19,9 +19,8 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C89
-- [ ] C88
 - [ ] C92
+- [ ] C95
 
 (Items with a status line are listed under "Items".)
 
@@ -343,6 +342,17 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C89 An explicit item on a reply takes the original's project (2026-10-31, decided by the user)
+  - `src/shim/main.ts` `itemFor`: a reply that names `item` takes `id` from the argument and `project` from the original Message's `meta.item.project` when it has one; otherwise the shim's `cwd`, as before. A reply without `item` is unchanged (C77). A non-reply keeps `cwd`. The original is read by `originalItem` (`GET /messages/:id`); an unreadable original falls back to `cwd`. No refusal of a disagreeing `item` (decided).
+  - `src/shim/shim.test.ts` (new case): a reply from the shim's project naming `item` to a request tagged with `c:/other` is tagged with `c:/other`; a reply to an untagged request is tagged with the shim's project; a non-reply naming `item` uses the shim's project.
+  - `docs/protocol.md` §3 (`post_message`) and §2 (`meta.item`) say where `project` comes from.
+  - Checked: `npx tsc --noEmit` clean; `node --import tsx --test src/shim/shim.test.ts` 27 pass, 0 fail; `npm test` 407 pass, 0 fail; `npm run docs:check` 30 items, 0 errors, 0 warnings. Not checked: a real session naming `item` on a reply end to end.
+- [x] C88 What the start-warnings record leaves out (2026-10-31, decided by the user)
+  - `src/team/startlog.ts`: the pre-start line gets `kind: "start"` and the start's `time`; `splitByConnection` leaves connected roles (without `--force`) out of it. `buildResultRecord` / `recordResult` write a `kind: "result"` line with `start` (the pre-start `time`), `started`, `skipped`, `failed` (each with its reason) and `aborted`. The result is written on every start, and a failed write only warns.
+  - `src/team/team.ts`: `runTeam` is a wrapper; the body (`teamStart`) fills an outcome, and the `finally` writes the result, so an early stop (claude does not run, the Hub does not start, a thrown error) still leaves one with `aborted`. `src/team/agent.ts`: `start-agent` writes its own result when started on its own (`started` on claude's spawn, `failed` when it cannot spawn or fails before that); `team` does not add one for an agent it starts.
+  - `src/team/startlog.test.ts` (new cases): the split (connected skipped without `--force`); the pre-start line lists only the roles that will start and its `time` is the result's `start`; the result line with started, skipped and failed (reason) and its match to the pre-start line; a result without warnings, and an aborted one; a failed write returns an error and does not throw.
+  - `docs/usage.md` (Start warnings) and `docs/design.md` §3.14 describe both lines.
+  - Checked: `npm test` 412 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 29 items, 0 errors, 0 warnings. Not checked: `runTeam` and `runAgent` end to end (they need a Hub, claude and a tab), so the wrapper's `finally` and the agent's spawn events were checked by reading and typecheck only.
 - [x] C86 Refuse a reply to a Message the sending Mailbox never received or sent (2026-10-31, decided by the user)
   - `src/hub/hub.ts` `postMessage` → `checkReplyTarget`: a reply from a Mailbox (`from.type === 'mailbox'`) passes only if `store.isRecipient(name, original)` or the original's sender is that Mailbox. Otherwise 400 `reply_not_received`, nothing stored or delivered. The message names the oldest open request that Mailbox received (`store.oldestOpenRequestTo`: id, seq, sender) or says there is none. Human replies are not restricted; forwarded copies go through `forwardMessage`, which is not changed (see NOTES below).
   - `src/hub/reply-target.test.ts` (new): the C80 case (deployer replying to the user's request to the leader is refused, names the leader's request, saves nothing, received stays 0); no open request; a human reply to another Mailbox's request passes; by name; by role; a forwarded copy received; its own Message; a reply after takeover. `mailbox.test.ts` (receipt by reply) now replies to a message the Mailbox received; `shim.test.ts` (C77 item inheritance) addresses its requests to the shim's Mailbox by name.
@@ -634,29 +644,6 @@ Seen 2026-10-31: with the agent-hub tab behind another tab, its icon stayed idle
 Seen again 2026-10-31 after a Hub restart (C86's run): with the tab in the background, the icon did turn blue when the team started working, so the lag is not every time. A likely difference is how long the tab had been hidden (Chrome's heavier throttling starts after about five minutes hidden), not yet measured.
 To decide after measuring: the delay with the tab hidden, then whether to re-read without a timer when hidden, or to update the state from the SSE event itself.
 
-### C88. What the start-warnings record leaves out
-
-Found 2026-10-31 in a review of C85 (commits `3559217..08c5c85`). Both are within C85's done-when ("the warning texts shown at the start"), so they are not bugs; they bear on whether the record serves its purpose, matching a later breakage against a start (design.md §1.2, §3.14).
-- Failures after the record is written are not in it. `runTeam` (`src/team/team.ts`) calls `recordStart` before the roles start, so a role that fails to attach shows as `failed:` under `--- summary ---` but not in `logs/start-warnings.jsonl`, and a start with no earlier warnings writes no line at all.
-- `mailboxes` (and `roles`) list every requested role, including connected ones that `team` skips without `--force`, so the line names Mailboxes that were not started.
-Decided 2026-10-31 by the user: append a result line after the roles start. Keeping the record to pre-start warnings was rejected, since a failed attach is exactly what the record is for. The pre-start line stays where it is, so the warnings are kept even if `team` itself dies before the roles start.
-
-#### Done when
-- [ ] After the roles start, `runTeam` (`src/team/team.ts`) appends one result line to `logs/start-warnings.jsonl` with the roles and Mailboxes actually started, those skipped as already connected, and those that failed with their reason; it is written on every start, with or without warnings, and a write failure still does not stop the start
-- [ ] The pre-start line names only the roles and Mailboxes that will be started (connected ones skipped without `--force` are left out), and the result line can be matched to it (same start time or an id)
-- [ ] `start-agent` (`src/team/agent.ts`) writes the same result line for its one role
-- [ ] Tests in `src/team/startlog.test.ts` cover the result line (started, skipped, failed, no warnings) and the narrowed pre-start line; usage.md (start warnings) and design.md §3.14 describe both lines; `npm test` and `npm run docs:check` pass
-
-### C89. An explicit item on a reply takes the replier's project
-
-Found 2026-10-31 in the same review. `itemFor` in `src/shim/main.ts` (C77): a reply that omits `item` copies `id` and `project` from the original Message, but a reply that names `item` gets `project` from the shim's own `cwd`. An agent in project A replying with `item: C5` to a request from project B tags it as A's C5. No visible effect yet: the page's item cards count only the human's requests (`itemRequests` in `public/index.html`).
-Decided 2026-10-31 by the user: take `project` from the original. Refusing a disagreeing `item` was rejected, since naming the item is still useful and only the project is wrong.
-
-#### Done when
-- [ ] On a reply that names `item`, `itemFor` (`src/shim/main.ts`) uses the argument's `id` and the original Message's `meta.item.project` when the original has one; without one (no item on the original, or the original cannot be read) it falls back to the shim's `cwd` as today
-- [ ] A Message that is not a reply keeps `project` from the shim's `cwd`
-- [ ] Tests cover: a reply from project A naming `item` to a request from project B is tagged with B; a reply to a request without an item uses A; a non-reply uses A; protocol.md §5 (`post_message`'s `item`) says where `project` comes from; `npm test` and `npm run docs:check` pass
-
 ### C91. The human's open requests on the map
 Status: proposed
 
@@ -678,6 +665,18 @@ Decided 2026-10-31 by the user: fix all four. For the arrows, a request or waiti
 - [ ] A chip whose fetch by seq failed is fetched again the next time the map is opened (and after the SSE reconnects), and shows "not on the Hub" only after a fetch that says the Message is gone (404), not after a network error
 - [ ] Moving through the "Forward to…" options with the arrow keys does not fill the draft; it is filled once when an option is chosen (Enter or a click)
 - [ ] `ui:check` adds a scene for each of the four, and the existing scenes are unchanged; `npm test`, `npm run ui:check` and `npm run docs:check` pass
+
+### C95. Show an opened map chip below the map, not inside its node
+
+Raised 2026-10-31 by the user, looking at the map during C88's run: opening a chip puts the whole Message (`buildMsgBox`, the thread's rendering) inside the receiver's node (`mapChip` in `public/index.html`). The columns have no width limit and `.mapcanvas` is `min-width: max-content`, so one request with long lines widens its node across the screen, the map scrolls sideways, and the overview the map is for is lost.
+Decided 2026-10-31 by the user: show the opened chip in a detail pane outside the map. Keeping it inside the node with a width and height cap, and jumping to the thread instead, were not chosen. The pane goes below the map, since the map runs sideways by role. C92 (rough edges of the map) is separate and unchanged.
+
+#### Done when
+- [ ] Pressing a chip shows its Message (or its waiting Event) in a pane below the map, one at a time; the node keeps only the chip, so opening it does not change the map's layout (the canvas width and the nodes' positions are the same before and after)
+- [ ] The pane names what it shows (seq, item, sender, receiver) and scrolls on its own; its height is limited so the map stays in view; pressing the same chip again or the pane's close button empties it, and the opened chip is marked in the map
+- [ ] The opened chip survives the map's redraws while it is still open (new data, the deferred redraw of C78); when its request closes or leaves the map, the pane says so instead of disappearing silently
+- [ ] Forward to... and dragging work as before from the chip; a not-loaded or deleted Message shows the same notes as today, in the pane
+- [ ] `ui:check` adds scenes for: opening a request with long lines leaves the canvas width unchanged and fills the pane; one at a time; closing; a redraw keeps the pane; the existing map scenes are changed only where they read the expansion inside the node. docs/usage.md (the map) describes the pane; `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
 ### C94. A settings button in the page header
 Status: proposed

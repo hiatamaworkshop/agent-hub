@@ -278,6 +278,28 @@ describe('shim と Hub の結合', () => {
     assert.equal(hub.store.listMessages().at(-1)!.meta, undefined)
   })
 
+  it('返信で項目を名指すと project は元の項目のもの (C89)。元に項目がなければ shim の cwd。項目でない送信は cwd', async () => {
+    const human = { type: 'user', id: 'browser', role: null } as const
+    const project = normalizeProjectPath(ROOT)
+    // 別のプロジェクト (c:/other) の項目への返信: 項目の id は引数、project は元の項目のもの
+    const fromOther = hub.postMessage(
+      { kind: 'request', to: { type: 'mailbox', id: 'test-mb' }, body: 'q', meta: { item: { id: 'C5', project: 'c:/other', source: null, promise: null } } },
+      human,
+    )
+    const named = await call('post_message', { kind: 'reply', reply_to: fromOther.id, body: 'a', item: 'C9' })
+    assert.equal(named.isError, false, named.text)
+    assert.deepEqual(hub.store.listMessages().at(-1)!.meta, { item: { id: 'C9', project: 'c:/other', source: null, promise: null } })
+    // 元に項目がない返信: 引数の項目は shim の cwd のプロジェクト
+    const untagged = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'test-mb' }, body: 'q2' }, human)
+    const fallback = await call('post_message', { kind: 'reply', reply_to: untagged.id, body: 'a', item: 'C9' })
+    assert.equal(fallback.isError, false, fallback.text)
+    assert.deepEqual(hub.store.listMessages().at(-1)!.meta, { item: { id: 'C9', project, source: null, promise: null } })
+    // 返信でない送信は、項目を名指しても cwd のプロジェクト
+    const request = await call('post_message', { kind: 'request', body: 'new', to: 'topic:nobody', item: 'C9' })
+    assert.equal(request.isError, false, request.text)
+    assert.deepEqual(hub.store.listMessages().at(-1)!.meta, { item: { id: 'C9', project, source: null, promise: null } })
+  })
+
   it('shim が終了すると (kill でも) detach し、Mailbox は残る', async () => {
     await client.close()
     await until(() => hub.store.getMailbox('test-mb')!.attachment === null)
