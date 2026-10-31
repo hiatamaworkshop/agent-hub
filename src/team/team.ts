@@ -6,8 +6,9 @@ import { connect } from 'node:net'
 import { basename, join } from 'node:path'
 import { defaultMailboxName } from '../shared/types.js'
 import { clearStartStatus } from './agent.js'
-import { checkoutWarnings, hookWarning, startStatusPath, testClaudeCli } from './checks.js'
+import { checkClaudeCli, checkoutWarnings, hookWarning, startStatusPath } from './checks.js'
 import { envSetting, hubRolesFile, readRoleNames, ROOT } from './env.js'
+import { checkClaudeVersion, recordStart } from './startlog.js'
 import { ask } from './prompt.js'
 import { commandLine } from './quote.js'
 import { openTab, TMUX_SESSION, type Opener } from './tabs.js'
@@ -109,16 +110,27 @@ export async function runTeam(o: TeamOptions): Promise<number> {
   if (unknown.length) throw new Error(`Roles not in the roles file (${rolesFile}): ${unknown.join(', ')}`)
 
   // --- checks before starting. If claude does not run (blocked by NVM, an exe being replaced), start no role (C56)
-  const cliError = testClaudeCli()
-  if (cliError) {
-    console.error(`WARNING: claude does not run, so no role is started: ${cliError}`)
+  const cli = checkClaudeCli()
+  if (cli.problem) {
+    console.error(`WARNING: claude does not run, so no role is started: ${cli.problem}`)
     return 1
   }
   const notes: string[] = []
   const note = (w: string) => { console.warn(`WARNING: ${w}`); notes.push(w) }
+  const version = checkClaudeVersion(cli.output)
+  if (version.warning) note(version.warning)
   const hw = hookWarning(o.projectDir, ROOT)
   if (hw) note(hw)
   for (const w of await checkoutWarnings(o.projectDir)) note(w)
+  // The start's warnings go to logs/ before the roles start, so they are kept even if a role fails (C85)
+  await recordStart({
+    projectDir: o.projectDir,
+    roles,
+    mailboxes: roles.map((r) => defaultMailboxName(o.projectDir, r)),
+    claudeVersion: cli.output,
+    check: version,
+    warnings: notes,
+  })
 
   // --- build (the shim is started from dist/)
   if (!o.noBuild && distIsStale()) {

@@ -38,15 +38,28 @@ export function spawnArgs(cmd: Command, args: string[]): { file: string; args: s
   return { file: [cmd.file, ...args].map((a) => quoteForPlatform(a, 'win32')).join(' '), args: [], shell: true }
 }
 
-// Run `claude --version`. Returns null if it passes, else the head of its output.
-// NVM blocking claude.cmd (NVM4306) shows up here too. The interactive claude's output is not redirected, so the reason is taken here
-export function testClaudeCli(cmd = claudeCommand()): string | null {
+export interface ClaudeCheck {
+  // The head of the output when claude does not run, else null
+  problem: string | null
+  // The first line of `claude --version` when it runs (the version), else null
+  output: string | null
+}
+
+// Run `claude --version`. NVM blocking claude.cmd (NVM4306) shows up as a problem too. The interactive claude's output
+// is not redirected, so the reason is taken here
+export function checkClaudeCli(cmd = claudeCommand()): ClaudeCheck {
   const s = spawnArgs(cmd, ['--version'])
   const r = spawnSync(s.file, s.args, { shell: s.shell, encoding: 'utf8', timeout: 30_000, windowsHide: true })
-  if (r.error) return `cannot start claude: ${r.error.message}`
-  if (r.status === 0) return null
+  if (r.error) return { problem: `cannot start claude: ${r.error.message}`, output: null }
+  const first = (r.stdout ?? '').split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? null
+  if (r.status === 0) return { problem: null, output: first }
   const lines = `${r.stdout ?? ''}\n${r.stderr ?? ''}`.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(0, 3)
-  return lines.length ? lines.join(' / ') : `claude --version ended with exit code ${r.status}`
+  return { problem: lines.length ? lines.join(' / ') : `claude --version ended with exit code ${r.status}`, output: null }
+}
+
+// Null if claude runs, else the reason (see checkClaudeCli)
+export function testClaudeCli(cmd = claudeCommand()): string | null {
+  return checkClaudeCli(cmd).problem
 }
 
 // The Hub's hook settings for a project, per event (C57, C69). Returns a warning, or null if every event is set.

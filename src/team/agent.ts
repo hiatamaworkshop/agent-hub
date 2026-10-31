@@ -6,8 +6,9 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { defaultMailboxName } from '../shared/types.js'
-import { checkoutWarnings, claudeCommand, hookWarning, spawnArgs, startStatusPath, testClaudeCli } from './checks.js'
+import { checkClaudeCli, checkoutWarnings, claudeCommand, hookWarning, spawnArgs, startStatusPath, testClaudeCli } from './checks.js'
 import { envSetting, hubRolesFile, readRoleNames, ROOT } from './env.js'
+import { checkClaudeVersion, recordStart } from './startlog.js'
 import { waitForEnter } from './prompt.js'
 
 export interface AgentOptions {
@@ -71,13 +72,21 @@ export async function runAgent(o: AgentOptions): Promise<number> {
     return fail(`Could not prepare to start claude: ${e instanceof Error ? e.message : String(e)}`)
   }
 
-  const warning = hookWarning(o.projectDir, ROOT)
-  if (warning) console.warn(`WARNING: ${warning}`)
-  // Only when started on its own; `team` has already checked (C58)
-  if (!o.fromTeam) for (const w of await checkoutWarnings(o.projectDir)) console.warn(`WARNING: ${w}`)
+  const cmd = claudeCommand()
+  const notes: string[] = []
+  const hw = hookWarning(o.projectDir, ROOT)
+  if (hw) notes.push(hw)
+  // Only when started on its own; `team` has already checked and recorded them (C58, C85)
+  if (!o.fromTeam) {
+    const cli = checkClaudeCli(cmd)
+    const version = checkClaudeVersion(cli.output)
+    if (version.warning) notes.push(version.warning)
+    notes.push(...await checkoutWarnings(o.projectDir))
+    await recordStart({ projectDir: o.projectDir, roles: [o.role], mailboxes: [mailbox], claudeVersion: cli.output, check: version, warnings: notes })
+  }
+  for (const w of notes) console.warn(`WARNING: ${w}`)
 
   console.log(`project: ${o.projectDir} / Mailbox: ${mailbox}`)
-  const cmd = claudeCommand()
   const s = spawnArgs(cmd, claudeArgs(o, ROOT, mcpConfig, filesDir))
   // The HTTP hooks expand Authorization from HUB_TOKEN and do not read .env, so pass it. HUB_MAILBOX goes into the hooks' X-Hub-Mailbox header
   const env = { ...process.env, HUB_ROLE: o.role, HUB_MAILBOX: mailbox, HUB_TOKEN: envSetting('HUB_TOKEN', '') }

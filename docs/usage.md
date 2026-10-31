@@ -281,6 +281,19 @@ When following a running team through the API (the same when an agent watches it
 - Messages sent from curl show as `user:cli`, distinguished from those from the browser (`browser`).
 - The compose Hub runs from the built image. After changing the Hub's code, `docker compose up -d --build` is needed (`restart` alone keeps the old image). After rebuilding, shims attach again by themselves.
 
+## Start warnings (logs/start-warnings.jsonl)
+
+When `npm run team`, or `agent` started on its own, has warnings (a Claude Code newer than the last verified one, a stale checkout, hooks missing), one JSON line is appended to `logs/start-warnings.jsonl` in agent-hub. The file is gitignored. A start with no warnings writes nothing, so a missing line means no warning was raised. A start by hand (Claude Code run directly) is not covered.
+
+Each line has `time` (UTC, ISO), `project` (the target folder), `head` (its HEAD, `null` if it is not a git repository), `roles` and `mailboxes`, `claudeVersion` (the first line of `claude --version`), `lastVerified` and `verifiedSection` (the highest Claude Code version named in the headings of design.md §6.1, and its section; `verifiedNote` says why it is unknown), and `warnings` (the texts shown at the start).
+
+When something breaks, read it against the history:
+1. Take the time of the breakage and find the last line before it: `Get-Content logs\start-warnings.jsonl -Tail 5` (PowerShell). Its `time` is UTC.
+2. Check the project at `head`: `git -C <project> log --oneline <head>..HEAD` lists the commits made after that start, and `git -C <project> show --stat <head>` shows what the start was on.
+3. Check `claudeVersion` against `lastVerified`. If the version was newer, that line's warning is the first thing to look at; the behaviour is outside the verified envelope (design.md §1.2, §6.1).
+
+What is not in the file, and where to look instead: changes and decisions are in git and the roadmap; rejected proposals are `[-] C<n>` lines in the roadmap (design.md §3.16).
+
 ## Development
 
 ```powershell

@@ -19,8 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C85
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -341,6 +339,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C85 Record a start's warnings locally, including a Claude Code outside the verified envelope (2026-10-31, requested by the user)
+  - `src/team/startlog.ts`: `team` and `agent` started on its own append one JSONL line to `logs/start-warnings.jsonl` when the start has warnings (`team` writes one line for its roles; `agent` started by `team` writes none). It holds the time, project, HEAD, roles and Mailboxes, the `claude --version` output (`checkClaudeCli` in `checks.ts` now returns it), the last verified version with its §6.1 section, and the warning texts. A failed write prints one warning and the start goes on. The Hub is not involved.
+  - The last verified version is the highest Claude Code version named after "Claude Code" in the headings of design.md §6.1 (currently 2.1.310, §6.1r; `6.2` and the Docker version in §6.1l are not counted). A newer `claude --version` is a warning; the start is not stopped.
+  - usage.md "Start warnings" says where the file is and how to read it against `git log`. design.md §3.14 says what is recorded and what is not, and that sessions started by hand are not covered.
+  - Checked: `npm test` 397 pass (new `src/team/startlog.test.ts`: version parsing and comparison; the §6.1 heading parse on a fixture, which excludes a version after `;` and a version in a body line; the newer-version warning and its absence; the real design.md; the line format and one line per append; a failed write returned, not thrown; no line without warnings); `npm run docs:check` no errors (29 items). The C58 warnings and the hook warning are written into the same line.
+  - Not checked: a real `npm run team` or `agent` start writing the line (not run here: it opens tabs and starts claude). The newer-version warning on a real newer claude; the test uses a fixture version. Sessions started by hand are not covered, by design.
 - [x] C80 Write down the working conventions agent-hub stands for (2026-10-31, requested by the user)
   - design.md §1.2 (new, after §1.1): the thesis, the input envelope, trust on evidence, sorting conventions by what they do, and "what is not written in the repository did not happen". A table lists each convention with where it is already enforced, or "not enforced yet". Not enforced yet: publishing and deleting data (no rule in the repository), running the affected tests while working (C84, rejected), a "direction first" reply at the start of work (no rule; §6.1n is a correction that arrived mid-work), an incident becoming a new verification angle (no step does it), and sycophancy (C82, proposed).
   - CLAUDE.md's document map lists §1.2.
@@ -615,20 +619,6 @@ Status: proposed
 
 Raised 2026-10-30 in an outside discussion (see C80). Borrowed from the Apache rule that a -1 needs a reason: a finding or objection names the input or state that breaks (an angle at the edge of the envelope, C80) and, where possible, an alternative. Against long lists of weak findings. Related: C45 (reviewer conventions), C47.
 Discussed 2026-10-30: `tools/dev/roles/reviewer.md` already asks each finding for `checked against:` (the source of truth it disagrees with), not for what breaks; the change would add `breaks when:`. A finding without one is kept as a NOTE (§3.11's two levels), not dropped: a higher cost of objecting would otherwise mean fewer objections, that is, more sycophancy. Claude Code's own code review asks each finding for a failure scenario (concrete inputs or state → wrong result).
-
-### C85. Record a start's warnings locally, including a Claude Code outside the verified envelope
-
-Raised 2026-10-30 in an outside discussion (see C80); decided the same day by the user, on C80's thesis. A warning that would be ignored neither stops a start nor nags: it becomes a line in a local record, matched against `git log` by time and HEAD when something breaks later. design.md §6.1 is the envelope: the highest Claude Code version named in its headings (2.1.310 today; 2.1.301 to 2.1.314 came out in 14 days) is the last verified one. Recording it in §6.1 widens the envelope.
-- Writer: the team starter (`npm run team`, start-agent). It already runs `claude --version` before starting (`testClaudeCli`; the output is dropped on success) and collects C58's warnings, which today only reach the console. The Hub is not involved.
-- Recorded: only what git does not keep, i.e. the environment and the warnings shown at a start. Not recorded: changes and decisions (git, the ledger's `[x]` / `[-]` lines, §9), rejected proposals (`[-] C<n>`), review findings that were not adopted (an agent would be writing about itself; revisit after C82).
-- Dropped from the first proposal: marking §6.1 records that depend on one another for re-verification.
-
-#### Done when
-- [ ] `npm run team` and start-agent append one JSONL line to a local file under agent-hub's `logs/` (gitignored) when a start has warnings. The Hub is not involved
-- [ ] The line has the time, project, HEAD sha, role / Mailbox, the `claude --version` output, the last verified version with its design.md §6.1 section, and the warning texts (C58's and this item's)
-- [ ] A Claude Code version newer than the highest version named in design.md §6.1 headings is a warning. The start is not stopped
-- [ ] usage.md says where the file is and how to read it against `git log` when something breaks. design.md says what is recorded and what is not (changes and decisions are left to git), and that sessions started by hand are not covered
-- [ ] Unit tests for the version comparison and the line format
 
 ### C86. A reply to a Message the sender never received
 Status: proposed

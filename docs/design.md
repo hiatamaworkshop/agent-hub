@@ -39,7 +39,7 @@ If practicality were the only goal, adding a UI to something existing (mcp_agent
 
 The working conventions that agent-hub stands for, and where each one is enforced. Where a convention has no check yet, the table says so.
 
-**Thesis** (agreed with the user, 2026-10-30). The question is not whether a human or an AI decides, but how the system keeps moving forward. The history of development is kept in the repository (git, the ledger's closed lines, §6, §9), not in the Hub. Approvals and warnings that would become formalities, or be ignored, do not stop the flow. They are recorded outside it, with the time and a pointer back, and only for what git does not keep. A later problem is first matched against that record by its timing. C85 is the first planned case; it is not built yet.
+**Thesis** (agreed with the user, 2026-10-30). The question is not whether a human or an AI decides, but how the system keeps moving forward. The history of development is kept in the repository (git, the ledger's closed lines, §6, §9), not in the Hub. Approvals and warnings that would become formalities, or be ignored, do not stop the flow. They are recorded outside it, with the time and a pointer back, and only for what git does not keep. A later problem is first matched against that record by its timing. C85 is the first case: its record is described in §3.14.
 The measure is not "less human attention per accepted change": that would count removing the human's decision points (§1.1) as progress.
 
 **Input envelope.** A guarantee means something only together with the input it covers ("this behaviour for inputs in this range"). Widen the envelope when a case is verified, state its boundary, and do not let input outside it pass unrecorded. Already in use: §6 entries name the version, OS and model they were observed with (§6.1c, §6.1v); §3.11 asks for coverage to be stated honestly ("0 waiting for confirmation" covers only work that went through the Hub); C58 warns when a checkout is stale before a start.
@@ -535,6 +535,12 @@ Open questions:
 - Deleting a Mailbox (§9-3) is as before.
 **Compacting the log**: deleting appends a deletion line to the JSONL. When the automatic cleanup deleted one or more, the file is replaced by one containing only the current state (written to a temporary file and renamed). Manual deletions are compacted at the next cleanup (within an hour, or at the next start).
 The compacted file's head records the last `seq`, so seq never rolls back (rolling back would misalign the shim's `after` and cursors; the known issue "the shim's seq rollback" in the roadmap). The same line carries `answered`, and closing requests is not re-derived from Messages up to that seq (the closed ones are written on `replied` lines; C28, protocol.md §2). The seq at the deletion of deleted Mailboxes, the seq at subscription, and the seq at which a role was taken are kept too.
+
+**Start warnings (C85, 2026-10-31)**: a record kept outside the Hub. `npm run team`, and `agent` started on its own, append one JSONL line to `logs/start-warnings.jsonl` (gitignored) when the start has warnings. The Hub is not involved, and a failed write prints one warning without stopping the start.
+- **Recorded**: the time, the project, HEAD of the project, the roles and Mailboxes, the `claude --version` output, the highest Claude Code version named in the headings of §6.1 with its section (or why none is known), and the warning texts. A Claude Code newer than that version is a warning, and the start goes on. This is the input envelope of §1.2 made visible: a version outside it is recorded, not blocked.
+- **Not recorded**: changes and decisions (git, the ledger's `[x]` / `[-]` lines, §9), rejected proposals, and review findings that were not adopted. An agent writing about its own unadopted findings would be knowledge in a second place.
+- **Not covered**: sessions started by hand (Claude Code run directly, without `team` or `agent`), since nothing runs these checks there. `agent` started by `team` does not write its own line; `team`'s line covers it.
+- How to read it against the history: usage.md ("Start warnings").
 
 ### 3.15 Showing the backlog, and requesting work from roadmap items (concept 2026-10-18; implemented in C6, C8, C26, C37, C42)
 
