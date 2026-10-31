@@ -19,8 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C96
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -341,6 +339,14 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C96 Who files items, and where a reviewer's findings go (2026-10-31, decided by the user)
+  - `docs/design.md` §3.15 (the new block "Who files items, and where a reviewer's findings go"): the planning session (the human's session with Claude where the project is discussed; not a Hub role) is the only place that files items, changes done-when wording and rejects items; progress is written by the deployer with the change; the three kinds of reviewer findings (`FINDINGS:` fixed in the request, `NOTES:` raised with the human, `OUT OF SCOPE:` candidates only) and where each goes. No section numbers changed, so the map in CLAUDE.md only gained a pointer in its §3.15 line.
+  - `CLAUDE.md`: the map's §3.15 line, and "Updating the docs" (who files items; approved wording is written by the planning session; the deployer writes progress only).
+  - `tools/dev/roles/reviewer.md`: `OUT OF SCOPE:` in the reply format, with the three kinds explained; a commitment that the reviewer does not judge whether a candidate becomes an item.
+  - `tools/dev/roles/leader.md`: `OUT OF SCOPE:` goes to the human as candidates (`default: not filed`), never to the deployer; approved `PROPOSED CONDITIONS:` are returned in the report for the planning session, not sent to the deployer; a decided item is reviewed (`TARGET` = its commit range) before it is reported done, and a missing reviewer is written in `NOT VERIFIED`; filing and wording are not asked of the deployer.
+  - `tools/dev/roles/deployer.md`: records progress only; a request to file or reword is not done and the planning session is named under `NOTES:`.
+  - `docs/usage.md` (teams in detail): describes the `OUT OF SCOPE:` lines and where filing happens.
+  - Checked: `npm test` 412 pass, 0 fail; `npm run docs:check` 29 items, 0 errors, 0 warnings. Each required phrase was checked by grep in the files named above. Not checked: a real team run, so the role changes are read, not exercised (a reviewer reply with an `OUT OF SCOPE:` line has not been seen by a leader yet).
 - [x] C95 Show an opened map chip below the map, not inside its node (2026-10-31, decided by the user)
   - `public/index.html`: the open chip is one key (`mapOpenKey`, with `mapOpenInfo` kept after the edge closes), not a set. A chip keeps only the chip and gets an `open` outline. `mapPaneOf` renders the pane below the map (after the canvas, so the canvas and the nodes do not change size): seq, item, sender and receiver; the Message (`buildMsgBox`) or Event (`eventBody`) body with a height cap and its own scroll; a × that empties it. Clicking the same chip again also empties it.
   - The pane survives redraws (it is rebuilt from the model each time, and the C78 deferred redraw applies). When the edge is no longer open it says `Closed:`; when the receiver is hidden by the project or Mailbox filter it says so. The C92 notes (`not on the Hub`, `could not load`, `Loading…`) now appear in the pane.
@@ -662,22 +668,6 @@ Status: proposed
 
 Found 2026-10-31 in a review of C78. The map's chips come from `backlog.outgoing.to[].seqs`, and `outgoing` counts only what a Mailbox sent (`from.type === 'mailbox'` in `src/hub/store.ts`). A request from the human is not in anyone's `outgoing`, so the most common stop, the human's request to a `leader` that is Stopped, has no chip: the leader's card state shows it, but it cannot be expanded or forwarded from the map. The receiver's `backlog.awaitingReply` and `unread` have only a count and the oldest seq, which is not enough for one chip per request (the reason C78 added `seqs`).
 To decide: where the seqs come from (`seqs` on the receiver's `awaitingReply` and `unread`, or an `outgoing` for the human across its user ids `browser` / `cli`), and how the chip is drawn (an edge from the human node, which runs along the role order, unlike a Mailbox's request to the human).
-
-### C96. Who files items, and where a reviewer's findings go
-
-Raised 2026-10-31 by the user: the reviewer is under-used, and the roles do not say which of its findings become items or who writes the ledger. Today `reviewer.md` has no place for what it sees outside the target (it lands in `FINDINGS:` or `NOTES:`), `leader.md` says how to ask for a review but not when, and approved `PROPOSED CONDITIONS:` are written into the roadmap by the deployer.
-Decided 2026-10-31 by the user, after looking at it whole:
-- A finding is not an item by nature. The ledger holds work that outlives the request. A finding inside the target with a breaks-when is fixed within the request (reviewer → leader checks it → deployer), as now. One inside the target that needs a judgment goes to the human as `NEEDS DECISION` within the request. One outside the target is only reported as a candidate.
-- Writing the ledger is two acts. Filing and changing promises (new items, done-when wording, rejections) decide direction, so only the session where the human and Claude discuss the project does it: the one closest to the project's thinking, not a Hub role. The reviewer is kept away from the conversation by design (independent eyes, farthest from the thinking), and the leader works per request and may be disposable (design.md §3.13). Recording progress (checking conditions, closing records, removing blocked lines) stays with the deployer in the same commit as the change.
-- Approved done-when wording also moves to the planning session, even though a request then waits for the human to come back there. Keeping "approved lines only, by the deployer" was not chosen.
-- The planning session gets a name in design.md so the role files can point at it.
-
-#### Done when
-- [ ] design.md §3.15 names the planning session (the human's session with Claude where the project is discussed; not a Hub role) and states the split: filing, done-when wording and rejections are written there only; progress records are written by the deployer with the change. It also states the three kinds of reviewer findings above and where each goes. The document map in CLAUDE.md is updated if section numbers change, and the CLAUDE.md "Updating the docs" rules match
-- [ ] `tools/dev/roles/reviewer.md` adds an `OUT OF SCOPE:` section to the reply format, for what is seen outside the target, written as a candidate (what, where, checked against), not as a fix; `-` when none. Its "Commitments" say the reviewer does not judge whether a candidate becomes an item
-- [ ] `tools/dev/roles/leader.md`: `OUT OF SCOPE:` lines are never sent to the deployer and go to the human in the report as candidates; approved `PROPOSED CONDITIONS:` are not sent to the deployer either, but returned in the report for the planning session to write; and a request for a decided item is sent to the reviewer (`TARGET` = the commit range) before the leader reports the item done, when a reviewer is connected (if none is, the report says so in `NOT VERIFIED`)
-- [ ] `tools/dev/roles/deployer.md` (and leader.md's roadmap section) say the deployer records progress only and does not file items or change done-when wording, even when asked through a request; a request asking for it is answered by naming the planning session
-- [ ] docs/usage.md (teams in detail) describes the reviewer's `OUT OF SCOPE:` lines and where filing happens; `npm test` and `npm run docs:check` pass
 
 ### C94. A settings button in the page header
 Status: proposed

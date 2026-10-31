@@ -56,6 +56,7 @@ Use the "document map" in the working folder's CLAUDE.md as the index (if there 
 - When `GOAL` starts with `C<n>`, pass `item: "C<n>"` to `post_message` for that request, so the Hub's Messages carry the item. A reply to a Message that has an item inherits it, so replies need no `item`.
 - Put the roadmap in SCOPE, and put in DONE WHEN both checking off the done-when conditions and, when all are checked, the cleanup (delete the section, mark the phase line `[x] C<n>` with a record of what was checked, and remove `blocked(after C<n>)` lines that waited for this item).
 - When checking, use `git diff` to see whether the wording of the done-when conditions changed after the request. If it did, that is a change of promise: tell the user and ask for a decision.
+- Filing a new item, changing done-when wording and rejecting an item are written only in the planning session (the human's session with Claude where the project is discussed; design.md §3.15). Do not ask the deployer to do them, even when the user asks in a request; say in the report that they belong to the planning session. The deployer may still record progress (checked conditions, the record, the cleanup) with the change.
 - The rules for writing items live at the top of that project's roadmap (for agent-hub, the reasons are in design.md §3.15).
 
 ## Requests to the reviewer
@@ -68,16 +69,18 @@ QUESTION: <what you want judged, in one line>
 ```
 
 - Send it as kind=request, to=role:reviewer. What to read and what to return is up to reviewer.md; do not add it to the body.
+- **When to ask:** before you report a decided item (`C<n>`) as done, send a review of its change with `TARGET` = the commit range of that change, when a reviewer is connected. Wait for the reply and check it before the report. The `TARGET` is a commit range, so the change must be committed first; if it is not, say so under `NEEDS ACTION` (commit, then the review is requested). If no reviewer is connected (post_message returns an `unattached` warning for it), the report says in `NOT VERIFIED` that the item had no review.
 - Before putting a finding in your report, check the location of its source of truth yourself. If it needs fixing, ask the deployer (the reviewer does not fix).
 - The reviewer's `FINDINGS:` lines each name a `breaks when:`. Check that input or state yourself before you pass a finding on. A finding you pass on goes to the deployer as a fix, with its `breaks when:` as a case to handle.
 - `NOTES:` lines (a disagreement with no breaks-when) are never sent to the deployer. Put them in your report to the user under `NOT VERIFIED`, each starting with `reviewer note:`; if one needs the user's decision, put it under `NEEDS DECISION` instead.
+- `OUT OF SCOPE:` lines (seen outside the target) are never sent to the deployer either. Put each one in your report to the user under `NEEDS DECISION` as a candidate, numbered, with what it is, where it is, and `default: not filed`. The user decides in the planning session whether it becomes an item (design.md §3.15).
 
 ## Proposed done-when conditions from the reviewer
 
-When the reviewer's reply has proposals under `PROPOSED CONDITIONS:`, do not pass them to the deployer. Changing the wording of done-when conditions is a change of promise and needs the user's approval (CLAUDE.md, "Updating the docs").
+When the reviewer's reply has proposals under `PROPOSED CONDITIONS:`, do not pass them to the deployer. Changing the wording of done-when conditions is a change of promise and needs the user's approval (CLAUDE.md, "Updating the docs"). Writing it is the planning session's job, not the deployer's (design.md §3.15, C96).
 - Put them in the `NEEDS DECISION` of your reply to the user, numbered, one per point. Quote the old and new wording and add `default: no change`.
-- Only for the approved ones, send the deployer a request to "change only the approved lines". Have the date of approval written in the item's body.
-- Do not include unapproved ones in the next request either. If the next instruction arrives without an answer, do not take the default; ask again (the exception above). The default is "no change".
+- For the ones the user approves, do not send them to the deployer. Return them in your report as old / new lines under `NEEDS ACTION` ("write in the planning session: …"), with the date of approval, for the planning session to write. The request that depends on them waits until the planning session has written them.
+- Do not include unapproved ones anywhere else. If the next instruction arrives without an answer, do not take the default; ask again (the exception above). The default is "no change".
 
 ## When the other side is not connected
 

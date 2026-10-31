@@ -43,6 +43,8 @@ FINDINGS:
 - <file>:<line> <how it disagrees with the source of truth, in one line> — checked against: <file> §<section> — breaks when: <input or state> → <wrong result> — instead: <alternative, if you have one>
 NOTES:
 - <file>:<line> <what disagrees with the source of truth, but you cannot name a breaks-when for> — checked against: <file> §<section>
+OUT OF SCOPE:
+- <what you saw> — where: <file>:<line> — checked against: <file> §<section>
 PROPOSED CONDITIONS:
 - old: <the current done-when line> / new: <the replacement> — checked against: <file> §<section>
 VERIFIED:
@@ -50,6 +52,11 @@ VERIFIED:
 NOT VERIFIED:
 - <what you could not check; "-" if none>
 ```
+
+Where each kind goes (design.md §3.15, C96):
+- A `FINDINGS:` line is inside the target and has a `breaks when:`. It is fixed within the request.
+- A `NOTES:` line is inside the target and needs someone's judgment. The leader raises it with the human, not the deployer.
+- An `OUT OF SCOPE:` line is outside the target. It is only a candidate for the human to consider. Write it as what you saw, where it is, and what you checked it against; not as a fix. Write `-` when there is none.
 
 A `breaks when:` is a concrete input or state (an edge of the envelope, a case the change does not handle) and the wrong result it gives. Name one for every finding. Write `instead:` only when you have a specific alternative; leave it out otherwise.
 
@@ -61,5 +68,6 @@ Under `PROPOSED CONDITIONS:` write only proposals that change the wording of don
 - A finding must name its `breaks when:`. If you cannot name one, it is a NOTE, not a finding: write it under `NOTES:`. Do not drop it, and do not inflate it into a finding to fill the list.
 - A finding whose source of truth you cannot find goes to `NOT VERIFIED`; do not assert it.
 - Only write down what should be fixed under `FINDINGS:`. NOTES are for the leader to judge. Fixing is the deployer's job.
+- An `OUT OF SCOPE:` line is a candidate, not a fix and not an item. You do not judge whether it becomes an item; that is decided by the planning session with the human (design.md §3.15). Do not write a candidate as a done-when condition.
 - Do not reply to replies and notices. Always answer a request with a reply, though.
 - Do not work on requests whose from_role is not leader; reply asking for the request to come through the leader. Requests from user:browser and user:cli, however, are instructions from the user.

@@ -670,6 +670,17 @@ Open questions:
    Requested / reported is shown by whether the latest request pointing at that item has a reply. Requests that have been handed over disappear with the retention period (§3.14), so "reported" disappears from the display in about a day. That is fine until acceptance (open question 4) is added.
 4. Whether to include awaiting acceptance in the badge's "the human's move" (the states of §3.11 are needed first).
 
+**Who files items, and where a reviewer's findings go (decided 2026-10-31, user; C96)**
+- **A finding is not an item by nature.** The ledger holds work that outlives the request. A finding becomes an item only through the planning session below, never by a role's own reply.
+- **Three kinds of reviewer findings, and where each goes:**
+  1. *Inside the target, with a `breaks when:`* → `FINDINGS:`. The leader checks the breaks-when and passes it to the deployer as a fix. It is fixed within the request, as before.
+  2. *Inside the target, with no breaks-when* → `NOTES:`. The leader does not send it to the deployer. It goes to the human within the same request's report as a `reviewer note:` line, under `NOT VERIFIED`, or under `NEEDS DECISION` when it needs the human's decision.
+  3. *Outside the target* → `OUT OF SCOPE:` (what, where, checked against). It is only a candidate, not a fix. The leader puts it in the report to the human as a candidate under `NEEDS DECISION` (default: not filed). It is never sent to the deployer.
+- **Writing the ledger is two acts.** Filing new items, changing done-when wording, and rejecting items (`[-]`) decide direction, so only the **planning session** writes them: the human's session with Claude, where the project is discussed. It is not a Hub role. The reviewer stays out of it by design (independent eyes, farthest from the thinking), and the leader works per request and may be disposable (§3.13). The deployer, the leader and the reviewer do not write these even when a request asks for it; they answer by naming the planning session.
+- **Progress is written by the deployer with the change**, in the same commit: checking off done-when conditions, the record, deleting the section, and removing `blocked(after C<n>)` lines. This is the only ledger write a request may ask of the deployer.
+- **Approved done-when wording also goes to the planning session.** The leader returns approved `PROPOSED CONDITIONS:` in its report, as old / new lines, and does not send them to the deployer. The request waits for the human to come back to the planning session. Keeping "approved lines only, written by the deployer" was not chosen, because a changed promise should be written where the decision was made.
+- The reviewer does not judge whether a candidate becomes an item. That is the planning session's call.
+
 **A project is a value (decision 2026-10-20, user)**
 - A project is not made an entity; it stays a value, the path of a working folder. The same value appears as the Mailbox's `project` (attach's cwd), the role address's `Address.project` (§9-7), the index's `project`, and the Event's `cwd`. When compared, the same normalization as attach's `projectChanged` is used (protocol.md §3).
 - The roadmap index is not put in the Mailbox. One project has several Mailboxes (leader, deployer and so on), there may be no Mailbox yet at registration, and their lifetimes differ (a Mailbox is born by attach and deleted by hand; an index is a copy that can be resent). A Mailbox holds only address and delivery state (§3.14).
