@@ -19,8 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C93
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -341,6 +339,9 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C93 A light / dark / follow-OS theme toggle in the page header (2026-10-31, decided by the user)
+  - `public/index.html`: a `Theme:` button after Map cycles auto → light → dark, kept in `localStorage` (`agent-hub.theme`, in `try`). A `<head>` script sets `data-theme` before the first paint; `applyTheme` sets it on a press or an OS change. The dark palette is one `:root[data-theme="dark"]` block (with `color-scheme`); the light palette is `:root`. The tab icon redraws in `applyTheme`, so its colors follow the chosen theme.
+  - Checked: `npm test` 398 pass; `npm run ui:check` 127 pass, 0 failures (new scenes: the three states in order with titles; light on a dark OS and dark on a light OS, background and `--st-you`; the choice across a reload; follow tracking an OS change while open; the tab badge's pixel color per choice; `localStorage` blocked, page still works); `npm run docs:check` 32 items, no errors, no warnings. Not checked: the button and palettes looked at by eye in a real browser tab, and a Chrome with a real OS theme change (the OS was emulated through CDP).
 - [x] C78 A map in the page showing where messages are stopped (2026-10-31, decided by the user)
   - Hub: `backlog.outgoing.to[]` entries carry `seqs` (oldest first, counted by the same rule as `count`; protocol.md §3). `src/hub/mailbox.test.ts` checks `seqs` against `count`, including a request closed by the other party's reply that was never handed over; `store.test.ts`'s reference count includes `seqs`.
   - `teamModel()` gains `edges`: one per open request and receiving Mailbox (or `#human`), with seq, item (`meta.item.id`) and time, plus the human's waiting Events (not draggable). A request's item and time come from the Message in the page, or from a fetch by seq (`ensureRequests`).
@@ -657,19 +658,6 @@ Found 2026-10-31 in the same review of C78 (`a091714`). None breaks the done-whe
 - A Message whose fetch by seq failed once goes into `mapMissing` and is not fetched again until the page is reloaded (`ensureRequests`), so a passing network error leaves "not on the Hub" on the chip.
 - With the "Forward to…" select focused, each arrow key fires `change` (Chrome on a closed select) and fills the Forward draft again.
 To decide: which to fix, and for the arrows, how a request to the human is drawn (no back-arrow style, or the human placed outside the role columns).
-
-### C93. A light / dark toggle in the page header
-
-Decided 2026-10-31 by the user. Today the page follows the OS only (`@media (prefers-color-scheme: dark)` in `public/index.html`). The header's right side holds Health check and Map (C78, design.md §3.2); the toggle joins them there, and C94's settings button is to be the rightmost when it comes.
-Details chosen when filing, not yet confirmed by the user: three states cycled by one button (follow the OS → light → dark → follow the OS), so the OS default can be reached again; the choice is kept per browser in `localStorage`, as the other page preferences are (it is a viewer's convenience, not Hub state, design.md §3.14).
-
-#### Done when
-- [ ] A button at the right of the header, after Map, cycles the theme through follow the OS, light and dark. Its label or icon shows the current state, and its title says what the next press does
-- [ ] Choosing light shows the light palette even on a dark OS, and dark the dark palette on a light OS; follow the OS behaves as today, including a change of the OS setting while the page is open. The dark palette is defined once and used for both the OS case and the chosen case
-- [ ] The choice survives a reload (`localStorage`, read in a `try`); without storage the page follows the OS
-- [ ] The tab icon (C70) and the other colors read from the CSS variables follow the chosen theme, not only the OS
-- [ ] `ui:check` adds scenes for: the three states in order, the palette under a chosen theme that differs from the emulated OS one, the choice kept across a reload, and the tab icon following the choice; the existing scenes are unchanged
-- [ ] docs/usage.md describes the toggle and design.md §3.2 the header's controls; `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
 ### C94. A settings button in the page header
 Status: proposed

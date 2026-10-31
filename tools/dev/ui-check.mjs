@@ -1090,6 +1090,130 @@ try {
   await sleep(1500)
   const dropped = parse(await clickIn(`(() => { const dt = new DataTransfer(); const n = document.querySelector('.mapnode[data-name="map.leader"]'); n.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt })); n.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })); return JSON.stringify({ renders: window.__renders, to: document.getElementById('to').value, info: document.getElementById('replyInfo').textContent, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length, connected: window.__chip.isConnected }) })()`))
   verify('チップを落とすと Forward の下書きができ、途中の描き直しは 1 回にまとまる (送らない) (C78)', dropped.renders === 1 && dropped.to === 'mailbox:map.leader' && /^Forwarding #\d+ unchanged/.test(dropped.info) && dropped.chips === chipsDrop + 1 && !dropped.connected, { dropped, chipsDrop })
+  // 配色 (C93): 選んだ配色と OS の設定の組を確かめる。OS の設定は Emulation で変え、選んだ配色は localStorage に覚える
+  const setOs = (dark) => cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: dark ? 'dark' : 'light' }] })
+  const goPage = async () => {
+    await cdp('Page.navigate', { url: `${HUB}/?token=${TOKEN}` })
+    await sleep(1500)
+  }
+  const themeOf = async () =>
+    JSON.parse(
+      await evaluate(`JSON.stringify({
+        theme: document.documentElement.dataset.theme,
+        label: $('themeToggle').textContent,
+        title: $('themeToggle').title,
+        bg: getComputedStyle(document.body).backgroundColor,
+        you: getComputedStyle(document.documentElement).getPropertyValue('--st-you').trim(),
+        stored: (() => { try { return localStorage.getItem('agent-hub.theme') } catch (e) { return 'ERR' } })(),
+      })`),
+    )
+  const pressTheme = async () => {
+    await evaluate("$('themeToggle').click()")
+    await sleep(300)
+    return themeOf()
+  }
+  const waitTheme = async (want) => {
+    for (let i = 0; i < 30; i++) {
+      if ((await themeOf()).theme === want) return true
+      await sleep(100)
+    }
+    return false
+  }
+  const DARK_BG = 'rgb(22, 22, 21)'
+  const LIGHT_BG = 'rgb(247, 247, 245)'
+  // タブの件数バッジの左の内側の画素 (--st-you の色)。絵が描き直されるまで待つ
+  const badgePixel = () =>
+    evaluate(`(async () => {
+      const im = new Image()
+      await new Promise((resolve, reject) => { im.onload = resolve; im.onerror = reject; im.src = document.querySelector('link[rel~=icon]').href })
+      const c = document.createElement('canvas')
+      c.width = c.height = 32
+      const g = c.getContext('2d')
+      g.drawImage(im, 0, 0)
+      return [...g.getImageData(6, 16, 1, 1).data.slice(0, 3)].join(',')
+    })()`)
+  const badgeIs = async (rgb) => {
+    for (let i = 0; i < 30; i++) {
+      try {
+        if ((await badgePixel()) === rgb) return true
+      } catch {}
+      await sleep(100)
+    }
+    return false
+  }
+  const LIGHT_YOU = '154,91,0' // --st-you の昼 (#9a5b00)
+  const DARK_YOU = '240,176,80' // --st-you の夜 (#f0b050)
+
+  await evaluate("try { localStorage.removeItem('agent-hub.theme') } catch (e) {}")
+  await setOs(true)
+  await goPage()
+  const t0 = await themeOf()
+  const seq = [await pressTheme(), await pressTheme(), await pressTheme()]
+  const labels = [t0, ...seq].map((t) => t.label)
+  verify(
+    '配色: 初めは follow the OS (OS が夜なら夜の色)。押すたびに follow → light → dark → follow と回り、ボタンの文字が今の状態を、title が次の動きを言う (C93)',
+    JSON.stringify(labels) === JSON.stringify(['Theme: auto', 'Theme: light', 'Theme: dark', 'Theme: auto']) &&
+      t0.theme === 'dark' && t0.bg === DARK_BG && t0.title === 'Follows the OS setting. Press for light.' &&
+      seq[0].title === 'Light. Press for dark.' && seq[1].title === 'Dark. Press to follow the OS setting again.' && seq[2].title === 'Follows the OS setting. Press for light.',
+    { labels, titles: [t0.title, ...seq.map((t) => t.title)] },
+  )
+  verify(
+    '配色: 夜の OS で昼を選ぶと昼の色 (背景と --st-you とも。夜の定義は使わない) (C93)',
+    seq[0].theme === 'light' && seq[0].bg === LIGHT_BG && seq[0].you === '#9a5b00',
+    seq[0],
+  )
+
+  // 選んだ配色は読み直しても残る。昼の OS で夜を選んでも夜の色 (昼と夜の両方の定義が要る)
+  await pressTheme() // follow → light
+  await goPage()
+  const reLight = await themeOf()
+  verify('配色: light を選んだまま読み直すと、ボタンも配色も light のまま (localStorage に残る) (C93)', reLight.label === 'Theme: light' && reLight.theme === 'light' && reLight.stored === 'light', reLight)
+  await pressTheme() // light → dark
+  await setOs(false)
+  await goPage()
+  const dark = await themeOf()
+  verify(
+    '配色: 昼の OS で夜を選ぶと夜の色 (背景と --st-you とも)。読み直しても残る (C93)',
+    dark.label === 'Theme: dark' && dark.theme === 'dark' && dark.bg === DARK_BG && dark.you === '#f0b050' && dark.stored === 'dark',
+    dark,
+  )
+
+  // follow は OS の変更に、開いたまま従う
+  await pressTheme() // dark → follow (OS は昼なので昼の色)
+  const followLight = await themeOf()
+  await setOs(true)
+  const liveDark = await waitTheme('dark')
+  await setOs(false)
+  const liveLight = await waitTheme('light')
+  verify(
+    '配色: follow は、開いたままの OS の変更に従う (昼 → 夜 → 昼) (C93)',
+    followLight.label === 'Theme: auto' && followLight.theme === 'light' && liveDark && liveLight,
+    { followLight, liveDark, liveLight },
+  )
+
+  // タブの絵は配色に従う (C70)。件数バッジ (人の番を 1 件) の色を画素で読む。OS は夜にして、follow と light を比べる
+  await setOs(true)
+  await evaluate('tabWaiting = 1; tabStopped = 0; tabUnread = 0; tabWorking = false; showTabUnread()')
+  const iconFollow = await badgeIs(DARK_YOU)
+  await pressTheme() // follow → light (OS は夜)
+  const iconLight = await badgeIs(LIGHT_YOU)
+  await pressTheme() // light → dark
+  const iconDark = await badgeIs(DARK_YOU)
+  verify('タブの絵: 件数バッジの色は配色に従う (follow は OS の夜の色、light は昼の色で夜の OS でも、dark は夜の色) (C70, C93)', iconFollow && iconLight && iconDark, { iconFollow, iconLight, iconDark })
+
+  // localStorage が使えないとき: 読み書きは try で囲まれ、OS の設定に従い、押しても壊れない
+  const blocked = await cdp('Page.addScriptToEvaluateOnNewDocument', { source: "Object.defineProperty(window, 'localStorage', { get() { throw new Error('blocked') } })" })
+  await setOs(true)
+  await goPage()
+  const noStore = await themeOf()
+  const noStorePressed = await pressTheme()
+  const cards = await evaluate("document.querySelectorAll('#mailboxes .mb').length")
+  await cdp('Page.removeScriptToEvaluateOnNewDocument', { identifier: blocked.identifier })
+  verify(
+    '配色: localStorage が使えないときは OS の設定に従い、押しても描画が壊れない (C93)',
+    noStore.stored === 'ERR' && noStore.theme === 'dark' && noStore.label === 'Theme: auto' && noStorePressed.theme === 'light' && noStorePressed.label === 'Theme: light' && cards > 0,
+    { noStore, noStorePressed, cards },
+  )
 } catch (e) {
   failed++
   console.error(`NG  ${e.message}`)

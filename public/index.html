@@ -4,8 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>agent-hub</title>
+<script>
+// 配色 (C93): 描く前に data-theme を入れる (選んだ配色、なければ OS の設定)。本体の applyTheme も同じ決まりで入れ直す
+(function () { var t = null; try { t = localStorage.getItem('agent-hub.theme') } catch (e) {} document.documentElement.dataset.theme = t === 'light' || t === 'dark' ? t : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' })()
+</script>
 <style>
   :root {
+    color-scheme: light;
     --bg: #f7f7f5; --panel: #ffffff; --fg: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc;
     --accent: #2f5fd0; --reply: #1f8a4c; --warn: #b3261e; --amber: #9a5b00;
     /* カードの 2 つの信号 (C71)。人の番 (Needs you・Stopped) は --st-you、作業中 (Working・Waiting on others) は --st-working、
@@ -15,13 +20,13 @@
     --p0: #2f5fd0; --p1: #b45309; --p2: #15803d; --p3: #7e22ce; --p4: #0f766e; --p5: #be185d; --p6: #854d0e; --p7: #475569; --pfg: #ffffff;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #161615; --panel: #1f1f1d; --fg: #ecece8; --muted: #9a9a93; --line: #34342f;
-      --accent: #7aa2ff; --reply: #5fcf8e; --warn: #ff8a80; --amber: #f0b050;
-      --st-you: #f0b050; --st-working: #7aa2ff;
-      --p0: #7aa2ff; --p1: #f0a050; --p2: #5fcf8e; --p3: #c4a1ff; --p4: #5fd0c4; --p5: #f489b8; --p6: #e0c060; --p7: #aab4c4; --pfg: #161615;
-    }
+  /* 夜の色はここだけ (C93)。OS が夜のときも、選んだ配色が夜のときも、:root に data-theme="dark" が付く (head の script と applyTheme が決める) */
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #161615; --panel: #1f1f1d; --fg: #ecece8; --muted: #9a9a93; --line: #34342f;
+    --accent: #7aa2ff; --reply: #5fcf8e; --warn: #ff8a80; --amber: #f0b050;
+    --st-you: #f0b050; --st-working: #7aa2ff;
+    --p0: #7aa2ff; --p1: #f0a050; --p2: #5fcf8e; --p3: #c4a1ff; --p4: #5fd0c4; --p5: #f489b8; --p6: #e0c060; --p7: #aab4c4; --pfg: #161615;
   }
   * { box-sizing: border-box; }
   /* 画面は固定し、スクロールはスレッド (#list) とサイドバー (aside) だけ */
@@ -112,6 +117,7 @@
   #map { flex: 1 1 0; min-height: 0; overflow: auto; }
   #mapToggle { font-size: 12px; padding: 1px 8px; line-height: 1.4; }
   #mapToggle[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  #themeToggle { font-size: 12px; padding: 1px 8px; line-height: 1.4; }
   .mapcanvas { position: relative; display: flex; gap: 40px; align-items: flex-start; padding: 12px 16px; min-width: max-content; }
   .mapcol { display: flex; flex-direction: column; gap: 8px; min-width: 200px; }
   .mapcolhead { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
@@ -266,7 +272,7 @@
 </style>
 </head>
 <body>
-<header><h1>agent-hub</h1><span id="conn" class="ng">Disconnected</span><button type="button" id="health" disabled title="Send one notice to each Mailbox in Stopped, no reply (all projects), naming its oldest request with no reply. Mailboxes in other states get nothing.">Health check (0)</button><button type="button" id="mapToggle" aria-pressed="false" title="Switch between the messages and a map of where each open request is waiting, by whose move it is (the same sessions as the cards, the same project filter)">Map</button></header>
+<header><h1>agent-hub</h1><span id="conn" class="ng">Disconnected</span><button type="button" id="health" disabled title="Send one notice to each Mailbox in Stopped, no reply (all projects), naming its oldest request with no reply. Mailboxes in other states get nothing.">Health check (0)</button><button type="button" id="mapToggle" aria-pressed="false" title="Switch between the messages and a map of where each open request is waiting, by whose move it is (the same sessions as the cards, the same project filter)">Map</button><button type="button" id="themeToggle" title="Follows the OS setting. Press for light.">Theme: auto</button></header>
 <div id="auth">
   <p>Not authenticated. Open the <code>http://127.0.0.1:&lt;port&gt;/?token=…</code> URL shown in the Hub's console when it started.</p>
 </div>
@@ -3095,12 +3101,34 @@ function showTabUnread() {
       : null)
   } catch {}
 }
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => showTabUnread())
+// 配色 (C93): 選んだ配色 (follow → light → dark → follow) を localStorage に覚える。follow は OS の設定に従い、OS が変わったら描き直す。
+// 夜の色は CSS の [data-theme="dark"] に 1 回だけ書いてあり、ここは data-theme を決めるだけ。タブの絵は CSS 変数の色で描くので、applyTheme の中で描き直す (C70)
+const THEME_KEY = 'agent-hub.theme'
+const THEME_NEXT = { follow: 'light', light: 'dark', dark: 'follow' }
+const THEME_LABEL = { follow: 'Theme: auto', light: 'Theme: light', dark: 'Theme: dark' }
+const THEME_TITLE = { follow: 'Follows the OS setting. Press for light.', light: 'Light. Press for dark.', dark: 'Dark. Press to follow the OS setting again.' }
+const OS_DARK = matchMedia('(prefers-color-scheme: dark)')
+let theme = 'follow'
+try { const v = localStorage.getItem(THEME_KEY); if (v === 'light' || v === 'dark') theme = v } catch {}
+function applyTheme() {
+  const dark = theme === 'dark' || (theme === 'follow' && OS_DARK.matches)
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+  const b = $('themeToggle')
+  b.textContent = THEME_LABEL[theme]
+  b.title = THEME_TITLE[theme]
+  showTabUnread()
+}
+$('themeToggle').onclick = () => {
+  theme = THEME_NEXT[theme]
+  try { localStorage.setItem(THEME_KEY, theme) } catch {}
+  applyTheme()
+}
+OS_DARK.addEventListener('change', () => applyTheme())
 function countTabUnread() { tabUnread++; showTabUnread() }
 function clearTabUnread() { if (tabUnread === 0) return; tabUnread = 0; showTabUnread() }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) clearTabUnread() })
 window.addEventListener('focus', clearTabUnread)
-showTabUnread()
+applyTheme()
 
 // Mailbox 一覧の取り直し。失敗しても止めず、少し待って数回まで試す (SSE が開き直したときは試し直す)。
 // 表示は #err に出し、成功したら消す (送信のエラーは消さない)

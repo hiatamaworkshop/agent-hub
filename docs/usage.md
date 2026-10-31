@@ -40,6 +40,12 @@ Each Mailbox card on the left shows, as one state and by the color of its frame,
 - While a **Forward to…** menu is open or a chip is being dragged, the map does not redraw for new data (the menu stays open and the drag is not interrupted). The map redraws once when the menu closes or the drag ends, with the latest data.
 - A chip whose Message is not in the page is loaded by itself when the map opens. If the Hub no longer has it, the chip says so.
 
+## Light and dark theme
+
+- The **Theme** button to the right of Map in the header cycles three states: `Theme: auto` (follows the OS setting, the default), `Theme: light`, `Theme: dark`, then back to auto (roadmap C93). The button's label shows the current state, and its title says what the next press does.
+- The choice is kept in this browser's `localStorage` (`agent-hub.theme`), so it survives a reload. Another browser or profile has its own. If storage is blocked, the page follows the OS and the button still works for the session.
+- In auto, a change of the OS setting while the page is open is followed at once. The tab's icon and the colors of the cards follow the chosen theme, not only the OS.
+
 ## Custom commands
 
 Under **Commands** in the browser you can name strings you use often. Example: name `cp`, text `commit and push`.
