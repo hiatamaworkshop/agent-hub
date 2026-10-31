@@ -697,3 +697,30 @@ Decided 2026-10-31 by the user: keep the position while the same chip stays open
 #### Done when
 - [ ] While the same chip stays open, a redraw (new data, and the deferred redraw of C78) keeps the pane body's scroll position; opening another chip starts at its top
 - [ ] `ui:check` adds a scene for each of the two, and the existing scenes are unchanged; `npm test`, `npm run ui:check` and `npm run docs:check` pass
+
+### C99. A Mailbox's reply is refused for a request it was handed (C86)
+Status: proposed
+
+Found 2026-10-31 in a review of `a646534..bb3415c` (C86 to C98), and reproduced with a probe against `Hub` and `Store`. C86's check (`checkReplyTarget` in `src/hub/hub.ts`) asks `Store.isRecipient`, which answers from the Mailbox's state now (role, `roleSince`, project, subscriptions), not from what was handed. A Mailbox that was handed a request gets `400 reply_not_received` when it replies after:
+- unsubscribing from the topic the request came by;
+- re-attaching under the same name with another role (`roleSince` moves);
+- re-attaching with another cwd, for a request sent to `role @ project`.
+
+Re-attaching with the same role still passes. The request then stays open, no Mailbox can close it by reply, and the hint (`oldestOpenRequestTo`, the same predicate) never names it. Only the human can close it.
+To decide: what "received" means for C86. Either handed (a recipient when it was delivered, which needs the recipients at send time kept on the Message or a history of role, subscription and project), or keep the current rule and say in protocol.md §3 that changing role, subscription or project gives up replies to earlier requests.
+
+### C100. The start result line (C88) says `started` for a role that did not run
+Status: proposed
+
+Found 2026-10-31 in the same review. `StartOutcome` (`src/team/startlog.ts`) defines `started` as "its tab is open and it attached (or, without a token, its tab is open)". Two paths record more than that:
+- `agent` on its own records `started` on the child's `spawn` event (`src/team/agent.ts`). On Windows with `claude.cmd`, `spawnArgs` runs it through the shell, so `spawn` is cmd.exe starting. A `claude.cmd` blocked by NVM (the C56 case) or a claude that exits at once is recorded as started, and no failed line follows.
+- `team` with the `print` opener and no `HUB_TOKEN` records every role as `started`, though it only printed the commands.
+
+Related, read but not reproduced: `runAgent` writes the result only from `fail()` and the spawn handlers, so a throw elsewhere leaves no result line (`runTeam` wraps its body in `try/finally`); and `team` checks connection twice (before the Hub is started, then per role), so the pre-start line's roles can differ from the result's `skipped`.
+To decide: what `started` means for `agent` on its own (attach seen on the Hub as `team` does, or the exit code written as a later line), and what the `print` opener without a token records (a separate `printed`, or nothing).
+
+### C101. The C78 scene "closing Forward to… draws once" in `ui:check` is flaky
+Status: proposed
+
+Seen 2026-10-31 running `npm run ui:check` with headless Chromium on Linux: the scene "Forward to… を閉じると、延ばした分を今のデータで 1 回だけ描く (C78)" in `tools/dev/ui-check.mjs` failed in 4 of 6 runs at `bb3415c` and 2 of 3 at `a646534`, each time with `{renders: 3, chips: chipsBefore + 1}`. The deferred redraw does happen, and two more renders come inside the 800 ms window. It fails before C92 and C95 too, so it is not their regression. Not measured on the Windows Chrome of the development machine. Likely cause, not measured: renders from `ensureRequests` completions or later SSE updates right after the deferred one. A flaky scene hides a real regression in the same place.
+To decide: whether the scene counts only the deferred redraw (the renders up to `flushMap`'s return), or the page stops the extra renders.
