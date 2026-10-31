@@ -19,6 +19,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C80
 - [ ] C85
 
 (Items with a status line are listed under "Items".)
@@ -607,9 +608,8 @@ Open: tree or graph layout, and how parallel requests to one party show (they cl
 - Dragging should not be the only way: keyboard and touch cannot drag, and `ui:check` (headless Chrome) tests drags poorly. A click alternative (a "Forward to…" menu filling the same draft) from the start.
 
 ### C80. Write down the working conventions agent-hub stands for
-Status: proposed
 
-Raised 2026-10-30 in an outside discussion (a session not on the team, comparing kanary relay, mcp_agent_mail and the CLI relays), whose remarks were filed as C80 to C85. Sorted with the user the same day: C85 decided; C81, C83 and C84 rejected (their usable parts are points below); C82 stays proposed.
+Raised 2026-10-30 in an outside discussion (a session not on the team, comparing kanary relay, mcp_agent_mail and the CLI relays), whose remarks were filed as C80 to C85. Sorted with the user the same day: C85 decided; C81, C83 and C84 rejected (their usable parts are points below); C82 stays proposed. Decided by the user 2026-10-31, to be taken before C85 and C82, which both point at it.
 The remark's framing: the target is not another communication tool but GitHub-centred OSS maintainer conventions with the human-made chaos removed. Points to write as one section of design.md (likely next to §1.1):
 - The thesis (agreed with the user, 2026-10-30): the question is not whether a human or an AI decides, but how the system keeps moving forward. The history of development is kept in the repository (git, the ledger's closed lines, §6, §9), not in the Hub. Approvals and warnings that would become formalities or be ignored do not stop the flow; they are recorded outside it with the time and a pointer back, only for what git does not keep, and a later problem is first matched against that record and its timing. C85 is the first case.
   The remark's first wording ("a convention is judged by whether it lowers human attention per accepted change") was dropped: it would count removing the human's decision points (§1.1) as progress.
@@ -618,6 +618,11 @@ The remark's framing: the target is not another communication tool but GitHub-ce
 - Sort conventions by what they do, not by where they came from: some that look social carry assurance (a second reviewer). Strengthen the ones against agent failure modes (drift between report and change, sycophancy, scope overreach, forgetting).
 - "What is not written in the repository did not happen" as the top principle (§3.16 says it for progress).
 - Conventions to include: decisions split by reversibility (a local commit proceeds; push, publishing, deleting data and changing a promise wait for the human's word; from C83). Affected tests while working, the full set before reporting done (from C84). Incidents in §6 become new verification angles. A "direction first" reply at the start of work (the correction in §6.1n).
+
+#### Done when
+- [ ] design.md has a new §1.2 next to §1.1 stating the thesis, the input envelope, trust on evidence, sorting conventions by what they do, and "what is not written in the repository did not happen"
+- [ ] Each convention listed in C80 points to where it is already enforced (CLAUDE.md, role files, §3.11, §6 …) or is named as not enforced yet
+- [ ] CLAUDE.md's document map lists §1.2; `npm run docs:check` passes
 
 ### C82. Objections and review findings carry a failure scenario
 Status: proposed
