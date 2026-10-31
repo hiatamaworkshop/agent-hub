@@ -19,6 +19,8 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C82
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -615,10 +617,16 @@ Open: tree or graph layout, and how parallel requests to one party show (they cl
 - Dragging should not be the only way: keyboard and touch cannot drag, and `ui:check` (headless Chrome) tests drags poorly. A click alternative (a "Forward to…" menu filling the same draft) from the start.
 
 ### C82. Objections and review findings carry a failure scenario
-Status: proposed
 
-Raised 2026-10-30 in an outside discussion (see C80). Borrowed from the Apache rule that a -1 needs a reason: a finding or objection names the input or state that breaks (an angle at the edge of the envelope, C80) and, where possible, an alternative. Against long lists of weak findings. Related: C45 (reviewer conventions), C47.
+Raised 2026-10-30 in an outside discussion (C80, now design.md §1.2). Borrowed from the Apache rule that a -1 needs a reason: a finding or objection names the input or state that breaks (an angle at the edge of the envelope, C80) and, where possible, an alternative. Against long lists of weak findings. Related: C45 (reviewer conventions), C47.
 Discussed 2026-10-30: `tools/dev/roles/reviewer.md` already asks each finding for `checked against:` (the source of truth it disagrees with), not for what breaks; the change would add `breaks when:`. A finding without one is kept as a NOTE (§3.11's two levels), not dropped: a higher cost of objecting would otherwise mean fewer objections, that is, more sycophancy. Claude Code's own code review asks each finding for a failure scenario (concrete inputs or state → wrong result).
+Decided by the user 2026-10-31. Scope is the reviewer's findings; objections from other roles are a separate item if they come up. Findings that were not adopted stay unrecorded (design.md §3.14, the question C85 left for after C82).
+
+#### Done when
+- [ ] reviewer.md's finding line adds `breaks when: <input or state> → <wrong result>` and, where it can, `instead: <alternative>`, keeping `checked against:`
+- [ ] A finding that cannot name a breaks-when is not dropped: reviewer.md puts it under a new `NOTES:` heading of the reply, apart from `FINDINGS:`
+- [ ] leader.md: `FINDINGS:` lines may go to the deployer as fixes; `NOTES:` lines go only into the report to the user, not to the deployer
+- [ ] design.md §1.2's sycophancy row points at reviewer.md / leader.md instead of "not enforced yet"; CLAUDE.md map unchanged unless a section is added
 
 ### C86. A reply to a Message the sender never received
 Status: proposed
