@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import {
   appendStartRecord, buildResultRecord, buildStartRecord, checkClaudeVersion, compareVersions, emptyOutcome, lastVerified, parseVersion,
-  recordResult, recordStart, splitByConnection, versionWarning,
+  recordResult, recordStart, splitByConnection, versionWarnedBefore, versionWarning,
 } from './startlog.js'
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'agent-hub-startlog-'))
@@ -183,4 +183,29 @@ test('result line: a failed write returns the error and does not throw (the star
   writeFileSync(blocker, '')
   const err = recordResult(T0, dir, emptyOutcome(), join(blocker, 'start-warnings.jsonl'))
   assert.equal(typeof err, 'string')
+})
+
+test('version warning: loud only on the first start with a version; every start is still recorded (C111)', async () => {
+  const dir = tmp()
+  const file = join(dir, 'start-warnings.jsonl')
+  const running: [number, number, number] = [99, 0, 1]
+  const warning = 'Claude Code 99.0.1 is newer than the last verified 2.1.310 (design.md §6.1x). Its behaviour is outside the verified envelope'
+  const check = { warning, lastVerified: '2.1.310', verifiedSection: '6.1x', verifiedNote: null }
+  // no log yet: not warned before
+  assert.equal(versionWarnedBefore(running, file), false)
+  const input = { projectDir: dir, roles: ['leader'], mailboxes: ['x.leader'], claudeVersion: '99.0.1 (Claude Code)', check, warnings: [warning] }
+  await recordStart(input, file)
+  assert.equal(versionWarnedBefore(running, file), true)
+  // another version has its own first start
+  assert.equal(versionWarnedBefore([99, 0, 2], file), false)
+  // a later start with the same version is recorded again, so the log keeps every start
+  await recordStart(input, file)
+  const lines = readFileSync(file, 'utf8').trim().split('\n')
+  assert.equal(lines.length, 2)
+  assert.equal(versionWarnedBefore(running, file), true)
+  // a start whose warnings are other things does not count as a warning about this version
+  const other = tmp()
+  const otherFile = join(other, 'start-warnings.jsonl')
+  await recordStart({ ...input, warnings: ['Hub hooks missing for Stop'] }, otherFile)
+  assert.equal(versionWarnedBefore(running, otherFile), false)
 })

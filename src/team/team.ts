@@ -3,12 +3,17 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { connect } from 'node:net'
+import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
-import { defaultMailboxName, normalizeProjectPath } from '../shared/types.js'
-import { clearStartStatus } from './agent.js'
+import { sendLedgerIndex } from '../docs-check/send-index.js'
+import { readLedgerSetting } from '../shared/ledger.js'
+import { chooseMailboxName, defaultMailboxName, normalizeProjectPath } from '../shared/types.js'
+import { clearStartStatus, readHubMailboxes, type HubMailbox } from './agent.js'
 import { checkClaudeCli, checkoutWarnings, hookWarning, startStatusPath } from './checks.js'
 import { envSetting, hubRolesFile, readRoleNames, ROOT } from './env.js'
-import { checkClaudeVersion, emptyOutcome, recordResult, recordStart, splitByConnection, type StartOutcome } from './startlog.js'
+import { writeMissingHooks } from './hooks.js'
+import { statusCommand } from './status.js'
+import { checkClaudeVersion, emptyOutcome, parseVersion, recordResult, recordStart, splitByConnection, type StartOutcome, versionWarnedBefore } from './startlog.js'
 import { ask } from './prompt.js'
 import { commandLine } from './quote.js'
 import { openTab, TMUX_SESSION, type Opener } from './tabs.js'
@@ -19,8 +24,38 @@ export interface TeamOptions {
   attachTimeoutSec: number
   force: boolean
   noBuild: boolean
+  // C111: do not write the missing Hub hooks at the start (warn only, as before)
+  noHooks: boolean
   permissionMode?: string
   opener: Opener
+}
+
+// The Hub hooks at a team start (C111). Writes the missing ones with the one writer `hooks --write` uses, unless noHooks; a project whose
+// hooks are set is not touched. Returns the summary lines (what was written) and the warnings (a failed write, or hook problems that remain)
+export function hooksForStart(projectDir: string, root: string, noHooks: boolean, home = homedir()): { infos: string[]; warnings: string[] } {
+  const infos: string[] = []
+  const warnings: string[] = []
+  if (!noHooks) {
+    const w = writeMissingHooks(projectDir, root, home)
+    if (w.kind === 'added') infos.push(`Hub hooks written to ${w.local}${w.backup ? ` (the previous file is ${w.backup})` : ''}`)
+    if (w.kind === 'failed') warnings.push(`Could not write the Hub hooks: ${w.reason}. The start goes on without them`)
+  }
+  const hw = hookWarning(projectDir, root, home)
+  if (hw) warnings.push(hw)
+  return { infos, warnings }
+}
+
+// The start's index (C107): the project's ledger (.agent-hub.json, else docs/roadmap.md) sent to the Hub. Never throws, and returns
+// the one line for the summary: what was sent, or why not (no file, Hub not reachable, token refused, an old Hub)
+export async function sendStartIndex(projectDir: string, source: string, hubUrl: string, token: string): Promise<string> {
+  try {
+    const r = await sendLedgerIndex({ project: projectDir, source, hubUrl, token })
+    if (!r.sent) return `not sent: ${r.reason}`
+    for (const w of r.warnings) console.warn(`WARNING: ${w}`)
+    return `sent ${r.source} (${r.items} items) to ${hubUrl}`
+  } catch (e) {
+    return `not sent: ${e instanceof Error ? e.message : String(e)}`
+  }
 }
 
 const MAIN = join(ROOT, 'src', 'team', 'main.ts')
@@ -28,10 +63,28 @@ const MAIN = join(ROOT, 'src', 'team', 'main.ts')
 const self = (...args: string[]) => [process.execPath, '--import', 'tsx', MAIN, ...args]
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-// The subcommand a role's tab runs
-export function agentSub(role: string, projectDir: string, permissionMode?: string): string[] {
+// The Mailbox each role takes (C103): the default name, or another one when another project holds it. Called once the Hub is up.
+// With a token, a list that cannot be read is an error, because the default name cannot be checked then. Without a token there is
+// nothing to read, so the default names are used (attach is not checked either). `read` is the Hub's list (readHubMailboxes)
+export async function chooseStartNames(
+  roles: string[],
+  projectDir: string,
+  token: string,
+  read: (token: string) => Promise<HubMailbox[] | null>,
+): Promise<Map<string, string>> {
+  const list = await read(token)
+  if (token && list === null) {
+    throw new Error('The Hub\'s Mailbox list cannot be read, so no Mailbox name is chosen and nothing is started. Check that the Hub is up and HUB_TOKEN in .env')
+  }
+  const known = list ?? []
+  return new Map(roles.map((role) => [role, chooseMailboxName(projectDir, role, known)]))
+}
+
+// The subcommand a role's tab runs. The Mailbox name `team` chose is passed on, so the agent uses it as given (C103)
+export function agentSub(role: string, projectDir: string, permissionMode?: string, mailbox?: string): string[] {
   const sub = ['agent', '--role', role, '--project', projectDir, '--from-team']
   if (permissionMode) sub.push('--permission-mode', permissionMode)
+  if (mailbox) sub.push('--mailbox', mailbox)
   return sub
 }
 
@@ -131,29 +184,20 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
     return 1
   }
   const notes: string[] = []
-  const note = (w: string) => { console.warn(`WARNING: ${w}`); notes.push(w) }
+  const infos: string[] = []
+  // A warning is printed as WARNING; a repeat is only a plain note in the summary. The start record keeps every note (C111)
+  const note = (w: string, loud = true) => { if (loud) console.warn(`WARNING: ${w}`); notes.push(w) }
   const version = checkClaudeVersion(cli.output)
-  if (version.warning) note(version.warning)
-  const hw = hookWarning(o.projectDir, ROOT)
-  if (hw) note(hw)
-  for (const w of await checkoutWarnings(o.projectDir)) note(w)
-  // The start's warnings go to logs/ before the roles start, so they are kept even if a role fails (C85).
-  // Only the roles that will start are listed: a connected Mailbox is skipped without --force, so it is left out here (C88)
-  const connected = new Set<string>()
-  if (token && !o.force) {
-    for (const role of roles) if (await attachmentId(defaultMailboxName(o.projectDir, role))) connected.add(role)
+  if (version.warning) {
+    // Read before this start's record is written, so this start is not counted as an earlier warning (C111)
+    const running = parseVersion(cli.output)
+    note(version.warning, !(running && versionWarnedBefore(running)))
   }
-  const toStart = splitByConnection(roles, connected, o.force).start
-  await recordStart({
-    projectDir: o.projectDir,
-    roles: toStart,
-    mailboxes: toStart.map((r) => defaultMailboxName(o.projectDir, r)),
-    claudeVersion: cli.output,
-    check: version,
-    warnings: notes,
-    time: startTime,
-  })
-
+  // The Hub hooks: written as `hooks --write` would, unless --no-hooks (C111). The write's summary line is information, not a warning
+  const hooks = hooksForStart(o.projectDir, ROOT, o.noHooks)
+  infos.push(...hooks.infos)
+  for (const w of hooks.warnings) note(w)
+  for (const w of await checkoutWarnings(o.projectDir)) note(w)
   // --- build (the shim is started from dist/)
   if (!o.noBuild && distIsStale()) {
     console.log('dist/ is older than src/, building')
@@ -177,6 +221,30 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
     }
     console.log('The Hub started')
   }
+  // --- the index (C107). A failure is only the summary's line, so the start goes on
+  const setting = readLedgerSetting(o.projectDir)
+  if (setting.warning) note(setting.warning)
+  const indexLine = await sendStartIndex(o.projectDir, setting.source, hubUrl, token)
+  // The names are chosen only now, with the Hub up, so a Mailbox that exists on a Hub that was down is seen (C103).
+  // A Hub list that cannot be read with a token stops the start here: the default name is not guessed
+  const names = await chooseStartNames(roles, o.projectDir, token, readHubMailboxes)
+  const nameOf = (role: string) => names.get(role)!
+  const connected = new Set<string>()
+  if (token && !o.force) {
+    for (const role of roles) if (await attachmentId(nameOf(role))) connected.add(role)
+  }
+  const toStart = splitByConnection(roles, connected, o.force).start
+  // The start's warnings go to logs/ before the roles start, so they are kept even if a role fails (C85).
+  // Only the roles that will start are listed: a connected Mailbox is skipped without --force, so it is left out here (C88)
+  await recordStart({
+    projectDir: o.projectDir,
+    roles: toStart,
+    mailboxes: toStart.map(nameOf),
+    claudeVersion: cli.output,
+    check: version,
+    warnings: notes,
+    time: startTime,
+  })
   if (!token) console.warn('WARNING: no HUB_TOKEN, so attach cannot be checked. Starting without waiting')
   if (print) {
     console.log(`No way to open tabs here. Run each command below in a terminal of its own, in this order (waiting up to ${o.attachTimeoutSec} seconds for each to attach):`)
@@ -186,8 +254,10 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
 
   // --- roles, one at a time. The Mailbox name is <project folder>.<role>, as in `agent`
   for (const role of roles) {
-    const mailbox = defaultMailboxName(o.projectDir, role)
+    const mailbox = nameOf(role)
     const ref = { role, mailbox }
+    const defaultName = defaultMailboxName(o.projectDir, role)
+    console.log(`${role}: Mailbox ${mailbox}${mailbox === defaultName ? '' : ` (${defaultName} belongs to another project)`}`)
     const before = token ? await attachmentId(mailbox) : null
     if (before && !o.force) {
       console.log(`${mailbox} is connected, skipping (--force to restart it)`)
@@ -198,9 +268,10 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
     if (!print) console.log(`Starting ${mailbox} (${o.projectDir})`)
     // Remove what the previous start left, so only this start's ending is read (C56)
     clearStartStatus(mailbox)
-    const err = start(mailbox, agentSub(role, o.projectDir, o.permissionMode))
+    const err = start(mailbox, agentSub(role, o.projectDir, o.permissionMode, mailbox))
     if (err) { outcome.failed.push({ ...ref, reason: `Could not open a tab for ${mailbox}: ${err}` }); continue }
-    if (!token) { outcome.started.push(ref); await sleep(3000); continue }
+    // Without a token the attach is not checked. With the print opener nothing was opened, so the role is only printed (C100)
+    if (!token) { (print ? outcome.printed : outcome.started).push(ref); await sleep(3000); continue }
     const deadline = Date.now() + o.attachTimeoutSec * 1000
     const statusFile = startStatusPath(mailbox)
     let attached = false
@@ -232,11 +303,13 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
   }
 
   // --- summary: warnings and failures gathered here so they are not lost in the tabs (C56-C58), then the UI URL (C55)
-  if (notes.length || outcome.failed.length) {
-    console.log('\n--- summary ---')
-    for (const n of notes) console.log(`note: ${n}`)
-    for (const f of outcome.failed) console.log(`failed: ${f.reason}`)
-  }
+  // The index line is always printed (C107), so a start that sent nothing says why
+  console.log('\n--- summary ---')
+  console.log(`index: ${indexLine}`)
+  for (const i of infos) console.log(`hooks: ${i}`)
+  console.log(`status: ${statusCommand(o.projectDir)} (the project's Mailboxes and latest report)`)
+  for (const n of notes) console.log(`note: ${n}`)
+  for (const f of outcome.failed) console.log(`failed: ${f.reason}`)
   await printUiUrl(hubUrl, token, o.projectDir)
   if (outcome.failed.length) return 1
   console.log('Done')

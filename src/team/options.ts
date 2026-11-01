@@ -3,19 +3,22 @@ import { parseArgs } from 'node:util'
 import { OPENERS, type Opener } from './tabs.js'
 
 export const USAGE = `Usage:
-  npm run team -- [--roles leader,deployer] [--project <dir>] [--attach-timeout 60] [--force] [--no-build]
+  npm run team -- [--roles leader,deployer] [--project <dir>] [--attach-timeout 60] [--force] [--no-build] [--no-hooks]
                   [--permission-mode <mode>] [--tabs ${OPENERS.join('|')}]
   npm run team -- agent --role <role> [--project <dir>] [--model <model>] [--mailbox <name>] [--permission-mode <mode>]
-  npm run team -- hooks [--project <dir>] [--write]   (list the Hub hooks the project lacks; --write adds them)`
+  npm run team -- hooks [--project <dir>] [--write]   (list the Hub hooks the project lacks; --write adds them)
+  npm run team -- status [--project <dir>]   (the project's Mailboxes on the Hub, and its latest report to the human; C108)`
 
 export interface Parsed {
-  command: 'team' | 'agent' | 'hub' | 'hooks' | 'help'
+  command: 'team' | 'agent' | 'hub' | 'hooks' | 'status' | 'help'
   roles: string[]
   role?: string
   project?: string
   attachTimeoutSec: number
   force: boolean
   noBuild: boolean
+  // C111: a team start writes the missing Hub hooks unless this is set (then it only warns)
+  noHooks: boolean
   permissionMode?: string
   model?: string
   mailbox?: string
@@ -35,6 +38,7 @@ export function parse(argv: string[]): Parsed {
       'attach-timeout': { type: 'string' },
       force: { type: 'boolean' },
       'no-build': { type: 'boolean' },
+      'no-hooks': { type: 'boolean' },
       'permission-mode': { type: 'string' },
       model: { type: 'string' },
       mailbox: { type: 'string' },
@@ -45,7 +49,7 @@ export function parse(argv: string[]): Parsed {
     },
   })
   const sub = positionals[0] ?? 'team'
-  if (positionals.length > 1 || !['team', 'agent', 'hub', 'hooks'].includes(sub)) throw new Error(`Unknown command: ${positionals.join(' ')}`)
+  if (positionals.length > 1 || !['team', 'agent', 'hub', 'hooks', 'status'].includes(sub)) throw new Error(`Unknown command: ${positionals.join(' ')}`)
   const timeout = values['attach-timeout'] === undefined ? 60 : Number(values['attach-timeout'])
   if (!Number.isInteger(timeout) || timeout <= 0) throw new Error(`--attach-timeout must be a positive whole number of seconds: ${values['attach-timeout']}`)
   const tabs = values.tabs
@@ -59,6 +63,7 @@ export function parse(argv: string[]): Parsed {
     attachTimeoutSec: timeout,
     force: values.force ?? false,
     noBuild: values['no-build'] ?? false,
+    noHooks: values['no-hooks'] ?? false,
     permissionMode: values['permission-mode'],
     model: values.model,
     mailbox: values.mailbox,

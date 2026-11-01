@@ -220,6 +220,41 @@ try {
   await cdp('Runtime.evaluate', { expression: "chooseProject('')", returnByValue: true })
   await api('DELETE', `/attachments/${othLead.attachmentId}`)
 
+  // 人からの依頼を渡したまま返信せずにターンを終え、同時に役割 auditor (Mailbox なし) へ依頼を出していた (C109)。
+  // 未接続の相手があっても Stopped と出し、その名前を添える。タブ・アイコン・バッジはカードと同じ状態で数える
+  const stk = await api('POST', '/mailboxes/stk.leader/attach', { client: 'claude-code', role: 'leader', cwd: othCwd, sessionId: 's-stk' })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'stk.leader' }, body: 'GOAL: 人からの依頼 (C109 の場面)' })
+  await api('POST', `/attachments/${stk.attachmentId}/ack`, { upTo: (await api('GET', '/messages?after=0&limit=1000')).messages.at(-1).seq })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'role', id: 'auditor' }, body: 'TARGET: C1 (未接続の役割へ)' }, { 'x-hub-attachment': stk.attachmentId })
+  await api('POST', '/events/claude-code', { cwd: othCwd, hook_event_name: 'Stop', session_id: 's-stk' }, { 'x-hub-mailbox': 'stk.leader' })
+  await scene('返信のない依頼を渡したままターンを終え、未接続の auditor にも依頼を出していた (C109)', { 'stk.leader': 'Stopped, no reply (auditor not connected)' })
+  const stkScreen = await screen()
+  const stkBadgeCheck = JSON.parse((await cdp('Runtime.evaluate', { expression: `JSON.stringify({ states: $('states').textContent, tabStopped, tabWaiting, title: document.title })`, returnByValue: true })).result.value)
+  const stoppedCards = stkScreen.cards.filter((c) => c.state.startsWith('Stopped')).length
+  const waitingCards = stkScreen.cards.filter((c) => c.state.startsWith('Needs you')).length
+  const badgeOk = stkBadgeCheck.tabStopped === stoppedCards && stkBadgeCheck.tabWaiting === waitingCards && stkBadgeCheck.states.includes(`Stopped, no reply ${stoppedCards}`)
+  if (!badgeOk) failed++
+  console.log(`${badgeOk ? 'ok' : 'NG'}  タブとサイドバーのバッジは、カードの Stopped と Needs you の数と同じ (C109)`)
+  if (!badgeOk) console.log(`      ${JSON.stringify({ stkBadgeCheck, stoppedCards, waitingCards })}`)
+  await api('DELETE', `/attachments/${stk.attachmentId}`)
+
+  // 同じ場面で、試験をバックグラウンドで流したままターンを終えた。C109 の Stopped にはせず、Working にもせず、C49 の Needs you (未接続の名前) を出す。
+  // 数もタブのタイトルと一致する (C109 の例外)
+  const bgk = await api('POST', '/mailboxes/bgk.leader/attach', { client: 'claude-code', role: 'leader', cwd: othCwd, sessionId: 's-bgk' })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'bgk.leader' }, body: 'GOAL: 人からの依頼 (試験を流す場面)' })
+  await api('POST', `/attachments/${bgk.attachmentId}/ack`, { upTo: (await api('GET', '/messages?after=0&limit=1000')).messages.at(-1).seq })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'role', id: 'auditor' }, body: 'TARGET: C2 (未接続の役割へ、試験を流しながら)' }, { 'x-hub-attachment': bgk.attachmentId })
+  await api('POST', '/events/claude-code', { cwd: othCwd, hook_event_name: 'Stop', session_id: 's-bgk', background_tasks: [{ status: 'running', description: 'npm test' }] }, { 'x-hub-mailbox': 'bgk.leader' })
+  await scene('試験を流したままターンを終え、返信のない依頼と未接続の auditor がある (C109 の例外。C49 のまま Needs you)', { 'bgk.leader': 'Needs you (auditor not connected)' }, '1 waiting')
+  const bgkScreen = await screen()
+  const bgkTab = JSON.parse((await cdp('Runtime.evaluate', { expression: `JSON.stringify({ tabWaiting, tabStopped })`, returnByValue: true })).result.value)
+  const bgkWaitingCards = bgkScreen.cards.filter((c) => c.state.startsWith('Needs you')).length
+  const bgkOk = bgkTab.tabWaiting === bgkWaitingCards && bgkTab.tabStopped === bgkScreen.cards.filter((c) => c.state.startsWith('Stopped')).length
+  if (!bgkOk) failed++
+  console.log(`${bgkOk ? 'ok' : 'NG'}  試験の場面でも、タブの件数はカードの Needs you・Stopped と同じ (C109 の例外)`)
+  if (!bgkOk) console.log(`      ${JSON.stringify({ bgkTab, bgkWaitingCards })}`)
+  await api('DELETE', `/attachments/${bgk.attachmentId}`)
+
   // UI が最初に読むのは最近の Event 200 件だけ。ほかの Mailbox の Event で押し出しても、Hub の lastTurnEnd で Idle のまま (C41)
   for (let i = 0; i < 250; i++) await turnEnd('demo.noise', 's-noise')
   await cdp('Page.navigate', { url: `${HUB}/` })
@@ -658,6 +693,27 @@ try {
   verify('モーダル: チェックを送らない古い形の索引は印を出さない (C54)', JSON.stringify(oldM.conds) === JSON.stringify(['古い形の一行']), oldM)
   await evaluate("$('itemClose').click()")
 
+  // 索引のないプロジェクト (Mailbox だけがある) を選ぶと、Items は docs:index のコマンドを出す。索引が届くと消える (C107)
+  const noIdx = join(work, 'noidx')
+  const noIdxAttach = await api('POST', '/mailboxes/demo.noidx/attach', { client: 'claude-code', cwd: noIdx, sessionId: 's-noidx' })
+  await sleep(1000)
+  await evaluate(`chooseProject(projectKey(${JSON.stringify(noIdx)}))`)
+  await sleep(500)
+  const readEmpty = () => evaluate(`({ head: !$('itemsHead').hidden, codes: [...$('items').querySelectorAll('code')].map((c) => c.textContent), text: $('items').textContent })`)
+  const emptyItems = await readEmpty()
+  verify('Items: 索引のないプロジェクトを選ぶと、見出しと docs:index のコマンド (--project) を出す (C107)', emptyItems.head && JSON.stringify(emptyItems.codes) === JSON.stringify([`npm run docs:index -- --project ${noIdx}`]) && emptyItems.text.includes('No roadmap index for noidx'), emptyItems)
+  verify('Items: 索引のないときのコマンドは --file を付けず、欄に --file を足すよう書かない (.agent-hub.json は docs:index が読む) (C107)', emptyItems.codes.every((c) => !c.includes('--file')) && !emptyItems.text.includes('--file'), emptyItems)
+  await sendIndex(noIdx, 'docs/roadmap.md', { items: [itemOf('C1', '一つ目', 'decided')] })
+  await sleep(1500)
+  const filled = await readEmpty()
+  verify('Items: 索引が届くと、索引のないときの欄は消え、項目が出る (C107)', filled.codes.length === 0 && filled.text.includes('一つ目'), filled)
+  await api('DELETE', `/indexes?project=${encodeURIComponent(noIdx)}&source=${encodeURIComponent('docs/roadmap.md')}`)
+  // 場面の後始末: この Mailbox は後の場面 (サイドバーの数え方など) に響かないよう、切って消す
+  await api('DELETE', `/attachments/${noIdxAttach.attachmentId}`)
+  await api('DELETE', '/mailboxes/demo.noidx')
+  await sleep(1000)
+  await evaluate("chooseProject('')")
+
   // サイドバーの幅 (C54): つまみで変えられ、200〜520px に収まり、ブラウザに覚える。保存値が壊れていれば既定の 260px
   const sideW = () => evaluate("Math.round(document.querySelector('aside').getBoundingClientRect().width)")
   const grip = () => evaluate("(() => { const r = $('sideResize').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()")
@@ -1068,9 +1124,9 @@ try {
   await sleep(2000)
   const held = parse(await clickIn(`JSON.stringify({ renders: window.__renders, connected: window.__sel.isConnected, focused: document.activeElement === window.__sel, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length })`))
   verify('Forward to… が開いている間、SSE の更新で地図を描き直さない (開いた選択は残り、数は変わらない) (C78)', held.renders === 0 && held.connected && held.focused && held.chips === chipsBefore, { held, chipsBefore })
-  await clickIn('window.__sel.blur()')
-  await sleep(800)
-  const released = parse(await clickIn(`JSON.stringify({ renders: window.__renders, connected: window.__sel.isConnected, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length })`))
+  // 閉じる (blur) の中で flushMap が延ばした描き直しを 1 回描く。描き直しと数えるのは flushMap が戻るまで (同期)。
+  // そのあとに来る描き直し (SSE の遅れ・タイマー) は数えない (C101)。待たずに、同じ式の中で読む
+  const released = parse(await clickIn(`(() => { window.__sel.blur(); return JSON.stringify({ renders: window.__renders, connected: window.__sel.isConnected, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length }) })()`))
   verify('Forward to… を閉じると、延ばした分を今のデータで 1 回だけ描く (C78)', released.renders === 1 && !released.connected && released.chips === chipsBefore + 1, { released, chipsBefore })
 
   // チップのドラッグ: 途中は描き直さず、dragend (取り消し) で 1 回
@@ -1080,9 +1136,8 @@ try {
   await sleep(2000)
   const dragging = parse(await clickIn(`JSON.stringify({ renders: window.__renders, connected: window.__chip.isConnected, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length })`))
   verify('チップのドラッグの途中は、SSE の更新で地図を描き直さず、ドラッグを途切れさせない (C78)', dragging.renders === 0 && dragging.connected && dragging.chips === chipsDrag, { dragging, chipsDrag })
-  await clickIn(`window.__chip.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: new DataTransfer() }))`)
-  await sleep(800)
-  const ended = parse(await clickIn(`JSON.stringify({ renders: window.__renders, connected: window.__chip.isConnected, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length })`))
+  // dragend の中で flushMap が 1 回描く (同期)。待たずに、同じ式の中で読む (C112、C101 と同じ)
+  const ended = parse(await clickIn(`(() => { window.__chip.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: new DataTransfer() })); return JSON.stringify({ renders: window.__renders, connected: window.__chip.isConnected, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length }) })()`))
   verify('ドラッグを取り消す (dragend) と、延ばした分を 1 回だけ描く (C78)', ended.renders === 1 && !ended.connected && ended.chips === chipsDrag + 1, { ended, chipsDrag })
 
   // ドロップ: 落とすと下書きを作り、そこで 1 回描く。ドロップのあとに届いた分も、その 1 回に含まれる
@@ -1284,6 +1339,33 @@ try {
     { before, redrawn, heldPane, afterBlur },
   )
 
+  // 欄の中身の位置 (C98): 同じチップが開いたままなら、新しいデータと延ばした描き直しの前後で位置を保つ。別のチップを開くと上から
+  const bodyTop = async () => parse(await clickIn(`JSON.stringify((() => { const p = document.querySelector('#map .mappane'); const b = p && p.querySelector('.mappanebody'); return b ? { top: b.scrollTop, max: b.scrollHeight - b.clientHeight, key: p.dataset.key } : null })())`))
+  await clickIn(`(() => { document.querySelector('#map .mappane .mappanebody').scrollTop = 30 })()`)
+  const k0 = await bodyTop()
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: 'GOAL: 位置 新しいデータ (C98)' }, asMLead)
+  await sleep(1500)
+  const k1 = await bodyTop()
+  await clickIn(`document.querySelector('#map .mapnode[data-name="map.deployer"] select.mapfwd').focus()`)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: 'GOAL: 位置 延ばした描き直し (C98)' }, asMLead)
+  await sleep(1500)
+  await clickIn(`document.querySelector('#map .mapnode[data-name="map.deployer"] select.mapfwd').blur()`)
+  await sleep(800)
+  const k2 = await bodyTop()
+  verify('開いたままのチップの欄は、新しいデータと延ばした描き直しの後も同じ位置で残る (C98)', k0.top > 0 && k1.top === k0.top && k2.top === k0.top && k1.key === k0.key && k2.key === k0.key && k2.max > 0, { k0, k1, k2 })
+
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: `GOAL: 長い行 B (C98)\n${'い'.repeat(200)}${'y'.repeat(400)}` }, asMLead)
+  await sleep(1500)
+  const bSeq = (await api('GET', '/messages?after=0&limit=1000')).messages.find((m) => m.body.startsWith('GOAL: 長い行 B (C98)')).seq
+  await clickIn(`${chipOf(bSeq)}.click()`)
+  await sleep(800)
+  await clickIn(`(() => { document.querySelector('#map .mappane .mappanebody').scrollTop = 30 })()`)
+  const b0 = await bodyTop()
+  await clickIn(`${chipOf(longSeq)}.click()`)
+  await sleep(800)
+  const a1 = await bodyTop()
+  verify('別のチップを開くと欄は上から始まる。前に開いた欄の位置は持ち越さない (C98)', b0.top > 0 && a1.top === 0 && a1.max > 0 && a1.key !== b0.key, { b0, a1 })
+
   // 辺が閉じたら、欄がそう言う (消えて黙ることはしない)。送り手は deployer: 返信で leader からの依頼が閉じる (C28)
   await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.leader' }, body: 'GOAL: 閉じさせる (C95)' }, asMDep)
   await sleep(1500)
@@ -1313,15 +1395,16 @@ try {
     JSON.parse(
       await evaluate(`JSON.stringify({
         theme: document.documentElement.dataset.theme,
-        label: $('themeToggle').textContent,
-        title: $('themeToggle').title,
+        label: (document.querySelector('#settings [data-choice][aria-pressed="true"]') || {}).textContent || '',
+        open: $('settingsToggle').getAttribute('aria-expanded'),
         bg: getComputedStyle(document.body).backgroundColor,
         you: getComputedStyle(document.documentElement).getPropertyValue('--st-you').trim(),
         stored: (() => { try { return localStorage.getItem('agent-hub.theme') } catch (e) { return 'ERR' } })(),
       })`),
     )
-  const pressTheme = async () => {
-    await evaluate("$('themeToggle').click()")
+  // 設定パネルで配色を選ぶ (C94)。パネルが閉じていれば歯車で開く
+  const pressTheme = async (choice) => {
+    await evaluate(`(() => { if ($('settings').hidden) $('settingsToggle').click(); document.querySelector('#settings [data-choice="${choice}"]').click() })()`)
     await sleep(300)
     return themeOf()
   }
@@ -1361,14 +1444,12 @@ try {
   await setOs(true)
   await goPage()
   const t0 = await themeOf()
-  const seq = [await pressTheme(), await pressTheme(), await pressTheme()]
+  const seq = [await pressTheme('light'), await pressTheme('dark'), await pressTheme('follow')]
   const labels = [t0, ...seq].map((t) => t.label)
   verify(
-    '配色: 初めは follow the OS (OS が夜なら夜の色)。押すたびに follow → light → dark → follow と回り、ボタンの文字が今の状態を、title が次の動きを言う (C93)',
-    JSON.stringify(labels) === JSON.stringify(['Theme: auto', 'Theme: light', 'Theme: dark', 'Theme: auto']) &&
-      t0.theme === 'dark' && t0.bg === DARK_BG && t0.title === 'Follows the OS setting. Press for light.' &&
-      seq[0].title === 'Light. Press for dark.' && seq[1].title === 'Dark. Press to follow the OS setting again.' && seq[2].title === 'Follows the OS setting. Press for light.',
-    { labels, titles: [t0.title, ...seq.map((t) => t.title)] },
+    '配色 (設定パネル): 初めは Follow the OS (OS が夜なら夜の色)。Light、Dark、Follow the OS と選ぶと、そのたびに今の選びが変わる (C93, C94)',
+    JSON.stringify(labels) === JSON.stringify(['Follow the OS', 'Light', 'Dark', 'Follow the OS']) && t0.theme === 'dark' && t0.bg === DARK_BG && t0.open === 'false',
+    { labels, open: t0.open },
   )
   verify(
     '配色: 夜の OS で昼を選ぶと昼の色 (背景と --st-you とも。夜の定義は使わない) (C93)',
@@ -1377,22 +1458,22 @@ try {
   )
 
   // 選んだ配色は読み直しても残る。昼の OS で夜を選んでも夜の色 (昼と夜の両方の定義が要る)
-  await pressTheme() // follow → light
+  await pressTheme('light')
   await goPage()
   const reLight = await themeOf()
-  verify('配色: light を選んだまま読み直すと、ボタンも配色も light のまま (localStorage に残る) (C93)', reLight.label === 'Theme: light' && reLight.theme === 'light' && reLight.stored === 'light', reLight)
-  await pressTheme() // light → dark
+  verify('配色: light を選んだまま読み直すと、ボタンも配色も light のまま (localStorage に残る) (C93)', reLight.label === 'Light' && reLight.theme === 'light' && reLight.stored === 'light', reLight)
+  await pressTheme('dark')
   await setOs(false)
   await goPage()
   const dark = await themeOf()
   verify(
     '配色: 昼の OS で夜を選ぶと夜の色 (背景と --st-you とも)。読み直しても残る (C93)',
-    dark.label === 'Theme: dark' && dark.theme === 'dark' && dark.bg === DARK_BG && dark.you === '#f0b050' && dark.stored === 'dark',
+    dark.label === 'Dark' && dark.theme === 'dark' && dark.bg === DARK_BG && dark.you === '#f0b050' && dark.stored === 'dark',
     dark,
   )
 
   // follow は OS の変更に、開いたまま従う
-  await pressTheme() // dark → follow (OS は昼なので昼の色)
+  await pressTheme('follow') // dark → follow (OS は昼なので昼の色)
   const followLight = await themeOf()
   await setOs(true)
   const liveDark = await waitTheme('dark')
@@ -1400,7 +1481,7 @@ try {
   const liveLight = await waitTheme('light')
   verify(
     '配色: follow は、開いたままの OS の変更に従う (昼 → 夜 → 昼) (C93)',
-    followLight.label === 'Theme: auto' && followLight.theme === 'light' && liveDark && liveLight,
+    followLight.label === 'Follow the OS' && followLight.theme === 'light' && liveDark && liveLight,
     { followLight, liveDark, liveLight },
   )
 
@@ -1408,9 +1489,9 @@ try {
   await setOs(true)
   await evaluate('tabWaiting = 1; tabStopped = 0; tabUnread = 0; tabWorking = false; showTabUnread()')
   const iconFollow = await badgeIs(DARK_YOU)
-  await pressTheme() // follow → light (OS は夜)
+  await pressTheme('light') // follow → light (OS は夜)
   const iconLight = await badgeIs(LIGHT_YOU)
-  await pressTheme() // light → dark
+  await pressTheme('dark') // light → dark
   const iconDark = await badgeIs(DARK_YOU)
   verify('タブの絵: 件数バッジの色は配色に従う (follow は OS の夜の色、light は昼の色で夜の OS でも、dark は夜の色) (C70, C93)', iconFollow && iconLight && iconDark, { iconFollow, iconLight, iconDark })
 
@@ -1419,14 +1500,321 @@ try {
   await setOs(true)
   await goPage()
   const noStore = await themeOf()
-  const noStorePressed = await pressTheme()
+  const noStorePressed = await pressTheme('light')
   const cards = await evaluate("document.querySelectorAll('#mailboxes .mb').length")
   await cdp('Page.removeScriptToEvaluateOnNewDocument', { identifier: blocked.identifier })
   verify(
     '配色: localStorage が使えないときは OS の設定に従い、押しても描画が壊れない (C93)',
-    noStore.stored === 'ERR' && noStore.theme === 'dark' && noStore.label === 'Theme: auto' && noStorePressed.theme === 'light' && noStorePressed.label === 'Theme: light' && cards > 0,
+    noStore.stored === 'ERR' && noStore.theme === 'dark' && noStore.label === 'Follow the OS' && noStorePressed.theme === 'light' && noStorePressed.label === 'Light' && cards > 0,
     { noStore, noStorePressed, cards },
   )
+
+  // ヘッダー (C94): 右は Health check・Map / Messages・歯車の 3 つだけで、Theme ボタンはない。ラベルが変わっても位置は動かない
+  await goPage()
+  const header = async () => JSON.parse(await evaluate(`JSON.stringify({
+    ids: [...document.querySelectorAll('header > button')].map((b) => b.id),
+    themeGone: document.getElementById('themeToggle') === null,
+    labels: ['health', 'mapToggle', 'settingsToggle', 'conn'].map((id) => document.getElementById(id).textContent),
+    boxes: ['health', 'mapToggle', 'settingsToggle'].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return [r.left, r.right] }),
+  })`))
+  const headerBefore = await header()
+  // 読むのは書いた直後 (描き直しで Health check の数が戻る前に)
+  await evaluate("$('health').textContent = 'Health check (123)'; $('conn').textContent = 'Reconnecting… (a longer connection message)'")
+  const headerAfter = await header()
+  await evaluate("$('mapToggle').click()")
+  const headerMap = await header()
+  await evaluate("$('mapToggle').click()")
+  const sameAs = (a) => headerBefore.boxes.every((b, i) => Math.abs(b[0] - a.boxes[i][0]) < 0.5 && Math.abs(b[1] - a.boxes[i][1]) < 0.5)
+  const sameBoxes = sameAs(headerAfter) && sameAs(headerMap)
+  verify(
+    'ヘッダーの右は Health check・Map / Messages・歯車の 3 つだけで、Theme ボタンはない (C94)',
+    JSON.stringify(headerBefore.ids) === JSON.stringify(['health', 'mapToggle', 'settingsToggle']) && headerBefore.themeGone,
+    headerBefore,
+  )
+  verify(
+    'ラベルが変わっても (Health check の数、Map ↔ Messages、接続の表示) ヘッダーの右の 3 つは同じ位置に留まる (C94)',
+    sameBoxes && headerAfter.labels[0] === 'Health check (123)' && headerMap.labels[1] === 'Messages' && headerAfter.labels[3].startsWith('Reconnecting'),
+    { before: headerBefore.boxes, after: headerAfter.boxes, map: headerMap.boxes, labels: headerAfter.labels },
+  )
+
+  // 設定パネル (C94): 歯車で開く。もう一度押す・Escape・外を押すと閉じる (Escape のあとは歯車へ戻る)。パネルの中で選んでも閉じない
+  await goPage()
+  const panel = async () => JSON.parse(await evaluate(`JSON.stringify({ expanded: $('settingsToggle').getAttribute('aria-expanded'), hidden: $('settings').hidden, focus: document.activeElement && document.activeElement.id })`))
+  const pn0 = await panel()
+  await evaluate("$('settingsToggle').click()")
+  await sleep(100)
+  const pn1 = await panel()
+  // 開いたパネルが画面の中にあり、欄の下 (ヘッダーの下) に見えている。中心の点は、パネルかその中の物が取る (C94 の確認)
+  const pn1box = JSON.parse(await evaluate(`JSON.stringify((() => {
+    const s = $('settings')
+    const r = s.getBoundingClientRect()
+    const headerBottom = document.querySelector('header').getBoundingClientRect().bottom
+    const mid = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+    return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, headerBottom, vh: innerHeight, vw: innerWidth, hit: !!mid && (mid === s || s.contains(mid)) }
+  })())`))
+  verify(
+    '設定パネル: 開くと、ヘッダーの下・画面の中に見えている (切れていない。中心の点はパネルが取る) (C94)',
+    pn1box.top >= pn1box.headerBottom && pn1box.bottom <= pn1box.vh && pn1box.left >= 0 && pn1box.right <= pn1box.vw && pn1box.hit,
+    pn1box,
+  )
+  await evaluate("$('settingsToggle').click()")
+  await sleep(100)
+  const pn2 = await panel()
+  await evaluate("$('settingsToggle').click()")
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
+  await sleep(100)
+  const pn3 = await panel()
+  await evaluate("$('settingsToggle').click()")
+  await evaluate("document.querySelector('header h1').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))")
+  await sleep(100)
+  const pn4 = await panel()
+  await evaluate("$('settingsToggle').click(); document.querySelector('#settings [data-choice=\"light\"]').click()")
+  await sleep(200)
+  const pn5 = await panel()
+  const choiceSaved = await evaluate("localStorage.getItem('agent-hub.theme')").catch(() => null)
+  await evaluate("$('settingsToggle').click()")
+  verify(
+    '設定パネル: 歯車で開き、もう一度押すと閉じる。開いた印 (aria-expanded) を持つ。閉じている間は隠れている (C94)',
+    pn0.expanded === 'false' && pn0.hidden === true && pn1.expanded === 'true' && pn1.hidden === false && pn2.expanded === 'false' && pn2.hidden === true,
+    { pn0, pn1, pn2 },
+  )
+  verify(
+    '設定パネル: Escape で閉じて、フォーカスは歯車に戻る。外を押しても閉じる。中で配色を選んでも閉じず、選んだ配色は残る (C94)',
+    pn3.expanded === 'false' && pn3.hidden === true && pn3.focus === 'settingsToggle' && pn4.expanded === 'false' && pn4.hidden === true && pn5.expanded === 'true' && pn5.hidden === false && choiceSaved === 'light',
+    { pn3, pn4, pn5, choiceSaved },
+  )
+
+  // 役割宛ての送信の確認 (C104): 役割の受け手が 2 つ以上のプロジェクトにいるなら、送る前に尋ねる。取り消すと何も送らず本文・宛先を残す。
+  // 1 つのプロジェクトだけなら尋ねずに送る。window.confirm は置き換えて、聞かれた文と答えを記録する (ダイアログは開かない)
+  const pb = join(work, 'pb')
+  await api('POST', '/mailboxes/pb.deployer/attach', { client: 'claude-code', role: 'deployer', cwd: pb, sessionId: 's-pb-dep' })
+  // reviewer の受け手を demo のものだけにする: demo 以外の reviewer を切ってから消す (1 プロジェクトの場面。ほかの場面は済んでいる)
+  for (const m of (await api('GET', '/mailboxes')).mailboxes) {
+    if (m.role !== 'reviewer' || !m.project || m.project === join(work, 'demo')) continue
+    if (m.attachment) await api('DELETE', `/attachments/${m.attachment.attachmentId}`)
+    await api('DELETE', `/mailboxes/${m.name}`)
+  }
+  await goPage()
+  const stubConfirm = (answer) =>
+    evaluate(`(() => { window.__asked = []; window.__answer = ${answer}; window.confirm = (m) => { window.__asked.push(m); return window.__answer }; return true })()`)
+  const compose = (to, body) => evaluate(`(() => { chooseTo(${JSON.stringify(to)}); $('body').value = ${JSON.stringify(body)}; return $('to').value })()`)
+  const submit = () => evaluate("(async () => { $('form').requestSubmit(); await new Promise((r) => setTimeout(r, 800)); return true })()")
+  const countMessages = async () => (await api('GET', '/messages?after=0&limit=1000')).messages.length
+  const lastMessage = async () => (await api('GET', '/messages?after=0&limit=1000')).messages.at(-1)
+  const receivers = (await api('GET', '/mailboxes')).mailboxes.filter((m) => m.role === 'deployer' && m.project)
+  // 数えるのと同じ比べ方 (区切り・末尾の区切り・ドライブ文字の大文字小文字) で、プロジェクトの数を数える
+  const projectCount = (list) => new Set(list.map((m) => m.project.replace(/[\\/]+/g, '/').replace(/(.)\/$/, '$1').replace(/^[a-z]:/i, (d) => d.toLowerCase()))).size
+  const fromJson = (text) => JSON.parse(text)
+
+  await stubConfirm(false)
+  const beforeCancel = await countMessages()
+  await compose('role:deployer', 'C104 check: cancel')
+  await submit()
+  const cancelled = fromJson(await evaluate("JSON.stringify({ asked: window.__asked, body: $('body').value, to: $('to').value })"))
+  const afterCancel = await countMessages()
+  verify(
+    '役割宛てが 2 つ以上のプロジェクトに届くとき、送る前に Mailbox とプロジェクトの数を尋ね、取り消すと何も送らず本文と宛先を残す (C104)',
+    projectCount(receivers) >= 2 &&
+      cancelled.asked.length === 1 &&
+      cancelled.asked[0].includes(`${receivers.length} Mailboxes in ${projectCount(receivers)} projects`) &&
+      afterCancel === beforeCancel &&
+      cancelled.body === 'C104 check: cancel' &&
+      cancelled.to === 'role:deployer',
+    { asked: cancelled.asked, beforeCancel, afterCancel, body: cancelled.body, to: cancelled.to, receivers: receivers.length },
+  )
+
+  await stubConfirm(true)
+  const beforeSend = await countMessages()
+  await submit()
+  const confirmed = fromJson(await evaluate("JSON.stringify({ asked: window.__asked, body: $('body').value })"))
+  const afterSend = await countMessages()
+  const sent = await lastMessage()
+  verify(
+    '同じ宛先で確認に「送る」と送られる。プロジェクトを絞らない役割宛てのまま届き、本文は空になる (C104)',
+    confirmed.asked.length === 1 && afterSend === beforeSend + 1 && sent.body === 'C104 check: cancel' && sent.to.type === 'role' && sent.to.id === 'deployer' && sent.to.project === undefined && confirmed.body === '',
+    { asked: confirmed.asked.length, beforeSend, afterSend, to: sent.to, body: confirmed.body },
+  )
+
+  await stubConfirm(false)
+  const beforeSolo = await countMessages()
+  // reviewer の受け手は demo の 1 つだけ (上で oth.reviewer を消した)。すべてのプロジェクトで、尋ねずに送る
+  const reviewers = (await api('GET', '/mailboxes')).mailboxes.filter((m) => m.role === 'reviewer' && m.project)
+  await compose('role:reviewer', 'C104 check: one project')
+  await submit()
+  const solo = fromJson(await evaluate("JSON.stringify({ asked: window.__asked })"))
+  const afterSolo = await countMessages()
+  const soloSent = await lastMessage()
+  verify(
+    '1 つのプロジェクトだけに届く役割宛てでは尋ねずに送る (C104)',
+    projectCount(reviewers) === 1 && solo.asked.length === 0 && afterSolo === beforeSolo + 1 && soloSent.body === 'C104 check: one project' && soloSent.to.id === 'reviewer',
+    { asked: solo.asked.length, projects: projectCount(reviewers), beforeSolo, afterSolo, to: soloSent.to },
+  )
+
+  {
+  // C106: バッジ・状態の数・地図の Needs you を押すと飛ぶ。飛び先は数えたものの最も古いもの (押した印の数え方と同じ)。
+  // 押しても送らず、既読にせず、状態も変えない。jo の質問を先に出し、jb の質問はそのあと (全プロジェクトの最も古いのは jo か demo の依頼)
+  const jbCwd = join(work, 'jb')
+  const joCwd = join(work, 'jo')
+  const joLead = await api('POST', '/mailboxes/jo.leader/attach', { client: 'claude-code', role: 'leader', cwd: joCwd, sessionId: 's-jo' })
+  await hook('jo.leader', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'tu-jo', session_id: 's-jo', cwd: joCwd })
+  const jbLead = await api('POST', '/mailboxes/jb.leader/attach', { client: 'claude-code', role: 'leader', cwd: jbCwd, sessionId: 's-jb-lead' })
+  const jbDep = await api('POST', '/mailboxes/jb.deployer/attach', { client: 'claude-code', role: 'deployer', cwd: jbCwd, sessionId: 's-jb-dep' })
+  await hook('jb.leader', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'tu-jb', session_id: 's-jb-lead', cwd: jbCwd })
+  // deployer は依頼を渡された (返信なし): Working。leader には未読の依頼 (JB-UNREAD) を置く
+  const awaitMsg = await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'jb.deployer' }, body: 'JB-AWAIT: 渡して返信を待つ依頼' })
+  await api('POST', `/attachments/${jbDep.attachmentId}/ack`, { upTo: awaitMsg.seq })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'jb.leader' }, body: 'JB-UNREAD: 未読の依頼' })
+  await sleep(1500)
+  const jbKey = await evaluate("[...projects.values()].find((p) => p.label === 'jb').key")
+  await evaluate(`chooseProject(${JSON.stringify(jbKey)})`)
+  await sleep(500)
+
+  // 押す。結果は押した印の見た目 (カーソル・title)、押した後に強調されたもの、表示 (Map か Messages)、ステータス
+  const press = (sel) => evaluate(`(async () => {
+    const el = document.querySelector(${JSON.stringify(sel)})
+    if (!el) return null
+    const cursor = getComputedStyle(el).cursor
+    const title = el.title
+    document.querySelectorAll('.hit').forEach((e) => e.classList.remove('hit'))
+    el.click()
+    await new Promise((r) => setTimeout(r, 400))
+    const hits = [...document.querySelectorAll('.hit')].map((h) => ({
+      kind: h.classList.contains('msg') ? 'msg' : h.classList.contains('evt') ? 'evt' : h.classList.contains('mb') ? 'mb' : 'mapnode',
+      seq: h.dataset.seq ?? null,
+      who: (h.querySelector('.chip, .name') || {}).textContent || null,
+    }))
+    return { cursor, title, status: $('status').textContent, hits, map: !$('map').hidden }
+  })()`)
+  const unreadOf = async (name) => (await api('GET', '/mailboxes')).mailboxes.find((m) => m.name === name).unread
+  const snapBefore = { msgs: await countMessages(), unread: await unreadOf('jb.leader') }
+
+  const back = await press('#backlog .bl[data-layer="agent"]')
+  verify('#backlog の Agent バッジ: 押すと、表示中のカードが数えた最も古いもの (JB-AWAIT) へ飛んで強調され、指の形の印で title がある (C106)',
+    back && back.cursor === 'pointer' && back.title.includes('Click') && back.hits.length === 1 && back.hits[0].seq === String(awaitMsg.seq), back)
+  const you = await press('#states .stc.st-you')
+  verify('Needs you バッジ: 押すと、この状態に入れた最も古い Event (jb.leader の質問) へ飛んで強調される (C106)',
+    you && you.cursor === 'pointer' && you.hits.length === 1 && you.hits[0].kind === 'evt' && you.hits[0].who === 'jb.leader', you)
+  const working = await press('#states .stc.st-working')
+  verify('Working バッジ: 押すと、その状態の最初のカード (サイドバー) が強調される。メッセージ欄は動かさない (C106)',
+    working && working.cursor === 'pointer' && working.hits.length === 1 && working.hits[0].kind === 'mb' && working.hits[0].who === 'jb.deployer', working)
+  const snapAfter = { msgs: await countMessages(), unread: await unreadOf('jb.leader') }
+  verify('押しても何も送らず、既読にせず、状態も変えない (C106)', snapAfter.msgs === snapBefore.msgs && snapAfter.unread === snapBefore.unread, { snapBefore, snapAfter })
+
+  // 地図: Needs you のラベルは Messages に切り替えてから飛ぶ。Working は地図の上で強調する
+  await evaluate("$('mapToggle').click()")
+  await sleep(400)
+  const cardYou = await press('.mapnode[data-name="jb.leader"] .state')
+  verify('地図の Needs you ラベル (カード): 押すと Messages に切り替わり、そのカードの質問 (Event) へ飛んで強調される (C106)',
+    cardYou && cardYou.cursor === 'pointer' && !cardYou.map && cardYou.hits.length === 1 && cardYou.hits[0].kind === 'evt' && cardYou.hits[0].who === 'jb.leader', cardYou)
+  await evaluate("$('mapToggle').click()")
+  await sleep(400)
+  const mapWorking = await press('#states .stc.st-working')
+  verify('地図の上で Working バッジを押すと、地図のノードを強調し、地図のまま (C106)',
+    mapWorking && mapWorking.map && mapWorking.hits.length === 1 && mapWorking.hits[0].kind === 'mapnode' && mapWorking.hits[0].who === 'jb.deployer', mapWorking)
+  // 人のノードの Needs you N は全プロジェクトの数。最も古いのは jb の外 (demo か jo) にあり、絞り込みで隠れている → 飛ばず、そう言う
+  const hiddenHuman = await press('.mapnode.human .state')
+  verify('地図の人の Needs you: 最も古いものが絞り込みで隠れていれば、飛ばずに隠れていると言い、地図のまま (C106)',
+    hiddenHuman && hiddenHuman.map && hiddenHuman.status.includes('hidden by the project filter') && hiddenHuman.hits.length === 0, hiddenHuman)
+  // 地図のまま絞り込みを外す (Map view は続く)
+  await evaluate("chooseProject('')")
+  await sleep(400)
+  const allHuman = await press('.mapnode.human .state')
+  verify('地図の人の Needs you: 絞り込みを外すと最も古いものへ飛び、Messages に切り替わって強調される (C106)',
+    allHuman && !allHuman.map && allHuman.hits.length === 1 && allHuman.hits[0].who === 'jo.leader', allHuman)
+
+  // C106 (2): 残りの押せる印を、実際のバッジで押す。Stopped (返信待ちの最も古い依頼)、Waiting on others と Paused (最初のカード。サイドバーと地図)、
+  // Kind で隠れた飛び先 (状態は変えない)、最新 200 件より古い Event (手元にない)。押すたびに、印・送らない・既読にしない・状態を変えないを見る
+  {
+  const press2 = (sel) => evaluate(`(async () => {
+    const el = document.querySelector(${JSON.stringify(sel)})
+    if (!el) return null
+    const cursor = getComputedStyle(el).cursor
+    const title = el.title
+    document.querySelectorAll('.hit').forEach((e) => e.classList.remove('hit'))
+    el.click()
+    await new Promise((r) => setTimeout(r, 400))
+    const hits = [...document.querySelectorAll('.hit')].map((h) => ({
+      kind: h.classList.contains('msg') ? 'msg' : h.classList.contains('evt') ? 'evt' : h.classList.contains('mb') ? 'mb' : 'mapnode',
+      seq: h.dataset.seq ?? null,
+      who: (h.querySelector('.chip, .name') || {}).textContent || null,
+    }))
+    return { cursor, title, status: $('status').textContent, hits, map: !$('map').hidden, states: $('states').textContent }
+  })()`)
+  const unread2 = async (name) => (await api('GET', '/mailboxes')).mailboxes.find((m) => m.name === name).unread
+  // 止まった依頼 (jb.deployer は JB-AWAIT を渡したままターンを終えた)。委ねる側 (jb.waiter) は jb.filler に依頼を出して終える
+  await api('POST', '/mailboxes/jb.filler/attach', { client: 'claude-code', cwd: jbCwd, sessionId: 's-jb-fill' })
+  await hook('jb.deployer', { hook_event_name: 'Stop', session_id: 's-jb-dep', cwd: jbCwd })
+  const waiter = await api('POST', '/mailboxes/jb.waiter/attach', { client: 'claude-code', cwd: jbCwd, sessionId: 's-jb-wait' })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'jb.filler' }, body: 'JB-WAIT: 待っている依頼' }, { 'x-hub-attachment': waiter.attachmentId })
+  await hook('jb.waiter', { hook_event_name: 'Stop', session_id: 's-jb-wait', cwd: jbCwd })
+  const paused = await api('POST', '/mailboxes/jb.paused/attach', { client: 'claude-code', cwd: jbCwd, sessionId: 's-jb-pz' })
+  await hook('jb.paused', { hook_event_name: 'StopFailure', session_id: 's-jb-pz', cwd: jbCwd, error: 'rate_limit', last_assistant_message: "You've hit your limit" })
+  await sleep(1500)
+  // 前のブロックは All projects で終わるので、ここで jb に絞り直す (demo の止まった依頼が先に来ないように)
+  await evaluate(`chooseProject(${JSON.stringify(jbKey)})`)
+  const cards2 = (await screen()).cards
+  const stateOfCard = (name) => (cards2.find((c) => c.name === name) || {}).state || ''
+  verify('(準備) jb.deployer は Stopped、jb.waiter は Waiting on others、jb.paused は Paused (C106)',
+    stateOfCard('jb.deployer').startsWith('Stopped') && stateOfCard('jb.waiter').startsWith('Waiting on others') && stateOfCard('jb.paused').startsWith('Paused'), cards2)
+  // Stuck?: 接続のない Mailbox (jb.gone) に届いた未読。そのバッジは、その依頼へ飛ぶ
+  const gone = await api('POST', '/mailboxes/jb.gone/attach', { client: 'claude-code', cwd: jbCwd, sessionId: 's-jb-gone' })
+  await api('DELETE', `/attachments/${gone.attachmentId}`)
+  const goneMsg = await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'jb.gone' }, body: 'JB-GONE: 未接続の Mailbox に届いた未読' })
+  await sleep(1500)
+  const snap2Before = { msgs: await countMessages(), unread: await unread2('jb.leader') }
+
+  const stoppedP = await press2('#states .stc.st-stopped')
+  verify('Stopped バッジ: 押すと、返信待ちの最も古い依頼 (JB-AWAIT) へ飛んで強調される (C106)',
+    stoppedP && stoppedP.cursor === 'pointer' && stoppedP.title.includes('Click') && stoppedP.hits.length === 1 && stoppedP.hits[0].kind === 'msg' && stoppedP.hits[0].seq === String(awaitMsg.seq), stoppedP)
+  const waitingP = await press2('#states .stc.st-delegated')
+  verify('Waiting on others バッジ: 押すと、その状態の最初のカード (サイドバー) が強調される (C106)',
+    waitingP && waitingP.cursor === 'pointer' && waitingP.hits.length === 1 && waitingP.hits[0].kind === 'mb' && waitingP.hits[0].who === 'jb.waiter', waitingP)
+  const pausedP = await press2('#states .stc.st-paused')
+  verify('Paused バッジ: 押すと、その状態の最初のカード (サイドバー) が強調される (C106)',
+    pausedP && pausedP.cursor === 'pointer' && pausedP.hits.length === 1 && pausedP.hits[0].kind === 'mb' && pausedP.hits[0].who === 'jb.paused', pausedP)
+  await evaluate("$('mapToggle').click()")
+  await sleep(400)
+  const mapWaiting = await press2('#states .stc.st-delegated')
+  verify('地図の上で Waiting on others バッジを押すと、地図のノードを強調し、地図のまま (C106)',
+    mapWaiting && mapWaiting.map && mapWaiting.hits.length === 1 && mapWaiting.hits[0].kind === 'mapnode' && mapWaiting.hits[0].who === 'jb.waiter', mapWaiting)
+  const mapPaused = await press2('#states .stc.st-paused')
+  verify('地図の上で Paused バッジを押すと、地図のノードを強調し、地図のまま (C106)',
+    mapPaused && mapPaused.map && mapPaused.hits.length === 1 && mapPaused.hits[0].kind === 'mapnode' && mapPaused.hits[0].who === 'jb.paused', mapPaused)
+  await evaluate("$('mapToggle').click()")
+  await sleep(400)
+
+  // #backlog の Stuck?: 接続のない jb.gone の未読 (JB-GONE) を数える。押すとそこへ飛ぶ
+  const stuckP = await press2('#backlog .bl[data-layer="stuck"]')
+  verify('#backlog の Stuck? バッジ: 押すと、接続のない Mailbox の最も古い未読 (JB-GONE) へ飛んで強調される (C106)',
+    stuckP && stuckP.cursor === 'pointer' && stuckP.hits.length === 1 && stuckP.hits[0].kind === 'msg' && stuckP.hits[0].seq === String(goneMsg.seq), stuckP)
+
+  // Kind で隠れた飛び先: #backlog の Agent と #states の Stopped は、押すと隠れていると言う。どちらも状態は変わらない
+  const statesBefore = await evaluate('$("states").textContent')
+  await evaluate("toggleIn(FILTER.kinds, 'request', true)")
+  await sleep(300)
+  const kindAgent = await press2('#backlog .bl[data-layer="agent"]')
+  verify('#backlog の Agent バッジ: 飛び先が Kind の絞り込みで隠れていれば、飛ばずに隠れていると言い、状態は変わらない (C48、C106)',
+    kindAgent && kindAgent.cursor === 'pointer' && kindAgent.hits.length === 0 && kindAgent.status.includes('hidden by the Kind filter') && kindAgent.states === statesBefore, kindAgent)
+  const kindStopped = await press2('#states .stc.st-stopped')
+  verify('#states の Stopped バッジ: 飛び先が Kind で隠れていれば、飛ばずに隠れていると言い、状態は変わらない (C48、C106)',
+    kindStopped && kindStopped.hits.length === 0 && kindStopped.status.includes('hidden by the Kind filter') && kindStopped.states === statesBefore, kindStopped)
+  await evaluate("toggleIn(FILTER.kinds, 'request', false)")
+  await sleep(300)
+
+  // 手元にない飛び先: 最新 200 件より古い Event (jb.leader の質問) は、ページが読んでいない。Hub の数えるもの (You) はそれを指す。
+  // 後から 205 件の Event を積んで押し出し、ページを読み直してから You バッジを押す
+  for (let i = 0; i < 205; i++) await hook('jb.filler', { hook_event_name: 'Stop', session_id: 's-jb-fill', cwd: jbCwd })
+  await cdp('Page.navigate', { url: `${HUB}/?token=${TOKEN}` })
+  await sleep(2000)
+  await evaluate(`chooseProject(${JSON.stringify(jbKey)})`)
+  await sleep(800)
+  const notLoadedP = await press2('#backlog .bl[data-layer="you"]')
+  verify('#backlog の You バッジ: 飛び先の Event が手元にないと、押すと not loaded と言い、何も動かさない (C106)',
+    notLoadedP && notLoadedP.cursor === 'pointer' && notLoadedP.hits.length === 0 && notLoadedP.status.includes('That event is not loaded'), notLoadedP)
+  const snap2After = { msgs: await countMessages(), unread: await unread2('jb.leader') }
+  verify('押しても何も送らず、既読にせず、状態も変えない (C106)', snap2After.msgs === snap2Before.msgs && snap2After.unread === snap2Before.unread, { snap2Before, snap2After })
+  }
+  }
 } catch (e) {
   failed++
   console.error(`NG  ${e.message}`)

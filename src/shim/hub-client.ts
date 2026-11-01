@@ -169,6 +169,14 @@ export class HubClient {
           this.log(`terminated: superseded (${e.message})`)
           break
         }
+        // 接続中の Mailbox を別のフォルダのプロジェクトが使っている。attach し直しても同じ結果なので止め、理由を見せる (C103)
+        if (e instanceof HubHttpError && e.status === 409 && e.code === 'project_mismatch') {
+          this.state = 'terminated'
+          this.terminatedReason = 'project_mismatch'
+          this.lastError = e.message
+          this.log(`terminated: project_mismatch (${e.message})`)
+          break
+        }
         this.lastError = e instanceof Error ? e.message : String(e)
         this.log(`hub: ${this.lastError}`)
       }

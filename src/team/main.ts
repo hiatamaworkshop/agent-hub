@@ -1,13 +1,15 @@
 // Starting a team on any OS (roadmap C62, design.md §3.8). Run through `npm run team -- …`.
-//   team   [--roles a,b] [--project <dir>] [--attach-timeout <sec>] [--force] [--no-build] [--permission-mode <m>] [--tabs <opener>]
+//   team   [--roles a,b] [--project <dir>] [--attach-timeout <sec>] [--force] [--no-build] [--no-hooks] [--permission-mode <m>] [--tabs <opener>]
 //   agent  --role <r> [--project <dir>] [--model <m>] [--mailbox <name>] [--permission-mode <m>]
 //   hooks  [--project <dir>] [--write]   (the Hub's hook settings for the project; C69)
+//   status [--project <dir>]   (the project's Mailboxes on the Hub and its latest report to the human; C108)
 //   hub    (what the Hub's tab runs)
 import { spawn } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { runAgent } from './agent.js'
 import { runHooks } from './hooks.js'
+import { runStatus } from './status.js'
 import { ROOT } from './env.js'
 import { waitForEnter } from './prompt.js'
 import { parse, USAGE } from './options.js'
@@ -47,14 +49,15 @@ async function main(argv: string[]): Promise<number> {
   if (p.command === 'help') { console.log(USAGE); return 0 }
   if (p.command === 'hub') return runHub()
   if (p.command === 'hooks') return runHooks(projectDir(p.project), ROOT, p.write)
+  if (p.command === 'status') return runStatus(projectDir(p.project))
   if (p.command === 'agent') {
-    return runAgent({ role: p.role!, projectDir: projectDir(p.project), model: p.model, mailbox: p.mailbox, permissionMode: p.permissionMode, fromTeam: p.fromTeam })
+    return runAgent({ role: p.role!, projectDir: projectDir(p.project), model: p.model, mailbox: p.mailbox, permissionMode: p.permissionMode, fromTeam: p.fromTeam, attachTimeoutSec: p.attachTimeoutSec })
   }
   const dir = projectDir(p.project)
   const roles = p.roles.length ? p.roles : await chooseRoles()
   if (!roles) { console.log('Cancelled'); return 0 }
   const opener = p.tabs ?? detectOpener(process.platform, process.env, (n) => hasCommand(n))
-  return runTeam({ roles, projectDir: dir, attachTimeoutSec: p.attachTimeoutSec, force: p.force, noBuild: p.noBuild, permissionMode: p.permissionMode, opener })
+  return runTeam({ roles, projectDir: dir, attachTimeoutSec: p.attachTimeoutSec, force: p.force, noBuild: p.noBuild, noHooks: p.noHooks, permissionMode: p.permissionMode, opener })
 }
 
 main(process.argv.slice(2)).then(

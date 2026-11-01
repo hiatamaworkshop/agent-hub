@@ -48,6 +48,30 @@ export function versionWarning(running: Version | null, verified: Verified | nul
   return `Claude Code ${r} is newer than the last verified ${v} (design.md §${verified.section}). Its behaviour is outside the verified envelope`
 }
 
+// Whether an earlier start in the log already warned about this running version (C111). The warning is loud (WARNING) only on the first
+// start with a version; later starts print it as one plain line in the summary. Starts with warnings are recorded in the log, so the log
+// is the record and no other state is kept. A missing or unreadable log counts as not warned
+export function versionWarnedBefore(running: Version, file = startLogPath()): boolean {
+  const prefix = `Claude Code ${running.join('.')} is newer than the last verified `
+  let text: string
+  try {
+    text = readFileSync(file, 'utf8')
+  } catch {
+    return false
+  }
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue
+    let r: Partial<StartRecord>
+    try {
+      r = JSON.parse(line) as Partial<StartRecord>
+    } catch {
+      continue
+    }
+    if (r.kind === 'start' && (r.warnings ?? []).some((w) => w.startsWith(prefix))) return true
+  }
+  return false
+}
+
 export interface VersionCheck {
   warning: string | null
   // The last verified version and its §6.1 section, or the reason none is known (design.md unreadable or no version named)
@@ -155,17 +179,20 @@ export function splitByConnection(roles: string[], connected: ReadonlySet<string
   return { start, skip }
 }
 
-// What a start did, for its result line. A role is `started` once its tab is open and it attached (or, without a token, once its tab is open:
-// the attach is then not checked); `failed` carries the reason; `aborted` says why the start stopped before or between roles
+// What a start did, for its result line. A role is `started` once it attached to the Hub (C100). Without a token the attach cannot be
+// checked: `team` then counts a role as started once its tab is open, and `agent` on its own once claude has spawned. With the `print`
+// opener and no token nothing is opened, only the command is printed, so the role is `printed` (C100). `failed` carries the reason;
+// `aborted` says why the start stopped before or between roles
 export interface RoleRef { role: string; mailbox: string }
 export interface StartOutcome {
   started: RoleRef[]
   skipped: RoleRef[]
+  printed: RoleRef[]
   failed: (RoleRef & { reason: string })[]
   aborted: string | null
 }
 export function emptyOutcome(): StartOutcome {
-  return { started: [], skipped: [], failed: [], aborted: null }
+  return { started: [], skipped: [], printed: [], failed: [], aborted: null }
 }
 
 export interface ResultRecord extends StartOutcome {
@@ -185,6 +212,7 @@ export function buildResultRecord(start: string, project: string, outcome: Start
     project,
     started: outcome.started,
     skipped: outcome.skipped,
+    printed: outcome.printed,
     failed: outcome.failed,
     aborted: outcome.aborted,
   }

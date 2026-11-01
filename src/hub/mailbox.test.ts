@@ -847,7 +847,9 @@ describe('project (attach の cwd)', () => {
 
   it('違うフォルダからの attach は記録を更新し、前のフォルダを次の attach まで projectChanged に出す', async () => {
     const { call, attach } = setup()
-    await attach('deployer', { client: 'claude-code', cwd: 'C:\\work\\cairn' })
+    const first = await attach('deployer', { client: 'claude-code', cwd: 'C:\\work\\cairn' })
+    // 接続中の Mailbox には別のフォルダから attach できない (C103)。切れてから別のフォルダで attach するのは (移動したフォルダ) 今のとおり
+    await call('DELETE', `/attachments/${first.attachmentId}`)
     await attach('deployer', { client: 'claude-code', cwd: 'C:\\work\\agent-hub' })
     const mb = await one(call, 'deployer')
     assert.equal(mb.project, 'C:\\work\\agent-hub')

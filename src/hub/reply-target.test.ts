@@ -104,4 +104,81 @@ describe('返信の replyTo は、受け取った Message か自分の Message �
     const res = await post({ kind: 'reply', replyTo: req.id, body: 'done' }, { 'x-hub-attachment': next.attachmentId })
     assert.equal(res.status, 201)
   })
+
+  // C99: 「受け取った」は送った時点の受け手。送った後に今の状態が変わっても、受け取った依頼への返信は通る
+  it('購読を外した後も、送った時点で購読していた Mailbox の返信は通る (C99)', async () => {
+    const { hub, post } = setup()
+    const x = hub.attach('x', { client: 'claude-code' })
+    hub.subscribe('x', 'agent.main')
+    const req = hub.postMessage({ kind: 'request', to: { type: 'topic', id: 'agent.main' }, body: 'x' }, user)
+    hub.unsubscribe('x', 'agent.main')
+    const res = await post({ kind: 'reply', replyTo: req.id, body: 'ok' }, { 'x-hub-attachment': x.attachmentId })
+    assert.equal(res.status, 201)
+  })
+
+  it('別の role で attach し直した後も、送った時点の role 宛ての依頼への返信は通る (C99)', async () => {
+    const { hub, post } = setup()
+    const rev = hub.attach('rev', { client: 'claude-code', role: 'reviewer' })
+    const req = hub.postMessage({ kind: 'request', to: { type: 'role', id: 'reviewer' }, body: 'review' }, user)
+    const again = hub.attach('rev', { client: 'claude-code', role: 'deployer' })
+    const res = await post({ kind: 'reply', replyTo: req.id, body: 'ok' }, { 'x-hub-attachment': again.attachmentId })
+    assert.equal(res.status, 201)
+  })
+
+  it('別の cwd で attach し直した後も、送った時点の project の role 宛ての依頼への返信は通る (C99)', async () => {
+    const { hub, post } = setup()
+    const rev = hub.attach('rev', { client: 'claude-code', role: 'reviewer', cwd: 'C:\\work\\a' })
+    const req = hub.postMessage({ kind: 'request', to: { type: 'role', id: 'reviewer', project: 'C:\\work\\a' }, body: 'review' }, user)
+    // 接続中の Mailbox には別のフォルダから attach できない (C103)。切れてから別のフォルダで attach し直す
+    hub.detach(rev.attachmentId)
+    const again = hub.attach('rev', { client: 'claude-code', role: 'reviewer', cwd: 'C:\\work\\b' })
+    const res = await post({ kind: 'reply', replyTo: req.id, body: 'ok' }, { 'x-hub-attachment': again.attachmentId })
+    assert.equal(res.status, 201)
+  })
+
+  it('送った時点で受け手でなかった Mailbox は、後から同じ role になっても refuse される (C99)', async () => {
+    const { hub, post } = setup()
+    const req = hub.postMessage({ kind: 'request', to: { type: 'role', id: 'reviewer' }, body: 'review' }, user)
+    const late = hub.attach('late', { client: 'claude-code', role: 'reviewer' })
+    const res = await post({ kind: 'reply', replyTo: req.id, body: 'ok' }, { 'x-hub-attachment': late.attachmentId })
+    const err = (await res.json()) as { error: string }
+    assert.equal(res.status, 400)
+    assert.equal(err.error, 'reply_not_received')
+  })
+
+  // C113: 送り手が自分の依頼に、未接続 (unattached) の role 宛てで返信して閉じる (leader が reviewer を待たずに進めた場合)。refuse されず、依頼が閉じ、返信は未読で届く
+  it('自分の依頼へ、unattached な role 宛てに返信して閉じる: 通り、outgoing と待ちが外れ、その Mailbox に未読で届く (C113)', async () => {
+    const { hub, post } = setup()
+    const lead = hub.attach('lead', { client: 'claude-code', role: 'leader' })
+    const rev = hub.attach('rev', { client: 'claude-code', role: 'reviewer' })
+    hub.detach(rev.attachmentId)
+    assert.ok(!hub.store.getMailbox('rev')!.attachment, 'rev は未接続 (unattached)')
+    const req = hub.postMessage({ kind: 'request', to: { type: 'role', id: 'reviewer' }, body: 'review C1' }, hub.senderOf(lead.attachmentId))
+    assert.equal(hub.store.isAwaitingReply(req), true)
+    assert.equal(hub.describeMailboxes().find((d) => d.name === 'lead')!.backlog.outgoing.count, 1)
+
+    const res = await post({ kind: 'reply', replyTo: req.id, to: { type: 'role', id: 'reviewer' }, body: 'went on without a reviewer' }, { 'x-hub-attachment': lead.attachmentId })
+    assert.equal(res.status, 201, await res.clone().text())
+    const reply = (await res.json()) as Message
+    assert.equal(reply.replyTo, req.id)
+    assert.equal(hub.store.isAwaitingReply(req), false, '依頼は閉じる')
+    assert.equal(hub.describeMailboxes().find((d) => d.name === 'lead')!.backlog.outgoing.count, 0, '送り手の outgoing から外れる')
+    assert.deepEqual(hub.store.unread('rev').map((m) => m.id), [req.id, reply.id], '再接続したときに、依頼と取り下げの返信が未読で届く')
+  })
+
+  it('購読を外した後も、受け取った未返信の依頼は案内に出る (oldestOpenRequestTo と同じ受け手)', async () => {
+    const { hub, post } = setup()
+    const x = hub.attach('x', { client: 'claude-code' })
+    hub.attach('other', { client: 'claude-code' })
+    hub.subscribe('x', 'agent.main')
+    const req = hub.postMessage({ kind: 'request', to: { type: 'topic', id: 'agent.main' }, body: 'x' }, user)
+    hub.unsubscribe('x', 'agent.main')
+    const unrelated = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'other' }, body: 'y' }, user)
+    assert.equal(hub.store.oldestOpenRequestTo('x')?.id, req.id)
+    // x は unrelated を受け取っていないので refuse され、案内に req が出る
+    const res = await post({ kind: 'reply', replyTo: unrelated.id, body: 'ok' }, { 'x-hub-attachment': x.attachmentId })
+    const err = (await res.json()) as { error: string; message: string }
+    assert.equal(err.error, 'reply_not_received')
+    assert.ok(err.message.includes(`#${req.seq}`), err.message)
+  })
 })

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -9,7 +9,7 @@ import { hookTemplate, runHooks } from './hooks.js'
 import { envSetting, hubRolesFile, ROOT } from './env.js'
 import { parse } from './options.js'
 import { commandLine, quoteForPlatform } from './quote.js'
-import { uiUrl } from './team.js'
+import { hooksForStart, uiUrl } from './team.js'
 import { detectOpener, launchFor, wtSeparatorError } from './tabs.js'
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'agent-hub-team-'))
@@ -157,4 +157,63 @@ test('wt: an argument with ; is refused because wt would split the command there
 test('uiUrl: the project goes in the fragment, normalized like the page and URL-encoded (C72)', () => {
   assert.equal(uiUrl('http://127.0.0.1:7777', 'tok', 'C:\\Users\\a\\my hub\\'),'http://127.0.0.1:7777/?token=tok#project=c%3A%2Fusers%2Fa%2Fmy%20hub')
   assert.equal(uiUrl('http://127.0.0.1:7777', 'tok', '/home/a/x"<b>'), 'http://127.0.0.1:7777/?token=tok#project=%2Fhome%2Fa%2Fx%22%3Cb%3E')
+})
+
+test('options: --no-hooks is off by default and on when given (C111)', () => {
+  assert.equal(parse(['--roles', 'leader']).noHooks, false)
+  assert.equal(parse(['--roles', 'leader', '--no-hooks']).noHooks, true)
+})
+
+test('team start hooks: the missing ones are written like --write, a backup is kept, a set project is not touched (C111)', () => {
+  const home = tmp()
+  const project = tmp()
+  const local = join(project, '.claude', 'settings.local.json')
+  const template = Object.keys(hookTemplate(ROOT, envSetting('HUB_PORT', '7777', ROOT)).hooks ?? {}).sort()
+
+  // a project with no hook settings: written, no backup (there was no file), the summary says so and no warning is left
+  const first = hooksForStart(project, ROOT, false, home)
+  assert.deepEqual(first.warnings, [])
+  assert.equal(first.infos.length, 1)
+  assert.match(first.infos[0]!, /Hub hooks written to .*settings\.local\.json/)
+  assert.ok(!first.infos[0]!.includes('previous file'))
+  assert.equal(existsSync(`${local}.bak`), false)
+  assert.deepEqual(Object.keys(JSON.parse(readFileSync(local, 'utf8')).hooks).sort(), template)
+
+  // the same start again: the hooks are set, so the file is not touched at all
+  const before = readFileSync(local, 'utf8')
+  assert.deepEqual(hooksForStart(project, ROOT, false, home), { infos: [], warnings: [] })
+  assert.equal(readFileSync(local, 'utf8'), before)
+
+  // a project with its own settings: those stay, and a backup of the previous file is kept
+  const other = tmp()
+  mkdirSync(join(other, '.claude'))
+  const otherLocal = join(other, '.claude', 'settings.local.json')
+  const mine = { permissions: { allow: ['Bash(ls)'] } }
+  writeFileSync(otherLocal, JSON.stringify(mine))
+  const kept = hooksForStart(other, ROOT, false, home)
+  assert.deepEqual(kept.warnings, [])
+  assert.match(kept.infos[0]!, /previous file is .*settings\.local\.json\.bak/)
+  assert.deepEqual(JSON.parse(readFileSync(`${otherLocal}.bak`, 'utf8')), mine)
+  const after = JSON.parse(readFileSync(otherLocal, 'utf8')) as { permissions: unknown; hooks: Record<string, unknown> }
+  assert.deepEqual(after.permissions, mine.permissions)
+  assert.deepEqual(Object.keys(after.hooks).sort(), template)
+})
+
+test('team start hooks: --no-hooks only warns and writes nothing; a file that is not JSON is not touched and the start goes on (C111)', () => {
+  const home = tmp()
+  const project = tmp()
+  const off = hooksForStart(project, ROOT, true, home)
+  assert.deepEqual(off.infos, [])
+  assert.match(off.warnings[0]!, /No Hub hook settings found.*hooks --project .* --write/)
+  assert.equal(existsSync(join(project, '.claude', 'settings.local.json')), false)
+
+  const broken = tmp()
+  mkdirSync(join(broken, '.claude'))
+  const brokenLocal = join(broken, '.claude', 'settings.local.json')
+  writeFileSync(brokenLocal, '{ not json')
+  const failed = hooksForStart(broken, ROOT, false, home)
+  assert.deepEqual(failed.infos, [])
+  assert.match(failed.warnings[0]!, /Could not write the Hub hooks: .*is not valid JSON, so it was not changed\. The start goes on/)
+  assert.equal(readFileSync(brokenLocal, 'utf8'), '{ not json')
+  assert.equal(existsSync(`${brokenLocal}.bak`), false)
 })
