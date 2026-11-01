@@ -1284,6 +1284,33 @@ try {
     { before, redrawn, heldPane, afterBlur },
   )
 
+  // 欄の中身の位置 (C98): 同じチップが開いたままなら、新しいデータと延ばした描き直しの前後で位置を保つ。別のチップを開くと上から
+  const bodyTop = async () => parse(await clickIn(`JSON.stringify((() => { const p = document.querySelector('#map .mappane'); const b = p && p.querySelector('.mappanebody'); return b ? { top: b.scrollTop, max: b.scrollHeight - b.clientHeight, key: p.dataset.key } : null })())`))
+  await clickIn(`(() => { document.querySelector('#map .mappane .mappanebody').scrollTop = 30 })()`)
+  const k0 = await bodyTop()
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: 'GOAL: 位置 新しいデータ (C98)' }, asMLead)
+  await sleep(1500)
+  const k1 = await bodyTop()
+  await clickIn(`document.querySelector('#map .mapnode[data-name="map.deployer"] select.mapfwd').focus()`)
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: 'GOAL: 位置 延ばした描き直し (C98)' }, asMLead)
+  await sleep(1500)
+  await clickIn(`document.querySelector('#map .mapnode[data-name="map.deployer"] select.mapfwd').blur()`)
+  await sleep(800)
+  const k2 = await bodyTop()
+  verify('開いたままのチップの欄は、新しいデータと延ばした描き直しの後も同じ位置で残る (C98)', k0.top > 0 && k1.top === k0.top && k2.top === k0.top && k1.key === k0.key && k2.key === k0.key && k2.max > 0, { k0, k1, k2 })
+
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.deployer' }, body: `GOAL: 長い行 B (C98)\n${'い'.repeat(200)}${'y'.repeat(400)}` }, asMLead)
+  await sleep(1500)
+  const bSeq = (await api('GET', '/messages?after=0&limit=1000')).messages.find((m) => m.body.startsWith('GOAL: 長い行 B (C98)')).seq
+  await clickIn(`${chipOf(bSeq)}.click()`)
+  await sleep(800)
+  await clickIn(`(() => { document.querySelector('#map .mappane .mappanebody').scrollTop = 30 })()`)
+  const b0 = await bodyTop()
+  await clickIn(`${chipOf(longSeq)}.click()`)
+  await sleep(800)
+  const a1 = await bodyTop()
+  verify('別のチップを開くと欄は上から始まる。前に開いた欄の位置は持ち越さない (C98)', b0.top > 0 && a1.top === 0 && a1.max > 0 && a1.key !== b0.key, { b0, a1 })
+
   // 辺が閉じたら、欄がそう言う (消えて黙ることはしない)。送り手は deployer: 返信で leader からの依頼が閉じる (C28)
   await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'map.leader' }, body: 'GOAL: 閉じさせる (C95)' }, asMDep)
   await sleep(1500)

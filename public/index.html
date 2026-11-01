@@ -2743,6 +2743,9 @@ window.addEventListener('resize', () => requestMapRender()) // 矢印は描い�
 
 function renderMap(model) {
   const root = $('map')
+  // 開いた欄の中身の位置は、同じチップが開いたままなら描き直しをまたいで保つ。別のチップは上から (C98)
+  const oldPane = root.querySelector('.mappane')
+  const keepTop = oldPane && oldPane.dataset.key === mapOpenKey ? (oldPane.querySelector('.mappanebody') || { scrollTop: 0 }).scrollTop : 0
   root.textContent = ''
   const canvas = el('div', 'mapcanvas')
   const nodes = new Map() // HUMAN_KEY か Mailbox 名 → { el, col }
@@ -2773,7 +2776,11 @@ function renderMap(model) {
   }
   drawMapArrows(canvas, pairs)
   const pane = mapPaneOf(model, nodes)
-  if (pane) root.append(pane)
+  if (pane) {
+    root.append(pane)
+    const body = pane.querySelector('.mappanebody')
+    if (body && keepTop) body.scrollTop = keepTop
+  }
   ensureRequests(model.edges)
 }
 function mapHumanNode(h) {

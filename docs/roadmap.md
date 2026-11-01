@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C98
 - [ ] C99
 - [ ] C100
 - [ ] C94
@@ -344,6 +343,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C98 Keep the map pane's scroll position across redraws (2026-11-01, decided by the user)
+  - `public/index.html` `renderMap`: reads the open pane body's `scrollTop` before it empties `#map`, and restores it after the pane is appended, only while the same `mapOpenKey` is still open. Another chip (or none) starts at 0. New data (SSE) and the C78 deferred redraw both take this path.
+  - `tools/dev/ui-check.mjs`: two scenes added after the C95 scenes. The first (the position is kept across new data and the deferred redraw) fails against the committed `index.html` (negative check, run once) and passes with the change. The second (another chip starts at the top) passes either way, as a guard. No existing scene changed.
+  - `docs/usage.md` (the map pane paragraph) describes the rule. `docs/design.md` §3.2 does not describe the pane, so it is unchanged.
+  - Checked: `npm run ui:check` exit 0 with both new scenes ok; `npm test` 412 pass, 0 fail; `npm run docs:check` 30 items, 0 errors, 0 warnings (after the close). The reviewer read the uncommitted change, found no findings. Not checked: a Message that loads after the pane is open ("Loading…" and then the Message): the position can be clamped and lost, and no scene covers it.
 - [x] C101 The C78 scene "closing Forward to… draws once" in `ui:check` is flaky (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the scene reads the render count and the chip count in the same evaluate as `blur()`. `blur()` runs `flushMap` synchronously (the select's onblur; `requestMapRender` renders at once when not held), so renders after it returns are not counted. The 800 ms wait is removed. The checks (`renders === 1`, `chips === chipsBefore + 1`) and the verify text are unchanged. `public/index.html` is not changed.
   - Checked: ten `npm run ui:check` runs in a row on the development machine's Chrome, all exit 0 with the C78 scene `ok` and no NG line; `npm test` 412 pass, 0 fail; `npm run docs:check` 31 items, 0 errors, 0 warnings (after the close). The reviewer read the uncommitted change, found no findings, and confirmed that `blur()` runs `flushMap` synchronously. Not checked: Linux Chromium, where the flake was seen.
@@ -698,15 +702,6 @@ Decided 2026-11-01 by the user: miscellaneous settings go behind a gear button, 
 - [ ] The gear opens a settings panel holding the theme choice (follow the OS / light / dark, the same states, `localStorage` key and first-paint behavior as C93); the panel closes on a second press, Escape or a click outside
 - [ ] No header control moves when a label changes length (the Health check count, Map ↔ Messages, the connection state)
 - [ ] `ui:check` adds scenes for the three controls, the panel's theme choice, and the controls keeping their positions across a label change; the theme scenes of C93 are moved to the panel; docs/usage.md and design.md (header controls) are updated; `npm test`, `npm run ui:check` and `npm run docs:check` pass
-
-### C98. Keep the map pane's scroll position across redraws
-
-Raised 2026-10-31 by the user, in the check of C95: the map is rebuilt from the model on every redraw (`renderMap` in `public/index.html` empties `#map`), so the pane below it is rebuilt too. Reading a long Message in the pane, any new data puts the pane back at its top.
-Decided 2026-10-31 by the user: keep the position while the same chip stays open.
-
-#### Done when
-- [ ] While the same chip stays open, a redraw (new data, and the deferred redraw of C78) keeps the pane body's scroll position; opening another chip starts at its top
-- [ ] `ui:check` adds a scene for each of the two, and the existing scenes are unchanged; `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
 ### C99. A Mailbox's reply is refused for a request it was handed (C86)
 
