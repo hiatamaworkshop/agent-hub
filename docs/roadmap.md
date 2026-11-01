@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C101
 - [ ] C98
 - [ ] C99
 - [ ] C100
@@ -344,6 +343,9 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C101 The C78 scene "closing Forward to… draws once" in `ui:check` is flaky (2026-11-01, decided by the user)
+  - `tools/dev/ui-check.mjs`: the scene reads the render count and the chip count in the same evaluate as `blur()`. `blur()` runs `flushMap` synchronously (the select's onblur; `requestMapRender` renders at once when not held), so renders after it returns are not counted. The 800 ms wait is removed. The checks (`renders === 1`, `chips === chipsBefore + 1`) and the verify text are unchanged. `public/index.html` is not changed.
+  - Checked: ten `npm run ui:check` runs in a row on the development machine's Chrome, all exit 0 with the C78 scene `ok` and no NG line; `npm test` 412 pass, 0 fail; `npm run docs:check` 31 items, 0 errors, 0 warnings (after the close). The reviewer read the uncommitted change, found no findings, and confirmed that `blur()` runs `flushMap` synchronously. Not checked: Linux Chromium, where the flake was seen.
 - [x] C102 Close an item after its review, not in the deployer's first run (2026-11-01, decided by the user)
   - `tools/dev/roles/leader.md`: the work request's DONE WHEN asks only for checking off and the facts in the body, not the close. A "Closing request (C102)" bullet and the order in "When to ask" send the close after the review and its fixes (or after the leader's check when no reviewer is connected), before the report to the human.
   - `tools/dev/roles/deployer.md`: the section is closed only when a request asks for the close, not when the last condition is checked.
@@ -733,13 +735,4 @@ Decided 2026-11-01 by the user: `agent` on its own records `started` only when i
 - [ ] `runAgent` writes a result line on every exit path, including a throw (as `runTeam` does with `try/finally`)
 - [ ] Tests cover the three; `npm test` and `npm run docs:check` pass
 
-### C101. The C78 scene "closing Forward to… draws once" in `ui:check` is flaky
-
-Seen 2026-10-31 running `npm run ui:check` with headless Chromium on Linux: the scene "Forward to… を閉じると、延ばした分を今のデータで 1 回だけ描く (C78)" in `tools/dev/ui-check.mjs` failed in 4 of 6 runs at `bb3415c` and 2 of 3 at `a646534`, each time with `{renders: 3, chips: chipsBefore + 1}`. The deferred redraw does happen, and two more renders come inside the 800 ms window. It fails before C92 and C95 too, so it is not their regression. Not measured on the Windows Chrome of the development machine. Likely cause, not measured: renders from `ensureRequests` completions or later SSE updates right after the deferred one. A flaky scene hides a real regression in the same place.
-
-Decided 2026-11-01 by the user: the scene counts only the deferred redraw, the renders up to `flushMap`'s return. Stopping the extra renders in the page is a change to the page, not to the scene, and is not part of this item.
-
-#### Done when
-- [ ] The scene checks that closing Forward to… draws once with the current data, counting the renders up to `flushMap`'s return, and does not count renders after it
-- [ ] The scene passes 10 runs in a row on the development machine's Chrome; the other scenes are unchanged; `npm test`, `npm run ui:check` and `npm run docs:check` pass
 

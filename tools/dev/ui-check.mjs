@@ -1068,9 +1068,9 @@ try {
   await sleep(2000)
   const held = parse(await clickIn(`JSON.stringify({ renders: window.__renders, connected: window.__sel.isConnected, focused: document.activeElement === window.__sel, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length })`))
   verify('Forward to… が開いている間、SSE の更新で地図を描き直さない (開いた選択は残り、数は変わらない) (C78)', held.renders === 0 && held.connected && held.focused && held.chips === chipsBefore, { held, chipsBefore })
-  await clickIn('window.__sel.blur()')
-  await sleep(800)
-  const released = parse(await clickIn(`JSON.stringify({ renders: window.__renders, connected: window.__sel.isConnected, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length })`))
+  // 閉じる (blur) の中で flushMap が延ばした描き直しを 1 回描く。描き直しと数えるのは flushMap が戻るまで (同期)。
+  // そのあとに来る描き直し (SSE の遅れ・タイマー) は数えない (C101)。待たずに、同じ式の中で読む
+  const released = parse(await clickIn(`(() => { window.__sel.blur(); return JSON.stringify({ renders: window.__renders, connected: window.__sel.isConnected, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length }) })()`))
   verify('Forward to… を閉じると、延ばした分を今のデータで 1 回だけ描く (C78)', released.renders === 1 && !released.connected && released.chips === chipsBefore + 1, { released, chipsBefore })
 
   // チップのドラッグ: 途中は描き直さず、dragend (取り消し) で 1 回
