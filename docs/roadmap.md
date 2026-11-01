@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C110
 - [ ] C109
 - [ ] C107
 - [ ] C106
@@ -384,6 +383,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - `tools/dev/ui-check.mjs`: three scenes at the end (cancel sends nothing and keeps the draft; confirm sends; one project is sent without asking). `window.confirm` is replaced in the page, so no dialog opens. Setup: reviewers outside `demo` are detached and deleted for the last scene.
   - `docs/usage.md` (the project paragraph) and `docs/design.md` §3.2 (the `All projects` bullet) say what happens.
   - Checked: `npm run ui:check` exit 0, 145 ok; `npm test` 462 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 29 items, 0 errors, 0 warnings after the close. The reviewer read the uncommitted change, found no findings, and ran ui:check. Not checked: the forward path's question (no scene); cancel keeping attachments and the forward state (the scene checks text and address only); a real browser with two real teams. Left as is (reviewer notes): the count comes from the page's `mailboxList`, so a Mailbox that attaches within the SSE gap is missed; Mailboxes of the role without a project receive the message but are not counted, so "N Mailboxes" can be lower than the Hub delivers to.
+- [x] C110 The leader does not close an item whose done-when it could not meet as written (2026-11-01, decided by the user)
+  - `tools/dev/roles/leader.md`: a done-when line not met as written (also when it failed before the work and still fails after it) sends no closing request; `NEEDS DECISION` with the facts and the proposed reading, and the item stays open. The flow step and the "Closing request (C102)" bullet cross-refer to it, and a reviewer finding of this kind goes to `NEEDS DECISION`, not to the deployer as a code fix.
+  - `tools/dev/roles/deployer.md`: checks off a line only when it is met as written; otherwise leaves `[ ]` and writes the facts in `NOTES:` and in the section's body.
+  - `tools/dev/roles/reviewer.md`: for `TARGET: C<n>`, a checked line whose facts do not meet its wording is a `FINDINGS:` entry.
+  - `docs/design.md` §3.15: one paragraph ("A done-when line is checked only when its wording is met as written") states the rule for all three roles.
+  - Checked: `npm test` 462 pass, 0 fail; `npm run docs:check` 33 items, 0 errors, 0 warnings (after the close). The reviewer read the uncommitted change; one finding (the parenthetical was wider in `deployer.md` and design.md §3.15 than in `leader.md`) was fixed in all places, and the planning session narrowed done-when line 1 to the same wording (bee8a8b). Not checked: a real team run where a line is unmet; a review of an item whose lines are all `[ ]` reads only the wording (C97 edge, not touched).
 - [x] C94 A settings button in the page header (2026-11-01, decided by the user)
   - Header: the Theme button is gone. The right side holds exactly three controls, the Map / Messages toggle, Health check and the gear (`#settingsToggle`, rightmost). The gear has `aria-expanded` and `aria-controls="settings"`.
   - Panel `#settings` sits inside `<header>` (absolute, under the header on the right, so the header's flex row is unchanged while it is hidden or open). It offers Follow the OS / Light / Dark as three `data-choice` buttons, marked with `aria-pressed`. The `localStorage` key (`agent-hub.theme`), the stored values, the `<head>` first-paint script and `applyTheme`'s data-theme rule are as in C93.
@@ -784,22 +789,6 @@ Decided 2026-11-01 by the user: fix what the card shows, and have the leader sto
 - [ ] The tab title, the tab icon and the `#states` / `#backlog` badges count that card the same way as the card shows it
 - [ ] `tools/dev/roles/leader.md`: when `post_message` answers a request with no recipients (or with all of them unattached), the leader does not wait on it; for a review it goes on as with no reviewer connected (`NOT VERIFIED`), otherwise it says so under `NEEDS ACTION` in its report
 - [ ] `ui:check` adds a scene for a card with both an outgoing request to a role with no Mailbox and a handed request with no reply; docs/usage.md (card states) and design.md §3.15 (card states) are updated; `npm test`, `npm run ui:check` and `npm run docs:check` pass
-
-### C110. The leader does not close an item whose done-when it could not meet as written
-
-Found 2026-11-01 in cairn's C12. A done-when line read "every draft under `seeds/` still passes `parseTemplate`"; 4 of 11 failed, before and after the change. The leader closed the item reading the line as "no regression", wrote that in the record, and put the 4 drafts under NEEDS DECISION with the default "do not file". The roadmap rule says changing done-when wording is a change of promise and goes to the human in the report; `docs:check` cannot see this. The human had the drafts fixed as a new item (cairn C18) and kept C12 closed.
-Candidate: say in `tools/dev/roles/leader.md` that a done-when line not met as written keeps the item open and goes to NEEDS DECISION with the reading proposed, and check the deployer's role file for the same.
-Decided 2026-11-01 by the user: taken up first; it is a change to the role files only.
-
-Checked 2026-11-01 (deployer): `leader.md`, `deployer.md` and `reviewer.md` each state the rule for their role, and design.md §3.15 ("A done-when line is checked only when its wording is met as written") states it once for all three. `npm test` 462/462 pass; `npm run docs:check` 34 items, 0 errors, 0 warnings. No done-when wording changed. Not closed: the section and the Plan line stay for the closing request (C102).
-Fixed 2026-11-01 after the reviewer's checked finding: the parenthetical "(also when the result is unchanged…)" was read as covering a met line whose result did not change; leader.md, deployer.md and design.md §3.15 now say "(also when the line failed before the work and still fails after it, so the work did not change the result)". The leader's flow and closing-request bullet, and its reviewer-finding bullet, cross-refer to the rule. The C110 done-when line still carries the wide wording: changing it is a change of promise, left to the planning session.
-Decided 2026-11-01 by the user: done-when line 1 narrowed to the role files' wording (the planning session changed it; the cairn C12 case was a line that failed before and after).
-
-#### Done when
-- [x] `tools/dev/roles/leader.md`: when a done-when line is not met as written (also when the line failed before the work and still fails after it, so the work did not change the result), the leader sends no closing request; the report puts it under `NEEDS DECISION` with the facts and the reading it proposes, and the item stays open
-- [x] `tools/dev/roles/deployer.md`: the deployer does not check off a line it met only under another reading; it leaves the box empty and writes the facts in its report and in the section's body
-- [x] `tools/dev/roles/reviewer.md`: for `TARGET: C<n>`, a checked line whose facts do not meet its wording is a finding
-- [x] design.md §3.15 (handling updates during implementation) says the same in one place; `npm test` and `npm run docs:check` pass
 
 ### C111. Write the Hub hooks on a project's first team start
 
