@@ -19,6 +19,8 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C114
+- [ ] C115
 
 (Items with a status line are listed under "Items".)
 
@@ -763,19 +765,35 @@ Status: held(after the user has run teams in two projects side by side)
 Raised 2026-11-01 by the user: projects where a team was started could show as tab-like buttons, so switching is one press (today it is the project selector above the sidebar). The user wants to run two teams first and decide then. design.md §3.2 chose a selector over tabs so waits in other projects are not missed (`N waiting in other projects`); buttons have to keep that.
 
 ### C114. A request handed after it was sent cannot be answered (C99)
-Status: proposed
 
 Found 2026-11-01 in the review of C99 (`7c8b665`), and reproduced at `1b6363c`. `Store.isRecipientAtSend` judges a Mailbox that existed at send time only by the send-time record, so a Mailbox that is handed the request later is refused with `400 reply_not_received`, the hint does not name it, and its later Message does not close it (C28). Two cases: a Mailbox first attached without a `cwd` (project `null`) that attaches with the project's cwd after a `role @ project` request; and a detached Mailbox whose folder moved, re-attaching from the new folder after the leader's `role @ <new folder>` request (C103 allows this with no live Attachment). The request is in its unread list. Before C99 the reply passed. This breaks C99's own decision ("received" means handed, design.md §3.14) and "A project is a value" (§3.15: a project-scoped role request arrives at the Mailbox that later attaches in that project).
 `known` also writes every Mailbox name on every `message` line (about 10 times the line size with 80 Mailboxes, measured by the reviewer).
-To decide: judge by "a recipient at send time, or a recipient now" (`recipients ∪ isRecipient`), which keeps C99's three cases and the refusal (role without project and topic still check seq) and drops `known`, with protocol.md §2 ("A Mailbox that existed when the Message was sent is judged only by that record") changed to match; or record hand-over instead of send time. Also whether a Mailbox deleted and re-created under the same name, which is not handed the old request, may still reply to it by the name in the record (documented in protocol.md §2 today).
+Decided 2026-11-01 by the user, as the reviewer recommended: a Mailbox counts as having received a Message when it was a recipient at send time or is a recipient now (`recipients` ∪ `isRecipient`). Role messages without a project and topic messages still check seq, so a Mailbox that was never handed the Message is still refused. `known` is dropped. A Mailbox deleted and re-created under the same name keeps what protocol.md §2 says today (it may reply by the name in the record); this item does not change it.
+
+#### Done when
+- [ ] The reply check (C86), the hint (`oldestOpenRequestTo`) and the closing rule (`answeredBy`, C28) accept a name that was a recipient at send time or is a recipient now; `known` is no longer written, and log lines that carry it still load
+- [ ] The two cases above can reply, are named in the hint, and close the request by a later Message; C99's three cases (unsubscribe, another role, another cwd) and the refusal of a Mailbox that was never a recipient still hold
+- [ ] protocol.md §2 / §3 and design.md §3.14 describe the rule, and protocol.md no longer says a Mailbox that existed at send time is judged only by the record
+- [ ] Tests cover the two cases, restart and compaction, and a log line written with `known`; `npm test` and `npm run docs:check` pass
 
 ### C115. Gaps left in C100's start result
+Found 2026-11-01 in the review of C100 (`a94255c`), at `1b6363c`, reproduced by the reviewer:
+- `fail()` in `src/team/agent.ts` writes the status file before it records `failed`. If that write throws (an unwritable temporary folder, the case its comment names), the line is `aborted` with the file error, with no role and without the reason.
+- C100's done-when 4 ("tests cover the three") was checked although no test runs `runAgent`'s spawn, exit and attach-watch wiring or `team`'s `print ? printed : started`. Reverting either to the pre-C100 behaviour leaves `npm test` green.
+
+Decided 2026-11-01 by the user: fix both; they need no new decision. The points that do are in C116.
+
+#### Done when
+- [ ] `fail()` in `src/team/agent.ts` records `failed` (role, mailbox, reason) before anything else that can throw, so an unwritable status file still leaves that line
+- [ ] Tests run `runAgent`'s child wiring (spawn, exit before attach, attach then exit, error) with a fake child and an injected attachment read, and `team`'s no-token outcome (`printed` for the `print` opener, `started` for a tab opener) through a function a test can call; reverting either to the pre-C100 behaviour fails a test
+- [ ] `npm test` and `npm run docs:check` pass
+
+### C116. What the start result records for a start without a token, a quick exit, or Ctrl+C
 Status: proposed
 
-Found 2026-11-01 in the review of C100 (`a94255c`), at `1b6363c`:
-- `fail()` in `src/team/agent.ts` writes the status file before it records `failed`. If that write throws (an unwritable temporary folder, the case its comment names), the line is `aborted` with the file error, with no role and without the reason (reproduced).
-- C100's done-when 4 ("tests cover the three") was checked although no test runs `runAgent`'s spawn, exit and attach-watch wiring or `team`'s `print ? printed : started`. Reverting either to the pre-C100 behaviour leaves `npm test` green (reproduced).
-- `agent` on its own without `HUB_TOKEN` still records `started` on spawn. docs/usage.md says so, but C100's done-when 1 put "(with a token)" only on the `failed` clause.
-- A claude that attaches and exits within one 1-second poll is recorded `failed` ("ended before attaching"); the closing record leaves it as is. One more read of the attachment when claude exits would see it (an Attachment outlives its stream for the grace period).
+Split from C115 on 2026-11-01 (the review of C100, at `1b6363c`). Each needs a decision:
+- `agent` on its own without `HUB_TOKEN` records `started` on spawn. docs/usage.md says so, but C100's done-when 1 put "(with a token)" only on the `failed` clause, so a blocked `claude.cmd` (C56) without a token is still `started`.
+- A claude that attaches and exits within one 1-second poll is recorded `failed` ("ended before attaching"); C100's closing record leaves it as is. One more read of the attachment when claude exits would see it (an Attachment outlives its stream for the grace period).
 - Ctrl+C before claude spawns, or during `team`'s attach waits, ends the process with no result line. docs/usage.md says both "on every exit path" and "a start … with no result line was killed".
-To decide: which of these to fix in code (the first two need no new decision), what `agent` without a token records, and how docs/usage.md words the kill case.
+
+To decide: what `agent` without a token records (as now, or something other than `started`), whether the exit handler reads the attachment once more, and whether a signal writes a result line or docs/usage.md says a kill leaves none.
