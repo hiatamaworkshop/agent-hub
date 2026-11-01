@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C94
 - [ ] C106
 
 (Items with a status line are listed under "Items".)
@@ -380,6 +379,15 @@ In the order they will be taken up. Only items without a status line and blocked
   - `tools/dev/ui-check.mjs`: three scenes at the end (cancel sends nothing and keeps the draft; confirm sends; one project is sent without asking). `window.confirm` is replaced in the page, so no dialog opens. Setup: reviewers outside `demo` are detached and deleted for the last scene.
   - `docs/usage.md` (the project paragraph) and `docs/design.md` §3.2 (the `All projects` bullet) say what happens.
   - Checked: `npm run ui:check` exit 0, 145 ok; `npm test` 462 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 29 items, 0 errors, 0 warnings after the close. The reviewer read the uncommitted change, found no findings, and ran ui:check. Not checked: the forward path's question (no scene); cancel keeping attachments and the forward state (the scene checks text and address only); a real browser with two real teams. Left as is (reviewer notes): the count comes from the page's `mailboxList`, so a Mailbox that attaches within the SSE gap is missed; Mailboxes of the role without a project receive the message but are not counted, so "N Mailboxes" can be lower than the Hub delivers to.
+- [x] C94 A settings button in the page header (2026-11-01, decided by the user)
+  - Header: the Theme button is gone. The right side holds exactly three controls, the Map / Messages toggle, Health check and the gear (`#settingsToggle`, rightmost). The gear has `aria-expanded` and `aria-controls="settings"`.
+  - Panel `#settings` sits inside `<header>` (absolute, under the header on the right, so the header's flex row is unchanged while it is hidden or open). It offers Follow the OS / Light / Dark as three `data-choice` buttons, marked with `aria-pressed`. The `localStorage` key (`agent-hub.theme`), the stored values, the `<head>` first-paint script and `applyTheme`'s data-theme rule are as in C93.
+  - Open and close: the gear opens and closes it; a second press closes it; Escape closes it and returns focus to the gear; a press outside the panel and the gear closes it; a choice keeps it open.
+  - Positions: fixed widths for `#health` (150px), `#mapToggle` (80px), `#settingsToggle` (34px) and `#conn` (140px, ellipsis). The right group is still anchored by `#health`'s `margin-left: auto`.
+  - `tools/dev/ui-check.mjs`: the C93 theme scenes use the panel (`pressTheme(choice)`, the same states); four header and panel scenes added (exactly the three controls and no Theme button; the right controls' edges unchanged across a Health count change, Map ↔ Messages and a connection-label change, measured; open, close, Escape with focus on the gear, outside press, a choice keeps it open and is saved); one scene asserts the open panel's rectangle is below the header and inside the viewport and that `elementFromPoint` at its centre is the panel or a child.
+  - Review fix (a reviewer finding): the panel was a sibling after `</header>`, and the body is not positioned, so it landed below the viewport and `body { overflow: hidden }` clipped it. Negative check: before the fix the rectangle scene failed (panel top 486 px, viewport height 482 px, centre point not hit). It was moved inside `<header>` and passes.
+  - `docs/usage.md` (Light and dark theme) and `docs/design.md` §3.2 (header controls) describe the panel, its closing rules and the fixed positions.
+  - Checked: `npm run ui:check` exit 0, 150 ok, 0 NG (145 before, plus five C94 scenes); `npm test` 462 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 29 items, 0 errors, 0 warnings after the close. The reviewer read the uncommitted change; the panel finding was fixed with a negative-checked scene. Not checked: a narrow (phone) width, where the fixed widths may crowd the left side (the connection label shrinks with ellipsis); the panel in dark theme beyond the scenes; keyboard tab order inside the panel beyond the three choices. Left as is (reviewer notes): Escape is a document-level handler that does not stop propagation (no conflict found, not tested); the moved theme scenes press explicit choices instead of cycling.
 - [x] C97 Review the uncommitted change before the leader reports an item done (2026-11-01, decided by the user on 2026-10-31)
   - `tools/dev/roles/reviewer.md`: for `TARGET: C<n>` with at least one `[x]` condition, the reviewer also reads `git diff HEAD` and the untracked files from `git status`, plus the item's commits, and says in `VERIFIED` which it read. A commit range `TARGET` is still accepted.
   - `tools/dev/roles/leader.md`: "When to ask" sends `TARGET: C<n>` after the deployer's report and the leader's check, before the report to the human. Nothing is committed for it. The `NEEDS ACTION` (commit first) path is removed, and the review is not sent while the deployer is still working on the same tree. Flow step 2 points to it, and the no-reviewer rule (`NOT VERIFIED`) is kept.
@@ -633,6 +641,8 @@ On 2026-10-20 the first half of vcp's C145 was run that way (`start-team.ps1 -Ro
 
 The same day, vcp's C147 was also run as a request without the index (the team was still C145's). From request to final report took about 26 minutes, with one correction from the human. After the deployer reported and while the leader was still checking, the human sent a correction (choose months by label rather than month name); the leader had the deployer fix it as is, and returned the results of both requests together in one reply to the first request. The correction request stayed awaiting reply, and the deployer's two reports stayed without confirmed receipt (design.md §6.1n, C28). The cause of the correction was the request's wording (it copied "run month names through C53's check" from an old discussion in the TODO), not an agent-hub bug.
 
+Seen again 2026-11-01 when a session that had never used agent-hub started a team in cairn (`hub-team --roles leader,deployer`): the start only warned that the project had no Hub hooks, and the session wrote them with a second command (`npm run team -- hooks --project <cairn> --write`, into the git-ignored `.claude/settings.local.json`). Writing them on the first start, or asking once, would remove that step. The same start also warned that Claude Code 2.1.316 is newer than the last verified version; shown on every start, it is likely to be skimmed past. The ledger side of that first run is C107.
+
 ### C35. Relaying requests from projects with their own ledger
 Status: held(until running it shows what is needed)
 
@@ -715,18 +725,6 @@ Status: proposed
 Found 2026-10-31 in a review of C78. The map's chips come from `backlog.outgoing.to[].seqs`, and `outgoing` counts only what a Mailbox sent (`from.type === 'mailbox'` in `src/hub/store.ts`). A request from the human is not in anyone's `outgoing`, so the most common stop, the human's request to a `leader` that is Stopped, has no chip: the leader's card state shows it, but it cannot be expanded or forwarded from the map. The receiver's `backlog.awaitingReply` and `unread` have only a count and the oldest seq, which is not enough for one chip per request (the reason C78 added `seqs`).
 To decide: where the seqs come from (`seqs` on the receiver's `awaitingReply` and `unread`, or an `outgoing` for the human across its user ids `browser` / `cli`), and how the chip is drawn (an edge from the human node, which runs along the role order, unlike a Mailbox's request to the human).
 
-### C94. A settings button in the page header
-
-Raised 2026-10-31 by the user: the page will need a settings place sooner or later. Its place is the rightmost of the header's controls. A button that opens an empty panel is not shipped, so the item waited for its first contents.
-Raised again 2026-11-01 by the user: the header's controls move sideways as their labels change length. `#health` has `margin-left: auto`, so the group is anchored at the right, and a label that changes width (`Health check (0)` → `(12)`, `Map` ↔ `Messages`, `Theme: auto` / `light` / `dark`) pushes every control to its left.
-Decided 2026-11-01 by the user: miscellaneous settings go behind a gear button, and the header always shows three controls only: the Map / Messages toggle, Health check and the gear. The first contents of the panel are C93's theme, moved out of the header (this replaces "the theme stays a one-press toggle in the header"). The other candidates (the retention input `#keep`, the default of the Noise filter, the sidebar width, resetting the preferences kept in `localStorage`) stay where they are; each is a later item if wanted.
-
-#### Done when
-- [ ] The header's right side shows exactly three controls: the Map / Messages toggle, Health check and a gear button (rightmost); the Theme button is no longer in the header
-- [ ] The gear opens a settings panel holding the theme choice (follow the OS / light / dark, the same states, `localStorage` key and first-paint behavior as C93); the panel closes on a second press, Escape or a click outside
-- [ ] No header control moves when a label changes length (the Health check count, Map ↔ Messages, the connection state)
-- [ ] `ui:check` adds scenes for the three controls, the panel's theme choice, and the controls keeping their positions across a label change; the theme scenes of C93 are moved to the panel; docs/usage.md and design.md (header controls) are updated; `npm test`, `npm run ui:check` and `npm run docs:check` pass
-
 ### C105. Switch between projects with running teams from the page header
 Status: held(after the user has run teams in two projects side by side)
 
@@ -743,3 +741,27 @@ Decided 2026-11-01 by the user: every badge jumps, so the rule stays one ("a bad
 - [ ] On the map, the human node's `Needs you N` and a card's Needs you label jump like the Needs you badge; a jump to a Message or Event from Map view switches to Messages view first
 - [ ] Every badge that jumps shows the pointer cursor and a title that says what a press finds; a press sends nothing, marks nothing read and changes no state
 - [ ] `ui:check` adds scenes for a `#backlog` badge, a Needs you badge and a Working badge jumping, a map Needs you label, and a badge whose target is hidden by the project filter; docs/usage.md and design.md §3.15 (backlog badges) are updated; `npm test`, `npm run ui:check` and `npm run docs:check` pass
+
+### C107. Send the ledger index when a team starts, and say so when a project has none
+Status: proposed
+
+Found 2026-11-01 when a session that had never used agent-hub started a team in cairn. The items pane stayed empty, and nothing said why: the Hub does not read the working tree, `docs:index` sends `docs/roadmap.md` by default, and cairn's ledger is `docs/items.md` (its `docs/roadmap.md` is a phase plan). The session found this only by reading `src/docs-check/push-index.ts`. `hub-team` does not send an index, and its summary does not mention one. After that, cairn's CLAUDE.md got the re-send command so its agents re-send after closing an item (the deployer did, unprompted, when closing C12).
+Candidates: name the ledger in a one-line per-project setting, and have `hub-team` send it on start and print the source in the summary; when a project shown in the page has no index, show the `docs:index` command (with `--file`) in the empty items pane.
+
+### C108. A command for the starting session to read a project's latest reports and states
+Status: proposed
+
+Found 2026-11-01 in the same first run. The session that started the team was asked "it seems done, take a look", and had no short way to read the leader's report: it took the token from `.env`, tried `GET /messages` (which returned another project's messages last), filtered by `cairn` by hand, and read `GET /mailboxes` and `GET /events` (no Mailbox filter) to see that the leader was idle with a request awaiting reply. The reports themselves read well (RESULT / VERIFIED / NOT VERIFIED / NEEDS DECISION).
+Candidate: `hub-team status --project <dir>` (or a `team` subcommand) printing, for that project, each Mailbox's state and backlog in one line, and the latest report to the human in full; `hub-team`'s summary names it.
+
+### C109. Catch a turn that ends with a handed request and no reply
+Status: proposed
+
+Found 2026-11-01 in cairn: the leader was handed the human's request (#499), wrote its report only in its terminal, and ended the turn without `post_message`. A minute later `idle_prompt` turned the card to `Needs you`, and the human read that as "finished". The leader posted the report only after a second turn (it noticed by itself). The Hub knew the request was awaiting reply (`backlog.awaitingReply` 1, `unconfirmed` 1), so this can be judged without an LLM.
+Candidates: a `Stop` hook that blocks the stop once with a short cue when the Mailbox holds a handed request with no reply; or show the card as `Stopped, no reply` rather than `Needs you` in that case. Related: C79 (a timer watcher), C76 (Health check).
+
+### C110. The leader does not close an item whose done-when it could not meet as written
+Status: proposed
+
+Found 2026-11-01 in cairn's C12. A done-when line read "every draft under `seeds/` still passes `parseTemplate`"; 4 of 11 failed, before and after the change. The leader closed the item reading the line as "no regression", wrote that in the record, and put the 4 drafts under NEEDS DECISION with the default "do not file". The roadmap rule says changing done-when wording is a change of promise and goes to the human in the report; `docs:check` cannot see this. The human had the drafts fixed as a new item (cairn C18) and kept C12 closed.
+Candidate: say in `tools/dev/roles/leader.md` that a done-when line not met as written keeps the item open and goes to NEEDS DECISION with the reading proposed, and check the deployer's role file for the same.

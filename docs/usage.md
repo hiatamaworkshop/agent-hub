@@ -44,9 +44,10 @@ Each Mailbox card on the left shows, as one state and by the color of its frame,
 
 ## Light and dark theme
 
-- The **Theme** button to the right of Map in the header cycles three states: `Theme: auto` (follows the OS setting, the default), `Theme: light`, `Theme: dark`, then back to auto (roadmap C93). The button's label shows the current state, and its title says what the next press does.
-- The choice is kept in this browser's `localStorage` (`agent-hub.theme`), so it survives a reload. Another browser or profile has its own. If storage is blocked, the page follows the OS and the button still works for the session.
-- In auto, a change of the OS setting while the page is open is followed at once. The tab's icon and the colors of the cards follow the chosen theme, not only the OS.
+- The theme is chosen in the **settings panel**: press the gear (⚙) at the right of the header. The panel offers **Follow the OS** (the default), **Light** and **Dark** (roadmap C93, moved to the panel in C94). The chosen one is marked. Press the gear again, press Escape, or click outside the panel to close it; choosing a theme does not close it.
+- The header's right side holds three controls only: Health check, Map / Messages and the gear. Their places do not move when a label changes length (C94).
+- The choice is kept in this browser's `localStorage` (`agent-hub.theme`), so it survives a reload. Another browser or profile has its own. If storage is blocked, the page follows the OS and the panel still works for the session.
+- With Follow the OS, a change of the OS setting while the page is open is followed at once. The tab's icon and the colors of the cards follow the chosen theme, not only the OS.
 
 ## Custom commands
 

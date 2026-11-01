@@ -117,7 +117,17 @@
   #map { flex: 1 1 0; min-height: 0; overflow: auto; }
   #mapToggle { font-size: 12px; padding: 1px 8px; line-height: 1.4; }
   #mapToggle[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-  #themeToggle { font-size: 12px; padding: 1px 8px; line-height: 1.4; }
+  /* ヘッダーの右の 3 つ (Health check・Map / Messages・歯車) と接続の表示は幅を決め、ラベルが変わっても位置が動かないようにする (C94) */
+  header { position: relative; }
+  #conn { display: inline-block; width: 140px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #health { width: 150px; }
+  #mapToggle { width: 80px; }
+  #settingsToggle { font-size: 12px; padding: 1px 8px; line-height: 1.4; width: 34px; }
+  #settingsToggle[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+  /* 設定パネル: 歯車の下に開く。hidden のときは出さない (C94) */
+  #settings { position: absolute; right: 12px; top: calc(100% + 4px); z-index: 20; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+  #settings[hidden] { display: none; }
+  #settings button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
   .mapcanvas { position: relative; display: flex; gap: 40px; align-items: flex-start; padding: 12px 16px; min-width: max-content; }
   .mapcol { display: flex; flex-direction: column; gap: 8px; min-width: 200px; }
   .mapcolhead { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
@@ -278,7 +288,7 @@
 </style>
 </head>
 <body>
-<header><h1>agent-hub</h1><span id="conn" class="ng">Disconnected</span><button type="button" id="health" disabled title="Send one notice to each Mailbox in Stopped, no reply (all projects), naming its oldest request with no reply. Mailboxes in other states get nothing.">Health check (0)</button><button type="button" id="mapToggle" aria-pressed="false" title="Switch between the messages and a map of where each open request is waiting, by whose move it is (the same sessions as the cards, the same project filter)">Map</button><button type="button" id="themeToggle" title="Follows the OS setting. Press for light.">Theme: auto</button></header>
+<header><h1>agent-hub</h1><span id="conn" class="ng">Disconnected</span><button type="button" id="health" disabled title="Send one notice to each Mailbox in Stopped, no reply (all projects), naming its oldest request with no reply. Mailboxes in other states get nothing.">Health check (0)</button><button type="button" id="mapToggle" aria-pressed="false" title="Switch between the messages and a map of where each open request is waiting, by whose move it is (the same sessions as the cards, the same project filter)">Map</button><button type="button" id="settingsToggle" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings" aria-label="Settings" title="Settings (theme: follow the OS)">⚙</button><div id="settings" role="dialog" aria-label="Settings" hidden><span>Theme</span> <button type="button" data-choice="follow">Follow the OS</button> <button type="button" data-choice="light">Light</button> <button type="button" data-choice="dark">Dark</button></div></header>
 <div id="auth">
   <p>Not authenticated. Open the <code>http://127.0.0.1:&lt;port&gt;/?token=…</code> URL shown in the Hub's console when it started.</p>
 </div>
@@ -3183,28 +3193,40 @@ function showTabUnread() {
       : null)
   } catch {}
 }
-// 配色 (C93): 選んだ配色 (follow → light → dark → follow) を localStorage に覚える。follow は OS の設定に従い、OS が変わったら描き直す。
+// 配色 (C93): 選んだ配色 (follow / light / dark) を localStorage に覚える。選ぶのは歯車の設定パネル (C94)。follow は OS の設定に従い、OS が変わったら描き直す。
 // 夜の色は CSS の [data-theme="dark"] に 1 回だけ書いてあり、ここは data-theme を決めるだけ。タブの絵は CSS 変数の色で描くので、applyTheme の中で描き直す (C70)
 const THEME_KEY = 'agent-hub.theme'
-const THEME_NEXT = { follow: 'light', light: 'dark', dark: 'follow' }
-const THEME_LABEL = { follow: 'Theme: auto', light: 'Theme: light', dark: 'Theme: dark' }
-const THEME_TITLE = { follow: 'Follows the OS setting. Press for light.', light: 'Light. Press for dark.', dark: 'Dark. Press to follow the OS setting again.' }
+const THEME_NAME = { follow: 'follow the OS', light: 'light', dark: 'dark' }
 const OS_DARK = matchMedia('(prefers-color-scheme: dark)')
 let theme = 'follow'
 try { const v = localStorage.getItem(THEME_KEY); if (v === 'light' || v === 'dark') theme = v } catch {}
 function applyTheme() {
   const dark = theme === 'dark' || (theme === 'follow' && OS_DARK.matches)
   document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-  const b = $('themeToggle')
-  b.textContent = THEME_LABEL[theme]
-  b.title = THEME_TITLE[theme]
+  // 設定パネルの選びの印と、歯車の title (今の配色) (C94)
+  for (const b of document.querySelectorAll('#settings [data-choice]')) b.setAttribute('aria-pressed', String(b.dataset.choice === theme))
+  $('settingsToggle').title = `Settings (theme: ${THEME_NAME[theme]})`
   showTabUnread()
 }
-$('themeToggle').onclick = () => {
-  theme = THEME_NEXT[theme]
-  try { localStorage.setItem(THEME_KEY, theme) } catch {}
-  applyTheme()
+// 設定パネル (C94): 歯車で開く。もう一度押す・Escape・外を押すと閉じる (Escape のときは歯車へ戻る)。選んでも閉じない
+function setSettingsOpen(open, returnFocus = false) {
+  $('settings').hidden = !open
+  $('settingsToggle').setAttribute('aria-expanded', String(open))
+  if (!open && returnFocus) $('settingsToggle').focus()
 }
+$('settingsToggle').onclick = () => setSettingsOpen($('settings').hidden)
+for (const b of document.querySelectorAll('#settings [data-choice]')) {
+  b.onclick = () => {
+    theme = b.dataset.choice
+    try { localStorage.setItem(THEME_KEY, theme) } catch {}
+    applyTheme()
+  }
+}
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('settings').hidden) setSettingsOpen(false, true) })
+document.addEventListener('pointerdown', (e) => {
+  if ($('settings').hidden || $('settings').contains(e.target) || $('settingsToggle').contains(e.target)) return
+  setSettingsOpen(false)
+})
 OS_DARK.addEventListener('change', () => applyTheme())
 function countTabUnread() { tabUnread++; showTabUnread() }
 function clearTabUnread() { if (tabUnread === 0) return; tabUnread = 0; showTabUnread() }

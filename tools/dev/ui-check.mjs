@@ -1340,15 +1340,16 @@ try {
     JSON.parse(
       await evaluate(`JSON.stringify({
         theme: document.documentElement.dataset.theme,
-        label: $('themeToggle').textContent,
-        title: $('themeToggle').title,
+        label: (document.querySelector('#settings [data-choice][aria-pressed="true"]') || {}).textContent || '',
+        open: $('settingsToggle').getAttribute('aria-expanded'),
         bg: getComputedStyle(document.body).backgroundColor,
         you: getComputedStyle(document.documentElement).getPropertyValue('--st-you').trim(),
         stored: (() => { try { return localStorage.getItem('agent-hub.theme') } catch (e) { return 'ERR' } })(),
       })`),
     )
-  const pressTheme = async () => {
-    await evaluate("$('themeToggle').click()")
+  // 設定パネルで配色を選ぶ (C94)。パネルが閉じていれば歯車で開く
+  const pressTheme = async (choice) => {
+    await evaluate(`(() => { if ($('settings').hidden) $('settingsToggle').click(); document.querySelector('#settings [data-choice="${choice}"]').click() })()`)
     await sleep(300)
     return themeOf()
   }
@@ -1388,14 +1389,12 @@ try {
   await setOs(true)
   await goPage()
   const t0 = await themeOf()
-  const seq = [await pressTheme(), await pressTheme(), await pressTheme()]
+  const seq = [await pressTheme('light'), await pressTheme('dark'), await pressTheme('follow')]
   const labels = [t0, ...seq].map((t) => t.label)
   verify(
-    '配色: 初めは follow the OS (OS が夜なら夜の色)。押すたびに follow → light → dark → follow と回り、ボタンの文字が今の状態を、title が次の動きを言う (C93)',
-    JSON.stringify(labels) === JSON.stringify(['Theme: auto', 'Theme: light', 'Theme: dark', 'Theme: auto']) &&
-      t0.theme === 'dark' && t0.bg === DARK_BG && t0.title === 'Follows the OS setting. Press for light.' &&
-      seq[0].title === 'Light. Press for dark.' && seq[1].title === 'Dark. Press to follow the OS setting again.' && seq[2].title === 'Follows the OS setting. Press for light.',
-    { labels, titles: [t0.title, ...seq.map((t) => t.title)] },
+    '配色 (設定パネル): 初めは Follow the OS (OS が夜なら夜の色)。Light、Dark、Follow the OS と選ぶと、そのたびに今の選びが変わる (C93, C94)',
+    JSON.stringify(labels) === JSON.stringify(['Follow the OS', 'Light', 'Dark', 'Follow the OS']) && t0.theme === 'dark' && t0.bg === DARK_BG && t0.open === 'false',
+    { labels, open: t0.open },
   )
   verify(
     '配色: 夜の OS で昼を選ぶと昼の色 (背景と --st-you とも。夜の定義は使わない) (C93)',
@@ -1404,22 +1403,22 @@ try {
   )
 
   // 選んだ配色は読み直しても残る。昼の OS で夜を選んでも夜の色 (昼と夜の両方の定義が要る)
-  await pressTheme() // follow → light
+  await pressTheme('light')
   await goPage()
   const reLight = await themeOf()
-  verify('配色: light を選んだまま読み直すと、ボタンも配色も light のまま (localStorage に残る) (C93)', reLight.label === 'Theme: light' && reLight.theme === 'light' && reLight.stored === 'light', reLight)
-  await pressTheme() // light → dark
+  verify('配色: light を選んだまま読み直すと、ボタンも配色も light のまま (localStorage に残る) (C93)', reLight.label === 'Light' && reLight.theme === 'light' && reLight.stored === 'light', reLight)
+  await pressTheme('dark')
   await setOs(false)
   await goPage()
   const dark = await themeOf()
   verify(
     '配色: 昼の OS で夜を選ぶと夜の色 (背景と --st-you とも)。読み直しても残る (C93)',
-    dark.label === 'Theme: dark' && dark.theme === 'dark' && dark.bg === DARK_BG && dark.you === '#f0b050' && dark.stored === 'dark',
+    dark.label === 'Dark' && dark.theme === 'dark' && dark.bg === DARK_BG && dark.you === '#f0b050' && dark.stored === 'dark',
     dark,
   )
 
   // follow は OS の変更に、開いたまま従う
-  await pressTheme() // dark → follow (OS は昼なので昼の色)
+  await pressTheme('follow') // dark → follow (OS は昼なので昼の色)
   const followLight = await themeOf()
   await setOs(true)
   const liveDark = await waitTheme('dark')
@@ -1427,7 +1426,7 @@ try {
   const liveLight = await waitTheme('light')
   verify(
     '配色: follow は、開いたままの OS の変更に従う (昼 → 夜 → 昼) (C93)',
-    followLight.label === 'Theme: auto' && followLight.theme === 'light' && liveDark && liveLight,
+    followLight.label === 'Follow the OS' && followLight.theme === 'light' && liveDark && liveLight,
     { followLight, liveDark, liveLight },
   )
 
@@ -1435,9 +1434,9 @@ try {
   await setOs(true)
   await evaluate('tabWaiting = 1; tabStopped = 0; tabUnread = 0; tabWorking = false; showTabUnread()')
   const iconFollow = await badgeIs(DARK_YOU)
-  await pressTheme() // follow → light (OS は夜)
+  await pressTheme('light') // follow → light (OS は夜)
   const iconLight = await badgeIs(LIGHT_YOU)
-  await pressTheme() // light → dark
+  await pressTheme('dark') // light → dark
   const iconDark = await badgeIs(DARK_YOU)
   verify('タブの絵: 件数バッジの色は配色に従う (follow は OS の夜の色、light は昼の色で夜の OS でも、dark は夜の色) (C70, C93)', iconFollow && iconLight && iconDark, { iconFollow, iconLight, iconDark })
 
@@ -1446,13 +1445,88 @@ try {
   await setOs(true)
   await goPage()
   const noStore = await themeOf()
-  const noStorePressed = await pressTheme()
+  const noStorePressed = await pressTheme('light')
   const cards = await evaluate("document.querySelectorAll('#mailboxes .mb').length")
   await cdp('Page.removeScriptToEvaluateOnNewDocument', { identifier: blocked.identifier })
   verify(
     '配色: localStorage が使えないときは OS の設定に従い、押しても描画が壊れない (C93)',
-    noStore.stored === 'ERR' && noStore.theme === 'dark' && noStore.label === 'Theme: auto' && noStorePressed.theme === 'light' && noStorePressed.label === 'Theme: light' && cards > 0,
+    noStore.stored === 'ERR' && noStore.theme === 'dark' && noStore.label === 'Follow the OS' && noStorePressed.theme === 'light' && noStorePressed.label === 'Light' && cards > 0,
     { noStore, noStorePressed, cards },
+  )
+
+  // ヘッダー (C94): 右は Health check・Map / Messages・歯車の 3 つだけで、Theme ボタンはない。ラベルが変わっても位置は動かない
+  await goPage()
+  const header = async () => JSON.parse(await evaluate(`JSON.stringify({
+    ids: [...document.querySelectorAll('header > button')].map((b) => b.id),
+    themeGone: document.getElementById('themeToggle') === null,
+    labels: ['health', 'mapToggle', 'settingsToggle', 'conn'].map((id) => document.getElementById(id).textContent),
+    boxes: ['health', 'mapToggle', 'settingsToggle'].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return [r.left, r.right] }),
+  })`))
+  const headerBefore = await header()
+  // 読むのは書いた直後 (描き直しで Health check の数が戻る前に)
+  await evaluate("$('health').textContent = 'Health check (123)'; $('conn').textContent = 'Reconnecting… (a longer connection message)'")
+  const headerAfter = await header()
+  await evaluate("$('mapToggle').click()")
+  const headerMap = await header()
+  await evaluate("$('mapToggle').click()")
+  const sameAs = (a) => headerBefore.boxes.every((b, i) => Math.abs(b[0] - a.boxes[i][0]) < 0.5 && Math.abs(b[1] - a.boxes[i][1]) < 0.5)
+  const sameBoxes = sameAs(headerAfter) && sameAs(headerMap)
+  verify(
+    'ヘッダーの右は Health check・Map / Messages・歯車の 3 つだけで、Theme ボタンはない (C94)',
+    JSON.stringify(headerBefore.ids) === JSON.stringify(['health', 'mapToggle', 'settingsToggle']) && headerBefore.themeGone,
+    headerBefore,
+  )
+  verify(
+    'ラベルが変わっても (Health check の数、Map ↔ Messages、接続の表示) ヘッダーの右の 3 つは同じ位置に留まる (C94)',
+    sameBoxes && headerAfter.labels[0] === 'Health check (123)' && headerMap.labels[1] === 'Messages' && headerAfter.labels[3].startsWith('Reconnecting'),
+    { before: headerBefore.boxes, after: headerAfter.boxes, map: headerMap.boxes, labels: headerAfter.labels },
+  )
+
+  // 設定パネル (C94): 歯車で開く。もう一度押す・Escape・外を押すと閉じる (Escape のあとは歯車へ戻る)。パネルの中で選んでも閉じない
+  await goPage()
+  const panel = async () => JSON.parse(await evaluate(`JSON.stringify({ expanded: $('settingsToggle').getAttribute('aria-expanded'), hidden: $('settings').hidden, focus: document.activeElement && document.activeElement.id })`))
+  const pn0 = await panel()
+  await evaluate("$('settingsToggle').click()")
+  await sleep(100)
+  const pn1 = await panel()
+  // 開いたパネルが画面の中にあり、欄の下 (ヘッダーの下) に見えている。中心の点は、パネルかその中の物が取る (C94 の確認)
+  const pn1box = JSON.parse(await evaluate(`JSON.stringify((() => {
+    const s = $('settings')
+    const r = s.getBoundingClientRect()
+    const headerBottom = document.querySelector('header').getBoundingClientRect().bottom
+    const mid = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+    return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, headerBottom, vh: innerHeight, vw: innerWidth, hit: !!mid && (mid === s || s.contains(mid)) }
+  })())`))
+  verify(
+    '設定パネル: 開くと、ヘッダーの下・画面の中に見えている (切れていない。中心の点はパネルが取る) (C94)',
+    pn1box.top >= pn1box.headerBottom && pn1box.bottom <= pn1box.vh && pn1box.left >= 0 && pn1box.right <= pn1box.vw && pn1box.hit,
+    pn1box,
+  )
+  await evaluate("$('settingsToggle').click()")
+  await sleep(100)
+  const pn2 = await panel()
+  await evaluate("$('settingsToggle').click()")
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
+  await sleep(100)
+  const pn3 = await panel()
+  await evaluate("$('settingsToggle').click()")
+  await evaluate("document.querySelector('header h1').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))")
+  await sleep(100)
+  const pn4 = await panel()
+  await evaluate("$('settingsToggle').click(); document.querySelector('#settings [data-choice=\"light\"]').click()")
+  await sleep(200)
+  const pn5 = await panel()
+  const choiceSaved = await evaluate("localStorage.getItem('agent-hub.theme')").catch(() => null)
+  await evaluate("$('settingsToggle').click()")
+  verify(
+    '設定パネル: 歯車で開き、もう一度押すと閉じる。開いた印 (aria-expanded) を持つ。閉じている間は隠れている (C94)',
+    pn0.expanded === 'false' && pn0.hidden === true && pn1.expanded === 'true' && pn1.hidden === false && pn2.expanded === 'false' && pn2.hidden === true,
+    { pn0, pn1, pn2 },
+  )
+  verify(
+    '設定パネル: Escape で閉じて、フォーカスは歯車に戻る。外を押しても閉じる。中で配色を選んでも閉じず、選んだ配色は残る (C94)',
+    pn3.expanded === 'false' && pn3.hidden === true && pn3.focus === 'settingsToggle' && pn4.expanded === 'false' && pn4.hidden === true && pn5.expanded === 'true' && pn5.hidden === false && choiceSaved === 'light',
+    { pn3, pn4, pn5, choiceSaved },
   )
 
   // 役割宛ての送信の確認 (C104): 役割の受け手が 2 つ以上のプロジェクトにいるなら、送る前に尋ねる。取り消すと何も送らず本文・宛先を残す。
