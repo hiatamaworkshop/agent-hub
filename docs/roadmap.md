@@ -20,6 +20,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C94
+- [ ] C106
 
 (Items with a status line are listed under "Items".)
 
@@ -731,5 +732,14 @@ Status: held(after the user has run teams in two projects side by side)
 
 Raised 2026-11-01 by the user: projects where a team was started could show as tab-like buttons, so switching is one press (today it is the project selector above the sidebar). The user wants to run two teams first and decide then. design.md §3.2 chose a selector over tabs so waits in other projects are not missed (`N waiting in other projects`); buttons have to keep that.
 
+### C106. Every badge jumps to what it counts
 
+Raised 2026-11-01 by the user while running two teams (agent-hub and cairn): the badges at the top of the sidebar (`#states`: Needs you, Working, Waiting on others and the rest; `#backlog`: You, Agent, Stuck?) and the Needs you labels on the map do nothing when pressed. Only the badges inside a card jump (C44, `backlogChips(…, jump)` and `jumpTo` in `public/index.html`). The user wanted Needs you and Stuck? to jump, but not as an exception for those two.
+Decided 2026-11-01 by the user: every badge jumps, so the rule stays one ("a badge jumps to what it counts"). A press only scrolls and highlights; it sends nothing, marks nothing read and changes no state, so a misclick costs nothing (the user's worry about misclicks). Badges that count Messages or Events jump to the oldest one, like a card's badge; state badges that count sessions with nothing of the human's to answer (Working, Waiting on others, Paused, Stopped's card when it has no request) jump to the card. Pressing again does not step to the next one (not decided; a later item if wanted).
 
+#### Done when
+- [ ] The `#backlog` badges (You, Agent, Stuck?) jump to the oldest Message or Event they count across the cards shown, the same way as a card's badge (C44), including the status line when it is hidden by a filter or not loaded
+- [ ] The `#states` badges jump: Needs you and Stopped, no reply to the oldest Message or Event that put a shown card in that state; the other states to the first card in that state in the sidebar's order (the sidebar card in Messages view, the map node in Map view), highlighted
+- [ ] On the map, the human node's `Needs you N` and a card's Needs you label jump like the Needs you badge; a jump to a Message or Event from Map view switches to Messages view first
+- [ ] Every badge that jumps shows the pointer cursor and a title that says what a press finds; a press sends nothing, marks nothing read and changes no state
+- [ ] `ui:check` adds scenes for a `#backlog` badge, a Needs you badge and a Working badge jumping, a map Needs you label, and a badge whose target is hidden by the project filter; docs/usage.md and design.md §3.15 (backlog badges) are updated; `npm test`, `npm run ui:check` and `npm run docs:check` pass
