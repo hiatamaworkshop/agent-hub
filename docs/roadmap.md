@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C106
 - [ ] C111
 - [ ] C108
 
@@ -389,6 +388,10 @@ In the order they will be taken up. Only items without a status line and blocked
   - `tools/dev/roles/leader.md` ("When the other side is not connected"): a request is left open only when the work is still due once the role starts (`NEEDS ACTION`); when the leader goes on without the other side (a review reported `NOT VERIFIED`, or work done another way), it closes its own request with a `reply` to the same address, one line why. `docs/usage.md` (teams in detail) says the same.
   - `src/hub/reply-target.test.ts`: a reply from the sender to its own request, addressed to an unattached role, is accepted, closes the request and reads as unread on that Mailbox. It passed on the existing Hub code; `src/hub` not changed.
   - Checked: `npm test` 475/475 pass; `npm run docs:check` 0 errors. No reviewer was connected, so the item had no review.
+- [x] C106 Every badge jumps to what it counts (2026-11-01, decided by the user)
+  - `public/index.html`: one jump helper for every badge (`jumpChip`: pointer cursor, a title saying what a press finds). The sidebar `#backlog` badges jump like a card's badge (C44); the `#states` counts jump to the oldest Message or Event (`oldestTargetOf`, Needs you and Stopped) or to the first card in that state (`jumpToCard`, sidebar or map, highlighted); the map's human `Needs you N` (all projects) and a card's Needs you label jump to their oldest target; `jumpTo` switches from Map view to Messages first. A press sends nothing, marks nothing read and changes no state. No Hub or protocol change.
+  - Done-when 5 was reworded on 2026-11-01 by the user: a sidebar badge counts only the shown cards, so its target cannot be hidden by the project filter; the scene uses the map's human `Needs you N`, which counts all projects.
+  - Checked: `npm test` 475/475 pass; `npm run ui:check` 176 ok, 0 NG (the C106 scenes press the real badges); `npm run docs:check` 0 errors; `docs/usage.md` and design.md §3.15 updated. Closed without a review (the user's decision).
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -754,23 +757,6 @@ To decide: where the seqs come from (`seqs` on the receiver's `awaitingReply` an
 Status: held(after the user has run teams in two projects side by side)
 
 Raised 2026-11-01 by the user: projects where a team was started could show as tab-like buttons, so switching is one press (today it is the project selector above the sidebar). The user wants to run two teams first and decide then. design.md §3.2 chose a selector over tabs so waits in other projects are not missed (`N waiting in other projects`); buttons have to keep that.
-
-### C106. Every badge jumps to what it counts
-
-Raised 2026-11-01 by the user while running two teams (agent-hub and cairn): the badges at the top of the sidebar (`#states`: Needs you, Working, Waiting on others and the rest; `#backlog`: You, Agent, Stuck?) and the Needs you labels on the map do nothing when pressed. Only the badges inside a card jump (C44, `backlogChips(…, jump)` and `jumpTo` in `public/index.html`). The user wanted Needs you and Stuck? to jump, but not as an exception for those two.
-Decided 2026-11-01 by the user: every badge jumps, so the rule stays one ("a badge jumps to what it counts"). A press only scrolls and highlights; it sends nothing, marks nothing read and changes no state, so a misclick costs nothing (the user's worry about misclicks). Badges that count Messages or Events jump to the oldest one, like a card's badge; state badges that count sessions with nothing of the human's to answer (Working, Waiting on others, Paused, Stopped's card when it has no request) jump to the card. Pressing again does not step to the next one (not decided; a later item if wanted).
-Facts checked (deployer, 2026-11-01): `public/index.html` has one jump helper for every badge (`jumpChip`: pointer cursor and a title that says what a press finds). Sidebar `#backlog` badges use `backlogChips(…, true)`; the state counts (`renderStates`) jump to `oldestTargetOf` (Needs you, Stopped) or `jumpToCard` (the first card in that state, `.mb` in Messages view, `.mapnode` in Map view, highlighted). The map's human `Needs you N` counts all projects, so its target is the oldest of those (`oldestTargetOf(model.mailboxes, 'you')`), and a card's Needs you label uses the card's own target (`stateTargetOf`). `jumpTo` switches to Messages when pressed from Map view. The jump reuses `jumpTo` (C44). No Hub or protocol change.
-`npm run ui:check` (176 ok, 0 NG) has the C106 scenes, each pressing the real badge: the `#backlog` Agent badge (to the oldest counted Message, JB-AWAIT), `#backlog` Stuck? (to the unread of a Mailbox with no session, JB-GONE), `#backlog` You with an Event not loaded in this page (the status says so), `#backlog` Agent and `#states` Stopped with the target hidden by the Kind filter (status says so, state unchanged), the `#states` Needs you, Stopped, Working, Waiting on others and Paused badges (the last three to the first card, highlighted, sidebar and map), and the map's human Needs you hidden by the project filter, then reached with All projects. Each press checks the cursor, the highlight and that nothing was sent or marked read.
-Not met as written, so done-when 5 stays `[ ]`: no sidebar badge can have a target hidden by the project filter. A sidebar badge counts only the shown cards (`visibleCard`), and for each item it counts, `messageInProject` / `eventInProject` is true, because the counting card is one of the ends. A Needs you target is never hidden by Kind, Mailbox or Noise either (waiting items are exempt). So the scene uses the map's human `Needs you N` instead, which counts all projects. Options for the planning session: count the sidebar badges across all projects (a change to the counting rule), or accept the map label as the scene.
-Decided 2026-11-01 by the user: accept the map's label as the scene; done-when 5 now names it (a sidebar badge counts only the shown cards, so its target cannot be hidden by the project filter).
-`npm test` 475/475 pass; `npm run docs:check` 31 items, 0 errors.
-
-#### Done when
-- [x] The `#backlog` badges (You, Agent, Stuck?) jump to the oldest Message or Event they count across the cards shown, the same way as a card's badge (C44), including the status line when it is hidden by a filter or not loaded
-- [x] The `#states` badges jump: Needs you and Stopped, no reply to the oldest Message or Event that put a shown card in that state; the other states to the first card in that state in the sidebar's order (the sidebar card in Messages view, the map node in Map view), highlighted
-- [x] On the map, the human node's `Needs you N` and a card's Needs you label jump like the Needs you badge; a jump to a Message or Event from Map view switches to Messages view first
-- [x] Every badge that jumps shows the pointer cursor and a title that says what a press finds; a press sends nothing, marks nothing read and changes no state
-- [x] `ui:check` adds scenes for a `#backlog` badge, a Needs you badge and a Working badge jumping, a map Needs you label, and the map's human `Needs you N` (which counts all projects) whose target is hidden by the project filter; docs/usage.md and design.md §3.15 (backlog badges) are updated; `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
 ### C108. A command for the starting session to read a project's latest reports and states
 
