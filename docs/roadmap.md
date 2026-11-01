@@ -22,6 +22,7 @@ In the order they will be taken up. Only items without a status line and blocked
 - [ ] C98
 - [ ] C99
 - [ ] C100
+- [ ] C94
 
 (Items with a status line are listed under "Items".)
 
@@ -687,11 +688,16 @@ Found 2026-10-31 in a review of C78. The map's chips come from `backlog.outgoing
 To decide: where the seqs come from (`seqs` on the receiver's `awaitingReply` and `unread`, or an `outgoing` for the human across its user ids `browser` / `cli`), and how the chip is drawn (an edge from the human node, which runs along the role order, unlike a Mailbox's request to the human).
 
 ### C94. A settings button in the page header
-Status: proposed
 
-Raised 2026-10-31 by the user: the page will need a settings place sooner or later, though what goes in it is not decided. Its place is the rightmost of the header's controls (after C93's toggle). A button that opens an empty panel is not shipped, so the item waits for its first contents.
-Candidates seen in the page today: the retention input (`#keep` in the thread's bar), the default of the Noise filter, the width of the sidebar (now set by dragging only), and resetting the per-browser preferences kept in `localStorage`. C93's theme stays a one-press toggle in the header either way.
-To decide: the first contents, and whether a setting moved in leaves its current place.
+Raised 2026-10-31 by the user: the page will need a settings place sooner or later. Its place is the rightmost of the header's controls. A button that opens an empty panel is not shipped, so the item waited for its first contents.
+Raised again 2026-11-01 by the user: the header's controls move sideways as their labels change length. `#health` has `margin-left: auto`, so the group is anchored at the right, and a label that changes width (`Health check (0)` → `(12)`, `Map` ↔ `Messages`, `Theme: auto` / `light` / `dark`) pushes every control to its left.
+Decided 2026-11-01 by the user: miscellaneous settings go behind a gear button, and the header always shows three controls only: the Map / Messages toggle, Health check and the gear. The first contents of the panel are C93's theme, moved out of the header (this replaces "the theme stays a one-press toggle in the header"). The other candidates (the retention input `#keep`, the default of the Noise filter, the sidebar width, resetting the preferences kept in `localStorage`) stay where they are; each is a later item if wanted.
+
+#### Done when
+- [ ] The header's right side shows exactly three controls: the Map / Messages toggle, Health check and a gear button (rightmost); the Theme button is no longer in the header
+- [ ] The gear opens a settings panel holding the theme choice (follow the OS / light / dark, the same states, `localStorage` key and first-paint behavior as C93); the panel closes on a second press, Escape or a click outside
+- [ ] No header control moves when a label changes length (the Health check count, Map ↔ Messages, the connection state)
+- [ ] `ui:check` adds scenes for the three controls, the panel's theme choice, and the controls keeping their positions across a label change; the theme scenes of C93 are moved to the panel; docs/usage.md and design.md (header controls) are updated; `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
 ### C98. Keep the map pane's scroll position across redraws
 
