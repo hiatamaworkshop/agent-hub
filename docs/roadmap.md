@@ -20,6 +20,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C107
+- [ ] C112
 - [ ] C106
 - [ ] C111
 - [ ] C108
@@ -762,12 +763,13 @@ Found 2026-11-01 when a session that had never used agent-hub started a team in 
 Candidates: name the ledger in a one-line per-project setting, and have `hub-team` send it on start and print the source in the summary; when a project shown in the page has no index, show the `docs:index` command (with `--file`) in the empty items pane. The post-commit hook (C52, `tools/hooks/post-commit-index.sh`) also tests only `docs/roadmap.md` and sends without `--file`, so for cairn it would never fire; it should read the same setting.
 Decided 2026-11-01 by the user, after the two-team run (agent-hub and cairn): taken up third, after C110 and C109. Where the ledger path is kept is left to the work, as long as one place is read by all three (`hub-team`, `docs:index`, the post-commit hook); the Hub already keys each index by `project` and `source`.
 Built 2026-11-01 (deployer, uncommitted). The setting is `.agent-hub.json` at the project's root, `"ledger": "<relative path>"`, read by `readLedgerSetting` in `src/shared/ledger.ts`; the place and why are in design.md §3.15 ("Where the ledger path is set"). The sender is `sendLedgerIndex` (`src/docs-check/send-index.ts`), used by `docs:index` and the team start. Checked: `npm test` 474/474 pass, with the new `src/shared/ledger.test.ts` and `src/docs-check/send-index.test.ts`; `npm run ui:check` 156 ok, with the new empty-Items-pane scene; `npm run docs:check` 32 items, 0 errors. In a scratch git repo (ledger `docs/items.md`) with a Hub on port 7797, the post-commit hook sent after a commit that changed the ledger, sent nothing after a commit that changed only `docs/roadmap.md` (the index's `updatedAt` did not move), and the commit succeeded with no Hub. `npm run team -- --tabs print` against that Hub printed `index: sent docs/items.md (1 items) to …`; for a project with no ledger it printed `index: not sent: docs/roadmap.md does not exist in …`. Not met as written: the empty Items pane names `--project` but not `--file`, because the page cannot read `.agent-hub.json` and the Hub holds no copy of the setting (done-when line 4 stays open). The close is a separate request.
+Decided 2026-11-01 by the user: done-when line 4 is narrowed. `docs:index --project <folder>` without `--file` already reads that folder's `.agent-hub.json` (`readLedgerSetting` in `push-index.ts`), so the command the pane shows sends the right ledger for any project; the pane's line and docs/usage.md's sentence telling the human to add `--file` send them to a step they do not need, and go.
 
 #### Done when
 - [x] A project's ledger path is set in one place that `hub-team` / `npm run team`, `docs:index` (without `--file`) and the post-commit hook all read; a project with no setting keeps `docs/roadmap.md`; the place and why are written in design.md §3.15 (where the index lives)
 - [x] A team start sends that project's index when the ledger file exists, and its summary prints the source sent (or why none was sent: no file, Hub not reachable); a failed send does not stop the start
 - [x] The post-commit hook sends only on commits that changed that project's ledger path, so a project whose ledger is `docs/items.md` gets its index sent after such a commit
-- [ ] When the project chosen in the page has no index, the empty Items pane shows the `docs:index` command for it (with `--project`, and `--file` when the setting names another path)
+- [ ] When the project chosen in the page has no index, the empty Items pane shows the `docs:index` command for it with `--project` and without `--file` (`docs:index` reads that project's `.agent-hub.json` itself), and does not tell the human to add `--file`
 - [x] Tests for reading the setting and the hook's path test; a `ui:check` scene for the empty Items pane; docs/usage.md (Items, the hook) is updated; `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
 ### C108. A command for the starting session to read a project's latest reports and states
@@ -792,3 +794,13 @@ Decided 2026-11-01 by the user: the start writes the hooks itself (a team start 
 - [ ] `--no-hooks` keeps today's behaviour (warn only); a failed write is a warning and does not stop the start
 - [ ] The warning that Claude Code is newer than the last verified version is a `WARNING` only on the first start with that version; later starts with the same version print it as one plain line in the summary, and `logs/start-warnings.jsonl` still records it on every start
 - [ ] Tests for the write on start, the opt-out and the once-per-version warning; docs/usage.md (hooks, teams, start warnings) is updated; `npm test` and `npm run docs:check` pass
+
+### C112. The C78 dragend scene in `ui:check` waits 800 ms before counting renders
+
+Found 2026-11-01 in the cloud review's correction of C101 (branch `claude/intelligent-hypatia-c5allq`, 03ed34a, written against the code before C101 closed): the dragend and drop scenes count renders the same way as the Forward scene did. C101 fixed only the Forward scene. The drop scene already reads its counts in the same evaluate as `drop`. The dragend scene ("ドラッグを取り消す (dragend) と、延ばした分を 1 回だけ描く (C78)" in `tools/dev/ui-check.mjs`) still dispatches `dragend`, waits 800 ms and then checks `renders === 1`, so renders from later data in that window can fail it, as they did the Forward scene on Linux Chromium. `ondragend` calls `flushMap` synchronously (`public/index.html`), so the deferred redraw is done when the dispatch returns.
+Decided 2026-11-01 by the user: fix it the same way as C101.
+
+#### Done when
+- [ ] The dragend scene reads the render count, `isConnected` and the chip count in the same evaluate as the `dragend` dispatch, with no wait between them; its checks and verify text are unchanged; `public/index.html` is not changed
+- [ ] No other C78 scene counts renders after a wait following the action it measures (each one is read in the same evaluate as that action, or the reason it is not is written in this item's body)
+- [ ] `npm run ui:check` passes ten runs in a row with the dragend scene `ok`; `npm test` and `npm run docs:check` pass
