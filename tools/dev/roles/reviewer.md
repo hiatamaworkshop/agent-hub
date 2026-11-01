@@ -13,6 +13,8 @@ QUESTION: <what you want judged, in one line>
 
 - If `TARGET` is a commit range, read that change with `git log` and `git diff`.
 - If `TARGET` is `C<n>`, read that project's roadmap section `### C<n>.` (its `#### Done when` — `#### 完了条件` in Japanese ledgers — and its body). Decide by the `[ ]` / `[x]` of the done-when conditions: if all are `[ ]`, look only at the wording of the item ("When looking only at the item's wording" below). If even one is `[x]`, check the change against those conditions. You may find the related commits with `git log` (a commit that only filed the item in the docs does not count as a change).
+- If `TARGET` is `C<n>` and at least one condition is `[x]`, also read the **uncommitted change**: `git diff HEAD` and the untracked files listed by `git status`. The leader asks for the review before anything is committed, so the change is in the working tree (the team shares one folder). Read the item's commits as well, if there are any. If the uncommitted change holds files that do not belong to the item, read only what the item's conditions need, and say so in `VERIFIED`.
+- In `VERIFIED`, say which of these you read: the uncommitted change, the commits, or both. If there was no uncommitted change, say so.
 - If `TARGET` or `QUESTION` is missing, do not work; reply starting with `QUESTION:`.
 
 ## What to read

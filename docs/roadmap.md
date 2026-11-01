@@ -19,7 +19,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C97
+- [ ] C102
 - [ ] C98
 - [ ] C99
 - [ ] C100
@@ -345,6 +345,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C97 Review the uncommitted change before the leader reports an item done (2026-11-01, decided by the user on 2026-10-31)
+  - `tools/dev/roles/reviewer.md`: for `TARGET: C<n>` with at least one `[x]` condition, the reviewer also reads `git diff HEAD` and the untracked files from `git status`, plus the item's commits, and says in `VERIFIED` which it read. A commit range `TARGET` is still accepted.
+  - `tools/dev/roles/leader.md`: "When to ask" sends `TARGET: C<n>` after the deployer's report and the leader's check, before the report to the human. Nothing is committed for it. The `NEEDS ACTION` (commit first) path is removed, and the review is not sent while the deployer is still working on the same tree. Flow step 2 points to it, and the no-reviewer rule (`NOT VERIFIED`) is kept.
+  - `docs/design.md`: §3.12 (the reviewer's target can be an uncommitted change), and the C96 block in §3.15 (a new bullet with the order: deployer reports → leader checks → reviewer → fixes to the deployer → leader reports → human commits). `docs/usage.md` (teams in detail) has the same order.
+  - Checked: `npm test` 412 pass, 0 fail; `npm run docs:check` 33 items, 0 errors, 0 warnings (after the close). Reviewed: the reviewer read the uncommitted change, no findings. This was also the first live run of the order (2026-11-01): the reviewer, started after the deployer's report, read `git diff HEAD` with nothing committed and said so in `VERIFIED`; the leader then had the deployer close the item before reporting (the order C102 writes down).
 - [x] C96 Who files items, and where a reviewer's findings go (2026-10-31, decided by the user)
   - `docs/design.md` §3.15 (the new block "Who files items, and where a reviewer's findings go"): the planning session (the human's session with Claude where the project is discussed; not a Hub role) is the only place that files items, changes done-when wording and rejects items; progress is written by the deployer with the change; the three kinds of reviewer findings (`FINDINGS:` fixed in the request, `NOTES:` raised with the human, `OUT OF SCOPE:` candidates only) and where each goes. No section numbers changed, so the map in CLAUDE.md only gained a pointer in its §3.15 line.
   - `CLAUDE.md`: the map's §3.15 line, and "Updating the docs" (who files items; approved wording is written by the planning session; the deployer writes progress only).
@@ -682,16 +687,6 @@ Raised 2026-10-31 by the user: the page will need a settings place sooner or lat
 Candidates seen in the page today: the retention input (`#keep` in the thread's bar), the default of the Noise filter, the width of the sidebar (now set by dragging only), and resetting the per-browser preferences kept in `localStorage`. C93's theme stays a one-press toggle in the header either way.
 To decide: the first contents, and whether a setting moved in leaves its current place.
 
-### C97. Review the uncommitted change before the leader reports an item done
-
-Raised 2026-10-31 by the user, right after C96: C96 has the leader send a review before it reports an item done, with `TARGET` = the commit range. The deployer does not commit and the human commits only after checking the report in the planning session, so the change is never committed at that point. The leader then ends with `NEEDS ACTION` (commit, then the review is requested), and the reviewer is effectively never called.
-Decided 2026-10-31 by the user: the review reads the uncommitted change. The team works in one folder, so the reviewer can read the deployer's change with `git diff HEAD`. The order is: the deployer reports → the leader checks → the reviewer (the uncommitted change) → fixes from checked findings go to the deployer → the leader reports to the human → the human commits. A review stays required only when a reviewer is connected (C96); without one, the report says so in `NOT VERIFIED`.
-
-#### Done when
-- [ ] `tools/dev/roles/reviewer.md`: for `TARGET: C<n>` with at least one `[x]` condition, the reviewer reads the uncommitted change (`git diff HEAD` and untracked files from `git status`) as well as the item's commits, and says in `VERIFIED` which it read. A commit range is still accepted as before
-- [ ] `tools/dev/roles/leader.md` "When to ask": the review is sent as `TARGET: C<n>` after the deployer's report and the leader's own check, and before the report to the human; nothing is committed for it, and the `NEEDS ACTION` (commit first) path is removed. The leader does not send it while the deployer is still working on the same tree
-- [ ] design.md (§3.12, where a review's target is described, and the C96 block in §3.15) and docs/usage.md (teams in detail) say a target can be an uncommitted change and give the order above; `npm test` and `npm run docs:check` pass
-
 ### C98. Keep the map pane's scroll position across redraws
 
 Raised 2026-10-31 by the user, in the check of C95: the map is rebuilt from the model on every redraw (`renderMap` in `public/index.html` empties `#map`), so the pane below it is rebuilt too. Reading a long Message in the pane, any new data puts the pane back at its top.
@@ -743,3 +738,13 @@ Decided 2026-11-01 by the user: the scene counts only the deferred redraw, the r
 #### Done when
 - [ ] The scene checks that closing Forward to… draws once with the current data, counting the renders up to `flushMap`'s return, and does not count renders after it
 - [ ] The scene passes 10 runs in a row on the development machine's Chrome; the other scenes are unchanged; `npm test`, `npm run ui:check` and `npm run docs:check` pass
+
+### C102. Close an item after its review, not in the deployer's first run
+
+Found 2026-11-01 in C97's run: the request's `DONE WHEN` asks the deployer to close the item when all conditions are checked (delete the section, mark the phase line `[x] C<n>` with the record, remove `blocked(after C<n>)` lines). The review comes after that, with `TARGET: C<n>`, and the reviewer reads the item's `### C<n>.` section, which is gone by then. It is left with the removed lines in `git diff HEAD`.
+Decided 2026-11-01 by the user: closing waits for the review. In the work request the deployer checks off conditions and adds the facts it checked to the section's body, and leaves the section in place. After the review and the fixes from its checked findings (or after the leader's own check, when no reviewer is connected), the leader sends the deployer a closing request, then reports to the human. The close lands in the same uncommitted change, so the human still commits once. `docs:check`'s warning for a section whose conditions are all checked is expected in between.
+
+#### Done when
+- [ ] `tools/dev/roles/leader.md`: the work request's `DONE WHEN` asks for checking off and the facts in the body, not the close; a separate closing request (delete the section, mark `[x] C<n>` with the record, remove `blocked(after C<n>)` lines) is sent after the review and its fixes, or after the leader's check when no reviewer is connected, and before the report to the human
+- [ ] `tools/dev/roles/deployer.md`: the section is closed only when a request asks for the close, not when the last condition is checked
+- [ ] design.md §3.15 (the C96 block and the C97 order), docs/usage.md (teams in detail) and CLAUDE.md ("Updating the docs") give the order with the close after the review; `npm test` and `npm run docs:check` pass
