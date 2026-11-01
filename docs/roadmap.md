@@ -20,6 +20,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C112
+- [ ] C113
 - [ ] C106
 - [ ] C111
 - [ ] C108
@@ -794,8 +795,13 @@ Decided 2026-11-01 by the user: fix it the same way as C101.
 - [ ] `npm run ui:check` passes ten runs in a row with the dragend scene `ok`; `npm test` and `npm run docs:check` pass
 
 ### C113. A request the leader went on without stays open and arrives stale
-Status: proposed
 
 Found 2026-11-01 in agent-hub's own team (C107). The leader sent a review request (#568, 09:51:32) to `role:reviewer`; the `agent-hub.reviewer` Mailbox was left from an earlier team and had no Attachment, so `post_message` answered with every recipient `unattached`. Following `tools/dev/roles/leader.md` ("When the other side is not connected"), the leader went on with its own check and sent the closing request 6 seconds later (#569). The same section says "Do not cancel the request; leave it as it is", so #568 stayed open: the reviewer's card kept one unread, the leader kept an outgoing request, and a reviewer started later would be handed a review of an item already closed. The user called this case common (2026-11-01): any role that is not started when the leader asks leaves one such request per item.
 "Leave it" was written for a request that still needs doing once the other side starts (C49). A request the leader has already replaced by going on (a review it reported as `NOT VERIFIED`, work it did another way) is not that case.
 Candidates: in leader.md, when the leader goes on without the other side, it closes its own request by replying to it (`replyTo` its own Message is allowed, protocol.md §3) with one line saying why ("went on without a reviewer; C107 closed as NOT VERIFIED"), and keeps "leave it" only for a request that should still be done later; the reply's address (back to itself, or to the role so a later reviewer reads the withdrawal) is to be decided. Or the Hub closes a request automatically when the item in its `meta.item` is closed in the index (C22 territory). The human can already close one by replying from the page; C106 (badges jump to what they count) makes finding it cheaper, but does not stop it piling up.
+Decided 2026-11-01 by the user: the first candidate (the leader closes its own request); taken up after C112. The closing reply goes to the same address as the request, so a session that starts later is handed the withdrawal with the request and does not do it. The Hub closing requests by item is not taken now.
+
+#### Done when
+- [ ] `tools/dev/roles/leader.md` ("When the other side is not connected"): when the leader goes on without the other side (a review reported as `NOT VERIFIED`, or work done another way), it closes its own request with `post_message` (`kind: reply`, `replyTo` that request, `to` the same address as the request) and one line saying why; "do not cancel, leave it" stays only for a request that should still be done once the other side starts (the `NEEDS ACTION` case), and the section says which case is which
+- [ ] A Hub test: a reply from a request's sender to its own request, addressed to a role whose only Mailbox is unattached, is accepted (no `reply_not_received`), closes the request (the sender's `outgoing` and the request's awaiting state clear) and is delivered to that Mailbox as unread
+- [ ] docs/usage.md (teams in detail) says what the leader does with a request it went on without; `npm test` and `npm run docs:check` pass
