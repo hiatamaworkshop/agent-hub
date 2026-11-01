@@ -216,6 +216,7 @@ npm --prefix <agent-hub> run docs:index -- --file docs/TODO.md            # anot
 ```
 
 - A project you sent can be chosen as a project in the UI even before any agent connects, and you can leave a request to `role:deployer @ <project>` (it arrives as unread at the Mailbox that attaches).
+- With `All projects`, a `role:` message has no project and reaches that role in every project. If its receivers are Mailboxes of two or more projects, Send asks first, naming the number of Mailboxes and projects. **Cancel** sends nothing and keeps the draft (text, address, images, forward state). To send to one project only, choose that project first (C104).
 - The Hub holds only a copy of the index; the source of truth is the repository's roadmap. Send it again after changing it. Remove it with **Remove** in Items.
 - Items shows four tiers: **Plan** (the order under the ledger's `## Plan` / `## 予定`; blocked items show what they wait for), **Awaiting a decision** (proposed), **Parked** (held; collapsed by default), **Recently closed** (the five newest closed lines by date). For a ledger without a plan heading, decided and blocked items go into Plan in number order.
 - Cards show requested / reported, and the diff when the wording of the done-when conditions changed after sending.

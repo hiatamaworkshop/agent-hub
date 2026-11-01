@@ -1454,6 +1454,72 @@ try {
     noStore.stored === 'ERR' && noStore.theme === 'dark' && noStore.label === 'Theme: auto' && noStorePressed.theme === 'light' && noStorePressed.label === 'Theme: light' && cards > 0,
     { noStore, noStorePressed, cards },
   )
+
+  // 役割宛ての送信の確認 (C104): 役割の受け手が 2 つ以上のプロジェクトにいるなら、送る前に尋ねる。取り消すと何も送らず本文・宛先を残す。
+  // 1 つのプロジェクトだけなら尋ねずに送る。window.confirm は置き換えて、聞かれた文と答えを記録する (ダイアログは開かない)
+  const pb = join(work, 'pb')
+  await api('POST', '/mailboxes/pb.deployer/attach', { client: 'claude-code', role: 'deployer', cwd: pb, sessionId: 's-pb-dep' })
+  // reviewer の受け手を demo のものだけにする: demo 以外の reviewer を切ってから消す (1 プロジェクトの場面。ほかの場面は済んでいる)
+  for (const m of (await api('GET', '/mailboxes')).mailboxes) {
+    if (m.role !== 'reviewer' || !m.project || m.project === join(work, 'demo')) continue
+    if (m.attachment) await api('DELETE', `/attachments/${m.attachment.attachmentId}`)
+    await api('DELETE', `/mailboxes/${m.name}`)
+  }
+  await goPage()
+  const stubConfirm = (answer) =>
+    evaluate(`(() => { window.__asked = []; window.__answer = ${answer}; window.confirm = (m) => { window.__asked.push(m); return window.__answer }; return true })()`)
+  const compose = (to, body) => evaluate(`(() => { chooseTo(${JSON.stringify(to)}); $('body').value = ${JSON.stringify(body)}; return $('to').value })()`)
+  const submit = () => evaluate("(async () => { $('form').requestSubmit(); await new Promise((r) => setTimeout(r, 800)); return true })()")
+  const countMessages = async () => (await api('GET', '/messages?after=0&limit=1000')).messages.length
+  const lastMessage = async () => (await api('GET', '/messages?after=0&limit=1000')).messages.at(-1)
+  const receivers = (await api('GET', '/mailboxes')).mailboxes.filter((m) => m.role === 'deployer' && m.project)
+  // 数えるのと同じ比べ方 (区切り・末尾の区切り・ドライブ文字の大文字小文字) で、プロジェクトの数を数える
+  const projectCount = (list) => new Set(list.map((m) => m.project.replace(/[\\/]+/g, '/').replace(/(.)\/$/, '$1').replace(/^[a-z]:/i, (d) => d.toLowerCase()))).size
+  const fromJson = (text) => JSON.parse(text)
+
+  await stubConfirm(false)
+  const beforeCancel = await countMessages()
+  await compose('role:deployer', 'C104 check: cancel')
+  await submit()
+  const cancelled = fromJson(await evaluate("JSON.stringify({ asked: window.__asked, body: $('body').value, to: $('to').value })"))
+  const afterCancel = await countMessages()
+  verify(
+    '役割宛てが 2 つ以上のプロジェクトに届くとき、送る前に Mailbox とプロジェクトの数を尋ね、取り消すと何も送らず本文と宛先を残す (C104)',
+    projectCount(receivers) >= 2 &&
+      cancelled.asked.length === 1 &&
+      cancelled.asked[0].includes(`${receivers.length} Mailboxes in ${projectCount(receivers)} projects`) &&
+      afterCancel === beforeCancel &&
+      cancelled.body === 'C104 check: cancel' &&
+      cancelled.to === 'role:deployer',
+    { asked: cancelled.asked, beforeCancel, afterCancel, body: cancelled.body, to: cancelled.to, receivers: receivers.length },
+  )
+
+  await stubConfirm(true)
+  const beforeSend = await countMessages()
+  await submit()
+  const confirmed = fromJson(await evaluate("JSON.stringify({ asked: window.__asked, body: $('body').value })"))
+  const afterSend = await countMessages()
+  const sent = await lastMessage()
+  verify(
+    '同じ宛先で確認に「送る」と送られる。プロジェクトを絞らない役割宛てのまま届き、本文は空になる (C104)',
+    confirmed.asked.length === 1 && afterSend === beforeSend + 1 && sent.body === 'C104 check: cancel' && sent.to.type === 'role' && sent.to.id === 'deployer' && sent.to.project === undefined && confirmed.body === '',
+    { asked: confirmed.asked.length, beforeSend, afterSend, to: sent.to, body: confirmed.body },
+  )
+
+  await stubConfirm(false)
+  const beforeSolo = await countMessages()
+  // reviewer の受け手は demo の 1 つだけ (上で oth.reviewer を消した)。すべてのプロジェクトで、尋ねずに送る
+  const reviewers = (await api('GET', '/mailboxes')).mailboxes.filter((m) => m.role === 'reviewer' && m.project)
+  await compose('role:reviewer', 'C104 check: one project')
+  await submit()
+  const solo = fromJson(await evaluate("JSON.stringify({ asked: window.__asked })"))
+  const afterSolo = await countMessages()
+  const soloSent = await lastMessage()
+  verify(
+    '1 つのプロジェクトだけに届く役割宛てでは尋ねずに送る (C104)',
+    projectCount(reviewers) === 1 && solo.asked.length === 0 && afterSolo === beforeSolo + 1 && soloSent.body === 'C104 check: one project' && soloSent.to.id === 'reviewer',
+    { asked: solo.asked.length, projects: projectCount(reviewers), beforeSolo, afterSolo, to: soloSent.to },
+  )
 } catch (e) {
   failed++
   console.error(`NG  ${e.message}`)

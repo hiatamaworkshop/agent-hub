@@ -1017,6 +1017,16 @@ function selectedTo() {
   return to
 }
 
+// 役割宛て (project のない role:) が 2 つ以上のプロジェクトの Mailbox に届くときの確認の文 (C104)。届かないか 1 つのプロジェクトだけなら null。
+// 数えるのは project のある Mailbox だけ (project のないものはどのプロジェクトのものでもない)。宛先の判定は、いま一覧にある Mailbox で行う
+function broadcastQuestion(to) {
+  if (to.type !== 'role' || to.project) return null
+  const receivers = mailboxList.filter((mb) => mb.role === to.id && mb.project)
+  const projects = new Set(receivers.map((mb) => projectKey(mb.project)))
+  if (projects.size < 2) return null
+  return `"role:${to.id}" has no project, so this message goes to ${receivers.length} Mailboxes in ${projects.size} projects. Send it to all of them?`
+}
+
 // 人が選んだ宛先。自動で選んだ値ではなくなるので、以後の Mailbox 一覧の更新では動かさない (同じ値を選んでも同じ)
 function chooseTo(value) {
   autoTo = false
@@ -1182,6 +1192,9 @@ async function forwardSelected() {
   const hasNote = body.trim() !== '' || attachments.length > 0
   if (hasNote && kind === 'reply') { $('err').textContent = 'Send the note as a request or notice (a reply starts from the "Reply" button).'; return }
   if (sending) return
+  // 転送先が役割宛てで 2 つ以上のプロジェクトに届くなら、送る前に尋ねる (C104)
+  const question = broadcastQuestion(selectedTo())
+  if (question && !window.confirm(question)) return
   autoTo = false
   sending = true
   const picked = [...forwarding.values()].sort((a, b) => a.seq - b.seq)
@@ -1290,6 +1303,9 @@ $('form').onsubmit = async (e) => {
   if (kind === 'reply' && !replyTo) { $('err').textContent = 'For a reply, start with the "Reply" button on a message.'; return }
   if (!$('to').value) { $('err').textContent = 'Choose a destination first.'; return }
   if (sending) return
+  // 役割宛てが 2 つ以上のプロジェクトに届くなら、送る前に尋ねる (C104)。取り消すと何も変えない (本文・宛先・画像は残す)
+  const question = broadcastQuestion(selectedTo())
+  if (question && !window.confirm(question)) return
   autoTo = false // 送った時点で、自動で選んだ宛先は人が確定したものとして扱う
   sending = true
   // 送るものを先に固定する。送信中に打ち足した本文や追加した画像は、成功後も残す (body は上で取った送信時点の値)

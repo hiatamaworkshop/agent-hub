@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C104
 - [ ] C94
 
 (Items with a status line are listed under "Items".)
@@ -375,6 +374,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Docs: `docs/design.md` §3.3, `docs/protocol.md` (error code list, attach section), `docs/usage.md` (team names).
   - Tests: `src/team/mailbox-name.test.ts` (names, long-name suffixes, `chooseStartNames`, `chooseAgentMailbox`, `agentSub --mailbox`), `src/hub/attach-project.test.ts`, `src/shim/project-mismatch.test.ts`.
   - Checked: `npm test` 462 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 30 items, 0 errors, 0 warnings after the close. The reviewer read the uncommitted change; the names-before-Hub finding and the long-name note were fixed and tested. Not checked: two real projects side by side on one Hub; the shim error inside a real claude; `team` with the print opener and a name clash; the order inside `teamStart` and `agent` with the Hub down end to end (read, not run). Left as is: the Hub's hook fallback `resolveMailbox` (folder name) can map project B to A's default-named Mailbox for a hand-started session with no header; two starts racing can both take the default (the `project_mismatch` refusal catches it once the first is attached); the pre-start line is not written when the name choice fails.
+- [x] C104 Confirm before a role message from the browser reaches several projects (2026-11-01, decided by the user)
+  - `public/index.html`: `broadcastQuestion(to)` returns a question only for a `role:` target with no `project` whose receivers (Mailboxes of that role with a `project`, in `mailboxList`, compared with `projectKey`) are in two or more projects; it names the Mailbox count and the project count. `onsubmit` and `forwardSelected` ask with `window.confirm` before anything changes. Cancel returns, so the text, the address, the images and the forward state stay. A scoped send (a project chosen) adds `to.project` and is not asked.
+  - `tools/dev/ui-check.mjs`: three scenes at the end (cancel sends nothing and keeps the draft; confirm sends; one project is sent without asking). `window.confirm` is replaced in the page, so no dialog opens. Setup: reviewers outside `demo` are detached and deleted for the last scene.
+  - `docs/usage.md` (the project paragraph) and `docs/design.md` §3.2 (the `All projects` bullet) say what happens.
+  - Checked: `npm run ui:check` exit 0, 145 ok; `npm test` 462 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 29 items, 0 errors, 0 warnings after the close. The reviewer read the uncommitted change, found no findings, and ran ui:check. Not checked: the forward path's question (no scene); cancel keeping attachments and the forward state (the scene checks text and address only); a real browser with two real teams. Left as is (reviewer notes): the count comes from the page's `mailboxList`, so a Mailbox that attaches within the SSE gap is missed; Mailboxes of the role without a project receive the message but are not counted, so "N Mailboxes" can be lower than the Hub delivers to.
 - [x] C97 Review the uncommitted change before the leader reports an item done (2026-11-01, decided by the user on 2026-10-31)
   - `tools/dev/roles/reviewer.md`: for `TARGET: C<n>` with at least one `[x]` condition, the reviewer also reads `git diff HEAD` and the untracked files from `git status`, plus the item's commits, and says in `VERIFIED` which it read. A commit range `TARGET` is still accepted.
   - `tools/dev/roles/leader.md`: "When to ask" sends `TARGET: C<n>` after the deployer's report and the leader's check, before the report to the human. Nothing is committed for it. The `NEEDS ACTION` (commit first) path is removed, and the review is not sent while the deployer is still working on the same tree. Flow step 2 points to it, and the no-reviewer rule (`NOT VERIFIED`) is kept.
@@ -721,15 +725,6 @@ Decided 2026-11-01 by the user: miscellaneous settings go behind a gear button, 
 - [ ] The gear opens a settings panel holding the theme choice (follow the OS / light / dark, the same states, `localStorage` key and first-paint behavior as C93); the panel closes on a second press, Escape or a click outside
 - [ ] No header control moves when a label changes length (the Health check count, Map ↔ Messages, the connection state)
 - [ ] `ui:check` adds scenes for the three controls, the panel's theme choice, and the controls keeping their positions across a label change; the theme scenes of C93 are moved to the panel; docs/usage.md and design.md (header controls) are updated; `npm test`, `npm run ui:check` and `npm run docs:check` pass
-
-### C104. Confirm before a role message from the browser reaches several projects
-
-Raised 2026-11-01 by the user, in the same question. With `All projects` chosen, the browser's `role:` message carries no `project` and reaches that role in every project (design.md §9-7). With two teams running, a `role:deployer` meant for one reaches both.
-Decided 2026-11-01 by the user: keep the broadcast, and ask before sending when it would reach Mailboxes of two or more projects.
-
-#### Done when
-- [ ] On Send, a `role:` message from the browser without a `project` whose receivers are Mailboxes of two or more projects (by the Mailbox's `project`; Mailboxes without one are not counted) asks for confirmation, naming the number of projects and of Mailboxes; cancelling sends nothing and keeps the draft. A message that reaches one project or none is sent without asking, as now
-- [ ] `ui:check` adds scenes for asking (cancel sends nothing and keeps the draft; confirm sends) and for not asking with one project; docs/usage.md says it; `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
 ### C105. Switch between projects with running teams from the page header
 Status: held(after the user has run teams in two projects side by side)
