@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C100
 - [ ] C94
 - [ ] C103
 - [ ] C104
@@ -355,6 +354,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - Tests: `src/hub/reply-target.test.ts` (unsubscribe, re-attach with another role, re-attach with another cwd, a Mailbox that was not a recipient refused with `reply_not_received`, the hint names the request) and `src/hub/store-recipients.test.ts` (recording, restart and compaction, pre-record lines, Mailboxes created after sending).
   - `docs/protocol.md` §2 (Recipients, Awaiting reply) and §3 (`POST /messages`) say what "received" means for a reply; `docs/design.md` §3.14 describes the record.
   - Checked: `npm test` 422 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 29 items, 0 errors, 0 warnings after the close. The reviewer read the uncommitted change, found no findings, and ran `npm test` 422 pass. Not checked: the new tests against the pre-change code; a live Hub with an old on-disk log. Open points, left as they are: a Mailbox created after the request and then re-attached with another role or cwd still loses its reply for a project-scoped role request (reviewer note, judgment call); the backlog's awaitingReply, the map chip and live delivery still use the current state.
+- [x] C100 The start result line (C88) says `started` for a role that did not run (2026-11-01, decided by the user)
+  - `agent` on its own with a token records `started` only after the attach is seen on the Hub (`watchAttach` in `src/team/agent.ts`, polling `attachmentOf` every second, `--attach-timeout` default 60 seconds). The baseline is the id held before claude started. An unreadable Hub read (`attachmentOf` returns `undefined`) never counts as an attach, and when the baseline could not be read the first successful read is the baseline. A claude that ends first, or does not attach in time, records `failed` with the reason; a later attach is not recorded. Without a token `agent` records `started` on spawn, as before, and `usage.md` says so.
+  - `team` with the `print` opener and no `HUB_TOKEN` records each role as `printed` (`StartOutcome.printed` in `src/team/startlog.ts`, carried into the result line). A tab opener without a token still records `started`. `docs/usage.md` (start warnings) and `docs/design.md` (§C88) describe `printed`.
+  - `runAgent` writes exactly one result line on every exit path (`recordOnce` and `withResult` in `src/team/agent.ts`): a throw is written as `aborted` and rethrown, and a return that recorded nothing gets an `aborted` line.
+  - Tests: `src/team/agent.test.ts` (13 cases: the attach watch, including an unreadable before with an id already held and the unreadable-throughout timeout; `recordOnce`; `withResult`; `printed` in the result line).
+  - Checked: `npm test` 435 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 28 items, 0 errors, 0 warnings after the close. The reviewer read the uncommitted change; one finding (a false `started` when the Hub read at `before` fails) was fixed and tested. Not checked: a real claude or Hub attach; the NVM-blocked claude (C56); a `team` run with the print opener; the exit-before-attach branch of `runAgent` and the `print ? printed : started` line in `team.ts` (no test runs them). Left as is: a claude that attaches and exits within one 1-second poll is recorded `failed`; a claude that attaches after the limit is not recorded as started later; the attach and timeout messages are printed beside claude's screen; a claude that attaches before the first successful read, with `before` unknown, ends `failed` at the limit.
 - [x] C101 The C78 scene "closing Forward to… draws once" in `ui:check` is flaky (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the scene reads the render count and the chip count in the same evaluate as `blur()`. `blur()` runs `flushMap` synchronously (the select's onblur; `requestMapRender` renders at once when not held), so renders after it returns are not counted. The 800 ms wait is removed. The checks (`renders === 1`, `chips === chipsBefore + 1`) and the verify text are unchanged. `public/index.html` is not changed.
   - Checked: ten `npm run ui:check` runs in a row on the development machine's Chrome, all exit 0 with the C78 scene `ok` and no NG line; `npm test` 412 pass, 0 fail; `npm run docs:check` 31 items, 0 errors, 0 warnings (after the close). The reviewer read the uncommitted change, found no findings, and confirmed that `blur()` runs `flushMap` synchronously. Not checked: Linux Chromium, where the flake was seen.
@@ -735,20 +740,5 @@ Status: held(after the user has run teams in two projects side by side)
 
 Raised 2026-11-01 by the user: projects where a team was started could show as tab-like buttons, so switching is one press (today it is the project selector above the sidebar). The user wants to run two teams first and decide then. design.md §3.2 chose a selector over tabs so waits in other projects are not missed (`N waiting in other projects`); buttons have to keep that.
 
-### C100. The start result line (C88) says `started` for a role that did not run
-
-Found 2026-10-31 in the same review. `StartOutcome` (`src/team/startlog.ts`) defines `started` as "its tab is open and it attached (or, without a token, its tab is open)". Two paths record more than that:
-- `agent` on its own records `started` on the child's `spawn` event (`src/team/agent.ts`). On Windows with `claude.cmd`, `spawnArgs` runs it through the shell, so `spawn` is cmd.exe starting. A `claude.cmd` blocked by NVM (the C56 case) or a claude that exits at once is recorded as started, and no failed line follows.
-- `team` with the `print` opener and no `HUB_TOKEN` records every role as `started`, though it only printed the commands.
-
-Related, read but not reproduced: `runAgent` writes the result only from `fail()` and the spawn handlers, so a throw elsewhere leaves no result line (`runTeam` wraps its body in `try/finally`); and `team` checks connection twice (before the Hub is started, then per role), so the pre-start line's roles can differ from the result's `skipped`.
-
-Decided 2026-11-01 by the user: `agent` on its own records `started` only when its attach is seen on the Hub, as `team` does; the `print` opener without a token records a separate outcome `printed`.
-
-#### Done when
-- [ ] `agent` on its own records `started` only after the attach is seen on the Hub; a child that exits or is blocked before attaching records `failed` (with a token) instead
-- [ ] `team` with the `print` opener and no `HUB_TOKEN` records each role as `printed`, and `StartOutcome` and docs/usage.md (start warnings) describe `printed`
-- [ ] `runAgent` writes a result line on every exit path, including a throw (as `runTeam` does with `try/finally`)
-- [ ] Tests cover the three; `npm test` and `npm run docs:check` pass
 
 

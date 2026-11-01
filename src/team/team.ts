@@ -200,7 +200,8 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
     clearStartStatus(mailbox)
     const err = start(mailbox, agentSub(role, o.projectDir, o.permissionMode))
     if (err) { outcome.failed.push({ ...ref, reason: `Could not open a tab for ${mailbox}: ${err}` }); continue }
-    if (!token) { outcome.started.push(ref); await sleep(3000); continue }
+    // Without a token the attach is not checked. With the print opener nothing was opened, so the role is only printed (C100)
+    if (!token) { (print ? outcome.printed : outcome.started).push(ref); await sleep(3000); continue }
     const deadline = Date.now() + o.attachTimeoutSec * 1000
     const statusFile = startStatusPath(mailbox)
     let attached = false

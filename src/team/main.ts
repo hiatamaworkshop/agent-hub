@@ -48,7 +48,7 @@ async function main(argv: string[]): Promise<number> {
   if (p.command === 'hub') return runHub()
   if (p.command === 'hooks') return runHooks(projectDir(p.project), ROOT, p.write)
   if (p.command === 'agent') {
-    return runAgent({ role: p.role!, projectDir: projectDir(p.project), model: p.model, mailbox: p.mailbox, permissionMode: p.permissionMode, fromTeam: p.fromTeam })
+    return runAgent({ role: p.role!, projectDir: projectDir(p.project), model: p.model, mailbox: p.mailbox, permissionMode: p.permissionMode, fromTeam: p.fromTeam, attachTimeoutSec: p.attachTimeoutSec })
   }
   const dir = projectDir(p.project)
   const roles = p.roles.length ? p.roles : await chooseRoles()
