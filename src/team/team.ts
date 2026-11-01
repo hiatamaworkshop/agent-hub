@@ -12,6 +12,7 @@ import { clearStartStatus, readHubMailboxes, type HubMailbox } from './agent.js'
 import { checkClaudeCli, checkoutWarnings, hookWarning, startStatusPath } from './checks.js'
 import { envSetting, hubRolesFile, readRoleNames, ROOT } from './env.js'
 import { writeMissingHooks } from './hooks.js'
+import { statusCommand } from './status.js'
 import { checkClaudeVersion, emptyOutcome, parseVersion, recordResult, recordStart, splitByConnection, type StartOutcome, versionWarnedBefore } from './startlog.js'
 import { ask } from './prompt.js'
 import { commandLine } from './quote.js'
@@ -306,6 +307,7 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
   console.log('\n--- summary ---')
   console.log(`index: ${indexLine}`)
   for (const i of infos) console.log(`hooks: ${i}`)
+  console.log(`status: ${statusCommand(o.projectDir)} (the project's Mailboxes and latest report)`)
   for (const n of notes) console.log(`note: ${n}`)
   for (const f of outcome.failed) console.log(`failed: ${f.reason}`)
   await printUiUrl(hubUrl, token, o.projectDir)

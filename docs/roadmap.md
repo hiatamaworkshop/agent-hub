@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C108
 
 (Items with a status line are listed under "Items".)
 
@@ -394,6 +393,9 @@ In the order they will be taken up. Only items without a status line and blocked
 - [x] C111 Write the Hub hooks on a project's first team start (2026-11-01, decided by the user)
   - `src/team/hooks.ts` `writeMissingHooks` is the one writer (`hooks --write` and the team start both call it, with a backup when the file existed); `src/team/team.ts` `hooksForStart` writes the missing hooks at a team start and says so in the summary (`hooks: …`) instead of warning; `--no-hooks` (`src/team/options.ts`, `src/team/main.ts`) keeps the warning only. The version warning is `WARNING` only on the first start with that version (`versionWarnedBefore` in `src/team/startlog.ts`, read from `logs/start-warnings.jsonl`); later starts print a plain `note:`, and every start is still recorded.
   - Checked: `npm test` 479/479 pass; `npm run docs:check` 0 errors; `npx tsc --noEmit` ok. A real team start against a scratch project on a separate Hub (port 7791, stopped afterwards): the first start wrote `.claude/settings.local.json` and printed `hooks: Hub hooks written to …`, the second left it unchanged, `--no-hooks` warned only and wrote nothing, and with the start log set aside the first start printed `WARNING` for the newer version. A failed write inside a real start is covered by the unit test only. No reviewer was connected, so the item had no review.
+- [x] C108 A command for the starting session to read a project's latest reports and states (2026-11-01, decided by the user)
+  - `src/team/status.ts`: `npm run team -- status --project <dir>` (also `hub-team status`) prints one line per Mailbox of the project and the newest report from one of its Mailboxes to the human, in full. It reads `GET /mailboxes` and pages `GET /messages` with the URL and token rule of `docs:index`; a missing token, a refused token or an unreachable Hub is one line and exit 1. The team start's summary prints `status: npm run team -- status --project <dir>`. `src/team/options.ts`, `src/team/main.ts`, `src/team/team.ts` wire it; `docs/usage.md` (teams) describes it.
+  - Checked: `npm test` 485/485 pass; `npm run docs:check` 0 errors; `npx tsc --noEmit` ok. A real read-only run of `npm run team -- status --project .` against the running Hub printed the three Mailbox lines and the latest report in full; `hub-team status` ran in that folder (exit 0). The unreachable and refused cases are covered by unit tests only. No reviewer was connected, so the item had no review.
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -759,15 +761,3 @@ To decide: where the seqs come from (`seqs` on the receiver's `awaitingReply` an
 Status: held(after the user has run teams in two projects side by side)
 
 Raised 2026-11-01 by the user: projects where a team was started could show as tab-like buttons, so switching is one press (today it is the project selector above the sidebar). The user wants to run two teams first and decide then. design.md §3.2 chose a selector over tabs so waits in other projects are not missed (`N waiting in other projects`); buttons have to keep that.
-
-### C108. A command for the starting session to read a project's latest reports and states
-
-Found 2026-11-01 in the same first run. The session that started the team was asked "it seems done, take a look", and had no short way to read the leader's report: it took the token from `.env`, tried `GET /messages` (which returned another project's messages last), filtered by `cairn` by hand, and read `GET /mailboxes` and `GET /events` (no Mailbox filter) to see that the leader was idle with a request awaiting reply. The reports themselves read well (RESULT / VERIFIED / NOT VERIFIED / NEEDS DECISION).
-Candidate: `hub-team status --project <dir>` (or a `team` subcommand) printing, for that project, each Mailbox's state and backlog in one line, and the latest report to the human in full; `hub-team`'s summary names it.
-Decided 2026-11-01 by the user: taken up last of the items from the two-team run. The card state (Needs you, Stopped and so on) is derived in the page (`cardState` in `public/index.html`), so the command prints the delivery facts it is derived from rather than repeating that derivation.
-
-#### Done when
-- [ ] `npm run team -- status --project <dir>` (and the same through `hub-team`) prints one line per Mailbox of that project: name, role, connected or not, unread, awaiting reply, outgoing with its targets, handed but unconfirmed, and the last Event's kind and time
-- [ ] It then prints the newest Message from a Mailbox of that project to the human in full, with its seq, sender and time; Messages of other projects are not shown
-- [ ] It reads the Hub and token the same way as `docs:index`; when the Hub is not reachable or the token is refused it says so in one line and exits non-zero
-- [ ] The team start's summary names the command; tests cover the project filter and the newest report; docs/usage.md (teams) is updated; `npm test` and `npm run docs:check` pass
