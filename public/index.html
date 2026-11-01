@@ -2404,7 +2404,6 @@ function noIndexHint(path) {
   const box = el('div', 'noindex', `No roadmap index for ${folderName(path)}. In agent-hub's folder, run:`)
   const arg = /\s/.test(path) ? `"${path}"` : path
   box.append(el('code', '', `npm run docs:index -- --project ${arg}`))
-  box.append(el('div', '', 'If the ledger is not docs/roadmap.md, add --file <path> with the "ledger" in .agent-hub.json in that folder. The page cannot read that file.'))
   return box
 }
 function renderItems() {

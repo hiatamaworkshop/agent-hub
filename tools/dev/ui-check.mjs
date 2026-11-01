@@ -702,6 +702,7 @@ try {
   const readEmpty = () => evaluate(`({ head: !$('itemsHead').hidden, codes: [...$('items').querySelectorAll('code')].map((c) => c.textContent), text: $('items').textContent })`)
   const emptyItems = await readEmpty()
   verify('Items: 索引のないプロジェクトを選ぶと、見出しと docs:index のコマンド (--project) を出す (C107)', emptyItems.head && JSON.stringify(emptyItems.codes) === JSON.stringify([`npm run docs:index -- --project ${noIdx}`]) && emptyItems.text.includes('No roadmap index for noidx'), emptyItems)
+  verify('Items: 索引のないときのコマンドは --file を付けず、欄に --file を足すよう書かない (.agent-hub.json は docs:index が読む) (C107)', emptyItems.codes.every((c) => !c.includes('--file')) && !emptyItems.text.includes('--file'), emptyItems)
   await sendIndex(noIdx, 'docs/roadmap.md', { items: [itemOf('C1', '一つ目', 'decided')] })
   await sleep(1500)
   const filled = await readEmpty()
