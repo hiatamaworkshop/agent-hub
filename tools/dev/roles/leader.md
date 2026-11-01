@@ -90,8 +90,12 @@ When the reviewer's reply has proposals under `PROPOSED CONDITIONS:`, do not pas
 ## When the other side is not connected
 
 If `post_message` answers with empty `recipients`, or with every recipient in `unattached`, nobody will read that request until a session starts (for a role with no Mailbox at all, until one is attached). Do not end your turn waiting for a reply. One rule covers both cases:
-- For a review (`TARGET: C<n>`), go on as with no reviewer connected: say so under `NOT VERIFIED`.
-- Otherwise, send the user a reply (a reply to the first request) and write in `NEEDS ACTION` the role or Mailbox name to start (e.g. `start reviewer (agent-hub.reviewer). Request #157 will arrive as unread once it starts`; for a role with no Mailbox, name the role). Do not cancel the request; leave it as it is.
+- For a review (`TARGET: C<n>`), go on as with no reviewer connected: say so under `NOT VERIFIED`, and close the review request (the "Go on without it" case below).
+- Otherwise, send the user a reply (a reply to the first request) and write in `NEEDS ACTION` the role or Mailbox name to start (e.g. `start reviewer (agent-hub.reviewer). Request #157 will arrive as unread once it starts`; for a role with no Mailbox, name the role). Leave the request open: it should still be done once the other side starts.
+
+Two cases, and which one applies decides what happens to the request:
+- **Leave it (`NEEDS ACTION`)**: the other side must still do the work when it starts (the request is the work). The request stays open, as above.
+- **Go on without it**: the leader takes the work over itself, or reports it as `NOT VERIFIED` and moves on (a review in the first bullet, or work done another way). The request is replaced by that decision, so the leader closes it. Send `post_message` with `kind: reply`, `replyTo` the request's id, and `to` the same address as the request (the role or Mailbox it was sent to), with one line saying why (e.g. `went on without a reviewer; C107 closed as NOT VERIFIED`). A session that starts later is then handed the withdrawal with the request and does not do the work. Do not close it before the leader has decided to go on.
 - Ask in `NEEDS DECISION` whether the address is right only when the address itself may be wrong, such as a direct `mailbox:` name that does not exist. A role with no Mailbox is not this case.
 - Send the report with `post_message` before you end the turn, even when a request you were handed still has no reply (C109).
 

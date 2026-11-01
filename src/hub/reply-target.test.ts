@@ -146,6 +146,26 @@ describe('返信の replyTo は、受け取った Message か自分の Message �
     assert.equal(err.error, 'reply_not_received')
   })
 
+  // C113: 送り手が自分の依頼に、未接続 (unattached) の role 宛てで返信して閉じる (leader が reviewer を待たずに進めた場合)。refuse されず、依頼が閉じ、返信は未読で届く
+  it('自分の依頼へ、unattached な role 宛てに返信して閉じる: 通り、outgoing と待ちが外れ、その Mailbox に未読で届く (C113)', async () => {
+    const { hub, post } = setup()
+    const lead = hub.attach('lead', { client: 'claude-code', role: 'leader' })
+    const rev = hub.attach('rev', { client: 'claude-code', role: 'reviewer' })
+    hub.detach(rev.attachmentId)
+    assert.ok(!hub.store.getMailbox('rev')!.attachment, 'rev は未接続 (unattached)')
+    const req = hub.postMessage({ kind: 'request', to: { type: 'role', id: 'reviewer' }, body: 'review C1' }, hub.senderOf(lead.attachmentId))
+    assert.equal(hub.store.isAwaitingReply(req), true)
+    assert.equal(hub.describeMailboxes().find((d) => d.name === 'lead')!.backlog.outgoing.count, 1)
+
+    const res = await post({ kind: 'reply', replyTo: req.id, to: { type: 'role', id: 'reviewer' }, body: 'went on without a reviewer' }, { 'x-hub-attachment': lead.attachmentId })
+    assert.equal(res.status, 201, await res.clone().text())
+    const reply = (await res.json()) as Message
+    assert.equal(reply.replyTo, req.id)
+    assert.equal(hub.store.isAwaitingReply(req), false, '依頼は閉じる')
+    assert.equal(hub.describeMailboxes().find((d) => d.name === 'lead')!.backlog.outgoing.count, 0, '送り手の outgoing から外れる')
+    assert.deepEqual(hub.store.unread('rev').map((m) => m.id), [req.id, reply.id], '再接続したときに、依頼と取り下げの返信が未読で届く')
+  })
+
   it('購読を外した後も、受け取った未返信の依頼は案内に出る (oldestOpenRequestTo と同じ受け手)', async () => {
     const { hub, post } = setup()
     const x = hub.attach('x', { client: 'claude-code' })
