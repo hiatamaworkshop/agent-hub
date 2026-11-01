@@ -62,7 +62,9 @@
   #states { margin-bottom: 4px; }
   #backlog { margin-bottom: 10px; }
   .bl { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
-  .bl.jump { cursor: pointer; }
+  /* 押すと飛ぶ印 (C106)。バッジ・状態の数・地図の Needs you。押しても送らず、既読にせず、状態も変えない */
+  .bl.jump, .stc.jump, .state.jump { cursor: pointer; }
+  .mb.hit, .mapnode.hit { outline: 2px solid var(--accent); outline-offset: 2px; }
   .bl.age1 { color: var(--amber); border-color: var(--amber); }
   .bl.age2 { color: var(--warn); border-color: var(--warn); }
   /* カードの状態 (design.md §3.15)。枠の強調で、誰が動いているか・誰の番かを一目で分ける。色は状態の線とそろえる */
@@ -2124,6 +2126,7 @@ function mailboxModelOf(mb, bySeq) {
     signal: signalOf(state), // 人の番 (you)・作業中 (working)・静か (idle)
     layers: layersOf(mb), // 溜まりのバッジの 3 層
     humanTurn,
+    target: stateTargetOf(mb, state, humanTurn), // 人の番・Stopped を押したときの飛び先 (C106)
     // タブの件数: 人の番の件数。未接続の相手を待つカードの 1 件を足す (C49)
     waiting: humanTurn.count || (state && state.key === 'you' ? 1 : 0),
     // Health check が再送する request の seq (Stopped で返信待ちのもの)。なければ null
@@ -2153,6 +2156,7 @@ function stateLine(st) {
 // 枠と状態の行の CSS クラス。未読だけ (quiet) は Working と書くが、信号の Working ではない (C71)
 const frameClass = (st) => (st.quiet ? 'unread' : st.key)
 // サイドバーの上: 表示中のプロジェクトで、状態ごとの数 (Idle と Offline は出さない。未読だけは数えない)。モデルの state を数える
+// 押すと (C106): Needs you と Stopped は、その状態に入れた最も古い Message か Event へ (jumpTo)。ほかの状態は、その状態の最初のカードへ (jumpToCard)
 function renderStates(mailboxes) {
   const box = $('states')
   box.textContent = ''
@@ -2162,8 +2166,56 @@ function renderStates(mailboxes) {
     if (s.key === 'idle' || s.key === 'offline' || !n.get(s.key)) continue
     const chip = el('span', `stc state st-${s.key}`, `${s.label} ${n.get(s.key)}`)
     chip.title = s.title
+    if (s.key === 'you' || s.key === 'stopped') {
+      const t = oldestTargetOf(mailboxes, s.key)
+      if (t) jumpChip(chip, () => jumpTo(t), 'Click to find the oldest one in the thread.')
+    } else jumpChip(chip, () => jumpToCard(s.key), 'Click to find the first one in the sidebar (the map in Map view).')
     box.append(chip)
   }
+}
+// 押すと飛ぶ印 (C106)。カーソルは指の形、title に押すと見つかるものを足す。押しても送らず、既読にせず、状態も変えない
+function jumpChip(node, go, hint) {
+  node.classList.add('jump')
+  node.title = node.title ? `${node.title} ${hint}` : hint
+  node.onclick = (e) => { e.stopPropagation(); go() }
+}
+// 飛び先になれるか (Event の id か、seq がある)。古い Hub の材料は seq を持たないので、飛べない
+const jumpable = (t) => !!t && (!!t.eventId || (t.oldestSeq !== null && t.oldestSeq !== undefined))
+// 状態 key の、最も古い Message か Event (C106)。mailboxes はモデルの一覧 (表示の絞り込みは呼ぶ側)。飛び先がなければ null
+function oldestTargetOf(mailboxes, key) {
+  let best = null
+  for (const mb of mailboxes) {
+    const t = mb.state && mb.state.key === key && !mb.state.quiet ? mb.target : null
+    if (!jumpable(t)) continue
+    if (!best || (t.oldestAt && best.oldestAt && Date.parse(t.oldestAt) < Date.parse(best.oldestAt))) best = t
+  }
+  return best
+}
+// カードの状態の飛び先 (C106)。人の番は humanTurn (質問・許可待ち・人宛ての request)、未接続の相手を待つときは、その相手宛ての最も古い request。Stopped は返信待ちの最も古い request。ほかの状態は飛び先を持たない
+function stateTargetOf(mb, state, humanTurn) {
+  if (!state || !mb.backlog) return null
+  if (state.key === 'you') {
+    if (humanTurn.count) return humanTurn
+    let best = null
+    for (const a of (mb.backlog.outgoing && mb.backlog.outgoing.to) || []) {
+      if (a.type === 'user' || !jumpable(a)) continue
+      if (!best || (a.oldestAt && best.oldestAt && Date.parse(a.oldestAt) < Date.parse(best.oldestAt))) best = a
+    }
+    return best ? { count: best.count, oldestAt: best.oldestAt, oldestSeq: best.oldestSeq, eventId: null } : null
+  }
+  if (state.key === 'stopped') return mb.backlog.awaitingReply
+  return null
+}
+// 状態の最初のカードへ (C106): サイドバー (Messages view) か地図 (Map view) で、その状態の最初のもの。強調するだけ
+function jumpToCard(key) {
+  const onMap = mapOn
+  const card = $(onMap ? 'map' : 'mailboxes').querySelector(`${onMap ? '.mapnode' : '.mb'}.st-${key}`)
+  if (!card) return setStatus(`No card is ${STATES.find((s) => s.key === key).label} now.`)
+  card.scrollIntoView({ block: 'center' })
+  card.classList.remove('hit')
+  void card.offsetWidth
+  card.classList.add('hit')
+  setTimeout(() => card.classList.remove('hit'), 3000)
 }
 function formatAge(ms) {
   const m = Math.floor(ms / 60000)
@@ -2193,11 +2245,7 @@ function backlogChips(box, layers, jump = false) {
     chip.dataset.count = String(t.count)
     if (t.oldestAt) chip.dataset.since = t.oldestAt
     chip.title = layer.title + (t.oldestAt ? ` Oldest since ${new Date(t.oldestAt).toLocaleString()}.` : '')
-    if (jump && (t.eventId || t.oldestSeq !== null)) {
-      chip.classList.add('jump')
-      chip.title += ' Click to find the oldest one in the thread.'
-      chip.onclick = (e) => { e.stopPropagation(); jumpTo(t) }
-    }
+    if (jump && jumpable(t)) jumpChip(chip, () => jumpTo(t), 'Click to find the oldest one in the thread.')
     paintChip(chip)
     box.append(chip)
   }
@@ -2225,6 +2273,7 @@ function jumpTo(t) {
     return
   }
   if (box.dataset.compacted === '1') unfold()
+  if (mapOn) setMapView(false) // 地図から押したときは、Messages に切り替えてから飛ぶ (C106)
   box.scrollIntoView({ block: 'center' })
   box.classList.remove('hit')
   void box.offsetWidth
@@ -2270,7 +2319,7 @@ $('health').onclick = async () => {
 let tabStopped = 0 // Stopped は人の番だが、タイトルの件数 (Needs you) には足さない。アイコンのバッジにだけ足す
 // サイドバーのバッジ: 表示中のプロジェクトの合計。タブ: モデルの human (全プロジェクト)
 function renderBacklog(model = teamModel()) {
-  backlogChips($('backlog'), sumLayers(model.mailboxes.filter(visibleCard)))
+  backlogChips($('backlog'), sumLayers(model.mailboxes.filter(visibleCard)), true)
   renderHealth(model)
   const { waiting: you, stopped, working } = model.human
   if (you !== tabWaiting || stopped !== tabStopped || working !== tabWorking) { tabWaiting = you; tabStopped = stopped; tabWorking = working; showTabUnread() }
@@ -2797,7 +2846,8 @@ function renderMap(model) {
     canvas.append(c)
   }
   const cols = [...canvas.querySelectorAll('.mapcol')]
-  const human = mapHumanNode(model.human)
+  // 人のノードの Needs you N は全プロジェクトの数。押すと、その中で最も古いもの (C106)。絞り込みで隠れていれば、飛ばずにそう言う
+  const human = mapHumanNode(model.human, oldestTargetOf(model.mailboxes, 'you'))
   cols[0].append(human)
   nodes.set(HUMAN_KEY, { el: human, col: 0 })
   const shown = model.mailboxes.filter(visibleCard).sort((a, b) => a.name.localeCompare(b.name))
@@ -2825,10 +2875,14 @@ function renderMap(model) {
   }
   ensureRequests(model.edges)
 }
-function mapHumanNode(h) {
+function mapHumanNode(h, t) {
   const n = el('div', `mapnode human${h.waiting ? ' st-you' : ''}`)
   n.append(el('div', 'name', 'You'), el('div', 'meta', 'the human'))
-  if (h.waiting) n.append(el('div', 'state st-you', `Needs you ${h.waiting}`))
+  if (h.waiting) {
+    const label = el('div', 'state st-you', `Needs you ${h.waiting}`)
+    if (t) jumpChip(label, () => jumpTo(t), 'Click to find the oldest one in the thread.')
+    n.append(label)
+  }
   n.append(el('div', 'mapchips'))
   return n
 }
@@ -2842,7 +2896,10 @@ function mapNodeOf(mb) {
   n.append(head)
   if (st) {
     const def = STATES.find((s) => s.key === st.key)
-    n.append(el('div', `state st-${frameClass(st)}`, def ? def.label : st.key))
+    const label = el('div', `state st-${frameClass(st)}`, def ? def.label : st.key)
+    // 人の番の card は、その card の最も古いもの (Needs you バッジと同じ飛び先。C106)
+    if (st.key === 'you' && jumpable(mb.target)) jumpChip(label, () => jumpTo(mb.target), 'Click to find the oldest one in the thread.')
+    n.append(label)
   }
   n.append(el('div', 'mapchips'))
   // 落とせるのは Mailbox のノードだけ (人のノードは宛先にならない)

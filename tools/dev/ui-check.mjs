@@ -1649,6 +1649,172 @@ try {
     projectCount(reviewers) === 1 && solo.asked.length === 0 && afterSolo === beforeSolo + 1 && soloSent.body === 'C104 check: one project' && soloSent.to.id === 'reviewer',
     { asked: solo.asked.length, projects: projectCount(reviewers), beforeSolo, afterSolo, to: soloSent.to },
   )
+
+  {
+  // C106: バッジ・状態の数・地図の Needs you を押すと飛ぶ。飛び先は数えたものの最も古いもの (押した印の数え方と同じ)。
+  // 押しても送らず、既読にせず、状態も変えない。jo の質問を先に出し、jb の質問はそのあと (全プロジェクトの最も古いのは jo か demo の依頼)
+  const jbCwd = join(work, 'jb')
+  const joCwd = join(work, 'jo')
+  const joLead = await api('POST', '/mailboxes/jo.leader/attach', { client: 'claude-code', role: 'leader', cwd: joCwd, sessionId: 's-jo' })
+  await hook('jo.leader', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'tu-jo', session_id: 's-jo', cwd: joCwd })
+  const jbLead = await api('POST', '/mailboxes/jb.leader/attach', { client: 'claude-code', role: 'leader', cwd: jbCwd, sessionId: 's-jb-lead' })
+  const jbDep = await api('POST', '/mailboxes/jb.deployer/attach', { client: 'claude-code', role: 'deployer', cwd: jbCwd, sessionId: 's-jb-dep' })
+  await hook('jb.leader', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'tu-jb', session_id: 's-jb-lead', cwd: jbCwd })
+  // deployer は依頼を渡された (返信なし): Working。leader には未読の依頼 (JB-UNREAD) を置く
+  const awaitMsg = await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'jb.deployer' }, body: 'JB-AWAIT: 渡して返信を待つ依頼' })
+  await api('POST', `/attachments/${jbDep.attachmentId}/ack`, { upTo: awaitMsg.seq })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'jb.leader' }, body: 'JB-UNREAD: 未読の依頼' })
+  await sleep(1500)
+  const jbKey = await evaluate("[...projects.values()].find((p) => p.label === 'jb').key")
+  await evaluate(`chooseProject(${JSON.stringify(jbKey)})`)
+  await sleep(500)
+
+  // 押す。結果は押した印の見た目 (カーソル・title)、押した後に強調されたもの、表示 (Map か Messages)、ステータス
+  const press = (sel) => evaluate(`(async () => {
+    const el = document.querySelector(${JSON.stringify(sel)})
+    if (!el) return null
+    const cursor = getComputedStyle(el).cursor
+    const title = el.title
+    document.querySelectorAll('.hit').forEach((e) => e.classList.remove('hit'))
+    el.click()
+    await new Promise((r) => setTimeout(r, 400))
+    const hits = [...document.querySelectorAll('.hit')].map((h) => ({
+      kind: h.classList.contains('msg') ? 'msg' : h.classList.contains('evt') ? 'evt' : h.classList.contains('mb') ? 'mb' : 'mapnode',
+      seq: h.dataset.seq ?? null,
+      who: (h.querySelector('.chip, .name') || {}).textContent || null,
+    }))
+    return { cursor, title, status: $('status').textContent, hits, map: !$('map').hidden }
+  })()`)
+  const unreadOf = async (name) => (await api('GET', '/mailboxes')).mailboxes.find((m) => m.name === name).unread
+  const snapBefore = { msgs: await countMessages(), unread: await unreadOf('jb.leader') }
+
+  const back = await press('#backlog .bl[data-layer="agent"]')
+  verify('#backlog の Agent バッジ: 押すと、表示中のカードが数えた最も古いもの (JB-AWAIT) へ飛んで強調され、指の形の印で title がある (C106)',
+    back && back.cursor === 'pointer' && back.title.includes('Click') && back.hits.length === 1 && back.hits[0].seq === String(awaitMsg.seq), back)
+  const you = await press('#states .stc.st-you')
+  verify('Needs you バッジ: 押すと、この状態に入れた最も古い Event (jb.leader の質問) へ飛んで強調される (C106)',
+    you && you.cursor === 'pointer' && you.hits.length === 1 && you.hits[0].kind === 'evt' && you.hits[0].who === 'jb.leader', you)
+  const working = await press('#states .stc.st-working')
+  verify('Working バッジ: 押すと、その状態の最初のカード (サイドバー) が強調される。メッセージ欄は動かさない (C106)',
+    working && working.cursor === 'pointer' && working.hits.length === 1 && working.hits[0].kind === 'mb' && working.hits[0].who === 'jb.deployer', working)
+  const snapAfter = { msgs: await countMessages(), unread: await unreadOf('jb.leader') }
+  verify('押しても何も送らず、既読にせず、状態も変えない (C106)', snapAfter.msgs === snapBefore.msgs && snapAfter.unread === snapBefore.unread, { snapBefore, snapAfter })
+
+  // 地図: Needs you のラベルは Messages に切り替えてから飛ぶ。Working は地図の上で強調する
+  await evaluate("$('mapToggle').click()")
+  await sleep(400)
+  const cardYou = await press('.mapnode[data-name="jb.leader"] .state')
+  verify('地図の Needs you ラベル (カード): 押すと Messages に切り替わり、そのカードの質問 (Event) へ飛んで強調される (C106)',
+    cardYou && cardYou.cursor === 'pointer' && !cardYou.map && cardYou.hits.length === 1 && cardYou.hits[0].kind === 'evt' && cardYou.hits[0].who === 'jb.leader', cardYou)
+  await evaluate("$('mapToggle').click()")
+  await sleep(400)
+  const mapWorking = await press('#states .stc.st-working')
+  verify('地図の上で Working バッジを押すと、地図のノードを強調し、地図のまま (C106)',
+    mapWorking && mapWorking.map && mapWorking.hits.length === 1 && mapWorking.hits[0].kind === 'mapnode' && mapWorking.hits[0].who === 'jb.deployer', mapWorking)
+  // 人のノードの Needs you N は全プロジェクトの数。最も古いのは jb の外 (demo か jo) にあり、絞り込みで隠れている → 飛ばず、そう言う
+  const hiddenHuman = await press('.mapnode.human .state')
+  verify('地図の人の Needs you: 最も古いものが絞り込みで隠れていれば、飛ばずに隠れていると言い、地図のまま (C106)',
+    hiddenHuman && hiddenHuman.map && hiddenHuman.status.includes('hidden by the project filter') && hiddenHuman.hits.length === 0, hiddenHuman)
+  // 地図のまま絞り込みを外す (Map view は続く)
+  await evaluate("chooseProject('')")
+  await sleep(400)
+  const allHuman = await press('.mapnode.human .state')
+  verify('地図の人の Needs you: 絞り込みを外すと最も古いものへ飛び、Messages に切り替わって強調される (C106)',
+    allHuman && !allHuman.map && allHuman.hits.length === 1 && allHuman.hits[0].who === 'jo.leader', allHuman)
+
+  // C106 (2): 残りの押せる印を、実際のバッジで押す。Stopped (返信待ちの最も古い依頼)、Waiting on others と Paused (最初のカード。サイドバーと地図)、
+  // Kind で隠れた飛び先 (状態は変えない)、最新 200 件より古い Event (手元にない)。押すたびに、印・送らない・既読にしない・状態を変えないを見る
+  {
+  const press2 = (sel) => evaluate(`(async () => {
+    const el = document.querySelector(${JSON.stringify(sel)})
+    if (!el) return null
+    const cursor = getComputedStyle(el).cursor
+    const title = el.title
+    document.querySelectorAll('.hit').forEach((e) => e.classList.remove('hit'))
+    el.click()
+    await new Promise((r) => setTimeout(r, 400))
+    const hits = [...document.querySelectorAll('.hit')].map((h) => ({
+      kind: h.classList.contains('msg') ? 'msg' : h.classList.contains('evt') ? 'evt' : h.classList.contains('mb') ? 'mb' : 'mapnode',
+      seq: h.dataset.seq ?? null,
+      who: (h.querySelector('.chip, .name') || {}).textContent || null,
+    }))
+    return { cursor, title, status: $('status').textContent, hits, map: !$('map').hidden, states: $('states').textContent }
+  })()`)
+  const unread2 = async (name) => (await api('GET', '/mailboxes')).mailboxes.find((m) => m.name === name).unread
+  // 止まった依頼 (jb.deployer は JB-AWAIT を渡したままターンを終えた)。委ねる側 (jb.waiter) は jb.filler に依頼を出して終える
+  await api('POST', '/mailboxes/jb.filler/attach', { client: 'claude-code', cwd: jbCwd, sessionId: 's-jb-fill' })
+  await hook('jb.deployer', { hook_event_name: 'Stop', session_id: 's-jb-dep', cwd: jbCwd })
+  const waiter = await api('POST', '/mailboxes/jb.waiter/attach', { client: 'claude-code', cwd: jbCwd, sessionId: 's-jb-wait' })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'jb.filler' }, body: 'JB-WAIT: 待っている依頼' }, { 'x-hub-attachment': waiter.attachmentId })
+  await hook('jb.waiter', { hook_event_name: 'Stop', session_id: 's-jb-wait', cwd: jbCwd })
+  const paused = await api('POST', '/mailboxes/jb.paused/attach', { client: 'claude-code', cwd: jbCwd, sessionId: 's-jb-pz' })
+  await hook('jb.paused', { hook_event_name: 'StopFailure', session_id: 's-jb-pz', cwd: jbCwd, error: 'rate_limit', last_assistant_message: "You've hit your limit" })
+  await sleep(1500)
+  // 前のブロックは All projects で終わるので、ここで jb に絞り直す (demo の止まった依頼が先に来ないように)
+  await evaluate(`chooseProject(${JSON.stringify(jbKey)})`)
+  const cards2 = (await screen()).cards
+  const stateOfCard = (name) => (cards2.find((c) => c.name === name) || {}).state || ''
+  verify('(準備) jb.deployer は Stopped、jb.waiter は Waiting on others、jb.paused は Paused (C106)',
+    stateOfCard('jb.deployer').startsWith('Stopped') && stateOfCard('jb.waiter').startsWith('Waiting on others') && stateOfCard('jb.paused').startsWith('Paused'), cards2)
+  // Stuck?: 接続のない Mailbox (jb.gone) に届いた未読。そのバッジは、その依頼へ飛ぶ
+  const gone = await api('POST', '/mailboxes/jb.gone/attach', { client: 'claude-code', cwd: jbCwd, sessionId: 's-jb-gone' })
+  await api('DELETE', `/attachments/${gone.attachmentId}`)
+  const goneMsg = await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'jb.gone' }, body: 'JB-GONE: 未接続の Mailbox に届いた未読' })
+  await sleep(1500)
+  const snap2Before = { msgs: await countMessages(), unread: await unread2('jb.leader') }
+
+  const stoppedP = await press2('#states .stc.st-stopped')
+  verify('Stopped バッジ: 押すと、返信待ちの最も古い依頼 (JB-AWAIT) へ飛んで強調される (C106)',
+    stoppedP && stoppedP.cursor === 'pointer' && stoppedP.title.includes('Click') && stoppedP.hits.length === 1 && stoppedP.hits[0].kind === 'msg' && stoppedP.hits[0].seq === String(awaitMsg.seq), stoppedP)
+  const waitingP = await press2('#states .stc.st-delegated')
+  verify('Waiting on others バッジ: 押すと、その状態の最初のカード (サイドバー) が強調される (C106)',
+    waitingP && waitingP.cursor === 'pointer' && waitingP.hits.length === 1 && waitingP.hits[0].kind === 'mb' && waitingP.hits[0].who === 'jb.waiter', waitingP)
+  const pausedP = await press2('#states .stc.st-paused')
+  verify('Paused バッジ: 押すと、その状態の最初のカード (サイドバー) が強調される (C106)',
+    pausedP && pausedP.cursor === 'pointer' && pausedP.hits.length === 1 && pausedP.hits[0].kind === 'mb' && pausedP.hits[0].who === 'jb.paused', pausedP)
+  await evaluate("$('mapToggle').click()")
+  await sleep(400)
+  const mapWaiting = await press2('#states .stc.st-delegated')
+  verify('地図の上で Waiting on others バッジを押すと、地図のノードを強調し、地図のまま (C106)',
+    mapWaiting && mapWaiting.map && mapWaiting.hits.length === 1 && mapWaiting.hits[0].kind === 'mapnode' && mapWaiting.hits[0].who === 'jb.waiter', mapWaiting)
+  const mapPaused = await press2('#states .stc.st-paused')
+  verify('地図の上で Paused バッジを押すと、地図のノードを強調し、地図のまま (C106)',
+    mapPaused && mapPaused.map && mapPaused.hits.length === 1 && mapPaused.hits[0].kind === 'mapnode' && mapPaused.hits[0].who === 'jb.paused', mapPaused)
+  await evaluate("$('mapToggle').click()")
+  await sleep(400)
+
+  // #backlog の Stuck?: 接続のない jb.gone の未読 (JB-GONE) を数える。押すとそこへ飛ぶ
+  const stuckP = await press2('#backlog .bl[data-layer="stuck"]')
+  verify('#backlog の Stuck? バッジ: 押すと、接続のない Mailbox の最も古い未読 (JB-GONE) へ飛んで強調される (C106)',
+    stuckP && stuckP.cursor === 'pointer' && stuckP.hits.length === 1 && stuckP.hits[0].kind === 'msg' && stuckP.hits[0].seq === String(goneMsg.seq), stuckP)
+
+  // Kind で隠れた飛び先: #backlog の Agent と #states の Stopped は、押すと隠れていると言う。どちらも状態は変わらない
+  const statesBefore = await evaluate('$("states").textContent')
+  await evaluate("toggleIn(FILTER.kinds, 'request', true)")
+  await sleep(300)
+  const kindAgent = await press2('#backlog .bl[data-layer="agent"]')
+  verify('#backlog の Agent バッジ: 飛び先が Kind の絞り込みで隠れていれば、飛ばずに隠れていると言い、状態は変わらない (C48、C106)',
+    kindAgent && kindAgent.cursor === 'pointer' && kindAgent.hits.length === 0 && kindAgent.status.includes('hidden by the Kind filter') && kindAgent.states === statesBefore, kindAgent)
+  const kindStopped = await press2('#states .stc.st-stopped')
+  verify('#states の Stopped バッジ: 飛び先が Kind で隠れていれば、飛ばずに隠れていると言い、状態は変わらない (C48、C106)',
+    kindStopped && kindStopped.hits.length === 0 && kindStopped.status.includes('hidden by the Kind filter') && kindStopped.states === statesBefore, kindStopped)
+  await evaluate("toggleIn(FILTER.kinds, 'request', false)")
+  await sleep(300)
+
+  // 手元にない飛び先: 最新 200 件より古い Event (jb.leader の質問) は、ページが読んでいない。Hub の数えるもの (You) はそれを指す。
+  // 後から 205 件の Event を積んで押し出し、ページを読み直してから You バッジを押す
+  for (let i = 0; i < 205; i++) await hook('jb.filler', { hook_event_name: 'Stop', session_id: 's-jb-fill', cwd: jbCwd })
+  await cdp('Page.navigate', { url: `${HUB}/?token=${TOKEN}` })
+  await sleep(2000)
+  await evaluate(`chooseProject(${JSON.stringify(jbKey)})`)
+  await sleep(800)
+  const notLoadedP = await press2('#backlog .bl[data-layer="you"]')
+  verify('#backlog の You バッジ: 飛び先の Event が手元にないと、押すと not loaded と言い、何も動かさない (C106)',
+    notLoadedP && notLoadedP.cursor === 'pointer' && notLoadedP.hits.length === 0 && notLoadedP.status.includes('That event is not loaded'), notLoadedP)
+  const snap2After = { msgs: await countMessages(), unread: await unread2('jb.leader') }
+  verify('押しても何も送らず、既読にせず、状態も変えない (C106)', snap2After.msgs === snap2Before.msgs && snap2After.unread === snap2Before.unread, { snap2Before, snap2After })
+  }
+  }
 } catch (e) {
   failed++
   console.error(`NG  ${e.message}`)
