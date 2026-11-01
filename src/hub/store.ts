@@ -7,7 +7,8 @@ import { normalizeProjectPath, type Address, type HubEvent, type Mailbox, type M
 import { newId } from './ids.js'
 
 type LogRecord =
-  | { op: 'message'; message: Message }
+  // recipients は送った時点の受け手、known は送った時点にあった Mailbox 名 (C99)。ない行は前の形式で、判定は今の状態で代用する
+  | { op: 'message'; message: Message; recipients?: string[]; known?: string[] }
   // received がない行は受領の記録を持つ前の形式。received は cursor に追従させる
   | { op: 'mailbox.create'; name: string; role: string | null; createdAt: string; cursor: number; received?: number; seq: number }
   | { op: 'mailbox.delete'; name: string; seq: number }
@@ -126,6 +127,8 @@ export class Store {
   private readonly now: () => Date
   private readonly messages: Message[] = []
   private readonly byId = new Map<string, Message>()
+  // Message id → 送った時点の受け手と、その時点にあった Mailbox 名 (C99)。記録のある Message だけ (前の形式は持たない)
+  private readonly sentTo = new Map<string, { recipients: Set<string>; known: Set<string> }>()
   private readonly mailboxes = new Map<string, MailboxState>()
   // 削除した Mailbox 名 → 削除時点の seq。作り直したときに古い直接宛てを再送しないため
   private readonly deletedAt = new Map<string, number>()
@@ -212,6 +215,8 @@ export class Store {
   private apply(rec: LogRecord): void {
     switch (rec.op) {
       case 'message':
+        // 閉じる判定 (answeredBy) より前に置く。判定はこの Message の受け手を使う
+        if (rec.recipients) this.sentTo.set(rec.message.id, { recipients: new Set(rec.recipients), known: new Set(rec.known ?? []) })
         // 閉じる request はログの順から導く (記録しない)。追記したときと再生したときで、前にある行が同じなので結果も同じ。
         // 詰め直したファイルの分は replied の行が残しているので、導き直さない
         if (rec.message.seq > this.answeredUpTo) for (const r of this.answeredBy(rec.message)) this.markReplied(r.id)
@@ -318,9 +323,12 @@ export class Store {
 
   // やりとりの Message が送り手について示すことは、閉じる request (apply が answeredBy で導く) と受領の確認の 2 つ。
   // 受領の確認は、送り手の Mailbox に渡してあった分 (cursor まで) すべて (C39)。渡す前の分は未読のまま届くので確認にしない
+  // 送った時点の受け手と、その時点にあった Mailbox 名を一緒に記録する (C99)。後で Mailbox の role・購読・project が変わっても、返信の判定は変わらない
   appendMessage(m: NewMessage): Message {
     const message: Message = { id: newId('m'), seq: this.seq + 1, ts: this.now().toISOString(), ...m }
-    this.write({ op: 'message', message })
+    const known = [...this.mailboxes.keys()]
+    const recipients = known.filter((name) => this.isRecipient(name, message))
+    this.write({ op: 'message', message, recipients, known })
     const sender = isExchange(message) && message.from.type === 'mailbox' ? this.mailboxes.get(message.from.id) : undefined
     if (sender) this.advanceReceived(sender.name, sender.cursor)
     return message
@@ -334,10 +342,10 @@ export class Store {
     const out: Message[] = []
     for (const r of this.openRequests.values()) {
       if (m.from.type === r.from.type && (m.from.type === 'user' || m.from.id === r.from.id)) continue
-      const fromRecipient = r.to.type === 'user' ? m.from.type === 'user' : m.from.type === 'mailbox' && this.isRecipient(m.from.id, r)
+      const fromRecipient = r.to.type === 'user' ? m.from.type === 'user' : m.from.type === 'mailbox' && this.isRecipientAtSend(m.from.id, r)
       if (!fromRecipient) continue
       const toSender =
-        r.from.type === 'user' ? m.to.type === 'user' : (m.to.type === 'mailbox' || m.to.type === 'role') && this.isRecipient(r.from.id, m)
+        r.from.type === 'user' ? m.to.type === 'user' : (m.to.type === 'mailbox' || m.to.type === 'role') && this.isRecipientAtSend(r.from.id, m)
       if (toSender) out.push(r)
     }
     return out
@@ -497,9 +505,19 @@ export class Store {
     }
   }
 
+  // name が m を受け取った Mailbox か (C99)。返信の判定 (C86)・案内・閉じる規則 (C28) はこれを使う。
+  // 送った時点にあった Mailbox は、送った時点の受け手かで決める。送った時点になかった名前 (まだ作られていない直接宛て、
+  // 後から作られたプロジェクトの role 宛て) は、作られたときに渡される (isRecipient) ので今の状態で決める。
+  // 記録のない前の形式の Message も今の状態で決める。詰め直しの後も記録は残る
+  isRecipientAtSend(name: string, m: Message): boolean {
+    const sent = this.sentTo.get(m.id)
+    if (!sent || !sent.known.has(name)) return this.isRecipient(name, m)
+    return sent.recipients.has(name)
+  }
+
   // name が受け取った、まだ閉じていない request の最も古いもの (replyTo を選ぶ案内に使う。C86)。openRequests は seq の昇順
   oldestOpenRequestTo(name: string): Message | undefined {
-    for (const r of this.openRequests.values()) if (this.isRecipient(name, r)) return r
+    for (const r of this.openRequests.values()) if (this.isRecipientAtSend(name, r)) return r
     return undefined
   }
 
@@ -620,6 +638,7 @@ export class Store {
       if (!ids.has(m.id)) continue
       this.messages.splice(i, 1)
       this.byId.delete(m.id)
+      this.sentTo.delete(m.id)
       this.repliedTo.delete(m.id)
       this.openRequests.delete(m.id)
     }
@@ -706,7 +725,8 @@ export class Store {
       for (const [topic, seq] of mb.subscriptions) recs.push({ op: 'subscribe', name: mb.name, topic, seq })
     }
     for (const message of this.messages) {
-      recs.push({ op: 'message', message })
+      const sent = this.sentTo.get(message.id)
+      recs.push(sent ? { op: 'message', message, recipients: [...sent.recipients], known: [...sent.known] } : { op: 'message', message })
       if (this.repliedTo.has(message.id)) recs.push({ op: 'replied', id: message.id })
     }
     for (const event of this.events) recs.push({ op: 'event', event })

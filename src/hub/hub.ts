@@ -203,10 +203,10 @@ export class Hub {
     return from.type === 'mailbox' ? this.acking(from.id, post) : post()
   }
 
-  // 返信先の判定 (C86): name が受け取ったか (store の isRecipient)、name が送ったものでなければ 400。何も保存・配信しない。
+  // 返信先の判定 (C86): name が送った時点で受け取る Mailbox だったか (store の isRecipientAtSend。C99)、name が送ったものでなければ 400。何も保存・配信しない。
   // 案内には name が受け取った、まだ閉じていない request の最も古いもの (id・seq・送り手) を入れ、正しい replyTo で送り直せるようにする
   private checkReplyTarget(name: string, original: Message): void {
-    if ((original.from.type === 'mailbox' && original.from.id === name) || this.store.isRecipient(name, original)) return
+    if ((original.from.type === 'mailbox' && original.from.id === name) || this.store.isRecipientAtSend(name, original)) return
     const open = this.store.oldestOpenRequestTo(name)
     const hint = open
       ? `${name} が受け取っている未返信の依頼で最も古いのは #${open.seq} (id ${open.id}、送り手 ${open.from.type}:${open.from.id})。replyTo にそれを指定して送り直す`

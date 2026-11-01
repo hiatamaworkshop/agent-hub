@@ -516,7 +516,7 @@ Open questions:
 ### 3.14 What the Hub holds and does not hold; retention (2026-10-18)
 
 **Principle**: the Hub is infrastructure for connecting, and holds only **state for addresses and delivery**.
-- Holds: Mailboxes (name, role, project, subscriptions, cursor, received), Messages in the middle of delivery, requests awaiting a reply.
+- Holds: Mailboxes (name, role, project, subscriptions, cursor, received), Messages in the middle of delivery, requests awaiting a reply. For each Message, the Mailboxes that received it when it was sent (C99). A reply is refused (C86) for a Mailbox that did not receive the request then, and a Mailbox's later changes (role, subscriptions, project, cwd) do not change that; this record is what makes "received" mean handed. It is not shown in the Message (protocol.md §2 Recipients).
 - Does not hold: knowledge (summaries, handoff notes, decisions). The repository's documents (§3.12) and engram hold those. Nor does it compress or summarize Messages to keep them.
 - Agents' volatility is a source of lightness, and the Hub matches it by discarding content early. Nor does the Hub hold an index for when documents grow (in order: make CLAUDE.md's map hierarchical, generate it from headings and check it; if search is needed, that is the domain of engram and the like). What the Hub carries is at most a pointer to a place inside a body ("see design.md §3.3").
 

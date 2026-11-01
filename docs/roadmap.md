@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C99
 - [ ] C100
 - [ ] C94
 
@@ -348,6 +347,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - `tools/dev/ui-check.mjs`: two scenes added after the C95 scenes. The first (the position is kept across new data and the deferred redraw) fails against the committed `index.html` (negative check, run once) and passes with the change. The second (another chip starts at the top) passes either way, as a guard. No existing scene changed.
   - `docs/usage.md` (the map pane paragraph) describes the rule. `docs/design.md` §3.2 does not describe the pane, so it is unchanged.
   - Checked: `npm run ui:check` exit 0 with both new scenes ok; `npm test` 412 pass, 0 fail; `npm run docs:check` 30 items, 0 errors, 0 warnings (after the close). The reviewer read the uncommitted change, found no findings. Not checked: a Message that loads after the pane is open ("Loading…" and then the Message): the position can be clamped and lost, and no scene covers it.
+- [x] C99 A Mailbox's reply is refused for a request it was handed (C86) (2026-11-01, decided by the user)
+  - The log's `message` line records `recipients` (the Mailboxes that received the Message when sent) and `known` (the Mailbox names that existed then). `Store.appendMessage` writes both; the replay reads them; compaction keeps them. The Message as returned does not carry them.
+  - `Store.isRecipientAtSend` decides for a name in `known` by `recipients`, and for any other name by the current rule (`isRecipient`), so a direct address before creation and a project-scoped role message for a project with no Mailbox yet still work. Messages without the record use the current rule. `checkReplyTarget` (C86), `oldestOpenRequestTo` (the hint) and the closing rule (`answeredBy`, C28) use it.
+  - Tests: `src/hub/reply-target.test.ts` (unsubscribe, re-attach with another role, re-attach with another cwd, a Mailbox that was not a recipient refused with `reply_not_received`, the hint names the request) and `src/hub/store-recipients.test.ts` (recording, restart and compaction, pre-record lines, Mailboxes created after sending).
+  - `docs/protocol.md` §2 (Recipients, Awaiting reply) and §3 (`POST /messages`) say what "received" means for a reply; `docs/design.md` §3.14 describes the record.
+  - Checked: `npm test` 422 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 29 items, 0 errors, 0 warnings after the close. The reviewer read the uncommitted change, found no findings, and ran `npm test` 422 pass. Not checked: the new tests against the pre-change code; a live Hub with an old on-disk log. Open points, left as they are: a Mailbox created after the request and then re-attached with another role or cwd still loses its reply for a project-scoped role request (reviewer note, judgment call); the backlog's awaitingReply, the map chip and live delivery still use the current state.
 - [x] C101 The C78 scene "closing Forward to… draws once" in `ui:check` is flaky (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the scene reads the render count and the chip count in the same evaluate as `blur()`. `blur()` runs `flushMap` synchronously (the select's onblur; `requestMapRender` renders at once when not held), so renders after it returns are not counted. The 800 ms wait is removed. The checks (`renders === 1`, `chips === chipsBefore + 1`) and the verify text are unchanged. `public/index.html` is not changed.
   - Checked: ten `npm run ui:check` runs in a row on the development machine's Chrome, all exit 0 with the C78 scene `ok` and no NG line; `npm test` 412 pass, 0 fail; `npm run docs:check` 31 items, 0 errors, 0 warnings (after the close). The reviewer read the uncommitted change, found no findings, and confirmed that `blur()` runs `flushMap` synchronously. Not checked: Linux Chromium, where the flake was seen.
@@ -702,23 +707,6 @@ Decided 2026-11-01 by the user: miscellaneous settings go behind a gear button, 
 - [ ] The gear opens a settings panel holding the theme choice (follow the OS / light / dark, the same states, `localStorage` key and first-paint behavior as C93); the panel closes on a second press, Escape or a click outside
 - [ ] No header control moves when a label changes length (the Health check count, Map ↔ Messages, the connection state)
 - [ ] `ui:check` adds scenes for the three controls, the panel's theme choice, and the controls keeping their positions across a label change; the theme scenes of C93 are moved to the panel; docs/usage.md and design.md (header controls) are updated; `npm test`, `npm run ui:check` and `npm run docs:check` pass
-
-### C99. A Mailbox's reply is refused for a request it was handed (C86)
-
-Found 2026-10-31 in a review of `a646534..bb3415c` (C86 to C98), and reproduced with a probe against `Hub` and `Store`. C86's check (`checkReplyTarget` in `src/hub/hub.ts`) asks `Store.isRecipient`, which answers from the Mailbox's state now (role, `roleSince`, project, subscriptions), not from what was handed. A Mailbox that was handed a request gets `400 reply_not_received` when it replies after:
-- unsubscribing from the topic the request came by;
-- re-attaching under the same name with another role (`roleSince` moves);
-- re-attaching with another cwd, for a request sent to `role @ project`.
-
-Re-attaching with the same role still passes. The request then stays open, no Mailbox can close it by reply, and the hint (`oldestOpenRequestTo`, the same predicate) never names it. Only the human can close it.
-
-Decided 2026-11-01 by the user: "received" means handed. The Hub keeps on the Message the Mailboxes that were its recipients when it was sent, and C86's check and the hint answer from that, not from the Mailbox's state now.
-
-#### Done when
-- [ ] A request keeps its recipients at send time, and a reply from one of them passes C86's check after it unsubscribes from the topic, re-attaches with another role, or re-attaches with another cwd; a Mailbox that was not a recipient is still refused with `reply_not_received`
-- [ ] `oldestOpenRequestTo` uses the same recipients, so the hint names such a request
-- [ ] protocol.md §2 / §3 say what "received" means for a reply, and design.md is updated where it describes C86
-- [ ] Tests cover the three cases above and the refusal; `npm test` and `npm run docs:check` pass
 
 ### C100. The start result line (C88) says `started` for a role that did not run
 
