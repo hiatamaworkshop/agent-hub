@@ -1941,7 +1941,7 @@ const STATES = [
   { key: 'you', label: 'Needs you', title: 'The session is waiting for your answer, to a question or permission prompt in its terminal or to a request it sent you through the Hub (answer with Reply, or send it your next request). Also shown when every agent it is waiting on is not connected: start that session, and the request arrives as unread.' },
   { key: 'paused', label: 'Paused', title: 'The turn stopped on a usage limit. It continues by itself when the limit resets (if auto-resume is on), so there is nothing to do but wait.' },
   { key: 'working', label: 'Working', title: 'A message was handed to the session after its last turn ended, so it is working on it. Also shown when its turn ended while a background task (such as a test run) was still running: the session continues when the task finishes.' },
-  { key: 'stopped', label: 'Stopped, no reply', title: 'The turn ended, but a request handed to this session has no reply yet. Check the terminal, or remind it to reply.' },
+  { key: 'stopped', label: 'Stopped, no reply', title: 'The turn ended, but a request handed to this session has no reply yet. Check the terminal, or remind it to reply. If a request it sent is also waiting on a session that is not connected, that name is shown after it.' },
   { key: 'delegated', label: 'Waiting on others', title: 'Its turn ended while a request it sent has no reply yet.' },
   { key: 'idle', label: 'Idle', title: 'Connected and nothing pending.' },
   { key: 'offline', label: 'Offline', title: 'No session is attached.' },
@@ -1986,21 +1986,24 @@ function stateOf(mb) {
     // Event が 1 つもないセッションは hook がない見込みで、ターン終了を知らない。推測であることを示す
     return { key: 'working', since: handed.ts, guess: !ev, detail: summaryOf(bySeq(handed.seq)) }
   }
-  if (b.outgoing.count) {
-    // 待っている相手がどれも接続していなければ、誰も読まないまま止まる。起動するのは人なので Needs you にする (C49)
-    const absent = absentTargets(b.outgoing)
+  // 待っている相手がどれも接続していなければ、誰も読まないまま止まる。起動するのは人なので Needs you にする (C49)。
+  // ただし渡した依頼に返信がないまま終わったターンなら Stopped を先に出し、未接続の相手は名前で添える (C109)。
+  // 試験などがバックグラウンドで走っている間は、その例外にしない (未接続の相手は C49 のまま Needs you)
+  const absent = b.outgoing.count ? absentTargets(b.outgoing) : null
+  // 試験などをバックグラウンドで流してターンを終えた。完了通知で次のターンが始まり、そこで返す見込み (C43、design.md §6.1t)
+  const bg = runningOf(end)
+  const until = end && Date.parse(end.ts) + BACKGROUND_MAX_MINUTES * 60000
+  const inBackground = bg && Date.now() < until
+  if (b.outgoing.count && !(absent && b.awaitingReply.count && !inBackground)) {
     if (absent) return { key: 'you', since: b.outgoing.oldestAt, detail: `${absent} not connected` }
     return { key: 'delegated', since: b.outgoing.oldestAt, detail: outgoingTargets(b.outgoing) }
   }
   if (b.awaitingReply.count) {
-    // 試験などをバックグラウンドで流してターンを終えた。完了通知で次のターンが始まり、そこで返す見込み (C43、design.md §6.1t)
-    const bg = runningOf(end)
-    const until = end && Date.parse(end.ts) + BACKGROUND_MAX_MINUTES * 60000
-    if (bg && Date.now() < until) {
+    if (inBackground) {
       const more = bg.count > 1 ? ` (+${bg.count - 1})` : ''
       return { key: 'working', since: end.ts, until, detail: `background: ${bg.description || 'task'}${more}` }
     }
-    return { key: 'stopped', since: end ? end.ts : b.awaitingReply.oldestAt }
+    return { key: 'stopped', since: end ? end.ts : b.awaitingReply.oldestAt, detail: absent ? `${absent} not connected` : undefined }
   }
   return { key: 'idle', since: end ? end.ts : null }
 }

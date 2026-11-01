@@ -89,9 +89,11 @@ When the reviewer's reply has proposals under `PROPOSED CONDITIONS:`, do not pas
 
 ## When the other side is not connected
 
-If post_message returns a `warning` saying none of the recipients is connected (their names appear in `unattached`), nobody will read that request until the other session starts. Do not end your turn waiting for a reply.
-- Send the user a reply (a reply to the first request) and write in `NEEDS ACTION` the role and Mailbox name to start (e.g. `start reviewer (agent-hub.reviewer). Request #157 will arrive as unread once it starts`). Do not cancel the request; leave it as it is.
-- Treat a `warning` that no Mailbox receives it (`recipients` is empty) the same way, and ask in `NEEDS DECISION` whether the address is right.
+If `post_message` answers with empty `recipients`, or with every recipient in `unattached`, nobody will read that request until a session starts (for a role with no Mailbox at all, until one is attached). Do not end your turn waiting for a reply. One rule covers both cases:
+- For a review (`TARGET: C<n>`), go on as with no reviewer connected: say so under `NOT VERIFIED`.
+- Otherwise, send the user a reply (a reply to the first request) and write in `NEEDS ACTION` the role or Mailbox name to start (e.g. `start reviewer (agent-hub.reviewer). Request #157 will arrive as unread once it starts`; for a role with no Mailbox, name the role). Do not cancel the request; leave it as it is.
+- Ask in `NEEDS DECISION` whether the address is right only when the address itself may be wrong, such as a direct `mailbox:` name that does not exist. A role with no Mailbox is not this case.
+- Send the report with `post_message` before you end the turn, even when a request you were handed still has no reply (C109).
 
 ## Commitments
 

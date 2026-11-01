@@ -220,6 +220,41 @@ try {
   await cdp('Runtime.evaluate', { expression: "chooseProject('')", returnByValue: true })
   await api('DELETE', `/attachments/${othLead.attachmentId}`)
 
+  // 人からの依頼を渡したまま返信せずにターンを終え、同時に役割 auditor (Mailbox なし) へ依頼を出していた (C109)。
+  // 未接続の相手があっても Stopped と出し、その名前を添える。タブ・アイコン・バッジはカードと同じ状態で数える
+  const stk = await api('POST', '/mailboxes/stk.leader/attach', { client: 'claude-code', role: 'leader', cwd: othCwd, sessionId: 's-stk' })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'stk.leader' }, body: 'GOAL: 人からの依頼 (C109 の場面)' })
+  await api('POST', `/attachments/${stk.attachmentId}/ack`, { upTo: (await api('GET', '/messages?after=0&limit=1000')).messages.at(-1).seq })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'role', id: 'auditor' }, body: 'TARGET: C1 (未接続の役割へ)' }, { 'x-hub-attachment': stk.attachmentId })
+  await api('POST', '/events/claude-code', { cwd: othCwd, hook_event_name: 'Stop', session_id: 's-stk' }, { 'x-hub-mailbox': 'stk.leader' })
+  await scene('返信のない依頼を渡したままターンを終え、未接続の auditor にも依頼を出していた (C109)', { 'stk.leader': 'Stopped, no reply (auditor not connected)' })
+  const stkScreen = await screen()
+  const stkBadgeCheck = JSON.parse((await cdp('Runtime.evaluate', { expression: `JSON.stringify({ states: $('states').textContent, tabStopped, tabWaiting, title: document.title })`, returnByValue: true })).result.value)
+  const stoppedCards = stkScreen.cards.filter((c) => c.state.startsWith('Stopped')).length
+  const waitingCards = stkScreen.cards.filter((c) => c.state.startsWith('Needs you')).length
+  const badgeOk = stkBadgeCheck.tabStopped === stoppedCards && stkBadgeCheck.tabWaiting === waitingCards && stkBadgeCheck.states.includes(`Stopped, no reply ${stoppedCards}`)
+  if (!badgeOk) failed++
+  console.log(`${badgeOk ? 'ok' : 'NG'}  タブとサイドバーのバッジは、カードの Stopped と Needs you の数と同じ (C109)`)
+  if (!badgeOk) console.log(`      ${JSON.stringify({ stkBadgeCheck, stoppedCards, waitingCards })}`)
+  await api('DELETE', `/attachments/${stk.attachmentId}`)
+
+  // 同じ場面で、試験をバックグラウンドで流したままターンを終えた。C109 の Stopped にはせず、Working にもせず、C49 の Needs you (未接続の名前) を出す。
+  // 数もタブのタイトルと一致する (C109 の例外)
+  const bgk = await api('POST', '/mailboxes/bgk.leader/attach', { client: 'claude-code', role: 'leader', cwd: othCwd, sessionId: 's-bgk' })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'bgk.leader' }, body: 'GOAL: 人からの依頼 (試験を流す場面)' })
+  await api('POST', `/attachments/${bgk.attachmentId}/ack`, { upTo: (await api('GET', '/messages?after=0&limit=1000')).messages.at(-1).seq })
+  await api('POST', '/messages', { kind: 'request', to: { type: 'role', id: 'auditor' }, body: 'TARGET: C2 (未接続の役割へ、試験を流しながら)' }, { 'x-hub-attachment': bgk.attachmentId })
+  await api('POST', '/events/claude-code', { cwd: othCwd, hook_event_name: 'Stop', session_id: 's-bgk', background_tasks: [{ status: 'running', description: 'npm test' }] }, { 'x-hub-mailbox': 'bgk.leader' })
+  await scene('試験を流したままターンを終え、返信のない依頼と未接続の auditor がある (C109 の例外。C49 のまま Needs you)', { 'bgk.leader': 'Needs you (auditor not connected)' }, '1 waiting')
+  const bgkScreen = await screen()
+  const bgkTab = JSON.parse((await cdp('Runtime.evaluate', { expression: `JSON.stringify({ tabWaiting, tabStopped })`, returnByValue: true })).result.value)
+  const bgkWaitingCards = bgkScreen.cards.filter((c) => c.state.startsWith('Needs you')).length
+  const bgkOk = bgkTab.tabWaiting === bgkWaitingCards && bgkTab.tabStopped === bgkScreen.cards.filter((c) => c.state.startsWith('Stopped')).length
+  if (!bgkOk) failed++
+  console.log(`${bgkOk ? 'ok' : 'NG'}  試験の場面でも、タブの件数はカードの Needs you・Stopped と同じ (C109 の例外)`)
+  if (!bgkOk) console.log(`      ${JSON.stringify({ bgkTab, bgkWaitingCards })}`)
+  await api('DELETE', `/attachments/${bgk.attachmentId}`)
+
   // UI が最初に読むのは最近の Event 200 件だけ。ほかの Mailbox の Event で押し出しても、Hub の lastTurnEnd で Idle のまま (C41)
   for (let i = 0; i < 250; i++) await turnEnd('demo.noise', 's-noise')
   await cdp('Page.navigate', { url: `${HUB}/` })

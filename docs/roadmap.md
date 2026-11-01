@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C109
 - [ ] C107
 - [ ] C106
 - [ ] C111
@@ -389,6 +388,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - `tools/dev/roles/reviewer.md`: for `TARGET: C<n>`, a checked line whose facts do not meet its wording is a `FINDINGS:` entry.
   - `docs/design.md` §3.15: one paragraph ("A done-when line is checked only when its wording is met as written") states the rule for all three roles.
   - Checked: `npm test` 462 pass, 0 fail; `npm run docs:check` 33 items, 0 errors, 0 warnings (after the close). The reviewer read the uncommitted change; one finding (the parenthetical was wider in `deployer.md` and design.md §3.15 than in `leader.md`) was fixed in all places, and the planning session narrowed done-when line 1 to the same wording (bee8a8b). Not checked: a real team run where a line is unmet; a review of an item whose lines are all `[ ]` reads only the wording (C97 edge, not touched).
+- [x] C109 Catch a turn that ends with a handed request and no reply (2026-11-01, decided by the user)
+  - `public/index.html` (`stateOf`): a handed request with no reply after the turn ended, with an outgoing target that is not connected, shows `Stopped, no reply (<target> not connected)` (the C49 cause is named). With a background task still running within 60 minutes it stays `Needs you (<target> not connected)`, as C49 had it. The tab title, the tab icon and `#states` count the card's own state; `#backlog` counts layers and is unchanged.
+  - `tools/dev/roles/leader.md` ("When the other side is not connected"): one rule for empty or unattached `recipients`: a review goes on as `NOT VERIFIED`; otherwise `NEEDS ACTION` names the role or Mailbox; `NEEDS DECISION` only when the address may be wrong; the report is sent with `post_message` before the turn ends.
+  - `tools/dev/ui-check.mjs`: two scenes (the Stopped case with a role that has no Mailbox; the background-task case), each negative-checked against the previous code (NG: `Needs you (auditor not connected) · <1m`, then `Working · <1m`), plus count checks of the tab and `#states` against the cards. `docs/usage.md` (card states) and `docs/design.md` §3.15 (card states, the C109 exception) say the same.
+  - Checked: `npm run ui:check` exit 0, 154 ok, 0 NG; `npm test` 462 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 32 items, 0 errors, 0 warnings (after the close). The reviewer read the uncommitted change; two findings were fixed (the background-task combination hid the C49 cause; two leader.md bullets gave one case two destinations). Not checked: a real team run in which a leader ends its turn with a handed request and an unattached reviewer; the favicon pixels; the scenes use hook events, not a real Claude Code turn. The Stop hook that would block a stop is not taken (decided).
 - [x] C94 A settings button in the page header (2026-11-01, decided by the user)
   - Header: the Theme button is gone. The right side holds exactly three controls, the Map / Messages toggle, Health check and the gear (`#settingsToggle`, rightmost). The gear has `aria-expanded` and `aria-controls="settings"`.
   - Panel `#settings` sits inside `<header>` (absolute, under the header on the right, so the header's flex row is unchanged while it is hidden or open). It offers Follow the OS / Light / Dark as three `data-choice` buttons, marked with `aria-pressed`. The `localStorage` key (`agent-hub.theme`), the stored values, the `<head>` first-paint script and `applyTheme`'s data-theme rule are as in C93.
@@ -776,19 +780,6 @@ Decided 2026-11-01 by the user: taken up last of the items from the two-team run
 - [ ] It then prints the newest Message from a Mailbox of that project to the human in full, with its seq, sender and time; Messages of other projects are not shown
 - [ ] It reads the Hub and token the same way as `docs:index`; when the Hub is not reachable or the token is refused it says so in one line and exits non-zero
 - [ ] The team start's summary names the command; tests cover the project filter and the newest report; docs/usage.md (teams) is updated; `npm test` and `npm run docs:check` pass
-
-### C109. Catch a turn that ends with a handed request and no reply
-
-Found 2026-11-01 in cairn: the leader was handed the human's request (#499), wrote its report only in its terminal, and ended the turn without `post_message` (08:17:44). The card showed `Needs you`, and the human read that as "finished". The leader posted the report (#505, 08:22:09) only after the human's nudge (#504, 08:21:58: "an unconfirmed request #499 is there"). The Hub knew the request was awaiting reply (`backlog.awaitingReply` 1, `unconfirmed` 1), so this can be judged without an LLM.
-Corrected 2026-11-01 by the planning session from the Hub's record: `Needs you` did not come from `idle_prompt` (the UI counts only `question` and `permission` as the human's move). It came from C49: at 08:11 the leader had sent a review request (#495) to `role:reviewer`, and no reviewer Mailbox existed (`recipients` empty), so `cardState` returned `Needs you (reviewer not connected)` from `outgoing` before reaching `awaitingReply`, and `Stopped, no reply` was never shown. The leader also went on after `post_message` answered #495 with no recipients.
-Candidates: a `Stop` hook that blocks the stop once with a short cue when the Mailbox holds a handed request with no reply; or let a handed request with no reply show (as `Stopped, no reply`, or next to the C49 cause) even when an outgoing request waits on a session that is not connected, since today the outgoing branch hides it; and have the leader stop and say so when a request it sends has no recipients. Related: C79 (a timer watcher), C76 (Health check), C49.
-Decided 2026-11-01 by the user: fix what the card shows, and have the leader stop on a request with no recipients. The `Stop` hook that blocks a stop is not taken now; it is the next step if the card is still misread. `leader.md` today checks only the `unattached` warning for a missing reviewer, which a role with no Mailbox at all (`recipients` empty) does not give.
-
-#### Done when
-- [ ] A card whose session holds a handed request with no reply after its turn ended shows `Stopped, no reply` even when it also has an outgoing request to a session that is not connected; that not-connected target is still named on the card (C49's cause is not lost)
-- [ ] The tab title, the tab icon and the `#states` / `#backlog` badges count that card the same way as the card shows it
-- [ ] `tools/dev/roles/leader.md`: when `post_message` answers a request with no recipients (or with all of them unattached), the leader does not wait on it; for a review it goes on as with no reviewer connected (`NOT VERIFIED`), otherwise it says so under `NEEDS ACTION` in its report
-- [ ] `ui:check` adds a scene for a card with both an outgoing request to a role with no Mailbox and a handed request with no reply; docs/usage.md (card states) and design.md §3.15 (card states) are updated; `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
 ### C111. Write the Hub hooks on a project's first team start
 
