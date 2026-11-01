@@ -693,6 +693,26 @@ try {
   verify('モーダル: チェックを送らない古い形の索引は印を出さない (C54)', JSON.stringify(oldM.conds) === JSON.stringify(['古い形の一行']), oldM)
   await evaluate("$('itemClose').click()")
 
+  // 索引のないプロジェクト (Mailbox だけがある) を選ぶと、Items は docs:index のコマンドを出す。索引が届くと消える (C107)
+  const noIdx = join(work, 'noidx')
+  const noIdxAttach = await api('POST', '/mailboxes/demo.noidx/attach', { client: 'claude-code', cwd: noIdx, sessionId: 's-noidx' })
+  await sleep(1000)
+  await evaluate(`chooseProject(projectKey(${JSON.stringify(noIdx)}))`)
+  await sleep(500)
+  const readEmpty = () => evaluate(`({ head: !$('itemsHead').hidden, codes: [...$('items').querySelectorAll('code')].map((c) => c.textContent), text: $('items').textContent })`)
+  const emptyItems = await readEmpty()
+  verify('Items: 索引のないプロジェクトを選ぶと、見出しと docs:index のコマンド (--project) を出す (C107)', emptyItems.head && JSON.stringify(emptyItems.codes) === JSON.stringify([`npm run docs:index -- --project ${noIdx}`]) && emptyItems.text.includes('No roadmap index for noidx'), emptyItems)
+  await sendIndex(noIdx, 'docs/roadmap.md', { items: [itemOf('C1', '一つ目', 'decided')] })
+  await sleep(1500)
+  const filled = await readEmpty()
+  verify('Items: 索引が届くと、索引のないときの欄は消え、項目が出る (C107)', filled.codes.length === 0 && filled.text.includes('一つ目'), filled)
+  await api('DELETE', `/indexes?project=${encodeURIComponent(noIdx)}&source=${encodeURIComponent('docs/roadmap.md')}`)
+  // 場面の後始末: この Mailbox は後の場面 (サイドバーの数え方など) に響かないよう、切って消す
+  await api('DELETE', `/attachments/${noIdxAttach.attachmentId}`)
+  await api('DELETE', '/mailboxes/demo.noidx')
+  await sleep(1000)
+  await evaluate("chooseProject('')")
+
   // サイドバーの幅 (C54): つまみで変えられ、200〜520px に収まり、ブラウザに覚える。保存値が壊れていれば既定の 260px
   const sideW = () => evaluate("Math.round(document.querySelector('aside').getBoundingClientRect().width)")
   const grip = () => evaluate("(() => { const r = $('sideResize').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()")

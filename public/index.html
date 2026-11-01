@@ -103,6 +103,8 @@
   .item .diff { font-family: var(--mono); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--warn); margin-top: 2px; }
   .itemhead { font-size: 12px; font-weight: 600; color: var(--muted); margin: 8px 0 4px; overflow-wrap: anywhere; }
   .tier { font-size: 11px; color: var(--muted); margin: 6px 0 2px; }
+  .noindex { font-size: 11px; color: var(--muted); margin: 6px 0 2px; overflow-wrap: anywhere; }
+  .noindex code { display: block; font-family: var(--mono); color: var(--text, inherit); margin: 3px 0; user-select: all; }
   details.held > summary { cursor: pointer; list-style: none; }
   .closedrow { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 1px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
@@ -2397,11 +2399,23 @@ function tiersOf(ix) {
   }
 }
 function tierHead(text) { return el('div', 'tier', text) }
+// 選んだプロジェクトに索引がないときの欄 (C107)。Hub は台帳の場所 (.agent-hub.json の "ledger") を知らないので、--file は出せない
+function noIndexHint(path) {
+  const box = el('div', 'noindex', `No roadmap index for ${folderName(path)}. In agent-hub's folder, run:`)
+  const arg = /\s/.test(path) ? `"${path}"` : path
+  box.append(el('code', '', `npm run docs:index -- --project ${arg}`))
+  box.append(el('div', '', 'If the ledger is not docs/roadmap.md, add --file <path> with the "ledger" in .agent-hub.json in that folder. The page cannot read that file.'))
+  return box
+}
 function renderItems() {
   const root = $('items')
   root.textContent = ''
   const shown = indexList.filter((ix) => !FILTER.project || projectKey(ix.project) === FILTER.project)
-  $('itemsHead').hidden = shown.length === 0
+  // 選んだプロジェクトに索引がなく、一覧が読めた後は、空の欄でも見出しとコマンドを出す (C107)
+  const chosen = FILTER.project ? projects.get(FILTER.project) : null
+  const noIndex = !!chosen && indexesSettled && shown.length === 0
+  $('itemsHead').hidden = shown.length === 0 && !noIndex
+  if (noIndex) root.append(noIndexHint(chosen.path))
   const { latest, replied } = itemRequests()
   for (const ix of shown) {
     const h = el('div', 'itemhead', FILTER.project ? ix.source : `${folderName(ix.project)} · ${ix.source}`)

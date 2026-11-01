@@ -4,6 +4,8 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { connect } from 'node:net'
 import { basename, join } from 'node:path'
+import { sendLedgerIndex } from '../docs-check/send-index.js'
+import { readLedgerSetting } from '../shared/ledger.js'
 import { chooseMailboxName, defaultMailboxName, normalizeProjectPath } from '../shared/types.js'
 import { clearStartStatus, readHubMailboxes, type HubMailbox } from './agent.js'
 import { checkClaudeCli, checkoutWarnings, hookWarning, startStatusPath } from './checks.js'
@@ -21,6 +23,19 @@ export interface TeamOptions {
   noBuild: boolean
   permissionMode?: string
   opener: Opener
+}
+
+// The start's index (C107): the project's ledger (.agent-hub.json, else docs/roadmap.md) sent to the Hub. Never throws, and returns
+// the one line for the summary: what was sent, or why not (no file, Hub not reachable, token refused, an old Hub)
+export async function sendStartIndex(projectDir: string, source: string, hubUrl: string, token: string): Promise<string> {
+  try {
+    const r = await sendLedgerIndex({ project: projectDir, source, hubUrl, token })
+    if (!r.sent) return `not sent: ${r.reason}`
+    for (const w of r.warnings) console.warn(`WARNING: ${w}`)
+    return `sent ${r.source} (${r.items} items) to ${hubUrl}`
+  } catch (e) {
+    return `not sent: ${e instanceof Error ? e.message : String(e)}`
+  }
 }
 
 const MAIN = join(ROOT, 'src', 'team', 'main.ts')
@@ -178,6 +193,10 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
     }
     console.log('The Hub started')
   }
+  // --- the index (C107). A failure is only the summary's line, so the start goes on
+  const setting = readLedgerSetting(o.projectDir)
+  if (setting.warning) note(setting.warning)
+  const indexLine = await sendStartIndex(o.projectDir, setting.source, hubUrl, token)
   // The names are chosen only now, with the Hub up, so a Mailbox that exists on a Hub that was down is seen (C103).
   // A Hub list that cannot be read with a token stops the start here: the default name is not guessed
   const names = await chooseStartNames(roles, o.projectDir, token, readHubMailboxes)
@@ -256,11 +275,11 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
   }
 
   // --- summary: warnings and failures gathered here so they are not lost in the tabs (C56-C58), then the UI URL (C55)
-  if (notes.length || outcome.failed.length) {
-    console.log('\n--- summary ---')
-    for (const n of notes) console.log(`note: ${n}`)
-    for (const f of outcome.failed) console.log(`failed: ${f.reason}`)
-  }
+  // The index line is always printed (C107), so a start that sent nothing says why
+  console.log('\n--- summary ---')
+  console.log(`index: ${indexLine}`)
+  for (const n of notes) console.log(`note: ${n}`)
+  for (const f of outcome.failed) console.log(`failed: ${f.reason}`)
   await printUiUrl(hubUrl, token, o.projectDir)
   if (outcome.failed.length) return 1
   console.log('Done')
