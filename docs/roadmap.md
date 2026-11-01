@@ -21,6 +21,7 @@ In the order they will be taken up. Only items without a status line and blocked
 
 - [ ] C114
 - [ ] C115
+- [ ] C116
 
 (Items with a status line are listed under "Items".)
 
@@ -788,12 +789,20 @@ Decided 2026-11-01 by the user: fix both; they need no new decision. The points 
 - [ ] Tests run `runAgent`'s child wiring (spawn, exit before attach, attach then exit, error) with a fake child and an injected attachment read, and `team`'s no-token outcome (`printed` for the `print` opener, `started` for a tab opener) through a function a test can call; reverting either to the pre-C100 behaviour fails a test
 - [ ] `npm test` and `npm run docs:check` pass
 
-### C116. What the start result records for a start without a token, a quick exit, or Ctrl+C
-Status: proposed
+### C116. Refuse `agent` without a token, and leave a result line on Ctrl+C
 
-Split from C115 on 2026-11-01 (the review of C100, at `1b6363c`). Each needs a decision:
+Split from C115 on 2026-11-01 (the review of C100, at `1b6363c`):
 - `agent` on its own without `HUB_TOKEN` records `started` on spawn. docs/usage.md says so, but C100's done-when 1 put "(with a token)" only on the `failed` clause, so a blocked `claude.cmd` (C56) without a token is still `started`.
-- A claude that attaches and exits within one 1-second poll is recorded `failed` ("ended before attaching"); C100's closing record leaves it as is. One more read of the attachment when claude exits would see it (an Attachment outlives its stream for the grace period).
+- A claude that attaches and exits within one 1-second poll is recorded `failed` ("ended before attaching").
 - Ctrl+C before claude spawns, or during `team`'s attach waits, ends the process with no result line. docs/usage.md says both "on every exit path" and "a start … with no result line was killed".
 
-To decide: what `agent` without a token records (as now, or something other than `started`), whether the exit handler reads the attachment once more, and whether a signal writes a result line or docs/usage.md says a kill leaves none.
+Decided 2026-11-01 by the user:
+- **No token: refuse.** The Hub does not start without a token of 16 characters or more, every API needs it, and the shim reads the same `HUB_TOKEN` (the environment, else agent-hub's `.env`) as `agent`. Without it the shim can never attach, so a start without a token cannot be `started`, and a guest-like mode has nothing to attach to. `agent` on its own refuses before starting claude. `team` is unchanged: its `print` opener's commands may run in another terminal that has the token, which is why `printed` exists (C100).
+- **Attach, then exit within a poll: left as `failed`.** It happens when claude quits right after starting (the human closes it, or it crashes after its MCP servers start); the role did not stay up, so `failed` is the right outcome.
+- **Signals: a line when the signal can be caught.** Ctrl+C (SIGINT) and a closed terminal (SIGHUP) write the result line with `aborted`. While claude runs under `agent`, Ctrl+C stays claude's, as now. Only a kill that cannot be caught leaves no line.
+
+#### Done when
+- [ ] `agent` on its own with no `HUB_TOKEN` (neither the environment nor agent-hub's `.env`) does not start claude: it prints that the shim cannot attach without the token, records `failed` with that reason, and exits 1; `agent` started by `team` is unchanged
+- [ ] SIGINT or SIGHUP while `agent` on its own has not yet spawned claude, and while `team` is running, writes the result line with `aborted` naming the signal (keeping the roles recorded so far) and exits; while claude runs under `agent`, SIGINT stays claude's
+- [ ] docs/usage.md (start warnings, and `agent` on its own) says a start without a token is refused and that only a kill that cannot be caught leaves no result line, and no longer says `agent` on its own records `started` once claude has spawned without a token
+- [ ] Tests cover the refusal and the signal line through functions a test can call; `npm test` and `npm run docs:check` pass
