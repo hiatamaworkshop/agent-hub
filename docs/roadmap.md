@@ -793,9 +793,10 @@ Decided 2026-11-01 by the user: taken up first; it is a change to the role files
 
 Checked 2026-11-01 (deployer): `leader.md`, `deployer.md` and `reviewer.md` each state the rule for their role, and design.md §3.15 ("A done-when line is checked only when its wording is met as written") states it once for all three. `npm test` 462/462 pass; `npm run docs:check` 34 items, 0 errors, 0 warnings. No done-when wording changed. Not closed: the section and the Plan line stay for the closing request (C102).
 Fixed 2026-11-01 after the reviewer's checked finding: the parenthetical "(also when the result is unchanged…)" was read as covering a met line whose result did not change; leader.md, deployer.md and design.md §3.15 now say "(also when the line failed before the work and still fails after it, so the work did not change the result)". The leader's flow and closing-request bullet, and its reviewer-finding bullet, cross-refer to the rule. The C110 done-when line still carries the wide wording: changing it is a change of promise, left to the planning session.
+Decided 2026-11-01 by the user: done-when line 1 narrowed to the role files' wording (the planning session changed it; the cairn C12 case was a line that failed before and after).
 
 #### Done when
-- [x] `tools/dev/roles/leader.md`: when a done-when line is not met as written (also when the result is unchanged from before the work), the leader sends no closing request; the report puts it under `NEEDS DECISION` with the facts and the reading it proposes, and the item stays open
+- [x] `tools/dev/roles/leader.md`: when a done-when line is not met as written (also when the line failed before the work and still fails after it, so the work did not change the result), the leader sends no closing request; the report puts it under `NEEDS DECISION` with the facts and the reading it proposes, and the item stays open
 - [x] `tools/dev/roles/deployer.md`: the deployer does not check off a line it met only under another reading; it leaves the box empty and writes the facts in its report and in the section's body
 - [x] `tools/dev/roles/reviewer.md`: for `TARGET: C<n>`, a checked line whose facts do not meet its wording is a finding
 - [x] design.md §3.15 (handling updates during implementation) says the same in one place; `npm test` and `npm run docs:check` pass
