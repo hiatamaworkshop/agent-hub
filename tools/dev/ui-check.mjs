@@ -1136,9 +1136,8 @@ try {
   await sleep(2000)
   const dragging = parse(await clickIn(`JSON.stringify({ renders: window.__renders, connected: window.__chip.isConnected, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length })`))
   verify('チップのドラッグの途中は、SSE の更新で地図を描き直さず、ドラッグを途切れさせない (C78)', dragging.renders === 0 && dragging.connected && dragging.chips === chipsDrag, { dragging, chipsDrag })
-  await clickIn(`window.__chip.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: new DataTransfer() }))`)
-  await sleep(800)
-  const ended = parse(await clickIn(`JSON.stringify({ renders: window.__renders, connected: window.__chip.isConnected, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length })`))
+  // dragend の中で flushMap が 1 回描く (同期)。待たずに、同じ式の中で読む (C112、C101 と同じ)
+  const ended = parse(await clickIn(`(() => { window.__chip.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: new DataTransfer() })); return JSON.stringify({ renders: window.__renders, connected: window.__chip.isConnected, chips: document.querySelectorAll('.mapnode[data-name="map.reviewer"] .mapchip').length }) })()`))
   verify('ドラッグを取り消す (dragend) と、延ばした分を 1 回だけ描く (C78)', ended.renders === 1 && !ended.connected && ended.chips === chipsDrag + 1, { ended, chipsDrag })
 
   // ドロップ: 落とすと下書きを作り、そこで 1 回描く。ドロップのあとに届いた分も、その 1 回に含まれる

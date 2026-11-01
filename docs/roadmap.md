@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C112
 - [ ] C113
 - [ ] C106
 - [ ] C111
@@ -387,6 +386,10 @@ In the order they will be taken up. Only items without a status line and blocked
   - The ledger is named in `.agent-hub.json` at the project's root (`"ledger"`, default `docs/roadmap.md`), read by `readLedgerSetting` (`src/shared/ledger.ts`) for the team start, `docs:index` and the post-commit hook (`docs:index -- --if-touched`, `touchesLedger`). The place and why are in design.md §3.15 (open question 2). `sendLedgerIndex` (`src/docs-check/send-index.ts`) never throws and returns the reason when it does not send.
   - Team start: after the Hub is up, sends the index when the ledger exists; the summary always prints `index: sent <file> (N items) to <Hub>` or `index: not sent: <reason>`; a failed send does not stop the start. Post-commit hook (`tools/hooks/post-commit-index.sh`): sends only when the commit changed the ledger. Items pane (`noIndexHint` in `public/index.html`): with no index for the chosen project, shows `npm run docs:index -- --project <folder>`, with no `--file`.
   - Checked: `npm test` 474/474 pass; `npm run ui:check` 157 ok, 0 NG (the empty-pane scene asserts the command has `--project`, no `--file`, and no `--file` hint); `npm run docs:check` 0 errors. The hook, the team-start summary and the pane command were checked by hand in a scratch git repo and a Hub on port 7797 (the earlier reports). The leader checked the diff against SCOPE. No reviewer was connected, so the item had no review.
+- [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
+  - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
+  - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
+  - Checked: `npm run ui:check` ten runs in a row, each 157 ok, 0 NG, dragend scene ok; `npm test` 474/474 pass; `npm run docs:check` 0 errors. The leader checked the diff against SCOPE. No reviewer was connected (the user said to continue without), so the item had no review.
 - [x] C110 The leader does not close an item whose done-when it could not meet as written (2026-11-01, decided by the user)
   - `tools/dev/roles/leader.md`: a done-when line not met as written (also when it failed before the work and still fails after it) sends no closing request; `NEEDS DECISION` with the facts and the proposed reading, and the item stays open. The flow step and the "Closing request (C102)" bullet cross-refer to it, and a reviewer finding of this kind goes to `NEEDS DECISION`, not to the deployer as a code fix.
   - `tools/dev/roles/deployer.md`: checks off a line only when it is met as written; otherwise leaves `[ ]` and writes the facts in `NOTES:` and in the section's body.
@@ -783,16 +786,6 @@ Decided 2026-11-01 by the user: the start writes the hooks itself (a team start 
 - [ ] `--no-hooks` keeps today's behaviour (warn only); a failed write is a warning and does not stop the start
 - [ ] The warning that Claude Code is newer than the last verified version is a `WARNING` only on the first start with that version; later starts with the same version print it as one plain line in the summary, and `logs/start-warnings.jsonl` still records it on every start
 - [ ] Tests for the write on start, the opt-out and the once-per-version warning; docs/usage.md (hooks, teams, start warnings) is updated; `npm test` and `npm run docs:check` pass
-
-### C112. The C78 dragend scene in `ui:check` waits 800 ms before counting renders
-
-Found 2026-11-01 in the cloud review's correction of C101 (branch `claude/intelligent-hypatia-c5allq`, 03ed34a, written against the code before C101 closed): the dragend and drop scenes count renders the same way as the Forward scene did. C101 fixed only the Forward scene. The drop scene already reads its counts in the same evaluate as `drop`. The dragend scene ("ドラッグを取り消す (dragend) と、延ばした分を 1 回だけ描く (C78)" in `tools/dev/ui-check.mjs`) still dispatches `dragend`, waits 800 ms and then checks `renders === 1`, so renders from later data in that window can fail it, as they did the Forward scene on Linux Chromium. `ondragend` calls `flushMap` synchronously (`public/index.html`), so the deferred redraw is done when the dispatch returns.
-Decided 2026-11-01 by the user: fix it the same way as C101.
-
-#### Done when
-- [ ] The dragend scene reads the render count, `isConnected` and the chip count in the same evaluate as the `dragend` dispatch, with no wait between them; its checks and verify text are unchanged; `public/index.html` is not changed
-- [ ] No other C78 scene counts renders after a wait following the action it measures (each one is read in the same evaluate as that action, or the reason it is not is written in this item's body)
-- [ ] `npm run ui:check` passes ten runs in a row with the dragend scene `ok`; `npm test` and `npm run docs:check` pass
 
 ### C113. A request the leader went on without stays open and arrives stale
 
