@@ -19,9 +19,9 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C94
 - [ ] C103
 - [ ] C104
+- [ ] C94
 
 (Items with a status line are listed under "Items".)
 
