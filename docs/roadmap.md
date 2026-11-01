@@ -19,7 +19,12 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C110
+- [ ] C109
+- [ ] C107
 - [ ] C106
+- [ ] C111
+- [ ] C108
 
 (Items with a status line are listed under "Items".)
 
@@ -641,7 +646,7 @@ On 2026-10-20 the first half of vcp's C145 was run that way (`start-team.ps1 -Ro
 
 The same day, vcp's C147 was also run as a request without the index (the team was still C145's). From request to final report took about 26 minutes, with one correction from the human. After the deployer reported and while the leader was still checking, the human sent a correction (choose months by label rather than month name); the leader had the deployer fix it as is, and returned the results of both requests together in one reply to the first request. The correction request stayed awaiting reply, and the deployer's two reports stayed without confirmed receipt (design.md §6.1n, C28). The cause of the correction was the request's wording (it copied "run month names through C53's check" from an old discussion in the TODO), not an agent-hub bug.
 
-Seen again 2026-11-01 when a session that had never used agent-hub started a team in cairn (`hub-team --roles leader,deployer`): the start only warned that the project had no Hub hooks, and the session wrote them with a second command (`npm run team -- hooks --project <cairn> --write`, into the git-ignored `.claude/settings.local.json`). Writing them on the first start, or asking once, would remove that step. The same start also warned that Claude Code 2.1.316 is newer than the last verified version; shown on every start, it is likely to be skimmed past. The ledger side of that first run is C107.
+Seen again 2026-11-01 when a session that had never used agent-hub started a team in cairn (`hub-team --roles leader,deployer`): the start only warned that the project had no Hub hooks, and the session wrote them with a second command (`npm run team -- hooks --project <cairn> --write`, into the git-ignored `.claude/settings.local.json`). Writing them on the first start, or asking once, would remove that step. The same start also warned that Claude Code 2.1.316 is newer than the last verified version; shown on every start, it is likely to be skimmed past. The ledger side of that first run is C107. The hooks on first start and the repeated version warning were split out as C111 (decided 2026-11-01).
 
 ### C35. Relaying requests from projects with their own ledger
 Status: held(until running it shows what is needed)
@@ -743,26 +748,62 @@ Decided 2026-11-01 by the user: every badge jumps, so the rule stays one ("a bad
 - [ ] `ui:check` adds scenes for a `#backlog` badge, a Needs you badge and a Working badge jumping, a map Needs you label, and a badge whose target is hidden by the project filter; docs/usage.md and design.md §3.15 (backlog badges) are updated; `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
 ### C107. Send the ledger index when a team starts, and say so when a project has none
-Status: proposed
 
 Found 2026-11-01 when a session that had never used agent-hub started a team in cairn. The items pane stayed empty, and nothing said why: the Hub does not read the working tree, `docs:index` sends `docs/roadmap.md` by default, and cairn's ledger is `docs/items.md` (its `docs/roadmap.md` is a phase plan). The session found this only by reading `src/docs-check/push-index.ts`. `hub-team` does not send an index, and its summary does not mention one. After that, cairn's CLAUDE.md got the re-send command so its agents re-send after closing an item (the deployer did, unprompted, when closing C12).
 Candidates: name the ledger in a one-line per-project setting, and have `hub-team` send it on start and print the source in the summary; when a project shown in the page has no index, show the `docs:index` command (with `--file`) in the empty items pane. The post-commit hook (C52, `tools/hooks/post-commit-index.sh`) also tests only `docs/roadmap.md` and sends without `--file`, so for cairn it would never fire; it should read the same setting.
+Decided 2026-11-01 by the user, after the two-team run (agent-hub and cairn): taken up third, after C110 and C109. Where the ledger path is kept is left to the work, as long as one place is read by all three (`hub-team`, `docs:index`, the post-commit hook); the Hub already keys each index by `project` and `source`.
+
+#### Done when
+- [ ] A project's ledger path is set in one place that `hub-team` / `npm run team`, `docs:index` (without `--file`) and the post-commit hook all read; a project with no setting keeps `docs/roadmap.md`; the place and why are written in design.md §3.15 (where the index lives)
+- [ ] A team start sends that project's index when the ledger file exists, and its summary prints the source sent (or why none was sent: no file, Hub not reachable); a failed send does not stop the start
+- [ ] The post-commit hook sends only on commits that changed that project's ledger path, so a project whose ledger is `docs/items.md` gets its index sent after such a commit
+- [ ] When the project chosen in the page has no index, the empty Items pane shows the `docs:index` command for it (with `--project`, and `--file` when the setting names another path)
+- [ ] Tests for reading the setting and the hook's path test; a `ui:check` scene for the empty Items pane; docs/usage.md (Items, the hook) is updated; `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
 ### C108. A command for the starting session to read a project's latest reports and states
-Status: proposed
 
 Found 2026-11-01 in the same first run. The session that started the team was asked "it seems done, take a look", and had no short way to read the leader's report: it took the token from `.env`, tried `GET /messages` (which returned another project's messages last), filtered by `cairn` by hand, and read `GET /mailboxes` and `GET /events` (no Mailbox filter) to see that the leader was idle with a request awaiting reply. The reports themselves read well (RESULT / VERIFIED / NOT VERIFIED / NEEDS DECISION).
 Candidate: `hub-team status --project <dir>` (or a `team` subcommand) printing, for that project, each Mailbox's state and backlog in one line, and the latest report to the human in full; `hub-team`'s summary names it.
+Decided 2026-11-01 by the user: taken up last of the items from the two-team run. The card state (Needs you, Stopped and so on) is derived in the page (`cardState` in `public/index.html`), so the command prints the delivery facts it is derived from rather than repeating that derivation.
+
+#### Done when
+- [ ] `npm run team -- status --project <dir>` (and the same through `hub-team`) prints one line per Mailbox of that project: name, role, connected or not, unread, awaiting reply, outgoing with its targets, handed but unconfirmed, and the last Event's kind and time
+- [ ] It then prints the newest Message from a Mailbox of that project to the human in full, with its seq, sender and time; Messages of other projects are not shown
+- [ ] It reads the Hub and token the same way as `docs:index`; when the Hub is not reachable or the token is refused it says so in one line and exits non-zero
+- [ ] The team start's summary names the command; tests cover the project filter and the newest report; docs/usage.md (teams) is updated; `npm test` and `npm run docs:check` pass
 
 ### C109. Catch a turn that ends with a handed request and no reply
-Status: proposed
 
 Found 2026-11-01 in cairn: the leader was handed the human's request (#499), wrote its report only in its terminal, and ended the turn without `post_message` (08:17:44). The card showed `Needs you`, and the human read that as "finished". The leader posted the report (#505, 08:22:09) only after the human's nudge (#504, 08:21:58: "an unconfirmed request #499 is there"). The Hub knew the request was awaiting reply (`backlog.awaitingReply` 1, `unconfirmed` 1), so this can be judged without an LLM.
 Corrected 2026-11-01 by the planning session from the Hub's record: `Needs you` did not come from `idle_prompt` (the UI counts only `question` and `permission` as the human's move). It came from C49: at 08:11 the leader had sent a review request (#495) to `role:reviewer`, and no reviewer Mailbox existed (`recipients` empty), so `cardState` returned `Needs you (reviewer not connected)` from `outgoing` before reaching `awaitingReply`, and `Stopped, no reply` was never shown. The leader also went on after `post_message` answered #495 with no recipients.
 Candidates: a `Stop` hook that blocks the stop once with a short cue when the Mailbox holds a handed request with no reply; or let a handed request with no reply show (as `Stopped, no reply`, or next to the C49 cause) even when an outgoing request waits on a session that is not connected, since today the outgoing branch hides it; and have the leader stop and say so when a request it sends has no recipients. Related: C79 (a timer watcher), C76 (Health check), C49.
+Decided 2026-11-01 by the user: fix what the card shows, and have the leader stop on a request with no recipients. The `Stop` hook that blocks a stop is not taken now; it is the next step if the card is still misread. `leader.md` today checks only the `unattached` warning for a missing reviewer, which a role with no Mailbox at all (`recipients` empty) does not give.
+
+#### Done when
+- [ ] A card whose session holds a handed request with no reply after its turn ended shows `Stopped, no reply` even when it also has an outgoing request to a session that is not connected; that not-connected target is still named on the card (C49's cause is not lost)
+- [ ] The tab title, the tab icon and the `#states` / `#backlog` badges count that card the same way as the card shows it
+- [ ] `tools/dev/roles/leader.md`: when `post_message` answers a request with no recipients (or with all of them unattached), the leader does not wait on it; for a review it goes on as with no reviewer connected (`NOT VERIFIED`), otherwise it says so under `NEEDS ACTION` in its report
+- [ ] `ui:check` adds a scene for a card with both an outgoing request to a role with no Mailbox and a handed request with no reply; docs/usage.md (card states) and design.md §3.15 (card states) are updated; `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
 ### C110. The leader does not close an item whose done-when it could not meet as written
-Status: proposed
 
 Found 2026-11-01 in cairn's C12. A done-when line read "every draft under `seeds/` still passes `parseTemplate`"; 4 of 11 failed, before and after the change. The leader closed the item reading the line as "no regression", wrote that in the record, and put the 4 drafts under NEEDS DECISION with the default "do not file". The roadmap rule says changing done-when wording is a change of promise and goes to the human in the report; `docs:check` cannot see this. The human had the drafts fixed as a new item (cairn C18) and kept C12 closed.
 Candidate: say in `tools/dev/roles/leader.md` that a done-when line not met as written keeps the item open and goes to NEEDS DECISION with the reading proposed, and check the deployer's role file for the same.
+Decided 2026-11-01 by the user: taken up first; it is a change to the role files only.
+
+#### Done when
+- [ ] `tools/dev/roles/leader.md`: when a done-when line is not met as written (also when the result is unchanged from before the work), the leader sends no closing request; the report puts it under `NEEDS DECISION` with the facts and the reading it proposes, and the item stays open
+- [ ] `tools/dev/roles/deployer.md`: the deployer does not check off a line it met only under another reading; it leaves the box empty and writes the facts in its report and in the section's body
+- [ ] `tools/dev/roles/reviewer.md`: for `TARGET: C<n>`, a checked line whose facts do not meet its wording is a finding
+- [ ] design.md §3.15 (handling updates during implementation) says the same in one place; `npm test` and `npm run docs:check` pass
+
+### C111. Write the Hub hooks on a project's first team start
+
+Split out of C27 on 2026-11-01 (C27's "Seen again 2026-11-01" paragraph). In cairn's first run the start only warned that the project had no Hub hooks (`hookWarning` in `src/team/checks.ts`), and the session wrote them with a second command (`npm run team -- hooks --project <cairn> --write`, into the git-ignored `.claude/settings.local.json`). The same start warned that Claude Code is newer than the last verified version (`versionWarning` in `src/team/startlog.ts`); shown on every start, it is likely to be skimmed past.
+Decided 2026-11-01 by the user: the start writes the hooks itself (a team start cannot ask, since an agent usually runs it), with a flag to opt out. The rest of C27 (ledger formats, a template for new projects) stays proposed there.
+
+#### Done when
+- [ ] A team start in a project where `hookWarning` finds the Hub hooks missing writes them the same way as `team hooks --project <dir> --write` (into `.claude/settings.local.json`, a backup kept when the file existed) and says so in its summary instead of the warning; a project whose hooks are already set is not touched
+- [ ] `--no-hooks` keeps today's behaviour (warn only); a failed write is a warning and does not stop the start
+- [ ] The warning that Claude Code is newer than the last verified version is a `WARNING` only on the first start with that version; later starts with the same version print it as one plain line in the summary, and `logs/start-warnings.jsonl` still records it on every start
+- [ ] Tests for the write on start, the opt-out and the once-per-version warning; docs/usage.md (hooks, teams, start warnings) is updated; `npm test` and `npm run docs:check` pass
