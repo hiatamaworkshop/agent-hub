@@ -21,6 +21,8 @@ In the order they will be taken up. Only items without a status line and blocked
 
 - [ ] C100
 - [ ] C94
+- [ ] C103
+- [ ] C104
 
 (Items with a status line are listed under "Items".)
 
@@ -707,6 +709,31 @@ Decided 2026-11-01 by the user: miscellaneous settings go behind a gear button, 
 - [ ] The gear opens a settings panel holding the theme choice (follow the OS / light / dark, the same states, `localStorage` key and first-paint behavior as C93); the panel closes on a second press, Escape or a click outside
 - [ ] No header control moves when a label changes length (the Health check count, Map ↔ Messages, the connection state)
 - [ ] `ui:check` adds scenes for the three controls, the panel's theme choice, and the controls keeping their positions across a label change; the theme scenes of C93 are moved to the panel; docs/usage.md and design.md (header controls) are updated; `npm test`, `npm run ui:check` and `npm run docs:check` pass
+
+### C103. Two projects with the same folder name get the same Mailbox names
+
+Found 2026-11-01 by the user and the planning session, asking whether teams in two projects can run side by side. `defaultMailboxName` (`src/shared/types.ts`) uses only the folder name, so `~/a/app` and `~/b/app` both give `app.deployer`. Starting a team in the second folder, `npm run team` sees `app.deployer` connected and skips the role as already connected (`src/team/team.ts`, C88). With `--force`, or a shim started without the script, the attach takes over the first project's session. The Hub records the new `cwd` and shows `projectChanged`, but does not refuse. Two clones of one repository are the likely case.
+Decided 2026-11-01 by the user: the start picks another name when the default name belongs to another project, and the Hub refuses an attach from another folder while the Mailbox is connected. Without a connection the attach is accepted with the warning, as now (a moved folder).
+
+#### Done when
+- [ ] When the default name's Mailbox exists on the Hub with a different `project` (compared with `normalizeProjectPath`), `npm run team` (the team and `agent`) starts the role under a name not used by another project that includes the parent folder (e.g. `b-app.deployer`), prints the chosen name, and uses it for the connected check (C88), the start log and `HUB_MAILBOX`; a later start in the same folder chooses the same name. The same project keeps the default name, and an explicit `--mailbox` is used as given
+- [ ] The Hub refuses an attach to a Mailbox with a live Attachment when the attach's `cwd` differs from the Mailbox's `project`: 409 with an error code and a message naming the other folder and `--mailbox`; the Mailbox and its Attachment are unchanged. An attach from the same folder (takeover), an attach to a Mailbox with no live Attachment (with the `projectChanged` warning, as now) and an attach without `cwd` work as before
+- [ ] The refusal is shown where the session was started (the shim's error output), not retried in silence
+- [ ] Tests cover the chosen name (another project, the same project, a later start, `--mailbox`) and the attach (refused, takeover from the same folder, no live Attachment, no `cwd`); protocol.md (attach errors), docs/usage.md (team names) and design.md §3.3 (how the Mailbox name is decided) are updated; `npm test` and `npm run docs:check` pass
+
+### C104. Confirm before a role message from the browser reaches several projects
+
+Raised 2026-11-01 by the user, in the same question. With `All projects` chosen, the browser's `role:` message carries no `project` and reaches that role in every project (design.md §9-7). With two teams running, a `role:deployer` meant for one reaches both.
+Decided 2026-11-01 by the user: keep the broadcast, and ask before sending when it would reach Mailboxes of two or more projects.
+
+#### Done when
+- [ ] On Send, a `role:` message from the browser without a `project` whose receivers are Mailboxes of two or more projects (by the Mailbox's `project`; Mailboxes without one are not counted) asks for confirmation, naming the number of projects and of Mailboxes; cancelling sends nothing and keeps the draft. A message that reaches one project or none is sent without asking, as now
+- [ ] `ui:check` adds scenes for asking (cancel sends nothing and keeps the draft; confirm sends) and for not asking with one project; docs/usage.md says it; `npm test`, `npm run ui:check` and `npm run docs:check` pass
+
+### C105. Switch between projects with running teams from the page header
+Status: held(after the user has run teams in two projects side by side)
+
+Raised 2026-11-01 by the user: projects where a team was started could show as tab-like buttons, so switching is one press (today it is the project selector above the sidebar). The user wants to run two teams first and decide then. design.md §3.2 chose a selector over tabs so waits in other projects are not missed (`N waiting in other projects`); buttons have to keep that.
 
 ### C100. The start result line (C88) says `started` for a role that did not run
 
