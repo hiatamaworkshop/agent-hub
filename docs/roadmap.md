@@ -5,7 +5,7 @@ Each phase puts weight on "ending in a working state". Move on after the accepta
 Open items are written as `### C<n>. Title` sections under "Items" at the end (design.md §3.15).
 - Right after the heading, write only an exceptional status, on one unindented line: `Status: proposed | held(<condition to resume>) | blocked(after C<n>)`. Without the line, the item is decided (may be started).
 - A decided item has `#### Done when` (a list of checkboxes). A request's `DONE WHEN` is copied from it.
-- Numbers are not reused. When done, delete the section, mark the phase line `[x] C<n> …`, and write the record of what was checked below it. In the same cleanup, remove `blocked(after C<n>)` lines that waited for that item (status is progress, not a promise).
+- Numbers are not reused. The close waits for the review (C102): after the review and its fixes, a closing request deletes the section, marks the phase line `[x] C<n> …`, writes the record of what was checked below it, and removes `blocked(after C<n>)` lines that waited for that item (status is progress, not a promise).
 - When rejected, delete the section and leave `[-] C<n> Title (rejected YYYY-MM-DD, one-line reason)` under a phase or "Known issues". If the reason is long, write it in design.md §9 and point to it (design.md §3.16).
 - The plan list: the ledger has one `## Plan`, listing the items without a status line and the `blocked(after C<n>)` items in the order they will be taken up, as `- [ ] C<n>`. No titles. These two kinds are always listed, and nothing else. Blocked items go after the item they wait for. Reordering is a human's decision (design.md §3.15).
 - How states are split: each of the four tiers corresponds to one state. `proposed` is only "awaiting a human's decision". `blocked(after C<n>)` is only for decided items (with done-when conditions) waiting on another item, with `C<n>` in the reason. An undecided item waiting on another is `held(after C<n>)`. Something waiting on an outside event (an update to the official docs, the next time a usage limit is hit and so on) is `held(<condition to resume>)` even if decided, and the reason is not omitted. Something accepted but not to be worked on is not held but rejected, `[-]`.
@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C102
 - [ ] C98
 - [ ] C99
 - [ ] C100
@@ -345,6 +344,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - グローバルの skill `roadmap-items` (`~/.claude/skills/roadmap-items/SKILL.md`、リポジトリの外) に英語の語彙の表を足した
   - role の説明 (`tools/dev/roles/*.md`) は日本語の見出しのまま。英語に書き換えるのは C65
   - `npm test` 345 件、`npm run ui:check` 79 件が合格、`npm run docs:check` はエラーなし
+- [x] C102 Close an item after its review, not in the deployer's first run (2026-11-01, decided by the user)
+  - `tools/dev/roles/leader.md`: the work request's DONE WHEN asks only for checking off and the facts in the body, not the close. A "Closing request (C102)" bullet and the order in "When to ask" send the close after the review and its fixes (or after the leader's check when no reviewer is connected), before the report to the human.
+  - `tools/dev/roles/deployer.md`: the section is closed only when a request asks for the close, not when the last condition is checked.
+  - `docs/design.md` §3.12 (the "A break" row), §3.15 (the C96 block's progress bullet and the C97 order), `docs/usage.md` (teams in detail, and the deployer's progress line), `CLAUDE.md` ("Updating the docs"), and the top rules of `docs/roadmap.md` all give the closing request after the review.
+  - Checked: `npm test` 412 pass, 0 fail; `npm run docs:check` 32 items, 0 errors, 0 warnings (after the close). The reviewer read the uncommitted change and found two stale places (the design.md §3.12 row and the roadmap.md top rule) plus usage.md line 199; all three were fixed. Not checked: a live closing request in a team run.
 - [x] C97 Review the uncommitted change before the leader reports an item done (2026-11-01, decided by the user on 2026-10-31)
   - `tools/dev/roles/reviewer.md`: for `TARGET: C<n>` with at least one `[x]` condition, the reviewer also reads `git diff HEAD` and the untracked files from `git status`, plus the item's commits, and says in `VERIFIED` which it read. A commit range `TARGET` is still accepted.
   - `tools/dev/roles/leader.md`: "When to ask" sends `TARGET: C<n>` after the deployer's report and the leader's check, before the report to the human. Nothing is committed for it. The `NEEDS ACTION` (commit first) path is removed, and the review is not sent while the deployer is still working on the same tree. Flow step 2 points to it, and the no-reviewer rule (`NOT VERIFIED`) is kept.
@@ -739,12 +743,3 @@ Decided 2026-11-01 by the user: the scene counts only the deferred redraw, the r
 - [ ] The scene checks that closing Forward to… draws once with the current data, counting the renders up to `flushMap`'s return, and does not count renders after it
 - [ ] The scene passes 10 runs in a row on the development machine's Chrome; the other scenes are unchanged; `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
-### C102. Close an item after its review, not in the deployer's first run
-
-Found 2026-11-01 in C97's run: the request's `DONE WHEN` asks the deployer to close the item when all conditions are checked (delete the section, mark the phase line `[x] C<n>` with the record, remove `blocked(after C<n>)` lines). The review comes after that, with `TARGET: C<n>`, and the reviewer reads the item's `### C<n>.` section, which is gone by then. It is left with the removed lines in `git diff HEAD`.
-Decided 2026-11-01 by the user: closing waits for the review. In the work request the deployer checks off conditions and adds the facts it checked to the section's body, and leaves the section in place. After the review and the fixes from its checked findings (or after the leader's own check, when no reviewer is connected), the leader sends the deployer a closing request, then reports to the human. The close lands in the same uncommitted change, so the human still commits once. `docs:check`'s warning for a section whose conditions are all checked is expected in between.
-
-#### Done when
-- [ ] `tools/dev/roles/leader.md`: the work request's `DONE WHEN` asks for checking off and the facts in the body, not the close; a separate closing request (delete the section, mark `[x] C<n>` with the record, remove `blocked(after C<n>)` lines) is sent after the review and its fixes, or after the leader's check when no reviewer is connected, and before the report to the human
-- [ ] `tools/dev/roles/deployer.md`: the section is closed only when a request asks for the close, not when the last condition is checked
-- [ ] design.md §3.15 (the C96 block and the C97 order), docs/usage.md (teams in detail) and CLAUDE.md ("Updating the docs") give the order with the close after the review; `npm test` and `npm run docs:check` pass
