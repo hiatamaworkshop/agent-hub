@@ -1,5 +1,5 @@
 // Starting a team on any OS (roadmap C62, design.md §3.8). Run through `npm run team -- …`.
-//   team   [--roles a,b] [--project <dir>] [--attach-timeout <sec>] [--force] [--no-build] [--permission-mode <m>] [--tabs <opener>]
+//   team   [--roles a,b] [--project <dir>] [--attach-timeout <sec>] [--force] [--no-build] [--no-hooks] [--permission-mode <m>] [--tabs <opener>]
 //   agent  --role <r> [--project <dir>] [--model <m>] [--mailbox <name>] [--permission-mode <m>]
 //   hooks  [--project <dir>] [--write]   (the Hub's hook settings for the project; C69)
 //   hub    (what the Hub's tab runs)
@@ -54,7 +54,7 @@ async function main(argv: string[]): Promise<number> {
   const roles = p.roles.length ? p.roles : await chooseRoles()
   if (!roles) { console.log('Cancelled'); return 0 }
   const opener = p.tabs ?? detectOpener(process.platform, process.env, (n) => hasCommand(n))
-  return runTeam({ roles, projectDir: dir, attachTimeoutSec: p.attachTimeoutSec, force: p.force, noBuild: p.noBuild, permissionMode: p.permissionMode, opener })
+  return runTeam({ roles, projectDir: dir, attachTimeoutSec: p.attachTimeoutSec, force: p.force, noBuild: p.noBuild, noHooks: p.noHooks, permissionMode: p.permissionMode, opener })
 }
 
 main(process.argv.slice(2)).then(

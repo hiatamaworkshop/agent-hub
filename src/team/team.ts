@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { connect } from 'node:net'
+import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { sendLedgerIndex } from '../docs-check/send-index.js'
 import { readLedgerSetting } from '../shared/ledger.js'
@@ -10,7 +11,8 @@ import { chooseMailboxName, defaultMailboxName, normalizeProjectPath } from '../
 import { clearStartStatus, readHubMailboxes, type HubMailbox } from './agent.js'
 import { checkClaudeCli, checkoutWarnings, hookWarning, startStatusPath } from './checks.js'
 import { envSetting, hubRolesFile, readRoleNames, ROOT } from './env.js'
-import { checkClaudeVersion, emptyOutcome, recordResult, recordStart, splitByConnection, type StartOutcome } from './startlog.js'
+import { writeMissingHooks } from './hooks.js'
+import { checkClaudeVersion, emptyOutcome, parseVersion, recordResult, recordStart, splitByConnection, type StartOutcome, versionWarnedBefore } from './startlog.js'
 import { ask } from './prompt.js'
 import { commandLine } from './quote.js'
 import { openTab, TMUX_SESSION, type Opener } from './tabs.js'
@@ -21,8 +23,25 @@ export interface TeamOptions {
   attachTimeoutSec: number
   force: boolean
   noBuild: boolean
+  // C111: do not write the missing Hub hooks at the start (warn only, as before)
+  noHooks: boolean
   permissionMode?: string
   opener: Opener
+}
+
+// The Hub hooks at a team start (C111). Writes the missing ones with the one writer `hooks --write` uses, unless noHooks; a project whose
+// hooks are set is not touched. Returns the summary lines (what was written) and the warnings (a failed write, or hook problems that remain)
+export function hooksForStart(projectDir: string, root: string, noHooks: boolean, home = homedir()): { infos: string[]; warnings: string[] } {
+  const infos: string[] = []
+  const warnings: string[] = []
+  if (!noHooks) {
+    const w = writeMissingHooks(projectDir, root, home)
+    if (w.kind === 'added') infos.push(`Hub hooks written to ${w.local}${w.backup ? ` (the previous file is ${w.backup})` : ''}`)
+    if (w.kind === 'failed') warnings.push(`Could not write the Hub hooks: ${w.reason}. The start goes on without them`)
+  }
+  const hw = hookWarning(projectDir, root, home)
+  if (hw) warnings.push(hw)
+  return { infos, warnings }
 }
 
 // The start's index (C107): the project's ledger (.agent-hub.json, else docs/roadmap.md) sent to the Hub. Never throws, and returns
@@ -164,11 +183,19 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
     return 1
   }
   const notes: string[] = []
-  const note = (w: string) => { console.warn(`WARNING: ${w}`); notes.push(w) }
+  const infos: string[] = []
+  // A warning is printed as WARNING; a repeat is only a plain note in the summary. The start record keeps every note (C111)
+  const note = (w: string, loud = true) => { if (loud) console.warn(`WARNING: ${w}`); notes.push(w) }
   const version = checkClaudeVersion(cli.output)
-  if (version.warning) note(version.warning)
-  const hw = hookWarning(o.projectDir, ROOT)
-  if (hw) note(hw)
+  if (version.warning) {
+    // Read before this start's record is written, so this start is not counted as an earlier warning (C111)
+    const running = parseVersion(cli.output)
+    note(version.warning, !(running && versionWarnedBefore(running)))
+  }
+  // The Hub hooks: written as `hooks --write` would, unless --no-hooks (C111). The write's summary line is information, not a warning
+  const hooks = hooksForStart(o.projectDir, ROOT, o.noHooks)
+  infos.push(...hooks.infos)
+  for (const w of hooks.warnings) note(w)
   for (const w of await checkoutWarnings(o.projectDir)) note(w)
   // --- build (the shim is started from dist/)
   if (!o.noBuild && distIsStale()) {
@@ -278,6 +305,7 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
   // The index line is always printed (C107), so a start that sent nothing says why
   console.log('\n--- summary ---')
   console.log(`index: ${indexLine}`)
+  for (const i of infos) console.log(`hooks: ${i}`)
   for (const n of notes) console.log(`note: ${n}`)
   for (const f of outcome.failed) console.log(`failed: ${f.reason}`)
   await printUiUrl(hubUrl, token, o.projectDir)

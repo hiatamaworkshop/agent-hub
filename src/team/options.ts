@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util'
 import { OPENERS, type Opener } from './tabs.js'
 
 export const USAGE = `Usage:
-  npm run team -- [--roles leader,deployer] [--project <dir>] [--attach-timeout 60] [--force] [--no-build]
+  npm run team -- [--roles leader,deployer] [--project <dir>] [--attach-timeout 60] [--force] [--no-build] [--no-hooks]
                   [--permission-mode <mode>] [--tabs ${OPENERS.join('|')}]
   npm run team -- agent --role <role> [--project <dir>] [--model <model>] [--mailbox <name>] [--permission-mode <mode>]
   npm run team -- hooks [--project <dir>] [--write]   (list the Hub hooks the project lacks; --write adds them)`
@@ -16,6 +16,8 @@ export interface Parsed {
   attachTimeoutSec: number
   force: boolean
   noBuild: boolean
+  // C111: a team start writes the missing Hub hooks unless this is set (then it only warns)
+  noHooks: boolean
   permissionMode?: string
   model?: string
   mailbox?: string
@@ -35,6 +37,7 @@ export function parse(argv: string[]): Parsed {
       'attach-timeout': { type: 'string' },
       force: { type: 'boolean' },
       'no-build': { type: 'boolean' },
+      'no-hooks': { type: 'boolean' },
       'permission-mode': { type: 'string' },
       model: { type: 'string' },
       mailbox: { type: 'string' },
@@ -59,6 +62,7 @@ export function parse(argv: string[]): Parsed {
     attachTimeoutSec: timeout,
     force: values.force ?? false,
     noBuild: values['no-build'] ?? false,
+    noHooks: values['no-hooks'] ?? false,
     permissionMode: values['permission-mode'],
     model: values.model,
     mailbox: values.mailbox,

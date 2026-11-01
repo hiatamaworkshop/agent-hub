@@ -48,6 +48,30 @@ export function versionWarning(running: Version | null, verified: Verified | nul
   return `Claude Code ${r} is newer than the last verified ${v} (design.md §${verified.section}). Its behaviour is outside the verified envelope`
 }
 
+// Whether an earlier start in the log already warned about this running version (C111). The warning is loud (WARNING) only on the first
+// start with a version; later starts print it as one plain line in the summary. Starts with warnings are recorded in the log, so the log
+// is the record and no other state is kept. A missing or unreadable log counts as not warned
+export function versionWarnedBefore(running: Version, file = startLogPath()): boolean {
+  const prefix = `Claude Code ${running.join('.')} is newer than the last verified `
+  let text: string
+  try {
+    text = readFileSync(file, 'utf8')
+  } catch {
+    return false
+  }
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue
+    let r: Partial<StartRecord>
+    try {
+      r = JSON.parse(line) as Partial<StartRecord>
+    } catch {
+      continue
+    }
+    if (r.kind === 'start' && (r.warnings ?? []).some((w) => w.startsWith(prefix))) return true
+  }
+  return false
+}
+
 export interface VersionCheck {
   warning: string | null
   // The last verified version and its §6.1 section, or the reason none is known (design.md unreadable or no version named)

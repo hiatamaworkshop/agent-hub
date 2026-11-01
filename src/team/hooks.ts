@@ -95,15 +95,37 @@ export function runHooks(projectDir: string, root: string, write: boolean, home 
     console.log(JSON.stringify({ hooks: mergeHooks({}, template, st.missing).hooks }, null, 2))
     return 1
   }
-  let existing: Settings = {}
-  const had = existsSync(local)
-  if (had) {
-    if (st.unreadable.includes(local)) { console.error(`Not writing: ${local} is not valid JSON`); return 1 }
-    existing = JSON.parse(readFileSync(local, 'utf8').replace(/^﻿/, '')) as Settings
-    copyFileSync(local, `${local}.bak`)
-  }
-  mkdirSync(join(projectDir, '.claude'), { recursive: true })
-  writeFileSync(local, `${JSON.stringify(mergeHooks(existing, template, st.missing), null, 2)}\n`)
-  console.log(`Added to ${local}${had ? ` (the previous file is ${local}.bak)` : ''}. Running sessions pick hooks up by themselves; SessionStart fires from the next start`)
+  const w = writeMissingHooks(projectDir, root, home)
+  if (w.kind === 'failed') { console.error(`Not writing: ${w.reason}`); return 1 }
+  if (w.kind === 'set') return 0
+  console.log(`Added to ${w.local}${w.backup ? ` (the previous file is ${w.backup})` : ''}. Running sessions pick hooks up by themselves; SessionStart fires from the next start`)
   return 0
+}
+
+export type HookWrite =
+  | { kind: 'set' }                                                          // nothing missing: the file is not touched
+  | { kind: 'added'; local: string; backup: string | null; missing: string[] }
+  | { kind: 'failed'; local: string; reason: string }
+
+// Add the missing events to <project>/.claude/settings.local.json, a backup beside it when the file existed. The one writer (C69, C111):
+// `hooks --write` and a team start both call it, so they write the same thing. A file that is not JSON is not touched
+export function writeMissingHooks(projectDir: string, root: string, home = homedir()): HookWrite {
+  const template = hookTemplate(root, envSetting('HUB_PORT', '7777', root))
+  const st = hookState(projectDir, template, home)
+  const local = settingsFiles(projectDir, home)[0]!
+  if (!st.missing.length) return { kind: 'set' }
+  if (st.unreadable.includes(local)) return { kind: 'failed', local, reason: `${local} is not valid JSON, so it was not changed` }
+  try {
+    let existing: Settings = {}
+    const had = existsSync(local)
+    if (had) {
+      existing = JSON.parse(readFileSync(local, 'utf8').replace(/^﻿/, '')) as Settings
+      copyFileSync(local, `${local}.bak`)
+    }
+    mkdirSync(join(projectDir, '.claude'), { recursive: true })
+    writeFileSync(local, `${JSON.stringify(mergeHooks(existing, template, st.missing), null, 2)}\n`)
+    return { kind: 'added', local, backup: had ? `${local}.bak` : null, missing: st.missing }
+  } catch (e) {
+    return { kind: 'failed', local, reason: `could not write ${local}: ${e instanceof Error ? e.message : String(e)}` }
+  }
 }

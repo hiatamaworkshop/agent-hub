@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C111
 - [ ] C108
 
 (Items with a status line are listed under "Items".)
@@ -392,6 +391,9 @@ In the order they will be taken up. Only items without a status line and blocked
   - `public/index.html`: one jump helper for every badge (`jumpChip`: pointer cursor, a title saying what a press finds). The sidebar `#backlog` badges jump like a card's badge (C44); the `#states` counts jump to the oldest Message or Event (`oldestTargetOf`, Needs you and Stopped) or to the first card in that state (`jumpToCard`, sidebar or map, highlighted); the map's human `Needs you N` (all projects) and a card's Needs you label jump to their oldest target; `jumpTo` switches from Map view to Messages first. A press sends nothing, marks nothing read and changes no state. No Hub or protocol change.
   - Done-when 5 was reworded on 2026-11-01 by the user: a sidebar badge counts only the shown cards, so its target cannot be hidden by the project filter; the scene uses the map's human `Needs you N`, which counts all projects.
   - Checked: `npm test` 475/475 pass; `npm run ui:check` 176 ok, 0 NG (the C106 scenes press the real badges); `npm run docs:check` 0 errors; `docs/usage.md` and design.md §3.15 updated. Closed without a review (the user's decision).
+- [x] C111 Write the Hub hooks on a project's first team start (2026-11-01, decided by the user)
+  - `src/team/hooks.ts` `writeMissingHooks` is the one writer (`hooks --write` and the team start both call it, with a backup when the file existed); `src/team/team.ts` `hooksForStart` writes the missing hooks at a team start and says so in the summary (`hooks: …`) instead of warning; `--no-hooks` (`src/team/options.ts`, `src/team/main.ts`) keeps the warning only. The version warning is `WARNING` only on the first start with that version (`versionWarnedBefore` in `src/team/startlog.ts`, read from `logs/start-warnings.jsonl`); later starts print a plain `note:`, and every start is still recorded.
+  - Checked: `npm test` 479/479 pass; `npm run docs:check` 0 errors; `npx tsc --noEmit` ok. A real team start against a scratch project on a separate Hub (port 7791, stopped afterwards): the first start wrote `.claude/settings.local.json` and printed `hooks: Hub hooks written to …`, the second left it unchanged, `--no-hooks` warned only and wrote nothing, and with the start log set aside the first start printed `WARNING` for the newer version. A failed write inside a real start is covered by the unit test only. No reviewer was connected, so the item had no review.
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -769,14 +771,3 @@ Decided 2026-11-01 by the user: taken up last of the items from the two-team run
 - [ ] It then prints the newest Message from a Mailbox of that project to the human in full, with its seq, sender and time; Messages of other projects are not shown
 - [ ] It reads the Hub and token the same way as `docs:index`; when the Hub is not reachable or the token is refused it says so in one line and exits non-zero
 - [ ] The team start's summary names the command; tests cover the project filter and the newest report; docs/usage.md (teams) is updated; `npm test` and `npm run docs:check` pass
-
-### C111. Write the Hub hooks on a project's first team start
-
-Split out of C27 on 2026-11-01 (C27's "Seen again 2026-11-01" paragraph). In cairn's first run the start only warned that the project had no Hub hooks (`hookWarning` in `src/team/checks.ts`), and the session wrote them with a second command (`npm run team -- hooks --project <cairn> --write`, into the git-ignored `.claude/settings.local.json`). The same start warned that Claude Code is newer than the last verified version (`versionWarning` in `src/team/startlog.ts`); shown on every start, it is likely to be skimmed past.
-Decided 2026-11-01 by the user: the start writes the hooks itself (a team start cannot ask, since an agent usually runs it), with a flag to opt out. The rest of C27 (ledger formats, a template for new projects) stays proposed there.
-
-#### Done when
-- [ ] A team start in a project where `hookWarning` finds the Hub hooks missing writes them the same way as `team hooks --project <dir> --write` (into `.claude/settings.local.json`, a backup kept when the file existed) and says so in its summary instead of the warning; a project whose hooks are already set is not touched
-- [ ] `--no-hooks` keeps today's behaviour (warn only); a failed write is a warning and does not stop the start
-- [ ] The warning that Claude Code is newer than the last verified version is a `WARNING` only on the first start with that version; later starts with the same version print it as one plain line in the summary, and `logs/start-warnings.jsonl` still records it on every start
-- [ ] Tests for the write on start, the opt-out and the once-per-version warning; docs/usage.md (hooks, teams, start warnings) is updated; `npm test` and `npm run docs:check` pass
