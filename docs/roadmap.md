@@ -746,7 +746,7 @@ Decided 2026-11-01 by the user: every badge jumps, so the rule stays one ("a bad
 Status: proposed
 
 Found 2026-11-01 when a session that had never used agent-hub started a team in cairn. The items pane stayed empty, and nothing said why: the Hub does not read the working tree, `docs:index` sends `docs/roadmap.md` by default, and cairn's ledger is `docs/items.md` (its `docs/roadmap.md` is a phase plan). The session found this only by reading `src/docs-check/push-index.ts`. `hub-team` does not send an index, and its summary does not mention one. After that, cairn's CLAUDE.md got the re-send command so its agents re-send after closing an item (the deployer did, unprompted, when closing C12).
-Candidates: name the ledger in a one-line per-project setting, and have `hub-team` send it on start and print the source in the summary; when a project shown in the page has no index, show the `docs:index` command (with `--file`) in the empty items pane.
+Candidates: name the ledger in a one-line per-project setting, and have `hub-team` send it on start and print the source in the summary; when a project shown in the page has no index, show the `docs:index` command (with `--file`) in the empty items pane. The post-commit hook (C52, `tools/hooks/post-commit-index.sh`) also tests only `docs/roadmap.md` and sends without `--file`, so for cairn it would never fire; it should read the same setting.
 
 ### C108. A command for the starting session to read a project's latest reports and states
 Status: proposed
@@ -757,8 +757,9 @@ Candidate: `hub-team status --project <dir>` (or a `team` subcommand) printing, 
 ### C109. Catch a turn that ends with a handed request and no reply
 Status: proposed
 
-Found 2026-11-01 in cairn: the leader was handed the human's request (#499), wrote its report only in its terminal, and ended the turn without `post_message`. A minute later `idle_prompt` turned the card to `Needs you`, and the human read that as "finished". The leader posted the report only after a second turn (it noticed by itself). The Hub knew the request was awaiting reply (`backlog.awaitingReply` 1, `unconfirmed` 1), so this can be judged without an LLM.
-Candidates: a `Stop` hook that blocks the stop once with a short cue when the Mailbox holds a handed request with no reply; or show the card as `Stopped, no reply` rather than `Needs you` in that case. Related: C79 (a timer watcher), C76 (Health check).
+Found 2026-11-01 in cairn: the leader was handed the human's request (#499), wrote its report only in its terminal, and ended the turn without `post_message` (08:17:44). The card showed `Needs you`, and the human read that as "finished". The leader posted the report (#505, 08:22:09) only after the human's nudge (#504, 08:21:58: "an unconfirmed request #499 is there"). The Hub knew the request was awaiting reply (`backlog.awaitingReply` 1, `unconfirmed` 1), so this can be judged without an LLM.
+Corrected 2026-11-01 by the planning session from the Hub's record: `Needs you` did not come from `idle_prompt` (the UI counts only `question` and `permission` as the human's move). It came from C49: at 08:11 the leader had sent a review request (#495) to `role:reviewer`, and no reviewer Mailbox existed (`recipients` empty), so `cardState` returned `Needs you (reviewer not connected)` from `outgoing` before reaching `awaitingReply`, and `Stopped, no reply` was never shown. The leader also went on after `post_message` answered #495 with no recipients.
+Candidates: a `Stop` hook that blocks the stop once with a short cue when the Mailbox holds a handed request with no reply; or let a handed request with no reply show (as `Stopped, no reply`, or next to the C49 cause) even when an outgoing request waits on a session that is not connected, since today the outgoing branch hides it; and have the leader stop and say so when a request it sends has no recipients. Related: C79 (a timer watcher), C76 (Health check), C49.
 
 ### C110. The leader does not close an item whose done-when it could not meet as written
 Status: proposed
