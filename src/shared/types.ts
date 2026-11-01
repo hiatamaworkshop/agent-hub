@@ -22,10 +22,42 @@ export function mailboxFromFolder(dir: string): string {
 // role を持つセッションの既定の Mailbox 名は <フォルダ名>.<role>。Mailbox の名前空間は Hub 全体で 1 つなので、
 // プロジェクトが違えば同じ role でも別の Mailbox にする (design.md §3.3)。64 文字に収まるようフォルダ名の側を切る
 export function defaultMailboxName(dir: string, role: string | null): string {
+  return mailboxNameFor(mailboxFromFolder(dir), role)
+}
+
+// <stem><suffix>.<role> (or <stem><suffix> without a role), the stem cut so the whole name fits in 64 characters and the suffix
+// (e.g. -2) survives the cut (C103). With suffix '' this is the same as before
+export function mailboxNameFor(stem: string, role: string | null, suffix = ''): string {
+  if (!role) return `${stem.slice(0, 64 - suffix.length)}${suffix}`
+  const room = 63 - role.length - suffix.length
+  return room > 0 ? `${stem.slice(0, room)}${suffix}.${role}` : role
+}
+
+// The name of the folder above dir, in the same rule as a folder name ('main' when there is none). Used by chooseMailboxName (C103)
+export function parentFolderName(dir: string): string {
+  return mailboxFromFolder(dir.split(/[\\/]+/).filter(Boolean).slice(0, -1).join('/'))
+}
+
+// The Mailbox name a start takes for a role in a folder (C103, design.md §3.3). known is the Mailbox list the Hub has (name and project).
+// The default name, unless it belongs to another project (a Mailbox with a project that is not dir); then <parent>-<folder>, and
+// <parent>-<folder>-2 … -9. A Mailbox without a project is not another project's. The same folder gets the same name on a later start,
+// because the name it took is then its own. Throws when all the candidates belong to other projects
+export function chooseMailboxName(dir: string, role: string | null, known: readonly { name: string; project: string | null }[]): string {
+  const me = normalizeProjectPath(dir)
+  const takenByOther = (name: string) => known.some((m) => m.name === name && m.project !== null && normalizeProjectPath(m.project) !== me)
   const folder = mailboxFromFolder(dir)
-  if (!role) return folder
-  const room = 63 - role.length
-  return room > 0 ? `${folder.slice(0, room)}.${role}` : role
+  const parent = parentFolderName(dir)
+  // [stem, suffix] pairs: the suffix is kept whole when the stem is cut to fit (C103)
+  const candidates: [string, string][] = [
+    [folder, ''],
+    [`${parent}-${folder}`, ''],
+    ...Array.from({ length: 8 }, (_, i): [string, string] => [`${parent}-${folder}`, `-${i + 2}`]),
+  ]
+  for (const [stem, suffix] of candidates) {
+    const name = mailboxNameFor(stem, role, suffix)
+    if (!takenByOther(name)) return name
+  }
+  throw new Error(`no free Mailbox name for ${dir} (all candidates belong to other projects); give one with --mailbox`)
 }
 
 // Mailbox の project の比較用。区切り・末尾の区切り・ドライブ文字のパスの大文字小文字を揃える (Windows のパスは大文字小文字を区別しない)

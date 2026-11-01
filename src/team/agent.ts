@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { defaultMailboxName } from '../shared/types.js'
+import { chooseMailboxName, defaultMailboxName } from '../shared/types.js'
 import { checkClaudeCli, checkoutWarnings, claudeCommand, hookWarning, spawnArgs, startStatusPath, testClaudeCli } from './checks.js'
 import { envSetting, hubRolesFile, readRoleNames, ROOT } from './env.js'
 import { checkClaudeVersion, emptyOutcome, recordResult, recordStart, type StartOutcome } from './startlog.js'
@@ -37,19 +37,28 @@ export function claudeArgs(o: AgentOptions, root: string, mcpConfig: string, fil
   return args
 }
 
-// The Attachment id the Hub holds for a Mailbox (C100). null: the Hub was read and the Mailbox is not attached.
-// undefined: the Hub could not be read (not 2xx, a timeout, a connection error), so nothing is known about the attach.
-// The two must not be mixed up: an unreadable baseline must not make another claude's attach look like this start's attach.
-export async function attachmentOf(mailbox: string, token: string): Promise<string | null | undefined> {
+export interface HubMailbox { name: string; project: string | null; attachment?: { attachmentId: string } | null }
+
+// The Mailboxes the Hub lists, or null when it cannot be read (not 2xx, a timeout, a connection error). Without a token nothing is asked (C103)
+export async function readHubMailboxes(token: string): Promise<HubMailbox[] | null> {
+  if (!token) return null
   const port = Number(envSetting('HUB_PORT', '7777'))
   try {
     const r = await fetch(`http://127.0.0.1:${port}/mailboxes`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3000) })
-    if (!r.ok) return undefined
-    const { mailboxes } = (await r.json()) as { mailboxes: { name: string; attachment?: { attachmentId: string } | null }[] }
-    return mailboxes.find((m) => m.name === mailbox)?.attachment?.attachmentId ?? null
+    if (!r.ok) return null
+    return ((await r.json()) as { mailboxes: HubMailbox[] }).mailboxes
   } catch {
-    return undefined
+    return null
   }
+}
+
+// The Attachment id the Hub holds for a Mailbox (C100). null: the Hub was read and the Mailbox is not attached.
+// undefined: the Hub could not be read, so nothing is known about the attach.
+// The two must not be mixed up: an unreadable baseline must not make another claude's attach look like this start's attach.
+export async function attachmentOf(mailbox: string, token: string): Promise<string | null | undefined> {
+  const list = await readHubMailboxes(token)
+  if (!list) return undefined
+  return list.find((m) => m.name === mailbox)?.attachment?.attachmentId ?? null
 }
 
 // Waits until the Hub shows an Attachment different from the baseline (C100). `attachmentOf` is asked every `intervalMs`.
@@ -119,13 +128,35 @@ export async function withResult<T>(record: (outcome: StartOutcome) => void, bod
   }
 }
 
+// The Mailbox an `agent` uses (C103). An explicit --mailbox is used as given. With a token, the name is chosen from the Hub's list, and a list
+// that cannot be read is an error (the start then says to start the Hub or pass --mailbox; the default is not guessed). Without a token
+// there is nothing to read, so the default name is used (usage.md)
+export async function chooseAgentMailbox(
+  o: { role: string; projectDir: string; mailbox?: string },
+  token: string,
+  read: (token: string) => Promise<HubMailbox[] | null>,
+): Promise<string> {
+  if (o.mailbox) return o.mailbox
+  const list = await read(token)
+  if (token && list === null) {
+    throw new Error(`The Hub's Mailbox list cannot be read, so no Mailbox name is chosen. Start the Hub (or check HUB_TOKEN in .env), or pass --mailbox`)
+  }
+  return chooseMailboxName(o.projectDir, o.role, list ?? [])
+}
+
 export async function runAgent(o: AgentOptions): Promise<number> {
-  const mailbox = o.mailbox ?? defaultMailboxName(o.projectDir, o.role)
   // The start's time: the pre-start line and this start's result line share it (C88). `team` writes the result for the roles it starts
   const startTime = new Date().toISOString()
-  const ref = { role: o.role, mailbox }
   const record = recordOnce(o.fromTeam ? () => {} : (outcome) => recordResult(startTime, o.projectDir, outcome))
-  return withResult(record, () => startRole(o, { mailbox, ref, startTime, record }))
+  return withResult(record, async () => {
+    // Inside withResult: a start that finds no free name still writes its result line (C100)
+    // An explicit --mailbox, or the name `team` chose and passed on, is used as given. Otherwise the name is chosen from the Hub's list (C103)
+    const token = envSetting('HUB_TOKEN', '')
+    const mailbox = await chooseAgentMailbox(o, token, readHubMailboxes)
+    if (!o.mailbox && !token) console.log(`No HUB_TOKEN, so the Mailbox list is not read: using ${mailbox}`)
+    if (!o.mailbox && mailbox !== defaultMailboxName(o.projectDir, o.role)) console.log(`${defaultMailboxName(o.projectDir, o.role)} belongs to another project, so ${mailbox} is used`)
+    return startRole(o, { mailbox, ref: { role: o.role, mailbox }, startTime, record })
+  })
 }
 
 async function startRole(

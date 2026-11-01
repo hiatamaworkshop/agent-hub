@@ -13,7 +13,7 @@ For the background of the terms and the model, see design.md §3.3 (Mailbox and 
   - No or wrong authentication is 401. If there is an `Authorization` header it takes precedence over the cookie and decides on its own.
   - The cookie's value is not the token itself but a value derived from it.
 - Error response: `{ "error": "<code>", "message"?: "…", "issues"?: [{ "path", "message" }] }`. Exceeding the body limit (413) returns the same shape.
-- Error codes named in this document: `reply_to_not_found` (400, `POST /messages`), `reply_not_received` (400, a reply to a Message the replying Mailbox neither received nor sent; §3, C86), `message_not_found` (404), `payload_too_large` (413). Each endpoint in §3 lists its own.
+- Error codes named in this document: `reply_to_not_found` (400, `POST /messages`), `reply_not_received` (400, a reply to a Message the replying Mailbox neither received nor sent; §3, C86), `message_not_found` (404), `payload_too_large` (413), `project_mismatch` (409, attach; C103). Each endpoint in §3 lists its own.
 - Time: ISO 8601 UTC strings.
 - id: a string (ULID recommended; sortable by time).
 - `seq`: an integer that increases monotonically across the whole Hub. Used for message order and cursors.
@@ -249,6 +249,7 @@ For the background of the terms and the model, see design.md §3.3 (Mailbox and 
 - Idempotent. Attaching again from the same session loses no unread messages (the cursor lives on the Mailbox).
 - If there is already another Attachment, this one takes over (exclusive; the newer wins; design.md §9-1). `terminated` is sent on the old Attachment's stream and it is closed.
   However, if `previous` is given and the Mailbox has an Attachment other than `previous` (a successor attached while it was disconnected), the attach is refused with 409 `successor_attached` and the successor is not cut off. The shim treats this the same as `terminated(superseded)` and does not attach again (design.md §3.3).
+- **Another folder (C103)**: if the Mailbox has a live Attachment and the attach's `cwd` differs from its `project` (compared with `normalizeProjectPath`), the attach is refused with 409 `project_mismatch`. The message names the folder that holds the Mailbox, the folder that was refused, and `--mailbox`. The Mailbox, its Attachment and its `project` are unchanged, and no `projectChanged` is recorded. Takeover from the same folder, an attach to a Mailbox with no live Attachment (the `projectChanged` warning, as before) and an attach without `cwd` are accepted as before. The shim does not retry; it stops and shows the reason (design.md §3.3).
 - **Limit on how much flows in**: at attach time, unread messages older than `maxAgeMs` and those before the newest `maxUnread` are marked abandoned and `cursor` advances; `truncated: true` and the count `skipped` are returned.
   Unread messages are in `seq` order, so what is dropped is always a contiguous range at the head. The `cursor` in the response is the value after advancing. The Message log is not erased, so they remain in the UI's history. When it advances, `mailbox.acked` is sent to the UI.
   The Hub's defaults are the environment variables `HUB_UNREAD_MAX_AGE_DAYS` (default 7, fractions allowed) and `HUB_UNREAD_MAX` (default 50). 0 means no limit for either. The shim does not specify them (it follows the Hub's defaults).

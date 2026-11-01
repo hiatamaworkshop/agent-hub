@@ -4,8 +4,8 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { connect } from 'node:net'
 import { basename, join } from 'node:path'
-import { defaultMailboxName, normalizeProjectPath } from '../shared/types.js'
-import { clearStartStatus } from './agent.js'
+import { chooseMailboxName, defaultMailboxName, normalizeProjectPath } from '../shared/types.js'
+import { clearStartStatus, readHubMailboxes, type HubMailbox } from './agent.js'
 import { checkClaudeCli, checkoutWarnings, hookWarning, startStatusPath } from './checks.js'
 import { envSetting, hubRolesFile, readRoleNames, ROOT } from './env.js'
 import { checkClaudeVersion, emptyOutcome, recordResult, recordStart, splitByConnection, type StartOutcome } from './startlog.js'
@@ -28,10 +28,28 @@ const MAIN = join(ROOT, 'src', 'team', 'main.ts')
 const self = (...args: string[]) => [process.execPath, '--import', 'tsx', MAIN, ...args]
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-// The subcommand a role's tab runs
-export function agentSub(role: string, projectDir: string, permissionMode?: string): string[] {
+// The Mailbox each role takes (C103): the default name, or another one when another project holds it. Called once the Hub is up.
+// With a token, a list that cannot be read is an error, because the default name cannot be checked then. Without a token there is
+// nothing to read, so the default names are used (attach is not checked either). `read` is the Hub's list (readHubMailboxes)
+export async function chooseStartNames(
+  roles: string[],
+  projectDir: string,
+  token: string,
+  read: (token: string) => Promise<HubMailbox[] | null>,
+): Promise<Map<string, string>> {
+  const list = await read(token)
+  if (token && list === null) {
+    throw new Error('The Hub\'s Mailbox list cannot be read, so no Mailbox name is chosen and nothing is started. Check that the Hub is up and HUB_TOKEN in .env')
+  }
+  const known = list ?? []
+  return new Map(roles.map((role) => [role, chooseMailboxName(projectDir, role, known)]))
+}
+
+// The subcommand a role's tab runs. The Mailbox name `team` chose is passed on, so the agent uses it as given (C103)
+export function agentSub(role: string, projectDir: string, permissionMode?: string, mailbox?: string): string[] {
   const sub = ['agent', '--role', role, '--project', projectDir, '--from-team']
   if (permissionMode) sub.push('--permission-mode', permissionMode)
+  if (mailbox) sub.push('--mailbox', mailbox)
   return sub
 }
 
@@ -137,23 +155,6 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
   const hw = hookWarning(o.projectDir, ROOT)
   if (hw) note(hw)
   for (const w of await checkoutWarnings(o.projectDir)) note(w)
-  // The start's warnings go to logs/ before the roles start, so they are kept even if a role fails (C85).
-  // Only the roles that will start are listed: a connected Mailbox is skipped without --force, so it is left out here (C88)
-  const connected = new Set<string>()
-  if (token && !o.force) {
-    for (const role of roles) if (await attachmentId(defaultMailboxName(o.projectDir, role))) connected.add(role)
-  }
-  const toStart = splitByConnection(roles, connected, o.force).start
-  await recordStart({
-    projectDir: o.projectDir,
-    roles: toStart,
-    mailboxes: toStart.map((r) => defaultMailboxName(o.projectDir, r)),
-    claudeVersion: cli.output,
-    check: version,
-    warnings: notes,
-    time: startTime,
-  })
-
   // --- build (the shim is started from dist/)
   if (!o.noBuild && distIsStale()) {
     console.log('dist/ is older than src/, building')
@@ -177,6 +178,26 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
     }
     console.log('The Hub started')
   }
+  // The names are chosen only now, with the Hub up, so a Mailbox that exists on a Hub that was down is seen (C103).
+  // A Hub list that cannot be read with a token stops the start here: the default name is not guessed
+  const names = await chooseStartNames(roles, o.projectDir, token, readHubMailboxes)
+  const nameOf = (role: string) => names.get(role)!
+  const connected = new Set<string>()
+  if (token && !o.force) {
+    for (const role of roles) if (await attachmentId(nameOf(role))) connected.add(role)
+  }
+  const toStart = splitByConnection(roles, connected, o.force).start
+  // The start's warnings go to logs/ before the roles start, so they are kept even if a role fails (C85).
+  // Only the roles that will start are listed: a connected Mailbox is skipped without --force, so it is left out here (C88)
+  await recordStart({
+    projectDir: o.projectDir,
+    roles: toStart,
+    mailboxes: toStart.map(nameOf),
+    claudeVersion: cli.output,
+    check: version,
+    warnings: notes,
+    time: startTime,
+  })
   if (!token) console.warn('WARNING: no HUB_TOKEN, so attach cannot be checked. Starting without waiting')
   if (print) {
     console.log(`No way to open tabs here. Run each command below in a terminal of its own, in this order (waiting up to ${o.attachTimeoutSec} seconds for each to attach):`)
@@ -186,8 +207,10 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
 
   // --- roles, one at a time. The Mailbox name is <project folder>.<role>, as in `agent`
   for (const role of roles) {
-    const mailbox = defaultMailboxName(o.projectDir, role)
+    const mailbox = nameOf(role)
     const ref = { role, mailbox }
+    const defaultName = defaultMailboxName(o.projectDir, role)
+    console.log(`${role}: Mailbox ${mailbox}${mailbox === defaultName ? '' : ` (${defaultName} belongs to another project)`}`)
     const before = token ? await attachmentId(mailbox) : null
     if (before && !o.force) {
       console.log(`${mailbox} is connected, skipping (--force to restart it)`)
@@ -198,7 +221,7 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
     if (!print) console.log(`Starting ${mailbox} (${o.projectDir})`)
     // Remove what the previous start left, so only this start's ending is read (C56)
     clearStartStatus(mailbox)
-    const err = start(mailbox, agentSub(role, o.projectDir, o.permissionMode))
+    const err = start(mailbox, agentSub(role, o.projectDir, o.permissionMode, mailbox))
     if (err) { outcome.failed.push({ ...ref, reason: `Could not open a tab for ${mailbox}: ${err}` }); continue }
     // Without a token the attach is not checked. With the print opener nothing was opened, so the role is only printed (C100)
     if (!token) { (print ? outcome.printed : outcome.started).push(ref); await sleep(3000); continue }

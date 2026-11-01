@@ -362,6 +362,16 @@ export class Hub {
     if (input.previous && current && current !== input.previous) {
       throw new HubError(409, 'successor_attached', `mailbox ${name} には切断中に別のセッションが attach した。attach し直さない`)
     }
+    // 接続中の Mailbox に、別のフォルダ (project) からは attach させない (C103)。同じフォルダの takeover、接続のない Mailbox への attach
+    // (移動したフォルダ。projectChanged の警告つき)、cwd のない attach は今のとおり
+    const owner = current ? this.store.getMailbox(name) : undefined
+    if (owner?.project && input.cwd && normalizeProjectPath(owner.project) !== normalizeProjectPath(input.cwd)) {
+      throw new HubError(
+        409,
+        'project_mismatch',
+        `mailbox ${name} は接続中で、${owner.project} のセッションが使っている。${input.cwd} からは attach できない。別の Mailbox 名で起動する (team なら --mailbox <名前> を付ける)`,
+      )
+    }
     const { mailbox, created } = this.store.ensureMailbox(name, input.role)
     if (created) this.emitUi('mailbox.created', mailbox)
 

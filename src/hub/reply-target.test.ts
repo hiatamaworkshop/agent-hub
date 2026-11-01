@@ -129,6 +129,8 @@ describe('返信の replyTo は、受け取った Message か自分の Message �
     const { hub, post } = setup()
     const rev = hub.attach('rev', { client: 'claude-code', role: 'reviewer', cwd: 'C:\\work\\a' })
     const req = hub.postMessage({ kind: 'request', to: { type: 'role', id: 'reviewer', project: 'C:\\work\\a' }, body: 'review' }, user)
+    // 接続中の Mailbox には別のフォルダから attach できない (C103)。切れてから別のフォルダで attach し直す
+    hub.detach(rev.attachmentId)
     const again = hub.attach('rev', { client: 'claude-code', role: 'reviewer', cwd: 'C:\\work\\b' })
     const res = await post({ kind: 'reply', replyTo: req.id, body: 'ok' }, { 'x-hub-attachment': again.attachmentId })
     assert.equal(res.status, 201)

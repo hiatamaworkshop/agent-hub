@@ -150,6 +150,8 @@ For the role's description, the `description` in `roles.json` goes into the shim
 
 Start a team with `npm run team` (the same on Windows, macOS and Linux). It starts the Hub if it is stopped, then starts the chosen roles one by one, each in a tab of its own.
 
+**Team names (C103).** A role's Mailbox is `<folder name>.<role>`. If another project's team already uses that name on the Hub (a folder with the same name elsewhere), the start uses `<parent folder>-<folder>.<role>` instead (e.g. `b-app.deployer` for `~/b/app`), and prints the name it chose, with the default in brackets. Starting again in the same folder gives the same name. `--mailbox <name>` uses the name as given. The Hub's list is read once the Hub is up. If it cannot be read while `HUB_TOKEN` is set, the start stops and names nothing (the default is not guessed); without `HUB_TOKEN` nothing can be read, so the default name is used. `agent` on its own follows the same rule. If a session is started by hand in a folder whose Mailbox is connected from another folder, the Hub refuses it (`project_mismatch`); the shim stops and says so, and the session needs another `HUB_MAILBOX`.
+
 ```sh
 npm run team                                      # choose roles from roles.json by number (e.g. 1,2; all for every role)
 npm run team -- --roles leader,deployer           # name them instead of choosing
