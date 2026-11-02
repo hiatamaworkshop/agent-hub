@@ -19,9 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C114
-- [ ] C115
-- [ ] C116
 
 (Items with a status line are listed under "Items".)
 
@@ -416,6 +413,18 @@ In the order they will be taken up. Only items without a status line and blocked
   - `npm run team -- git-hook [--project <dir>] [--write]` (`src/team/git-hook.ts`): writes a thin `.git/hooks/post-commit` (path from `git rev-parse --git-path`) that sets `AGENT_HUB_DIR` and runs agent-hub's `post-commit-index.sh`; an older thin hook is rewritten, a full copy is replaced with a `.bak`, the project's own hook is left alone with the line to add. Tests: `git-hook.test.ts` (6). Real: a scratch git repo with a one-item ledger, hook written, commit sent the index to the running Hub (removed afterwards).
   - Docs: `docs/project-setup.md` (map row names cairn's CLAUDE.md as a second example and adds a skeleton; the `.agent-hub.json` and hook rows; the check command with a relative path), `docs/usage.md` (Items: empty ledger, `docs:check` path, `git-hook`), design.md §3.15 (C107 addendum), `tools/dev/roles/reviewer.md` ("What to read" and the wording check name the places the project's map points to, with agent-hub's in brackets).
   - Checked: `npm test` 508/508; `npx tsc --noEmit` ok; `npm run docs:check` 0 errors. No review.
+- [x] C114 A request handed after it was sent cannot be answered (C99) (2026-11-02, closed by the user without a review)
+  - `Store.hasReceived` (renamed from `isRecipientAtSend`) is `recipients` ∪ `isRecipient`: in the send-time record, or a recipient now. `checkReplyTarget` (C86), `oldestOpenRequestTo` and `answeredBy` (C28) use it. `appendMessage` and `compact` no longer write `known`; a line with `known` loads and the field is ignored. protocol.md §2 (Recipients) / §3 (`POST /messages`) and design.md §3.14 say the rule.
+  - Tests: `src/hub/reply-target.test.ts` (C114) runs both cases through the Hub (a Mailbox first attached without `cwd`, then with the project's: reply 201, named in the hint, request closed; a detached Mailbox re-attached from a moved folder after `role @ <new folder>`: named in the hint, closed by its later request to the sender) and a Mailbox created after a project-less role request still gets 400. `src/hub/store-recipients.test.ts` (C114): a Mailbox that gets the project after the send has received it, also after compaction and restart; no `known` in new lines; a line with `known` loads. The C99 tests (unsubscribe, another role, restart and compaction, legacy lines) pass unchanged.
+  - Checked: `npm test` 499/499; `npx tsc --noEmit` ok; `npm run docs:check` 0 errors. No review.
+- [x] C115 Gaps left in C100's start result (2026-11-02, closed by the user without a review)
+  - `fail()` in `src/team/agent.ts` records `failed` first; the status file write after it is in a try/catch that prints the error.
+  - `superviseChild` (`src/team/agent.ts`) holds the child wiring `runAgent` used inline (spawn, error, exit, attach watch); `runAgent` calls it with the real child. `noTokenOutcome` (`src/team/team.ts`) is the no-token choice `teamStart` uses. Tests (`src/team/agent.test.ts`, `team.test.ts`): exit before attach is `failed` (fails if reverted to started-on-spawn), attach then exit is one `started` line, spawn error, attach timeout, started by team records nothing; `noTokenOutcome` is `printed` for `print` and `started` for each tab opener (fails if reverted to always `started`).
+  - Checked: `npm test` 499/499; `npm run docs:check` 0 errors. The unwritable status file is not exercised by a test. No review.
+- [x] C116 Refuse `agent` without a token, and leave a result line on Ctrl+C (2026-11-02, closed by the user without a review)
+  - `tokenRefusal` (`src/team/agent.ts`): `runAgent` on its own with no token prints the reason, records `failed` (role, the default or given Mailbox, reason) and returns 1 before any Hub read or claude spawn. Run for real with agent-hub's `.env` set aside: exit 1 and the `failed` line in `logs/start-warnings.jsonl`. `agent` from `team` is not refused.
+  - `onStartSignals` / `interrupted`: SIGINT and SIGHUP write the result line with `aborted: "interrupted by <signal>"` and exit 130 / 129. `runAgent` on its own installs it at the start and removes it just before the spawn, where SIGINT is ignored for claude as before; `runTeam` keeps it for the whole start and writes its outcome so far. docs/usage.md (team names, start warnings) says the refusal, the signal line, and that only a kill that cannot be caught leaves no line.
+  - Checked: `npm test` 499/499 (refusal, `interrupted`, `onStartSignals` with a fake process); `npm run docs:check` 0 errors. A real Ctrl+C was not sent (unit tests only). No review.
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -754,60 +763,3 @@ To decide: where the seqs come from (`seqs` on the receiver's `awaitingReply` an
 Status: held(after the user has run teams in two projects side by side)
 
 Raised 2026-11-01 by the user: projects where a team was started could show as tab-like buttons, so switching is one press (today it is the project selector above the sidebar). The user wants to run two teams first and decide then. design.md §3.2 chose a selector over tabs so waits in other projects are not missed (`N waiting in other projects`); buttons have to keep that.
-
-### C114. A request handed after it was sent cannot be answered (C99)
-
-Found 2026-11-01 in the review of C99 (`7c8b665`), and reproduced at `1b6363c`. `Store.isRecipientAtSend` judges a Mailbox that existed at send time only by the send-time record, so a Mailbox that is handed the request later is refused with `400 reply_not_received`, the hint does not name it, and its later Message does not close it (C28). Two cases: a Mailbox first attached without a `cwd` (project `null`) that attaches with the project's cwd after a `role @ project` request; and a detached Mailbox whose folder moved, re-attaching from the new folder after the leader's `role @ <new folder>` request (C103 allows this with no live Attachment). The request is in its unread list. Before C99 the reply passed. This breaks C99's own decision ("received" means handed, design.md §3.14) and "A project is a value" (§3.15: a project-scoped role request arrives at the Mailbox that later attaches in that project).
-`known` also writes every Mailbox name on every `message` line (about 10 times the line size with 80 Mailboxes, measured by the reviewer).
-Decided 2026-11-01 by the user, as the reviewer recommended: a Mailbox counts as having received a Message when it was a recipient at send time or is a recipient now (`recipients` ∪ `isRecipient`). Role messages without a project and topic messages still check seq, so a Mailbox that was never handed the Message is still refused. `known` is dropped. A Mailbox deleted and re-created under the same name keeps what protocol.md §2 says today (it may reply by the name in the record); this item does not change it.
-
-Done 2026-11-02 (implemented in the planning session, no Hub team):
-- `Store.hasReceived` (renamed from `isRecipientAtSend`) is `recipients` ∪ `isRecipient`: in the send-time record, or a recipient now. `checkReplyTarget` (C86), `oldestOpenRequestTo` and `answeredBy` (C28) use it. `appendMessage` and `compact` no longer write `known`; a line with `known` loads and the field is ignored. protocol.md §2 (Recipients) / §3 (`POST /messages`) and design.md §3.14 say the rule.
-- Tests: `src/hub/reply-target.test.ts` (C114) runs both cases through the Hub (a Mailbox first attached without `cwd`, then with the project's: reply 201, named in the hint, request closed; a detached Mailbox re-attached from a moved folder after `role @ <new folder>`: named in the hint, closed by its later request to the sender) and a Mailbox created after a project-less role request still gets 400. `src/hub/store-recipients.test.ts` (C114): a Mailbox that gets the project after the send has received it, also after compaction and restart; no `known` in new lines; a line with `known` loads. The C99 tests (unsubscribe, another role, restart and compaction, legacy lines) pass unchanged.
-- Checked: `npm test` 499/499; `npx tsc --noEmit` ok; `npm run docs:check` 0 errors. No review.
-
-#### Done when
-- [x] The reply check (C86), the hint (`oldestOpenRequestTo`) and the closing rule (`answeredBy`, C28) accept a name that was a recipient at send time or is a recipient now; `known` is no longer written, and log lines that carry it still load
-- [x] The two cases above can reply, are named in the hint, and close the request by a later Message; C99's three cases (unsubscribe, another role, another cwd) and the refusal of a Mailbox that was never a recipient still hold
-- [x] protocol.md §2 / §3 and design.md §3.14 describe the rule, and protocol.md no longer says a Mailbox that existed at send time is judged only by the record
-- [x] Tests cover the two cases, restart and compaction, and a log line written with `known`; `npm test` and `npm run docs:check` pass
-
-### C115. Gaps left in C100's start result
-Found 2026-11-01 in the review of C100 (`a94255c`), at `1b6363c`, reproduced by the reviewer:
-- `fail()` in `src/team/agent.ts` writes the status file before it records `failed`. If that write throws (an unwritable temporary folder, the case its comment names), the line is `aborted` with the file error, with no role and without the reason.
-- C100's done-when 4 ("tests cover the three") was checked although no test runs `runAgent`'s spawn, exit and attach-watch wiring or `team`'s `print ? printed : started`. Reverting either to the pre-C100 behaviour leaves `npm test` green.
-
-Decided 2026-11-01 by the user: fix both; they need no new decision. The points that do are in C116.
-
-Done 2026-11-02 (implemented in the planning session, no Hub team):
-- `fail()` in `src/team/agent.ts` records `failed` first; the status file write after it is in a try/catch that prints the error.
-- `superviseChild` (`src/team/agent.ts`) holds the child wiring `runAgent` used inline (spawn, error, exit, attach watch); `runAgent` calls it with the real child. `noTokenOutcome` (`src/team/team.ts`) is the no-token choice `teamStart` uses. Tests (`src/team/agent.test.ts`, `team.test.ts`): exit before attach is `failed` (fails if reverted to started-on-spawn), attach then exit is one `started` line, spawn error, attach timeout, started by team records nothing; `noTokenOutcome` is `printed` for `print` and `started` for each tab opener (fails if reverted to always `started`).
-- Checked: `npm test` 499/499; `npm run docs:check` 0 errors. The unwritable status file is not exercised by a test. No review.
-
-#### Done when
-- [x] `fail()` in `src/team/agent.ts` records `failed` (role, mailbox, reason) before anything else that can throw, so an unwritable status file still leaves that line
-- [x] Tests run `runAgent`'s child wiring (spawn, exit before attach, attach then exit, error) with a fake child and an injected attachment read, and `team`'s no-token outcome (`printed` for the `print` opener, `started` for a tab opener) through a function a test can call; reverting either to the pre-C100 behaviour fails a test
-- [x] `npm test` and `npm run docs:check` pass
-
-### C116. Refuse `agent` without a token, and leave a result line on Ctrl+C
-
-Split from C115 on 2026-11-01 (the review of C100, at `1b6363c`):
-- `agent` on its own without `HUB_TOKEN` records `started` on spawn. docs/usage.md says so, but C100's done-when 1 put "(with a token)" only on the `failed` clause, so a blocked `claude.cmd` (C56) without a token is still `started`.
-- A claude that attaches and exits within one 1-second poll is recorded `failed` ("ended before attaching").
-- Ctrl+C before claude spawns, or during `team`'s attach waits, ends the process with no result line. docs/usage.md says both "on every exit path" and "a start … with no result line was killed".
-
-Decided 2026-11-01 by the user:
-- **No token: refuse.** The Hub does not start without a token of 16 characters or more, every API needs it, and the shim reads the same `HUB_TOKEN` (the environment, else agent-hub's `.env`) as `agent`. Without it the shim can never attach, so a start without a token cannot be `started`, and a guest-like mode has nothing to attach to. `agent` on its own refuses before starting claude. `team` is unchanged: its `print` opener's commands may run in another terminal that has the token, which is why `printed` exists (C100). Its tab openers are left as they are too: a tab gets the token of the shell that opens it (design.md §6.1y, Windows Terminal), so a tab without a token is only the setup mistake of no token anywhere, which `team` already warns about.
-- **Attach, then exit within a poll: left as `failed`.** It happens when claude quits right after starting (the human closes it, or it crashes after its MCP servers start); the role did not stay up, so `failed` is the right outcome.
-- **Signals: a line when the signal can be caught.** Ctrl+C (SIGINT) and a closed terminal (SIGHUP) write the result line with `aborted`. While claude runs under `agent`, Ctrl+C stays claude's, as now. Only a kill that cannot be caught leaves no line.
-
-Done 2026-11-02 (implemented in the planning session, no Hub team):
-- `tokenRefusal` (`src/team/agent.ts`): `runAgent` on its own with no token prints the reason, records `failed` (role, the default or given Mailbox, reason) and returns 1 before any Hub read or claude spawn. Run for real with agent-hub's `.env` set aside: exit 1 and the `failed` line in `logs/start-warnings.jsonl`. `agent` from `team` is not refused.
-- `onStartSignals` / `interrupted`: SIGINT and SIGHUP write the result line with `aborted: "interrupted by <signal>"` and exit 130 / 129. `runAgent` on its own installs it at the start and removes it just before the spawn, where SIGINT is ignored for claude as before; `runTeam` keeps it for the whole start and writes its outcome so far. docs/usage.md (team names, start warnings) says the refusal, the signal line, and that only a kill that cannot be caught leaves no line.
-- Checked: `npm test` 499/499 (refusal, `interrupted`, `onStartSignals` with a fake process); `npm run docs:check` 0 errors. A real Ctrl+C was not sent (unit tests only). No review.
-
-#### Done when
-- [x] `agent` on its own with no `HUB_TOKEN` (neither the environment nor agent-hub's `.env`) does not start claude: it prints that the shim cannot attach without the token, records `failed` with that reason, and exits 1; `agent` started by `team` is unchanged
-- [x] SIGINT or SIGHUP while `agent` on its own has not yet spawned claude, and while `team` is running, writes the result line with `aborted` naming the signal (keeping the roles recorded so far) and exits; while claude runs under `agent`, SIGINT stays claude's
-- [x] docs/usage.md (start warnings, and `agent` on its own) says a start without a token is refused and that only a kill that cannot be caught leaves no result line, and no longer says `agent` on its own records `started` once claude has spawned without a token
-- [x] Tests cover the refusal and the signal line through functions a test can call; `npm test` and `npm run docs:check` pass
