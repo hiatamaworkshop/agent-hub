@@ -1042,6 +1042,15 @@ Requested vcp's C142 from the UI to vcp.leader (seq 69). leader → deployer (#7
 ode.exe`, an output file `window out.txt`) in a new window, in the given folder.
   - `npm run team -- --tabs bogus` from PowerShell 7 reached the script (npm's `--` is passed through).
 
+### 6.1y A tab inherits the environment of the shell that opens it (2026-11-01, C116; Windows 11, Windows Terminal, `wt.exe -w <name> new-tab`)
+
+Checked on the development machine for C116's question whether `team`'s tab opener needs the same refusal without a token as `agent` on its own.
+- A variable set only in the calling shell reached the new tab.
+- With a window of that name already open and another tab running in it, a second tab opened from a second shell got the second shell's value, not the value of the shell that created the window.
+- So when `HUB_TOKEN` is only in the environment, the `agent` in a tab sees the same token as `team`. The feared path, a tab started without the token, does not occur with Windows Terminal.
+- The remaining gap is a setup mistake: no token anywhere (neither the environment nor agent-hub's `.env`) while the Hub runs with a token from another source. `team` then records tab roles as `started` without an attach check, but it already prints `WARNING: no HUB_TOKEN`.
+- **Not checked**: the `tmux` opener (tmux may hand a new window the server's environment rather than the calling shell's; macOS and Linux only), and the `window` opener (`start`, expected to inherit the same way).
+
 ### 6.2 Unverified
 
 1. **Windows-specific**: path notation, line endings. That publishing in Docker Desktop is loopback only was confirmed (§6.1l).

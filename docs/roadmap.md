@@ -19,6 +19,9 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C114
+- [ ] C115
+- [ ] C116
 
 (Items with a status line are listed under "Items".)
 
@@ -359,7 +362,7 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: `npm test` 435 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 28 items, 0 errors, 0 warnings after the close. The reviewer read the uncommitted change; one finding (a false `started` when the Hub read at `before` fails) was fixed and tested. Not checked: a real claude or Hub attach; the NVM-blocked claude (C56); a `team` run with the print opener; the exit-before-attach branch of `runAgent` and the `print ? printed : started` line in `team.ts` (no test runs them). Left as is: a claude that attaches and exits within one 1-second poll is recorded `failed`; a claude that attaches after the limit is not recorded as started later; the attach and timeout messages are printed beside claude's screen; a claude that attaches before the first successful read, with `before` unknown, ends `failed` at the limit.
 - [x] C101 The C78 scene "closing Forward to… draws once" in `ui:check` is flaky (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the scene reads the render count and the chip count in the same evaluate as `blur()`. `blur()` runs `flushMap` synchronously (the select's onblur; `requestMapRender` renders at once when not held), so renders after it returns are not counted. The 800 ms wait is removed. The checks (`renders === 1`, `chips === chipsBefore + 1`) and the verify text are unchanged. `public/index.html` is not changed.
-  - Checked: ten `npm run ui:check` runs in a row on the development machine's Chrome, all exit 0 with the C78 scene `ok` and no NG line; `npm test` 412 pass, 0 fail; `npm run docs:check` 31 items, 0 errors, 0 warnings (after the close). The reviewer read the uncommitted change, found no findings, and confirmed that `blur()` runs `flushMap` synchronously. Not checked: Linux Chromium, where the flake was seen.
+  - Checked: ten `npm run ui:check` runs in a row on the development machine's Chrome, all exit 0 with the C78 scene `ok` and no NG line; `npm test` 412 pass, 0 fail; `npm run docs:check` 31 items, 0 errors, 0 warnings (after the close). The reviewer read the uncommitted change, found no findings, and confirmed that `blur()` runs `flushMap` synchronously. Linux Chromium, where the flake was seen, was checked on 2026-11-01 at `1b6363c` by the reviewer of the closed item: five runs, all exit 0 with the C78 scenes `ok` and no NG line. The same review found the page still draws twice more right after the deferred redraw (the old scene fails 1 of 2 runs on Linux); the item leaves stopping those renders out.
 - [x] C102 Close an item after its review, not in the deployer's first run (2026-11-01, decided by the user)
   - `tools/dev/roles/leader.md`: the work request's DONE WHEN asks only for checking off and the facts in the body, not the close. A "Closing request (C102)" bullet and the order in "When to ask" send the close after the review and its fixes (or after the leader's check when no reviewer is connected), before the report to the human.
   - `tools/dev/roles/deployer.md`: the section is closed only when a request asks for the close, not when the last condition is checked.
@@ -749,3 +752,45 @@ To decide: where the seqs come from (`seqs` on the receiver's `awaitingReply` an
 Status: held(after the user has run teams in two projects side by side)
 
 Raised 2026-11-01 by the user: projects where a team was started could show as tab-like buttons, so switching is one press (today it is the project selector above the sidebar). The user wants to run two teams first and decide then. design.md §3.2 chose a selector over tabs so waits in other projects are not missed (`N waiting in other projects`); buttons have to keep that.
+
+### C114. A request handed after it was sent cannot be answered (C99)
+
+Found 2026-11-01 in the review of C99 (`7c8b665`), and reproduced at `1b6363c`. `Store.isRecipientAtSend` judges a Mailbox that existed at send time only by the send-time record, so a Mailbox that is handed the request later is refused with `400 reply_not_received`, the hint does not name it, and its later Message does not close it (C28). Two cases: a Mailbox first attached without a `cwd` (project `null`) that attaches with the project's cwd after a `role @ project` request; and a detached Mailbox whose folder moved, re-attaching from the new folder after the leader's `role @ <new folder>` request (C103 allows this with no live Attachment). The request is in its unread list. Before C99 the reply passed. This breaks C99's own decision ("received" means handed, design.md §3.14) and "A project is a value" (§3.15: a project-scoped role request arrives at the Mailbox that later attaches in that project).
+`known` also writes every Mailbox name on every `message` line (about 10 times the line size with 80 Mailboxes, measured by the reviewer).
+Decided 2026-11-01 by the user, as the reviewer recommended: a Mailbox counts as having received a Message when it was a recipient at send time or is a recipient now (`recipients` ∪ `isRecipient`). Role messages without a project and topic messages still check seq, so a Mailbox that was never handed the Message is still refused. `known` is dropped. A Mailbox deleted and re-created under the same name keeps what protocol.md §2 says today (it may reply by the name in the record); this item does not change it.
+
+#### Done when
+- [ ] The reply check (C86), the hint (`oldestOpenRequestTo`) and the closing rule (`answeredBy`, C28) accept a name that was a recipient at send time or is a recipient now; `known` is no longer written, and log lines that carry it still load
+- [ ] The two cases above can reply, are named in the hint, and close the request by a later Message; C99's three cases (unsubscribe, another role, another cwd) and the refusal of a Mailbox that was never a recipient still hold
+- [ ] protocol.md §2 / §3 and design.md §3.14 describe the rule, and protocol.md no longer says a Mailbox that existed at send time is judged only by the record
+- [ ] Tests cover the two cases, restart and compaction, and a log line written with `known`; `npm test` and `npm run docs:check` pass
+
+### C115. Gaps left in C100's start result
+Found 2026-11-01 in the review of C100 (`a94255c`), at `1b6363c`, reproduced by the reviewer:
+- `fail()` in `src/team/agent.ts` writes the status file before it records `failed`. If that write throws (an unwritable temporary folder, the case its comment names), the line is `aborted` with the file error, with no role and without the reason.
+- C100's done-when 4 ("tests cover the three") was checked although no test runs `runAgent`'s spawn, exit and attach-watch wiring or `team`'s `print ? printed : started`. Reverting either to the pre-C100 behaviour leaves `npm test` green.
+
+Decided 2026-11-01 by the user: fix both; they need no new decision. The points that do are in C116.
+
+#### Done when
+- [ ] `fail()` in `src/team/agent.ts` records `failed` (role, mailbox, reason) before anything else that can throw, so an unwritable status file still leaves that line
+- [ ] Tests run `runAgent`'s child wiring (spawn, exit before attach, attach then exit, error) with a fake child and an injected attachment read, and `team`'s no-token outcome (`printed` for the `print` opener, `started` for a tab opener) through a function a test can call; reverting either to the pre-C100 behaviour fails a test
+- [ ] `npm test` and `npm run docs:check` pass
+
+### C116. Refuse `agent` without a token, and leave a result line on Ctrl+C
+
+Split from C115 on 2026-11-01 (the review of C100, at `1b6363c`):
+- `agent` on its own without `HUB_TOKEN` records `started` on spawn. docs/usage.md says so, but C100's done-when 1 put "(with a token)" only on the `failed` clause, so a blocked `claude.cmd` (C56) without a token is still `started`.
+- A claude that attaches and exits within one 1-second poll is recorded `failed` ("ended before attaching").
+- Ctrl+C before claude spawns, or during `team`'s attach waits, ends the process with no result line. docs/usage.md says both "on every exit path" and "a start … with no result line was killed".
+
+Decided 2026-11-01 by the user:
+- **No token: refuse.** The Hub does not start without a token of 16 characters or more, every API needs it, and the shim reads the same `HUB_TOKEN` (the environment, else agent-hub's `.env`) as `agent`. Without it the shim can never attach, so a start without a token cannot be `started`, and a guest-like mode has nothing to attach to. `agent` on its own refuses before starting claude. `team` is unchanged: its `print` opener's commands may run in another terminal that has the token, which is why `printed` exists (C100). Its tab openers are left as they are too: a tab gets the token of the shell that opens it (design.md §6.1y, Windows Terminal), so a tab without a token is only the setup mistake of no token anywhere, which `team` already warns about.
+- **Attach, then exit within a poll: left as `failed`.** It happens when claude quits right after starting (the human closes it, or it crashes after its MCP servers start); the role did not stay up, so `failed` is the right outcome.
+- **Signals: a line when the signal can be caught.** Ctrl+C (SIGINT) and a closed terminal (SIGHUP) write the result line with `aborted`. While claude runs under `agent`, Ctrl+C stays claude's, as now. Only a kill that cannot be caught leaves no line.
+
+#### Done when
+- [ ] `agent` on its own with no `HUB_TOKEN` (neither the environment nor agent-hub's `.env`) does not start claude: it prints that the shim cannot attach without the token, records `failed` with that reason, and exits 1; `agent` started by `team` is unchanged
+- [ ] SIGINT or SIGHUP while `agent` on its own has not yet spawned claude, and while `team` is running, writes the result line with `aborted` naming the signal (keeping the roles recorded so far) and exits; while claude runs under `agent`, SIGINT stays claude's
+- [ ] docs/usage.md (start warnings, and `agent` on its own) says a start without a token is refused and that only a kill that cannot be caught leaves no result line, and no longer says `agent` on its own records `started` once claude has spawned without a token
+- [ ] Tests cover the refusal and the signal line through functions a test can call; `npm test` and `npm run docs:check` pass
