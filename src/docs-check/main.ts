@@ -1,13 +1,15 @@
 // ドキュメントの決定的な検査 (design.md §3.12 の層 1)。今は roadmap の項目の規則だけ (roadmap.md 冒頭、§3.15)
 // npm run docs:check [-- <roadmap.md のパス>] [--index]
+//   パス: 相対なら npm を呼んだフォルダ (INIT_CWD) から読む。docs:index の --file と同じ基準 (npm --prefix で別のプロジェクトから呼んでも、そのプロジェクトのファイル)
 //   --index: 検査の代わりに項目の索引を JSON で出す
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { checkRoadmap, parseRoadmap } from '../shared/roadmap.js'
 
 const args = process.argv.slice(2)
 const indexOnly = args.includes('--index')
 const path = args.find((a) => !a.startsWith('--')) ?? 'docs/roadmap.md'
-const text = readFileSync(path, 'utf8')
+const text = readFileSync(resolve(process.env.INIT_CWD ?? process.cwd(), path), 'utf8')
 
 // process.exit は使わない。パイプへの書き込みが終わる前に止まり、出力の終わりが欠けうるため (exitCode を置いて自然に終わる)
 if (indexOnly) {

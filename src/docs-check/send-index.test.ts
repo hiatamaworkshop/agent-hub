@@ -16,6 +16,8 @@ let server: Server
 let hubUrl: string
 let nextStatus = 200
 const puts: { auth: string | undefined; body: unknown }[] = []
+// What GET /indexes answers (project and source of each index the stand-in Hub holds)
+let held: { project: string; source: string }[] = []
 
 function handle(req: IncomingMessage, res: ServerResponse) {
   let raw = ''
@@ -23,6 +25,11 @@ function handle(req: IncomingMessage, res: ServerResponse) {
   req.on('end', () => {
     if (req.method === 'PUT' && req.url === '/indexes') {
       puts.push({ auth: req.headers.authorization, body: JSON.parse(raw) })
+    }
+    if (req.method === 'GET' && req.url === '/indexes') {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ indexes: held }))
+      return
     }
     res.statusCode = nextStatus
     res.setHeader('content-type', 'application/json')
@@ -106,4 +113,21 @@ test('team start: the summary line says what was sent, and why nothing was, with
   assert.equal(sent, `sent docs/items.md (1 items) to ${hubUrl}`)
   const none = await sendStartIndex(project(null), 'docs/roadmap.md', hubUrl, TOKEN)
   assert.match(none, /^not sent: docs\/roadmap\.md does not exist/)
+})
+
+test('a ledger with no items is not sent unless the Hub already holds an index of that file (2026-11-02, cairn)', async () => {
+  const dir = project('docs/roadmap.md', '# Roadmap\n\nNothing here.\n')
+  nextStatus = 200
+  held = []
+  const before = puts.length
+  const r = await sendLedgerIndex({ project: dir, source: 'docs/roadmap.md', hubUrl, token: TOKEN })
+  assert.equal(r.sent, false)
+  assert.match(r.sent ? '' : r.reason, /has no `### C<n>\.` items.*\.agent-hub\.json/)
+  assert.equal(puts.length, before, 'nothing was PUT')
+  // The same file already on the Hub: the empty index is sent, so a ledger whose last item closed does not stay stale
+  held = [{ project: dir, source: 'docs/roadmap.md' }]
+  const again = await sendLedgerIndex({ project: dir, source: 'docs/roadmap.md', hubUrl, token: TOKEN })
+  assert.equal(again.sent, true)
+  assert.equal(puts.length, before + 1)
+  held = []
 })

@@ -20,20 +20,20 @@ QUESTION: <what you want judged, in one line>
 
 ## What to read
 
-The request does not decide what you read; you do. Use the "document map" in the working folder's CLAUDE.md as the index (if there is none, start from the README), Grep for the following, and then Read (the table in design.md §3.12 is the source of truth). The section numbers below are agent-hub's; in another project, use the places its map names for non-goals, decisions and verified facts. If it has none, say so in `VERIFIED`.
+The request does not decide what you read; you do. Use the "document map" in the working folder's CLAUDE.md as the index (if there is none, start from the README), Grep for the following, and then Read (in agent-hub, the table in design.md §3.12 is the source of truth). Each item is "where the project's map points"; agent-hub's places are in brackets. If the project has no such place, say so in `VERIFIED` instead of guessing.
 
 1. The sections related to the change (which section's specification each changed file falls under)
-2. The non-goals in §2 (does the change go beyond them?)
-3. The decisions in §9 (does it reopen a question already decided?)
-4. Rejected ideas (the roadmap's `[-] C<n>`). Does it recommend a rejected idea again without reading why it was rejected?
+2. The project's non-goals (agent-hub: design.md §2). Does the change go beyond them?
+3. The project's decisions (agent-hub: design.md §9; elsewhere often the item's body). Does it reopen a question already decided?
+4. Rejected ideas (the ledger's `[-] C<n>`). Does it recommend a rejected idea again without reading why it was rejected?
 
-When comparing facts of the specification, use design.md §6 (the verification record) and protocol.md as the source of truth.
+When comparing facts of the specification, use the project's verified facts and its specification as the source of truth (agent-hub: design.md §6, the verification record, and protocol.md).
 
 ## When looking only at the item's wording
 
 When `TARGET` is `C<n>` and all its done-when conditions are `[ ]`, look at the wording of the item itself rather than at a change.
 - Can each done-when condition be checked on its own (can you write how to check it)?
-- Do the conditions contradict the non-goals in §2, the decisions in §9, or a rejected `[-] C<n>`? Check them against the related sections.
+- Do the conditions contradict the project's non-goals, its decisions, or a rejected `[-] C<n>` (the places above)? Check them against the related sections.
 - Is anything missing, or does anything go beyond the scope?
 - Give fixes as concrete replacement wording, one done-when line at a time (old → new). You only propose; do not rewrite the roadmap. Until the requester (the leader) and the user approve, a proposal is not a promise.
 

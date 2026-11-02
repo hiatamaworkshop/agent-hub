@@ -219,11 +219,13 @@ Send the roadmap's `### C<n>. Title` items (how to write them is at the top of [
 npm run docs:index                                                       # agent-hub's ledger (docs/roadmap.md, or its .agent-hub.json)
 npm --prefix <agent-hub> run docs:index                                  # another project, from its root: its .agent-hub.json, else docs/roadmap.md
 npm --prefix <agent-hub> run docs:index -- --project <folder> --file docs/TODO.md   # another folder, with a file that is not the ledger
+npm --prefix <agent-hub> run docs:check -- docs/items.md                 # check a ledger; a relative path is read from the folder npm was called in, as docs:index does
 ```
 
 **Which file is the ledger**: a project names its ledger in `.agent-hub.json` at its root, `{ "ledger": "docs/items.md" }` (a path relative to the project, with `/`). Without the file or the key the ledger is `docs/roadmap.md`. `docs:index`, the team start and the post-commit hook all read this one setting. A value that cannot be used (bad JSON, an absolute path, `..`) prints a warning and the default is used (design.md §3.15, C107).
 
-- **A team start sends the index** (`npm run team` / `hub-team`) when the ledger file exists. Its summary says `index: sent <file> (N items) to <Hub>`, or why nothing was sent (no file, the Hub not reachable, the token refused, or a Hub without `/indexes`). A failed send does not stop the start; the summary's line is the only trace.
+- **A team start sends the index** (`npm run team` / `hub-team`) when the ledger file exists. Its summary says `index: sent <file> (N items) to <Hub>`, or why nothing was sent (no file, the Hub not reachable, the token refused, or a Hub without `/indexes`).
+- **A ledger with no items is not sent** (team start, `docs:index` and the hook alike), unless the Hub already holds an index of that same file, which is then cleared. The usual case is a project whose ledger is not `docs/roadmap.md` and has no `.agent-hub.json`: sending the default file would add an empty index beside the real one. The reason names `.agent-hub.json`. A failed send does not stop the start; the summary's line is the only trace.
 - **An empty Items pane**: when the project chosen in the page has no index, Items shows the `npm run docs:index -- --project <folder>` command for it. `docs:index` reads that project's `.agent-hub.json` itself, so the command needs no `--file` whatever the ledger is.
 
 - A project you sent can be chosen as a project in the UI even before any agent connects, and you can leave a request to `role:deployer @ <project>` (it arrives as unread at the Mailbox that attaches).
@@ -235,15 +237,16 @@ npm --prefix <agent-hub> run docs:index -- --project <folder> --file docs/TODO.m
 
 **Send automatically after a commit that changed it** (optional): you can install a git post-commit hook that sends the index only on commits that changed the ledger (`docs/roadmap.md`, or the path in the project's `.agent-hub.json`; C107). A commit that changes other files sends nothing. The commit is not stopped if sending fails (if the Hub is stopped, it prints one line of warning and goes on).
 
-1. Copy the hook into the target repository's `.git/hooks/` (agent-hub's `tools/hooks/post-commit-index.sh`).
-   ```powershell
-   Copy-Item <agent-hub>\tools\hooks\post-commit-index.sh <repository>\.git\hooks\post-commit
-   ```
-2. Rewrite the `AGENT_HUB_DIR=` line of the copied `post-commit` to agent-hub's folder (`AGENT_HUB_DIR="<agent-hub>"`, with `<agent-hub>` being the absolute path of agent-hub's folder written with `/` separators).
-3. To send, the Hub must be running and the token in agent-hub's `.env` must be readable (the same as `npm run docs:index`).
-4. To check: change the ledger and commit; it should appear in Items. If it does not, read the one line of warning printed after the commit.
+```powershell
+npm run team -- git-hook --project <repository>            # says what is there
+npm run team -- git-hook --project <repository> --write    # writes .git/hooks/post-commit
+```
 
-The hook runs `npm --prefix <agent-hub> run docs:index -- --if-touched` at the root of the repository you committed in. It gives the list of paths the commit changed to `docs:index`, which sends only when that list contains the project's ledger (`touchesLedger` in `src/shared/ledger.ts`). To remove the hook, delete `.git/hooks/post-commit`.
+- The written hook is three lines that set `AGENT_HUB_DIR` to this agent-hub folder and run its `tools/hooks/post-commit-index.sh`, so a change to that script applies without copying again. The path comes from `git rev-parse --git-path hooks/post-commit` (worktrees and `core.hooksPath` are followed).
+- A hook written for another agent-hub folder is rewritten. A full copy of `post-commit-index.sh` (the earlier way to install it) is replaced, with the copy kept as `post-commit.bak`. A post-commit of the project's own is not touched: the command prints the one line to add to it.
+- To send, the Hub must be running and the token in agent-hub's `.env` must be readable (the same as `npm run docs:index`). To check: change the ledger and commit; it should appear in Items. If it does not, read the one line of warning printed after the commit.
+
+The hook runs `npm --prefix <agent-hub> run docs:index -- --if-touched` at the root of the repository you committed in. It gives the list of paths the commit changed to `docs:index`, which sends only when that list contains the project's ledger (`touchesLedger` in `src/shared/ledger.ts`). To remove the hook, delete `.git/hooks/post-commit`. Without the command, the same hook is copying `tools/hooks/post-commit-index.sh` to `.git/hooks/post-commit` and setting its `AGENT_HUB_DIR=` line by hand (a copy does not follow later changes).
 
 ## Role definitions (roles.json)
 

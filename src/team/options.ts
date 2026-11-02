@@ -7,10 +7,11 @@ export const USAGE = `Usage:
                   [--permission-mode <mode>] [--tabs ${OPENERS.join('|')}]
   npm run team -- agent --role <role> [--project <dir>] [--model <model>] [--mailbox <name>] [--permission-mode <mode>]
   npm run team -- hooks [--project <dir>] [--write]   (list the Hub hooks the project lacks; --write adds them)
+  npm run team -- git-hook [--project <dir>] [--write]   (the post-commit hook that sends the ledger index; --write adds it)
   npm run team -- status [--project <dir>]   (the project's Mailboxes on the Hub, and its latest report to the human; C108)`
 
 export interface Parsed {
-  command: 'team' | 'agent' | 'hub' | 'hooks' | 'status' | 'help'
+  command: 'team' | 'agent' | 'hub' | 'hooks' | 'git-hook' | 'status' | 'help'
   roles: string[]
   role?: string
   project?: string
@@ -49,7 +50,7 @@ export function parse(argv: string[]): Parsed {
     },
   })
   const sub = positionals[0] ?? 'team'
-  if (positionals.length > 1 || !['team', 'agent', 'hub', 'hooks', 'status'].includes(sub)) throw new Error(`Unknown command: ${positionals.join(' ')}`)
+  if (positionals.length > 1 || !['team', 'agent', 'hub', 'hooks', 'git-hook', 'status'].includes(sub)) throw new Error(`Unknown command: ${positionals.join(' ')}`)
   const timeout = values['attach-timeout'] === undefined ? 60 : Number(values['attach-timeout'])
   if (!Number.isInteger(timeout) || timeout <= 0) throw new Error(`--attach-timeout must be a positive whole number of seconds: ${values['attach-timeout']}`)
   const tabs = values.tabs

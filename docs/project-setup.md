@@ -12,15 +12,24 @@ A short guide for a project that is about to run its first team. It lists what t
 
 | What | Why | How |
 |---|---|---|
-| `CLAUDE.md` with a **document map** | Leader and reviewer start reading from it; without it their search is ad hoc. In practice it is required | One line per document (and per section for long ones): what it holds. Example: agent-hub's own [CLAUDE.md](../CLAUDE.md) |
+| `CLAUDE.md` with a **document map** | Leader and reviewer start reading from it; without it their search is ad hoc. In practice it is required | One line per document (and per section for long ones): what it holds, and where the non-goals, decisions and verified facts are. Examples: agent-hub's own [CLAUDE.md](../CLAUDE.md); for another project, cairn's `CLAUDE.md` (its document map section). Skeleton below the table |
 | Working rules in `CLAUDE.md` | Rules for every request are not repeated in items | The test command, "do not commit/push until told", what not to touch |
 | A **ledger** of `### C<n>.` items | Items are what you request from the UI, and what the reviewer reads | Section 3. Name it in the map |
-| `.agent-hub.json` if the ledger is not `docs/roadmap.md` | Team start, `docs:index` and the post-commit hook read it; without it they send `docs/roadmap.md`, and Items shows empty | `{ "ledger": "docs/items.md" }` at the project root ([usage.md, Items](usage.md#request-work-from-roadmap-items-items)) |
+| `.agent-hub.json` if the ledger is not `docs/roadmap.md` | Team start, `docs:index` and the post-commit hook read it. Without it they look for `docs/roadmap.md`; if that file has no items nothing is sent and the summary names `.agent-hub.json` | `{ "ledger": "docs/items.md" }` at the project root ([usage.md, Items](usage.md#request-work-from-roadmap-items-items)) |
 | A place for **decisions** and **verified facts** | The reviewer gets no conversation, only a target; documents are its only source of what was decided | E.g. a design doc with a decisions section (question, then "Decision (date)" and the reason) and a facts section. Name both in the map |
 | Hub hooks | So cards show question / permission waits | Written on the first team start (C111); or `npm run team -- hooks --project <dir> --write` |
-| Post-commit hook (optional) | Sends the index when a commit changed the ledger | Copy `tools/hooks/post-commit-index.sh` to `.git/hooks/post-commit` and set `AGENT_HUB_DIR` ([usage.md, Items](usage.md#request-work-from-roadmap-items-items)) |
+| Post-commit hook (optional) | Sends the index when a commit changed the ledger | `npm run team -- git-hook --project <dir> --write`: a thin hook that calls agent-hub's script, so it follows its updates ([usage.md, Items](usage.md#request-work-from-roadmap-items-items)) |
 
-Check the ledger with `npm --prefix <agent-hub> run docs:check -- <absolute path of the ledger>`.
+A document map, in the shape both roles read:
+
+```markdown
+## Document map (do not read everything at startup; Grep the heading, then Read that section)
+- [README.md](README.md) — what it is, setup
+- [docs/design.md](docs/design.md) — §1 goals, §2 non-goals, §5 decisions (with dates), §6 verified facts
+- [docs/items.md](docs/items.md) — the ledger (`### C<n>.` items, `## Plan`)
+```
+
+Check the ledger from the project's root with `npm --prefix <agent-hub> run docs:check -- docs/items.md` (a relative path is read from the folder you are in, as `docs:index` reads `--file`).
 
 A project whose ledger has its own format (states in headings, no done-when lists) is read as all "decided". Do not index it; send plain requests with the item number in the body (roadmap C27).
 
