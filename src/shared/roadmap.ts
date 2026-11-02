@@ -39,6 +39,8 @@ export interface ClosedItem {
   id: string
   mark: 'x' | '-'
   date: string | null
+  // 却下の行だけ: 日付の後の理由 (`(rejected YYYY-MM-DD, 理由)`)。形が崩れていれば null (C24)
+  reason?: string | null
   line: number
 }
 
@@ -72,6 +74,8 @@ const CLOSED = /^\s*[-*] \[([xX-])\] C(\d+)\b/
 // 閉じた日は行末の括弧の先頭 (却下なら `却下 YYYY-MM-DD`)。題の中の日付は数えない (design.md §3.15)
 const TRAILING_PAREN = /\(([^()]*)\)\s*$/
 const CLOSED_DATE = /^(?:(?:却下|rejected)\s+)?(\d{4}-\d{2}-\d{2})(?!\d)/
+// 却下の行の括弧: `却下 YYYY-MM-DD、理由` か `rejected YYYY-MM-DD, reason` (C24)
+const REJECTED_PAREN = /^(?:却下|rejected)\s+\d{4}-\d{2}-\d{2}\s*[,、]\s*(\S.*)$/
 const PLAN_HEADING = /^##\s+(?:予定|Plan)\s*$/
 const PLAN_LIST = /^\s*[-*]\s/
 const PLAN_ITEM = /^[-*] \[ \] C(\d+)\b/
@@ -183,6 +187,12 @@ function closedDate(text: string): string | null {
   return m ? (CLOSED_DATE.exec(m[1]!)?.[1] ?? null) : null
 }
 
+// 却下の行の理由。括弧が `却下 日付、理由` / `rejected date, reason` の形でなければ null (C24)
+function rejectedReason(text: string): string | null {
+  const m = TRAILING_PAREN.exec(text)
+  return m ? (REJECTED_PAREN.exec(m[1]!.trim())?.[1]?.trim() ?? null) : null
+}
+
 // `## 予定` の節 (次の ## 以上の見出しまで)。節の行は refs に入れない。
 // headings は予定の見出しの行 (2 つ以上は error)、stray は `- [ ] C<n>` の形でない箇条書きの行 (checkRoadmap が error にする)
 interface PlanRead {
@@ -245,7 +255,10 @@ export function parseRoadmap(text: string): RoadmapIndex {
     const m = REF.exec(l.text)
     if (m) refs.push({ id: `C${m[2]}`, checked: m[1] !== ' ', line: l.no })
     const c = CLOSED.exec(l.text)
-    if (c) closed.push({ id: `C${c[2]}`, mark: c[1] === '-' ? '-' : 'x', date: closedDate(l.text), line: l.no })
+    if (c) {
+      const mark = c[1] === '-' ? '-' : 'x'
+      closed.push({ id: `C${c[2]}`, mark, date: closedDate(l.text), ...(mark === '-' ? { reason: rejectedReason(l.text) } : {}), line: l.no })
+    }
   }
   return { items, refs, plan, closed }
 }
@@ -338,8 +351,17 @@ export function checkRoadmap(text: string): RoadmapProblem[] {
     if (r.checked && exists) err(r.line, `\`[x] ${r.id}\` は終わった印だが、項目の節が残っている`)
   }
 
+  const closedAt = new Map<string, number>()
   for (const c of closed) {
     if (!c.date) err(c.line, `\`[${c.mark}] ${c.id}\` の行末の括弧の先頭に日付 (YYYY-MM-DD) がない`)
+    else if (c.mark === '-' && !c.reason) {
+      err(c.line, `\`[-] ${c.id}\` の行末の括弧は \`(却下 YYYY-MM-DD、理由)\` か \`(rejected YYYY-MM-DD, reason)\` の形にする`)
+    }
+    // 節が残っている却下 ([x] は refs の検査が言う) と、閉じた番号の使い回し (C24)
+    if (c.mark === '-' && seen.has(c.id)) err(c.line, `\`[-] ${c.id}\` は却下の印だが、項目の節が残っている (番号は使い回さない)`)
+    const prev = closedAt.get(c.id)
+    if (prev !== undefined) err(c.line, `${c.id} は ${prev} 行目でも閉じている。番号は使い回さない`)
+    else closedAt.set(c.id, c.line)
   }
 
   return problems.sort((a, b) => a.line - b.line)

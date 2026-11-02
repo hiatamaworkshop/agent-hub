@@ -182,3 +182,43 @@ describe('返信の replyTo は、受け取った Message か自分の Message �
     assert.ok(err.message.includes(`#${req.seq}`), err.message)
   })
 })
+
+// C114: 送った後に渡された Mailbox も受け取った分として返信でき、案内に名前が出て、後の Message で閉じる
+describe('送った後に渡された Mailbox (C114)', () => {
+  const P = 'C:\work\p'
+  const Q = 'C:\work\q'
+
+  it('cwd なしで attach した Mailbox が、role @ project の依頼の後にその cwd で attach すると返信できる', async () => {
+    const { hub, post } = setup()
+    const lead = hub.attach('p.leader', { client: 'claude-code', role: 'leader', cwd: P })
+    hub.attach('p.deployer', { client: 'claude-code', role: 'deployer' })
+    const req = hub.postMessage({ kind: 'request', to: { type: 'role', id: 'deployer', project: P }, body: 'work' }, hub.senderOf(lead.attachmentId))
+    const dep = hub.attach('p.deployer', { client: 'claude-code', role: 'deployer', cwd: P })
+    assert.equal(hub.store.oldestOpenRequestTo('p.deployer')?.id, req.id, '案内に出る')
+    const res = await post({ kind: 'reply', replyTo: req.id, body: 'done' }, { 'x-hub-attachment': dep.attachmentId })
+    assert.equal(res.status, 201, await res.text())
+    assert.equal(hub.store.isAwaitingReply(req), false)
+  })
+
+  it('フォルダを移した Mailbox が、新しいフォルダへの role @ project の依頼の後に付け直すと、後の Message で依頼が閉じる', () => {
+    const { hub } = setup()
+    const lead = hub.attach('m.leader', { client: 'claude-code', role: 'leader', cwd: Q })
+    const old = hub.attach('m.deployer', { client: 'claude-code', role: 'deployer', cwd: P })
+    hub.detach(old.attachmentId)
+    const req = hub.postMessage({ kind: 'request', to: { type: 'role', id: 'deployer', project: Q }, body: 'work' }, hub.senderOf(lead.attachmentId))
+    const dep = hub.attach('m.deployer', { client: 'claude-code', role: 'deployer', cwd: Q })
+    assert.equal(hub.store.oldestOpenRequestTo('m.deployer')?.id, req.id)
+    // replyTo なしの、送り手宛ての後の Message で閉じる (C28)
+    hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'm.leader' }, body: 'report' }, hub.senderOf(dep.attachmentId))
+    assert.equal(hub.store.isAwaitingReply(req), false)
+  })
+
+  it('一度も受け手でなかった Mailbox は今も拒まれる (project のない role 宛ての後に作られた同じ role)', async () => {
+    const { hub, post } = setup()
+    const req = hub.postMessage({ kind: 'request', to: { type: 'role', id: 'deployer' }, body: 'x' }, user)
+    hub.attach('lead', { client: 'claude-code', role: 'leader' })
+    const late = hub.attach('late', { client: 'claude-code', role: 'deployer' })
+    const res = await post({ kind: 'reply', replyTo: req.id, body: 'r' }, { 'x-hub-attachment': late.attachmentId })
+    assert.equal(res.status, 400)
+  })
+})

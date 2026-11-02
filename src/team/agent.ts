@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path'
 import { chooseMailboxName, defaultMailboxName } from '../shared/types.js'
 import { checkClaudeCli, checkoutWarnings, claudeCommand, hookWarning, spawnArgs, startStatusPath, testClaudeCli } from './checks.js'
 import { envSetting, hubRolesFile, readRoleNames, ROOT } from './env.js'
-import { checkClaudeVersion, emptyOutcome, recordResult, recordStart, type StartOutcome } from './startlog.js'
+import { checkClaudeVersion, emptyOutcome, recordResult, recordStart, type RoleRef, type StartOutcome } from './startlog.js'
 import { waitForEnter } from './prompt.js'
 
 export interface AgentOptions {
@@ -128,6 +128,97 @@ export async function withResult<T>(record: (outcome: StartOutcome) => void, bod
   }
 }
 
+// Why `agent` on its own does not start without a token, or null when it may start (C116). The shim reads the same HUB_TOKEN and
+// can never attach without it. `agent` started by `team` is not refused: `team` already warned and records the result
+export function tokenRefusal(token: string, fromTeam: boolean | undefined): string | null {
+  if (fromTeam || token) return null
+  return "No HUB_TOKEN (neither the environment nor agent-hub's .env): the shim cannot attach without it, so claude is not started"
+}
+
+// What an `agent` start or a `team` start writes when it is interrupted (C116). The roles recorded so far are kept
+export function interrupted(outcome: StartOutcome, signal: string): StartOutcome {
+  return { ...outcome, aborted: `interrupted by ${signal}` }
+}
+
+type SignalSource = { on(s: string, f: () => void): unknown; off(s: string, f: () => void): unknown }
+
+// Until the returned function is called, SIGINT (Ctrl+C) and SIGHUP (the terminal closed) call onSignal and then exit with 128 + the
+// signal's number (C116). A kill that cannot be caught still leaves no line
+export function onStartSignals(
+  onSignal: (signal: string) => void,
+  proc: SignalSource = process,
+  exit: (code: number) => void = (code) => process.exit(code),
+): () => void {
+  const handlers = (['SIGINT', 'SIGHUP'] as const).map((signal) => {
+    const f = () => {
+      onSignal(signal)
+      exit(signal === 'SIGINT' ? 130 : 129)
+    }
+    proc.on(signal, f)
+    return [signal, f] as const
+  })
+  return () => { for (const [signal, f] of handlers) proc.off(signal, f) }
+}
+
+// The child events `superviseChild` listens to (a ChildProcess, or a fake in tests)
+export interface ChildLike {
+  on(event: 'spawn', f: () => void): unknown
+  on(event: 'error', f: (e: Error) => void): unknown
+  on(event: 'exit', f: (code: number | null, signal: NodeJS.Signals | null) => void): unknown
+}
+
+// Follows one claude from spawn to exit and records the role (C88, C100). With `watch` the role is started only once the attach is seen
+// on the Hub; a claude that ends first, or does not attach in time, is `failed`. Without it the role is started once claude is running.
+// Started by `team`, nothing is recorded here. Resolves with claude's exit code
+export function superviseChild(child: ChildLike, c: {
+  ref: RoleRef
+  fromTeam: boolean | undefined
+  watch: boolean
+  attachmentOf: () => Promise<string | null | undefined>
+  before: string | null | undefined
+  attachSec: number
+  intervalMs?: number
+  record: (outcome: StartOutcome) => void
+}): Promise<number> {
+  const { ref, record } = c
+  const mailbox = ref.mailbox
+  return new Promise<number>((done) => {
+    let stopWatch: (() => void) | undefined
+    child.on('spawn', () => {
+      if (c.fromTeam) return
+      if (!c.watch) { record({ ...emptyOutcome(), started: [ref] }); return }
+      stopWatch = watchAttach({
+        attachmentOf: c.attachmentOf,
+        before: c.before,
+        timeoutMs: c.attachSec * 1000,
+        intervalMs: c.intervalMs ?? 1000,
+        onAttached: () => {
+          console.log(`${mailbox} attached`)
+          record({ ...emptyOutcome(), started: [ref] })
+        },
+        onTimeout: () => {
+          const reason = `${mailbox} did not attach within ${c.attachSec} seconds`
+          console.error(reason)
+          record({ ...emptyOutcome(), failed: [{ ...ref, reason }] })
+        },
+      })
+    })
+    child.on('error', (e) => {
+      console.error(`cannot start claude: ${e.message}`)
+      stopWatch?.()
+      record({ ...emptyOutcome(), failed: [{ ...ref, reason: `cannot start claude: ${e.message}` }] })
+      done(1)
+    })
+    child.on('exit', (code, signal) => {
+      const exitCode = code ?? (signal ? 1 : 0)
+      stopWatch?.()
+      // Recorded only if nothing was yet (a started role, or a timeout, already is)
+      record({ ...emptyOutcome(), failed: [{ ...ref, reason: `claude for ${mailbox} ended before attaching (exit code ${exitCode})` }] })
+      done(exitCode)
+    })
+  })
+}
+
 // The Mailbox an `agent` uses (C103). An explicit --mailbox is used as given. With a token, the name is chosen from the Hub's list, and a list
 // that cannot be read is an error (the start then says to start the Hub or pass --mailbox; the default is not guessed). Without a token
 // there is nothing to read, so the default name is used (usage.md)
@@ -148,20 +239,33 @@ export async function runAgent(o: AgentOptions): Promise<number> {
   // The start's time: the pre-start line and this start's result line share it (C88). `team` writes the result for the roles it starts
   const startTime = new Date().toISOString()
   const record = recordOnce(o.fromTeam ? () => {} : (outcome) => recordResult(startTime, o.projectDir, outcome))
-  return withResult(record, async () => {
-    // Inside withResult: a start that finds no free name still writes its result line (C100)
-    // An explicit --mailbox, or the name `team` chose and passed on, is used as given. Otherwise the name is chosen from the Hub's list (C103)
-    const token = envSetting('HUB_TOKEN', '')
-    const mailbox = await chooseAgentMailbox(o, token, readHubMailboxes)
-    if (!o.mailbox && !token) console.log(`No HUB_TOKEN, so the Mailbox list is not read: using ${mailbox}`)
-    if (!o.mailbox && mailbox !== defaultMailboxName(o.projectDir, o.role)) console.log(`${defaultMailboxName(o.projectDir, o.role)} belongs to another project, so ${mailbox} is used`)
-    return startRole(o, { mailbox, ref: { role: o.role, mailbox }, startTime, record })
-  })
+  // On its own, Ctrl+C or a closed terminal before claude spawns still writes the line (C116). Removed just before the spawn,
+  // where Ctrl+C becomes claude's
+  const offSignals = o.fromTeam ? () => {} : onStartSignals((signal) => record(interrupted(emptyOutcome(), signal)))
+  try {
+    return await withResult(record, async () => {
+      const token = envSetting('HUB_TOKEN', '')
+      const refusal = tokenRefusal(token, o.fromTeam)
+      if (refusal) {
+        console.error(refusal)
+        record({ ...emptyOutcome(), failed: [{ role: o.role, mailbox: o.mailbox ?? defaultMailboxName(o.projectDir, o.role), reason: refusal }] })
+        return 1
+      }
+      // Inside withResult: a start that finds no free name still writes its result line (C100)
+      // An explicit --mailbox, or the name `team` chose and passed on, is used as given. Otherwise the name is chosen from the Hub's list (C103)
+      const mailbox = await chooseAgentMailbox(o, token, readHubMailboxes)
+      if (!o.mailbox && !token) console.log(`No HUB_TOKEN, so the Mailbox list is not read: using ${mailbox}`)
+      if (!o.mailbox && mailbox !== defaultMailboxName(o.projectDir, o.role)) console.log(`${defaultMailboxName(o.projectDir, o.role)} belongs to another project, so ${mailbox} is used`)
+      return startRole(o, { mailbox, ref: { role: o.role, mailbox }, startTime, record, beforeSpawn: offSignals })
+    })
+  } finally {
+    offSignals()
+  }
 }
 
 async function startRole(
   o: AgentOptions,
-  c: { mailbox: string; ref: { role: string; mailbox: string }; startTime: string; record: (outcome: StartOutcome) => void },
+  c: { mailbox: string; ref: RoleRef; startTime: string; record: (outcome: StartOutcome) => void; beforeSpawn: () => void },
 ): Promise<number> {
   const { mailbox, ref, startTime, record } = c
   const statusFile = startStatusPath(mailbox)
@@ -172,8 +276,13 @@ async function startRole(
   }
   const fail = async (reason: string) => {
     console.error(reason)
-    writeStatus(1, reason)
+    // The result line first: an unwritable status file must not turn it into `aborted` without the role and the reason (C115)
     record({ ...emptyOutcome(), failed: [{ ...ref, reason }] })
+    try {
+      writeStatus(1, reason)
+    } catch (e) {
+      console.error(`Could not write the start status (${statusFile}): ${e instanceof Error ? e.message : String(e)}`)
+    }
     if (o.fromTeam) await waitForEnter()
     return 1
   }
@@ -228,44 +337,12 @@ async function startRole(
   const attachSec = o.attachTimeoutSec ?? 60
   // Ctrl+C belongs to claude. Without this, Node would exit and leave claude without its parent
   const ignore = () => {}
+  c.beforeSpawn()
   process.on('SIGINT', ignore)
-  const code = await new Promise<number>((done) => {
-    const child = spawn(s.file, s.args, { cwd: o.projectDir, env, stdio: 'inherit', shell: s.shell })
-    let stopWatch: (() => void) | undefined
-    // Without a token the attach cannot be checked, so the role is started once claude is running (C88). With a token it is started
-    // only once the attach is seen on the Hub (C100); a claude that ends first, or does not attach in time, is `failed`
-    child.on('spawn', () => {
-      if (o.fromTeam) return
-      if (!watch) { record({ ...emptyOutcome(), started: [ref] }); return }
-      stopWatch = watchAttach({
-        attachmentOf: () => attachmentOf(mailbox, token),
-        before,
-        timeoutMs: attachSec * 1000,
-        intervalMs: 1000,
-        onAttached: () => {
-          console.log(`${mailbox} attached`)
-          record({ ...emptyOutcome(), started: [ref] })
-        },
-        onTimeout: () => {
-          const reason = `${mailbox} did not attach within ${attachSec} seconds`
-          console.error(reason)
-          record({ ...emptyOutcome(), failed: [{ ...ref, reason }] })
-        },
-      })
-    })
-    child.on('error', (e) => {
-      console.error(`cannot start claude: ${e.message}`)
-      stopWatch?.()
-      record({ ...emptyOutcome(), failed: [{ ...ref, reason: `cannot start claude: ${e.message}` }] })
-      done(1)
-    })
-    child.on('exit', (c, signal) => {
-      const exitCode = c ?? (signal ? 1 : 0)
-      stopWatch?.()
-      // Recorded only if nothing was yet (a started role, or a timeout, already is)
-      record({ ...emptyOutcome(), failed: [{ ...ref, reason: `claude for ${mailbox} ended before attaching (exit code ${exitCode})` }] })
-      done(exitCode)
-    })
+  const child = spawn(s.file, s.args, { cwd: o.projectDir, env, stdio: 'inherit', shell: s.shell })
+  const code = await superviseChild(child, {
+    ref, fromTeam: o.fromTeam, watch, before, attachSec, record,
+    attachmentOf: () => attachmentOf(mailbox, token),
   })
   process.off('SIGINT', ignore)
   // On failure, take the reason from claude --version (claude's own output is not redirected so its screen is not broken)

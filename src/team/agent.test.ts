@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { recordOnce, watchAttach, withResult } from './agent.js'
+import { EventEmitter } from 'node:events'
+import { interrupted, onStartSignals, recordOnce, superviseChild, tokenRefusal, watchAttach, withResult } from './agent.js'
 import { buildResultRecord, emptyOutcome, type StartOutcome } from './startlog.js'
 
 // C100: a role is `started` only once its attach is seen on the Hub; a start writes exactly one result line on every exit path
@@ -145,4 +146,100 @@ test('result record: printed roles are carried into the line (C100)', () => {
   const line = buildResultRecord('2026-11-01T00:00:00.000Z', 'C:\\work\\x', outcome, '2026-11-01T00:00:01.000Z')
   assert.deepEqual(line.printed, [ref])
   assert.deepEqual(emptyOutcome().printed, [])
+})
+
+// C115: runAgent's child wiring, run with a fake child and an injected attachment read
+function fakeChild() { return new EventEmitter() as EventEmitter & { emit(e: string, ...a: unknown[]): boolean } }
+function supervise(child: EventEmitter, opts: { watch?: boolean; fromTeam?: boolean; ids?: (string | null)[]; attachSec?: number }) {
+  const lines: StartOutcome[] = []
+  const ids = opts.ids ?? [null]
+  let i = 0
+  const done = superviseChild(child as never, {
+    ref, fromTeam: opts.fromTeam, watch: opts.watch ?? true, before: null, attachSec: opts.attachSec ?? 5, intervalMs: 5,
+    attachmentOf: async () => ids[Math.min(i++, ids.length - 1)]!,
+    record: recordOnce((o) => lines.push(o)),
+  })
+  return { lines, done }
+}
+
+test('superviseChild: claude that exits before attaching is failed, not started (C115)', async () => {
+  const child = fakeChild()
+  const s = supervise(child, {})
+  child.emit('spawn')
+  await wait(20)
+  child.emit('exit', 3, null)
+  assert.equal(await s.done, 3)
+  assert.equal(s.lines.length, 1)
+  assert.deepEqual(s.lines[0]!.started, [])
+  assert.match(s.lines[0]!.failed[0]!.reason, /ended before attaching \(exit code 3\)/)
+})
+
+test('superviseChild: an attach seen on the Hub is started, and the later exit adds nothing (C115)', async () => {
+  const child = fakeChild()
+  const s = supervise(child, { ids: [null, 'new'] })
+  child.emit('spawn')
+  await wait(60)
+  child.emit('exit', 0, null)
+  assert.equal(await s.done, 0)
+  assert.equal(s.lines.length, 1)
+  assert.deepEqual(s.lines[0]!.started, [ref])
+  assert.deepEqual(s.lines[0]!.failed, [])
+})
+
+test('superviseChild: a spawn error is failed with the reason and resolves 1 (C115)', async () => {
+  const child = fakeChild()
+  const s = supervise(child, {})
+  child.emit('error', new Error('ENOENT'))
+  assert.equal(await s.done, 1)
+  assert.match(s.lines[0]!.failed[0]!.reason, /cannot start claude: ENOENT/)
+})
+
+test('superviseChild: no attach within the limit is failed once (C115)', async () => {
+  const child = fakeChild()
+  const s = supervise(child, { attachSec: 0.05 })
+  child.emit('spawn')
+  await wait(120)
+  child.emit('exit', 0, null)
+  await s.done
+  assert.equal(s.lines.length, 1)
+  assert.match(s.lines[0]!.failed[0]!.reason, /did not attach within/)
+})
+
+test('superviseChild: started by team, nothing is recorded here (C115)', async () => {
+  const child = fakeChild()
+  const s = supervise(child, { fromTeam: true })
+  child.emit('spawn')
+  child.emit('exit', 0, null)
+  await s.done
+  // recordOnce lets the exit line through only if nothing came before; team's own record is a no-op in runAgent
+  assert.ok(s.lines.every((l) => l.started.length === 0))
+})
+
+// C116: agent on its own without a token is refused; signals leave a line
+test('tokenRefusal: agent on its own without a token is refused; with a token or from team it is not (C116)', () => {
+  assert.match(tokenRefusal('', false)!, /cannot attach without it/)
+  assert.match(tokenRefusal('', undefined)!, /No HUB_TOKEN/)
+  assert.equal(tokenRefusal('x'.repeat(16), false), null)
+  assert.equal(tokenRefusal('', true), null)
+})
+
+test('interrupted: names the signal and keeps the roles recorded so far (C116)', () => {
+  const o = interrupted({ ...emptyOutcome(), started: [ref] }, 'SIGINT')
+  assert.equal(o.aborted, 'interrupted by SIGINT')
+  assert.deepEqual(o.started, [ref])
+})
+
+test('onStartSignals: SIGINT and SIGHUP call the handler and exit; after off, neither does (C116)', () => {
+  const proc = new EventEmitter()
+  const seen: string[] = []
+  const codes: number[] = []
+  const off = onStartSignals((s) => seen.push(s), proc, (c) => codes.push(c))
+  proc.emit('SIGINT')
+  proc.emit('SIGHUP')
+  assert.deepEqual(seen, ['SIGINT', 'SIGHUP'])
+  assert.deepEqual(codes, [130, 129])
+  off()
+  proc.emit('SIGINT')
+  assert.equal(seen.length, 2)
+  assert.equal(proc.listenerCount('SIGINT'), 0)
 })

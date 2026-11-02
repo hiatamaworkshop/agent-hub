@@ -25,7 +25,7 @@ describe('Store: 送った時点の受け手 (C99)', () => {
     s.unsubscribe('x', 't')
     s.ensureMailbox('x', 'deployer')
     assert.equal(s.isRecipient('x', sent), false, '今の状態では受け手でない')
-    assert.equal(s.isRecipientAtSend('x', sent), true, '送った時点の受け手')
+    assert.equal(s.hasReceived('x', sent), true, '送った時点の受け手')
     assert.equal(s.oldestOpenRequestTo('x')?.id, sent.id)
   })
 
@@ -34,7 +34,7 @@ describe('Store: 送った時点の受け手 (C99)', () => {
     const sent = s.appendMessage({ kind: 'request', from: user, to: { type: 'role', id: 'reviewer' }, body: 'b' })
     s.ensureMailbox('late', 'reviewer')
     assert.equal(s.isRecipient('late', sent), false, '送った後に作られた Mailbox は、role 宛てでも受け手でない')
-    assert.equal(s.isRecipientAtSend('late', sent), false)
+    assert.equal(s.hasReceived('late', sent), false)
   })
 
   it('送る時点になかった Mailbox も、後から作られた project の role 宛て・直接宛ては受け取った分として返信できる', () => {
@@ -43,8 +43,8 @@ describe('Store: 送った時点の受け手 (C99)', () => {
     const direct = s.appendMessage({ kind: 'request', from: user, to: { type: 'mailbox', id: 'later' }, body: 'b' })
     s.ensureMailbox('later', 'deployer')
     s.setProject('later', 'C:\\work\\demo')
-    assert.equal(s.isRecipientAtSend('later', byRole), true)
-    assert.equal(s.isRecipientAtSend('later', direct), true)
+    assert.equal(s.hasReceived('later', byRole), true)
+    assert.equal(s.hasReceived('later', direct), true)
   })
 
   it('再起動と詰め直しの後も記録は残る', () => {
@@ -59,14 +59,14 @@ describe('Store: 送った時点の受け手 (C99)', () => {
 
     const s2 = new Store({ file })
     const again = s2.getMessage(sent.id)!
-    assert.equal(s2.isRecipientAtSend('x', again), true, '再起動後も、今の role (deployer) に関係なく受け手のまま')
+    assert.equal(s2.hasReceived('x', again), true, '再起動後も、今の role (deployer) に関係なく受け手のまま')
     assert.equal(s2.oldestOpenRequestTo('x')?.id, sent.id)
     // もう一度詰め直しても記録は残る (compact は recipients を書く)
     const noise2 = s2.appendMessage({ kind: 'notice', from: user, to: { type: 'user', id: 'browser' }, body: 'n2' })
     s2.deleteMessages([noise2.id])
     assert.ok(s2.compact())
     const s3 = new Store({ file })
-    assert.equal(s3.isRecipientAtSend('x', s3.getMessage(sent.id)!), true, '詰め直した後も')
+    assert.equal(s3.hasReceived('x', s3.getMessage(sent.id)!), true, '詰め直した後も')
   })
 
   it('記録のない前の形式の Message は、今の状態で判定する (読めないことはない)', () => {
@@ -78,8 +78,40 @@ describe('Store: 送った時点の受け手 (C99)', () => {
     appendFileSync(file, JSON.stringify({ op: 'message', message: legacy }) + '\n')
     const s2 = new Store({ file })
     assert.equal(s2.lastSeq, 1)
-    assert.equal(s2.isRecipientAtSend('x', legacy), true, '記録がないので今の受け手で代用')
+    assert.equal(s2.hasReceived('x', legacy), true, '記録がないので今の受け手で代用')
     assert.equal(s2.oldestOpenRequestTo('x')?.id, 'm_legacy')
     assert.equal(readFileSync(file, 'utf8').includes('"recipients"'), false, '前の形式の行は書き換えない')
+  })
+})
+
+describe('Store: 送った時点か今の受け手 (C114)', () => {
+  const P = 'C:\work\p'
+  it('送った時点に project のなかった Mailbox が、後でその project になると受け取った分になる。再起動と詰め直しの後も', () => {
+    const file = tmpFile()
+    const s1 = new Store({ file })
+    s1.ensureMailbox('x', 'deployer')
+    const sent = s1.appendMessage({ kind: 'request', from: user, to: { type: 'role', id: 'deployer', project: P }, body: 'b' })
+    assert.equal(s1.hasReceived('x', sent), false, 'まだ渡されていない')
+    s1.setProject('x', P)
+    assert.equal(s1.hasReceived('x', sent), true, '今の受け手')
+    const noise = s1.appendMessage({ kind: 'notice', from: user, to: { type: 'user', id: 'browser' }, body: 'n' })
+    s1.deleteMessages([noise.id])
+    assert.ok(s1.compact())
+    const s2 = new Store({ file })
+    assert.equal(s2.hasReceived('x', s2.getMessage(sent.id)!), true)
+    assert.equal(s2.oldestOpenRequestTo('x')?.id, sent.id)
+  })
+
+  it('known は書かない。known のある古い行も読める', () => {
+    const file = tmpFile()
+    const s1 = new Store({ file })
+    s1.ensureMailbox('x', 'reviewer')
+    s1.appendMessage({ kind: 'request', from: user, to: { type: 'role', id: 'reviewer' }, body: 'b' })
+    assert.equal(readFileSync(file, 'utf8').includes('"known"'), false, '新しい行に known はない')
+    const old: Message = { id: 'm_known', seq: 2, ts: new Date().toISOString(), kind: 'request', from: user, to: { type: 'role', id: 'reviewer' }, body: 'old' }
+    appendFileSync(file, JSON.stringify({ op: 'message', message: old, recipients: [], known: ['x', 'y'] }) + '\n')
+    const s2 = new Store({ file })
+    assert.equal(s2.lastSeq, 2)
+    assert.equal(s2.hasReceived('x', s2.getMessage('m_known')!), true, '記録の受け手になくても、今の受け手 (role reviewer、seq が後) なら受け取った分')
   })
 })

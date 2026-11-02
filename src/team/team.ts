@@ -8,7 +8,7 @@ import { basename, join } from 'node:path'
 import { sendLedgerIndex } from '../docs-check/send-index.js'
 import { readLedgerSetting } from '../shared/ledger.js'
 import { chooseMailboxName, defaultMailboxName, normalizeProjectPath } from '../shared/types.js'
-import { clearStartStatus, readHubMailboxes, type HubMailbox } from './agent.js'
+import { clearStartStatus, interrupted, onStartSignals, readHubMailboxes, type HubMailbox } from './agent.js'
 import { checkClaudeCli, checkoutWarnings, hookWarning, startStatusPath } from './checks.js'
 import { envSetting, hubRolesFile, readRoleNames, ROOT } from './env.js'
 import { writeMissingHooks } from './hooks.js'
@@ -131,17 +131,26 @@ function portOpen(port: number): Promise<boolean> {
 interface Mailbox { name: string; attachment?: { attachmentId: string } | null }
 
 // A start always leaves its result line (C88), also when it stops early: the outcome is filled in as the start goes, and the finally writes it
+// Ctrl+C or a closed terminal while `team` runs writes the line with what was recorded so far, then exits (C116)
 export async function runTeam(o: TeamOptions): Promise<number> {
   const startTime = new Date().toISOString()
   const outcome = emptyOutcome()
+  const offSignals = onStartSignals((signal) => recordResult(startTime, o.projectDir, interrupted(outcome, signal)))
   try {
     return await teamStart(o, startTime, outcome)
   } catch (e) {
     outcome.aborted = e instanceof Error ? e.message : String(e)
     throw e
   } finally {
+    offSignals()
     recordResult(startTime, o.projectDir, outcome)
   }
+}
+
+// Where a role goes when there is no token and the attach cannot be checked (C100): the print opener opened nothing, so `printed`;
+// a tab opener opened the tab, so `started` (a tab gets the opener's token, design.md §6.1y)
+export function noTokenOutcome(opener: string): 'printed' | 'started' {
+  return opener === 'print' ? 'printed' : 'started'
 }
 
 async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcome): Promise<number> {
@@ -271,7 +280,7 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
     const err = start(mailbox, agentSub(role, o.projectDir, o.permissionMode, mailbox))
     if (err) { outcome.failed.push({ ...ref, reason: `Could not open a tab for ${mailbox}: ${err}` }); continue }
     // Without a token the attach is not checked. With the print opener nothing was opened, so the role is only printed (C100)
-    if (!token) { (print ? outcome.printed : outcome.started).push(ref); await sleep(3000); continue }
+    if (!token) { outcome[noTokenOutcome(o.opener)].push(ref); await sleep(3000); continue }
     const deadline = Date.now() + o.attachTimeoutSec * 1000
     const statusFile = startStatusPath(mailbox)
     let attached = false

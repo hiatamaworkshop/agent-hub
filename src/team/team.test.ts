@@ -9,7 +9,7 @@ import { hookTemplate, runHooks } from './hooks.js'
 import { envSetting, hubRolesFile, ROOT } from './env.js'
 import { parse } from './options.js'
 import { commandLine, quoteForPlatform } from './quote.js'
-import { hooksForStart, uiUrl } from './team.js'
+import { hooksForStart, noTokenOutcome, uiUrl } from './team.js'
 import { detectOpener, launchFor, wtSeparatorError } from './tabs.js'
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'agent-hub-team-'))
@@ -216,4 +216,9 @@ test('team start hooks: --no-hooks only warns and writes nothing; a file that is
   assert.match(failed.warnings[0]!, /Could not write the Hub hooks: .*is not valid JSON, so it was not changed\. The start goes on/)
   assert.equal(readFileSync(brokenLocal, 'utf8'), '{ not json')
   assert.equal(existsSync(`${brokenLocal}.bak`), false)
+})
+
+test('noTokenOutcome: without a token the print opener is printed and a tab opener is started (C100, C115)', () => {
+  assert.equal(noTokenOutcome('print'), 'printed')
+  for (const opener of ['wt', 'window', 'terminal', 'tmux']) assert.equal(noTokenOutcome(opener), 'started')
 })

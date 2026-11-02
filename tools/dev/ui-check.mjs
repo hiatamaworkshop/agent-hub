@@ -683,7 +683,16 @@ try {
   await sleep(300)
   const draft = await evaluate("({ open: $('itemDialog').open, body: $('body').value })")
   verify('モーダル: 「依頼の下書き」はカードを押したときと同じ下書きを入れ、モーダルを閉じる (C54)', !draft.open && draft.body.startsWith('GOAL: C1 一つ目') && draft.body.includes('DONE WHEN:') && draft.body.includes('- 一つ目'), draft)
-  await evaluate("$('body').value = ''")
+  // 組み込みコマンドで始まる本文は、実行されないと知らせる。似た名前や // の逃がしには出さない (C13)
+  const hintOf = (text) => evaluate(`(() => { $('body').value = ${JSON.stringify(text)}; updateHint(); return $('hint').textContent })()`)
+  const builtinHint = await hintOf('/clear')
+  const compactHint = await hintOf('/compact now')
+  const notBuiltin = await hintOf('/clearx')
+  const escaped = await hintOf('//clear')
+  verify('本文が /clear や /compact で始まると、文字として届き実行されないと出す (C13)',
+    builtinHint.includes('/clear is a Claude Code command') && builtinHint.includes('does not run') && compactHint.includes('/compact is a Claude Code command'), { builtinHint, compactHint })
+  verify('組み込みでない名前と // の逃がしには出さない (C13)', !notBuiltin.includes('Claude Code command') && escaped === '', { notBuiltin, escaped })
+  await evaluate("$('body').value = ''; updateHint()")
   // チェックを送らない古い形の索引は、印を出さない
   await api('PUT', '/indexes', { project: join(work, 'old2'), source: 'docs/x.md', items: [itemOf('C30', '古い形', 'decided', { conditionTexts: ['古い形の一行'], conditions: { done: 0, total: 1 } })] })
   await sleep(1500)

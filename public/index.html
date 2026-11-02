@@ -1440,12 +1440,21 @@ function expandBody(raw) {
 }
 
 // 本文が / で始まるときのヒント。一致すれば置換後の先頭、名前の途中なら前方一致の一覧
+// Claude Code の組み込みコマンド (入力欄でだけ解釈される)。本文の先頭にあれば、実行されないと知らせる (C13)
+const BUILTIN_COMMANDS = new Set(['clear', 'compact', 'exit', 'quit', 'model', 'resume', 'rewind', 'config', 'context', 'cost', 'usage', 'help', 'init', 'memory', 'permissions', 'status', 'mcp', 'hooks', 'agents', 'login', 'logout', 'doctor', 'export', 'add-dir', 'review', 'fast'])
+
 function updateHint() {
   const hint = $('hint')
   hint.textContent = ''
   if (commandsState === 'loading') return
   const t = $('body').value.trimStart()
   if (!t.startsWith('/') || t.startsWith('//')) return
+  // Claude Code の組み込みコマンドは、チャンネルの本文では実行されず文字として届く (design.md §6.1h、C13)。同じ名前のカスタムコマンドが勝つ
+  const first = t.slice(1).split(/\s/, 1)[0].toLowerCase()
+  if (BUILTIN_COMMANDS.has(first) && !findCommand(first)) {
+    hint.textContent = `/${first} is a Claude Code command. Sent here it arrives as text and does not run.`
+    return
+  }
   // 使えない理由は、/ で始まる本文に対してだけ出す
   if (commandsState === 'unavailable') { hint.textContent = 'Restart the Hub to enable custom commands.'; return }
   if (commandsState === 'invalid') { hint.textContent = 'Commands unavailable: the settings file is invalid.'; return }

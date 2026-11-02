@@ -83,7 +83,7 @@ describe('parseRoadmap', () => {
     ])
     assert.deepEqual(idx.closed, [
       { id: 'C1', mark: 'x', date: '2026-10-16', line: 6 },
-      { id: 'C5', mark: '-', date: '2026-10-17', line: 7 },
+      { id: 'C5', mark: '-', date: '2026-10-17', reason: null, line: 7 },
       { id: 'C6', mark: 'x', date: null, line: 8 },
     ])
     assert.deepEqual(idx.refs.map((r) => r.line), [6, 8], '予定の行 (2・3 行目) は参照に入れない')
@@ -323,7 +323,22 @@ describe('checkRoadmap', () => {
     const text = ['- [x] C1 終わった', '- [-] C2 却下 (2026-10-27)', '- [-] C3 却下'].join('\n')
     assert.deepEqual(messages(text), [
       ['error', 1, '`[x] C1` の行末の括弧の先頭に日付 (YYYY-MM-DD) がない'],
+      ['error', 2, '`[-] C2` の行末の括弧は `(却下 YYYY-MM-DD、理由)` か `(rejected YYYY-MM-DD, reason)` の形にする'],
       ['error', 3, '`[-] C3` の行末の括弧の先頭に日付 (YYYY-MM-DD) がない'],
+    ])
+  })
+
+  it('却下の行は `(却下 日付、理由)` / `(rejected date, reason)`。理由は索引に入る (C24)', () => {
+    const text = ['- [-] C1 a (却下 2026-10-27、理由)', '- [-] C2 b (rejected 2026-10-27, why not)', '- [-] C3 c (2026-10-27、却下)', '- [-] C4 d (rejected 2026-10-27)'].join('\n')
+    assert.deepEqual(parseRoadmap(text).closed.map((c) => [c.id, c.reason]), [['C1', '理由'], ['C2', 'why not'], ['C3', null], ['C4', null]])
+    assert.deepEqual(messages(text).map((m) => m[1]), [3, 4])
+  })
+
+  it('節が残っている `[-] C<n>` と、閉じた番号の使い回し (C24)', () => {
+    const text = ['- [-] C1 a (却下 2026-10-27、理由)', '- [x] C2 b (2026-10-27)', '- [x] C2 again (2026-10-28)', '## 予定', '### C1. a', '状態: 提案'].join('\n')
+    assert.deepEqual(messages(text), [
+      ['error', 1, '`[-] C1` は却下の印だが、項目の節が残っている (番号は使い回さない)'],
+      ['error', 3, 'C2 は 2 行目でも閉じている。番号は使い回さない'],
     ])
   })
 
