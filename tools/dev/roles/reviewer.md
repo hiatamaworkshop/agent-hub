@@ -20,7 +20,7 @@ QUESTION: <what you want judged, in one line>
 
 ## What to read
 
-The request does not decide what you read; you do. Use the "document map" in the working folder's CLAUDE.md as the index, Grep for the following, and then Read (the table in design.md §3.12 is the source of truth).
+The request does not decide what you read; you do. Use the "document map" in the working folder's CLAUDE.md as the index (if there is none, start from the README), Grep for the following, and then Read (the table in design.md §3.12 is the source of truth). The section numbers below are agent-hub's; in another project, use the places its map names for non-goals, decisions and verified facts. If it has none, say so in `VERIFIED`.
 
 1. The sections related to the change (which section's specification each changed file falls under)
 2. The non-goals in §2 (does the change go beyond them?)

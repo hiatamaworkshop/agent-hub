@@ -105,6 +105,8 @@ Send a `request` to `role:leader` from the browser; it goes user → leader → 
 
 ## Using it in other repositories
 
+**First time in a project**: read [docs/project-setup.md](docs/project-setup.md). It covers what to prepare (the document map in `CLAUDE.md`, the ledger and `.agent-hub.json`, the hooks), how to write items, and who writes what.
+
 Start agents **at that project's root**. The `CLAUDE.md` they read, the hooks, the scope of permissions and `git diff` are all decided by the folder they start in (design.md §3.3).
 
 ```sh
@@ -140,6 +142,7 @@ claude --dangerously-load-development-channels server:agent-hub
 
 | File | Content |
 |---|---|
+| [docs/project-setup.md](docs/project-setup.md) | Preparing a project for its first team: the checklist, writing items, who writes what |
 | [docs/usage.md](docs/usage.md) | Reference for everyday use (the sections above) |
 | [docs/design.md](docs/design.md) | Background, requirements, architecture, design decisions, unverified items |
 | [docs/protocol.md](docs/protocol.md) | HTTP API, message schema, MCP tools, delivery guarantees |

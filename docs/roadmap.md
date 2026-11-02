@@ -396,6 +396,11 @@ In the order they will be taken up. Only items without a status line and blocked
 - [x] C108 A command for the starting session to read a project's latest reports and states (2026-11-01, decided by the user)
   - `src/team/status.ts`: `npm run team -- status --project <dir>` (also `hub-team status`) prints one line per Mailbox of the project and the newest report from one of its Mailboxes to the human, in full. It reads `GET /mailboxes` and pages `GET /messages` with the URL and token rule of `docs:index`; a missing token, a refused token or an unreachable Hub is one line and exit 1. The team start's summary prints `status: npm run team -- status --project <dir>`. `src/team/options.ts`, `src/team/main.ts`, `src/team/team.ts` wire it; `docs/usage.md` (teams) describes it.
   - Checked: `npm test` 485/485 pass; `npm run docs:check` 0 errors; `npx tsc --noEmit` ok. A real read-only run of `npm run team -- status --project .` against the running Hub printed the three Mailbox lines and the latest report in full; `hub-team status` ran in that folder (exit 0). The unreachable and refused cases are covered by unit tests only. No reviewer was connected, so the item had no review.
+- [x] C27 Preparing new projects (2026-11-02, closed by the user as done)
+  - Hooks by hand: done by C111 (written on the first team start). The ledger's place: done by C107 (`.agent-hub.json`).
+  - Learning the rules: `docs/project-setup.md` (linked from the README and the CLAUDE.md map) lists what a project prepares (the document map, the ledger and `.agent-hub.json`, a place for decisions and facts, hooks, the post-commit hook), how to write items, who writes what, and one item end to end. `tools/dev/roles/reviewer.md` starts from the README when a project has no map, and reads the project's own places for non-goals, decisions and facts. No template file is placed; the guide carries an example item.
+  - Not built: reading ledgers with their own format (vcp: states in headings, no done-when lists). The stance stays as the section had it: the other side is not asked to rewrite its ledger, and such a project gets plain requests without the index (`docs/usage.md`, Items; `docs/project-setup.md` §2).
+  - Checked: `npm test` 485/485 pass; `npm run docs:check` 0 errors. Docs only; no review.
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -657,23 +662,6 @@ When a request without `meta.item` gets a reply, have the human choose "gather i
 Status: proposed
 
 Following the rejection rule at the top of the roadmap (design.md §3.16), check with `checkRoadmap` the form of `[-] C<n>` lines (the date and reason of the rejection), a `[-] C<n>` whose section remains, and reuse of closed numbers, and show them in the index too.
-
-### C27. Preparing new projects
-Status: proposed
-
-What remained from C26's run. Hook settings are copied by hand (`start-agent.ps1` only warns). Agents in a new project have no way to learn the rules for writing roadmap items (the rules are at the top of agent-hub's roadmap). Place a template, or have the startup script prepare one.
-
-In projects that already have a ledger, differences in format become a problem before any template does. Running `docs:check` on vcp's `docs/TODO.md` (31 `### C<n>.` items as of 2026-10-20) gives 31 errors: 30 "decided but no done-when heading", and 1 heading form (`### C104 の残り.`, "the rest of C104"). vcp writes state in the heading's parentheses ("held", "record only", "blocked waiting for data"), mixes what to do into the body's `- [ ]`, and moves finished items to DESIGN_LOG.md leaving one line in the "C-done" index. `docs:index` turns errors into warnings and sends, so sending it as is shows all 30 as "decided" in the UI.
-
-- Having the other side rewrite its ledger into agent-hub's format is the wrong way round (the delivery layer would be imposing document conventions)
-- Candidates: treat items with neither a status line nor done-when conditions as "unclassified" rather than "decided" / make the done-when heading name and how states are written configurable per project / without done-when conditions, copy the body's `- [ ]` as the promise
-- Until then, do not index it and send a plain request (with the item number in the body)
-
-On 2026-10-20 the first half of vcp's C145 was run that way (`start-team.ps1 -Roles leader,deployer -Project <vcp>`, the compose Hub). vcp's hooks had been copied into `.claude/settings.local.json`. user → leader → deployer → leader → user went around without a hand in between, and one round of correction went the same way (the leader found a discrepancy in the report itself and had the deployer fix it). No agent-hub bug appeared. No question or permission Events came up in this run (the deployer was in `auto` mode).
-
-The same day, vcp's C147 was also run as a request without the index (the team was still C145's). From request to final report took about 26 minutes, with one correction from the human. After the deployer reported and while the leader was still checking, the human sent a correction (choose months by label rather than month name); the leader had the deployer fix it as is, and returned the results of both requests together in one reply to the first request. The correction request stayed awaiting reply, and the deployer's two reports stayed without confirmed receipt (design.md §6.1n, C28). The cause of the correction was the request's wording (it copied "run month names through C53's check" from an old discussion in the TODO), not an agent-hub bug.
-
-Seen again 2026-11-01 when a session that had never used agent-hub started a team in cairn (`hub-team --roles leader,deployer`): the start only warned that the project had no Hub hooks, and the session wrote them with a second command (`npm run team -- hooks --project <cairn> --write`, into the git-ignored `.claude/settings.local.json`). Writing them on the first start, or asking once, would remove that step. The same start also warned that Claude Code 2.1.316 is newer than the last verified version; shown on every start, it is likely to be skimmed past. The ledger side of that first run is C107. The hooks on first start and the repeated version warning were split out as C111 (decided 2026-11-01).
 
 ### C35. Relaying requests from projects with their own ledger
 Status: held(until running it shows what is needed)
