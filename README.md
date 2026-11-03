@@ -44,7 +44,6 @@ cp roles.example.json roles.json   # PowerShell: Copy-Item roles.example.json ro
 
 - `roles.json` gives each role (leader, deployer, reviewer) its description and default subscriptions. Without it the Hub applies neither (usage guide, [Role definitions](docs/usage.md#role-definitions-rolesjson)).
 - **A variable already set in your shell overrides `.env`.** Node reads `.env` only for variables that are not set, so a `HUB_TOKEN`, `HUB_PORT` or `HUB_URL` in the environment wins over the value in the file. When its value differs from `.env`'s, `npm run hub`, `npm run team` (team start, `agent`, `status`) and `docs:index` print a warning that names the variable and how to unset it (C119); the environment's value is still the one used. To use `.env`'s, unset it in that terminal (PowerShell: `Remove-Item Env:HUB_TOKEN`; bash: `unset HUB_TOKEN`). `HUB_ROLE` and `HUB_MAILBOX` are not checked, because the team sets them on purpose.
-- `npm install` may print an `install-scripts` warning about esbuild (npm 11). It is not an error: the build and the Hub ran without it (checked on Windows 11, 2026-11-03).
 - To have agents write to you in your language, uncomment `HUB_LANGUAGE=ja` (or another tag) in `.env` ([`HUB_LANGUAGE`](docs/usage.md#the-language-agents-write-to-the-human-in-hub_language)).
 
 ### 2. Start the Hub (terminal A)

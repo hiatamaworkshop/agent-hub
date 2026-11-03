@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C120
 
 (Items with a status line are listed under "Items".)
 
@@ -440,6 +439,10 @@ In the order they will be taken up. Only items without a status line and blocked
   - Scratch-Hub runs in a temp copy of the repository (Hub on 7795; the shell's `HUB_TOKEN`, `HUB_PORT` or `HUB_URL` differing from the copy's `.env`): `npm run hub` warns for the variable only and listens on the shell's port; `team status` warns and its 401 message names the environment, exit 1; `docs:index` warns and its refusal names the environment, and `--if-touched` on a non-ledger path is silent; team start (`--tabs print`) warns, the mailbox-list error names the environment, and the result line keeps `warnings`; `agent` warns and stops before spawning anything. No token in any output or in `logs/start-warnings.jsonl`.
   - Not verified: the team-start UI 401 line (unit test only, since a start with a refused token stops earlier); the Docker side; real Claude sessions (NVM blocks `claude` in the shell here, so a test-only `claude.exe` stood in for the claude check); macOS and Linux.
   - No review (no reviewer connected).
+- [x] C120 Remove the esbuild install-scripts warning on `npm install` (npm 11) (2026-11-03, closed by the closing request; no review)
+  - Checked: npm 11.19.1 `npm ci` printed the esbuild install-scripts warning before the change (`allowScripts` absent) and none after; `npm test` 525 pass, 0 fail (the leader checked it too, after the change); `docker compose build` exit 0, and the built image started the Hub; `package-lock.json` unchanged; `npm run docs:check` 0 errors.
+  - Not verified: npm versions other than 11.19.1; the image's own npm version. The scratch build ran outside the working tree; its move of the `agent-hub` image tag was reverted by hand.
+  - No review (no reviewer connected).
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -778,18 +781,6 @@ To decide: where the seqs come from (`seqs` on the receiver's `awaitingReply` an
 Status: held(after the user has run teams in two projects side by side)
 
 Raised 2026-11-01 by the user: projects where a team was started could show as tab-like buttons, so switching is one press (today it is the project selector above the sidebar). The user wants to run two teams first and decide then. design.md §3.2 chose a selector over tabs so waits in other projects are not missed (`N waiting in other projects`); buttons have to keep that.
-
-### C120. The esbuild install-scripts warning on `npm install` (npm 11)
-
-Found 2026-11-03 in C118's walk-through. `npm install` on npm 11 prints an install-scripts warning for esbuild; the build, the Hub and the tests run without it. README step 1 says it is not an error. A first-time reader may still stop at a warning.
-Facts from the look before deciding (2026-11-03, npm 11.19.1, Node 26.10.0, `npm ci` in a scratch copy of `package.json` and the lock): esbuild 0.28.2 comes in through `tsx` 4.23.15 (not `sharp`). The warning reads `1 package has install scripts not yet covered by allowScripts: esbuild@0.28.2 (postinstall: node install.js)`. With `--foreground-scripts` the postinstall still ran, so on this npm the warning changes nothing. npm's own doc (`npm help install-scripts`) says unlisted scripts are blocked by default; either way esbuild worked. `npm install-scripts approve esbuild` writes a pinned `"allowScripts": { "esbuild@0.28.2": true }`, which goes stale when `tsx` moves esbuild; a name-only `"allowScripts": { "esbuild": true }` also silenced it.
-Decided 2026-11-03 (the user, "as recommended"): allow esbuild's script by name in `package.json`.
-
-#### Done when
-- [ ] `package.json` has `"allowScripts": { "esbuild": true }` (name only, so a new esbuild version from `tsx` stays covered)
-- [ ] `npm ci` on npm 11 prints no install-scripts warning, and `npm test` passes after it
-- [ ] The Docker image still builds (`docker compose build`), as its npm may be another version
-- [ ] README step 1's note on the warning is removed or reduced to what is still true; `npm run docs:check` passes
 
 ### C122. Do channels now work with `claude -p`?
 Status: proposed
