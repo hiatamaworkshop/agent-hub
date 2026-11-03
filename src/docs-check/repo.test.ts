@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { codeNames } from './code-names.js'
 import { hubRoutes } from './hub-routes.js'
-import { checkDecisionDates, checkKinds, checkMap, checkRepo, checkRoutes, parseMap } from './repo.js'
+import { checkDecisionDates, checkKinds, checkMap, checkMcpTools, checkRepo, checkRoutes, checkShimEvents, checkUiEmitters, checkUiEvents, parseMap } from './repo.js'
 
 const claudeMd = [
   '# Rules',
@@ -118,9 +119,88 @@ describe('checkDecisionDates', () => {
   })
 })
 
+describe('checkMcpTools (C124)', () => {
+  const protocol = (rows: string[]) => ['## 5. MCP tools (published by the shim)', '', '| Tool | Arguments | Behavior |', '|---|---|---|', ...rows, '', '## 6. Format'].join('\n')
+
+  it('passes when every published tool has a row and every row is a published tool or says not built', () => {
+    const doc = protocol(['| `post_message` | `kind` | Sends |', '| `attach` | `mailbox` | Not built. Switches |'])
+    assert.deepEqual(checkMcpTools(['post_message'], doc), [])
+  })
+
+  it('errors on a published tool with no row, and on a row with no tool that does not say not built', () => {
+    const doc = protocol(['| `post_message` | `kind` | Sends |', '| `list_topics` | none | Known topics |'])
+    assert.deepEqual(checkMcpTools(['post_message', 'inbox'], doc), [
+      { file: 'docs/protocol.md', line: 1, level: 'error', message: 'the shim publishes the MCP tool inbox, which has no row in §5' },
+      { file: 'docs/protocol.md', line: 6, level: 'error', message: '§5 lists list_topics, which the shim does not publish (say "not built" in the row if it is not built yet)' },
+    ])
+  })
+
+  it('errors when a row says not built but the shim publishes the tool', () => {
+    const doc = protocol(['| `inbox` | `after?` | Not built. Fetches |'])
+    assert.deepEqual(checkMcpTools(['inbox'], doc), [{ file: 'docs/protocol.md', line: 5, level: 'error', message: '§5 says inbox is not built, but the shim publishes it' }])
+  })
+})
+
+describe('checkUiEvents (C124)', () => {
+  const protocol = (names: string) => ['## 7. Event types UI ↔ Hub (SSE `event:` names)', '', names, '', '- `index.updated` is `{ "project" }`', '', '## 8. Vocabulary'].join('\n')
+
+  it('passes when the names sent and the names listed are the same', () => {
+    assert.deepEqual(checkUiEvents(['event', 'message.deleted'], protocol('`event` (detection events), `message.deleted`')), [])
+  })
+
+  it('errors on a name sent but not listed, and on a listed name the Hub does not send', () => {
+    assert.deepEqual(checkUiEvents(['event', 'mailbox.created'], protocol('`event`, `mailbox.acked`')), [
+      { file: 'docs/protocol.md', line: 3, level: 'error', message: 'the Hub sends the UI event mailbox.created on /stream, which is not in §7' },
+      { file: 'docs/protocol.md', line: 3, level: 'error', message: '§7 lists mailbox.acked, which the Hub does not send on /stream' },
+    ])
+  })
+})
+
+describe('checkUiEmitters (C124 review)', () => {
+  const declared = (n: string) => ({ event: 3, 'index.deleted': 7 })[n] ?? 1
+
+  it('passes when every listed name has an emitUi call with that literal and every call names a listed name', () => {
+    const emitters = [
+      { name: 'event', file: 'src/hub/hub.ts', line: 291 },
+      { name: 'index.deleted', file: 'src/hub/app.ts', line: 329 },
+    ]
+    assert.deepEqual(checkUiEmitters(['event', 'index.deleted'], emitters, declared), [])
+  })
+
+  it('errors on a listed name that no emitUi sends (its last emitter was removed), naming the entry', () => {
+    assert.deepEqual(checkUiEmitters(['event', 'index.deleted'], [{ name: 'event', file: 'src/hub/hub.ts', line: 291 }], declared), [
+      { file: 'src/shared/types.ts', line: 7, level: 'error', message: "UI_EVENT_NAMES lists index.deleted, which no emitUi('index.deleted', ...) in src/hub sends" },
+    ])
+  })
+
+  it('errors on an emitUi call with a name that is not a literal, and on a literal name that is not listed', () => {
+    const emitters = [{ name: 'event', file: 'src/hub/hub.ts', line: 299 }, { name: null, file: 'src/hub/hub.ts', line: 300 }, { name: 'foo', file: 'src/hub/hub.ts', line: 301 }]
+    assert.deepEqual(checkUiEmitters(['event'], emitters, declared), [
+      { file: 'src/hub/hub.ts', line: 300, level: 'error', message: 'emitUi is called with a name that is not a string literal, so the docs check cannot read which UI event it sends' },
+      { file: 'src/hub/hub.ts', line: 301, level: 'error', message: 'emitUi(\'foo\', ...) sends foo, which is not in UI_EVENT_NAMES' },
+    ])
+  })
+})
+
+describe('checkShimEvents (C124)', () => {
+  const protocol = (rows: string[]) =>
+    ['## 3. The Hub\'s HTTP API', '', '### For the shim', '', '#### SSE `event:` names for the shim', '', '| event | data | Meaning |', '|---|---|---|', ...rows, '', '#### Next', '| `ignored` | row outside the table |', '## 4. Delivery'].join('\n')
+
+  it('passes when the table lists the names the shim stream sends', () => {
+    assert.deepEqual(checkShimEvents(['message', 'terminated'], protocol(['| `message` | Message | x |', '| `terminated` | `{ "reason" }` | y |'])), [])
+  })
+
+  it('errors on a name sent but not in the table, and on a row the Hub does not send', () => {
+    assert.deepEqual(checkShimEvents(['message', 'heartbeat'], protocol(['| `message` | Message | x |', '| `terminated` | `{ "reason" }` | y |'])), [
+      { file: 'docs/protocol.md', line: 1, level: 'error', message: 'the Hub sends the shim event heartbeat, which is not in the SSE table for the shim in §3' },
+      { file: 'docs/protocol.md', line: 10, level: 'error', message: '§3\'s SSE table for the shim lists terminated, which the Hub does not send' },
+    ])
+  })
+})
+
 describe('the repository', () => {
-  it('has no drift between its documents, the Hub routes and the kinds', () => {
+  it('has no drift between its documents, the Hub routes, the kinds and the names the code sends', () => {
     const root = fileURLToPath(new URL('../../', import.meta.url))
-    assert.deepEqual(checkRepo(root, hubRoutes()), [])
+    assert.deepEqual(checkRepo(root, hubRoutes(), codeNames()), [])
   })
 })

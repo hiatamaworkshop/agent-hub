@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C124
 - [ ] C125
 - [ ] C126
 - [ ] C127
@@ -453,6 +452,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - Review finding: plain-text labels (`Decision (user): ...`, `- Decided by ...`) escaped the §9 check; the deployer's fix also matches a label at the start of the line, with tests for both.
   - Done-when line 5 (0 errors and 0 warnings): the deployer left it unchecked because the one warning left was the roadmap rule's close reminder for C9 itself. The planning session read that warning as part of closing, not drift in the documents, so the line is met; after this close the run reports 0 errors and 0 warnings.
   - Checked: `npm test` 538 pass, 0 fail; `npm run typecheck` pass; `npm run docs:check` 0 errors, 0 warnings.
+- [x] C124 Extend the table-drift checks to MCP tools and SSE event names (2026-11-03, closed by the planning session after the review)
+  - `npm run docs:check` (this repository's ledger) also checks the shim's MCP tools against protocol.md §5 (a row with no tool must say "Not built"), the UI stream's `event:` names against §7 and the shim stream's against §3's SSE table. Names come from the code: `SHIM_TOOLS` (`src/shim/tools.ts`, moved out of `main.ts` unchanged), `UI_EVENT_NAMES` (the type `emitUi` takes) and `SHIM_STREAM_EVENTS` (`src/shared/types.ts`), read by `src/docs-check/code-names.ts`.
+  - Drift fixed: §5's `attach`, `list_topics` and `report_event` rows now say Not built (`report_event` deferred, C17). §7 and the §3 shim table already matched.
+  - Review finding: a name left in `UI_EVENT_NAMES` after its last emitter was removed passed. Fix: the literal names of `emitUi(` calls in `src/hub` are compared with the list both ways, and a non-literal call is an error; checked by renaming the `index.deleted` emitter and restoring it.
+  - Done-when line 4 (0 errors and 0 warnings): left unchecked by the deployer for the same reason as C9 (the only warning was C124's own close reminder); read as met, and after this close the run reports 0 warnings.
+  - Checked: `npm test` 550 pass, 0 fail; `npm run typecheck` pass; `npm run docs:check` 0 errors, 0 warnings.
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -798,19 +803,6 @@ Status: proposed
 
 Split from C9 on 2026-11-03 (design.md §3.12, layer 1). The Hub does not read the working tree (§3.8), so the checks run on the host, in the leader's checking steps or a Stop hook, and their results would be sent to the Hub as a notice or Event and shown in the UI.
 The other half: a deployer's reply whose `CHANGED` lists `src/` but no `docs/`. Whether that is read by the Hub (the shape of `CHANGED` is not declared yet; C11) or by the leader's checking steps is open.
-
-### C124. Extend the table-drift checks to MCP tools and SSE event names
-
-Decided 2026-11-03 by the user, following C9 (design.md §3.12, layer 1). The same kind of check as C9's routes and kinds, added to `src/docs-check/repo.ts`.
-Known drift on 2026-11-03: protocol.md §5 lists `attach`, `list_topics` and `report_event`, but the shim publishes only `post_message`, `subscribe`, `unsubscribe`, `inbox` and `whoami` (`report_event` is deferred, design.md §3.4). Whether each row is wrong or not built yet is checked against the code and the docs when fixing.
-
-#### Done when
-- [ ] MCP tools: `npm run docs:check` reports an error for each tool the shim publishes that has no row in protocol.md §5's table, and for each row with no such tool unless the row says it is not built
-- [ ] SSE names: an error for each `event:` name the Hub sends on the UI stream (`/stream`) missing from protocol.md §7 and each name there it does not send; the same for the shim's stream against the table "SSE `event:` names for the shim" in §3
-- [ ] The names are read from the code (the shim's tool list, the Hub's emitters), not typed into the check
-- [ ] On today's tree `npm run docs:check` passes with 0 errors and 0 warnings (the documents are fixed for what the checks find)
-- [ ] Tests: each check with a passing and a failing input; `npm test` passes
-- [ ] Docs: the list of built checks in design.md §3.12 and the `docs:check` line in docs/usage.md include these
 
 ### C125. One home per document convention, with the table in design.md §3.12 as the index
 

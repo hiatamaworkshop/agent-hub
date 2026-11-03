@@ -12,9 +12,10 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { ADDRESS_TYPES, MESSAGE_KINDS, normalizeProjectPath, type Address, type Mailbox, type Message } from '../shared/types.js'
-import { ALWAYS_LOAD_META, CHANNEL_CAPABILITY, pushSkippedNotice, pushToChannel } from './channel.js'
+import { CHANNEL_CAPABILITY, pushSkippedNotice, pushToChannel } from './channel.js'
 import { instructionsFor, routeFor, type Route } from './instructions.js'
 import { loadConfig } from './config.js'
+import { SHIM_TOOLS } from './tools.js'
 import { resolveFiles, sweepFiles } from './files.js'
 import { HubClient } from './hub-client.js'
 import { fetchInbox } from './inbox.js'
@@ -91,56 +92,6 @@ async function itemFor(id: string | undefined, replyTo: string | undefined): Pro
   return orig && { id: orig.id, project: orig.project, source: null, promise: null }
 }
 
-const tools = [
-  {
-    name: 'post_message',
-    description:
-      'agent-hub にメッセージを送る。受け取ったメッセージ (<channel> / <hub-message>) への返信は kind="reply" と reply_to=<その id> を指定する (to を省略すると送り手に返る)。',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        kind: { type: 'string', enum: [...MESSAGE_KINDS], description: 'request (依頼) / reply (返信) / notice (通知)' },
-        body: { type: 'string', description: '本文' },
-        to: { type: 'string', description: '宛先。mailbox:<名前> / role:<名前> / topic:<名前> / user:browser。role:<名前> は自分と同じプロジェクト (作業フォルダ) の Mailbox にだけ届く。ほかのプロジェクトには mailbox:<名前> で送る。reply では省略可' },
-        reply_to: { type: 'string', description: '返信元のメッセージ id (kind=reply では必須)' },
-        item: { type: 'string', description: 'roadmap の項目 ID (C<n> の形。例: C77)。項目の作業の request / reply に付ける。reply で省くと、元のメッセージの項目を引き継ぐ' },
-      },
-      required: ['kind', 'body'],
-    },
-  },
-  {
-    name: 'subscribe',
-    description: 'トピックを購読する。以後そのトピック宛てのメッセージを受け取る',
-    inputSchema: { type: 'object', properties: { topic: { type: 'string', description: '例: user.message' } }, required: ['topic'] },
-  },
-  {
-    name: 'unsubscribe',
-    description: 'トピックの個別購読を解除する。role の既定購読 (roles.json) は解除されない',
-    inputSchema: { type: 'object', properties: { topic: { type: 'string' } }, required: ['topic'] },
-  },
-  {
-    name: 'inbox',
-    description:
-      '自分の Mailbox の未読を取り出す。各メッセージは <hub-message> で包まれて返り、返した分は既読になる。<channel> で届いたものは既読なので含まれない (unconfirmed: true なら含む)',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        limit: { type: 'integer', minimum: 1, maximum: 100, description: '最大件数 (既定 20)' },
-        after: { type: 'integer', minimum: 0, description: 'この seq より後だけを取る (省略時は未読の先頭から)' },
-        unconfirmed: {
-          type: 'boolean',
-          description: 'true なら、<channel> で渡したが受領の確認 (inbox で取り出す・reply_to で返信する) がない分も返す。<channel> が届いていないときの取り直し用',
-        },
-      },
-    },
-  },
-  {
-    name: 'whoami',
-    description: 'agent-hub での自分の Mailbox 名・role・接続状態・購読を返す',
-    inputSchema: { type: 'object', properties: {} },
-  },
-].map((t) => ({ ...t, _meta: ALWAYS_LOAD_META }))
-
 const postArgs = z.object({
   kind: z.enum(MESSAGE_KINDS),
   body: z.string().min(1),
@@ -157,7 +108,7 @@ const inboxArgs = z.object({
 
 const text = (v: unknown): CallToolResult => ({ content: [{ type: 'text', text: typeof v === 'string' ? v : JSON.stringify(v, null, 2) }] })
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }))
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: SHIM_TOOLS }))
 
 // 切り離された shim は attach し直さない。「新しい方を閉じればこちらが戻る」とモデルが案内したので (2026-10-19、C21)、
 // 戻らないことと、使い続けるときの手順を書く

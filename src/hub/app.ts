@@ -4,7 +4,7 @@ import { setCookie } from 'hono/cookie'
 import { bodyLimit } from 'hono/body-limit'
 import { streamSSE } from 'hono/streaming'
 import { z } from 'zod'
-import { forwardSchema, isValidName, nameSchema, postMessageSchema, type PostMessageInput, type Sender } from '../shared/types.js'
+import { forwardSchema, isValidName, nameSchema, postMessageSchema, SHIM_STREAM_EVENTS, type PostMessageInput, type Sender } from '../shared/types.js'
 import { Auth, COOKIE_NAME, type AuthEnv } from './auth.js'
 import { Hub, HubError } from './hub.js'
 import { pump } from './sse.js'
@@ -253,16 +253,16 @@ export function createApp(opts: AppOptions) {
       pump(stream, {
         subscribe: (send, close) =>
           hub.openStream(id, after, {
-            message: (m) => send({ event: 'message', id: String(m.seq), data: JSON.stringify(m) }),
+            message: (m) => send({ event: SHIM_STREAM_EVENTS.message, id: String(m.seq), data: JSON.stringify(m) }),
             close: (reason) => {
-              if (reason) send({ event: 'terminated', data: JSON.stringify({ reason }) })
+              if (reason) send({ event: SHIM_STREAM_EVENTS.terminated, data: JSON.stringify({ reason }) })
               close()
             },
           }),
         heartbeatMs,
         heartbeat: () => {
           try {
-            return { event: 'heartbeat', data: JSON.stringify({ cursor: hub.cursorOf(id) }) }
+            return { event: SHIM_STREAM_EVENTS.heartbeat, data: JSON.stringify({ cursor: hub.cursorOf(id) }) }
           } catch {
             return ': ping\n\n'
           }

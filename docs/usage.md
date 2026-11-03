@@ -353,8 +353,9 @@ What is not in the file, and where to look instead: changes and decisions are in
 npm test          # unit tests, and integration tests that start the shim as a real process
 npm run typecheck
 npm run docs:check   # checks how roadmap items are written (exit 1 if broken). `-- --index` prints the item index as JSON
-                     # on this repository's own roadmap it also checks the docs (C9): the CLAUDE.md map against the headings, the Hub's
-                     # routes and EVENT_KINDS / MESSAGE_KINDS against protocol.md §3 / §2, and dates on design.md §9's decisions
+                     # on this repository's own roadmap it also checks the docs (C9, C124): the CLAUDE.md map against the headings, the Hub's
+                     # routes and EVENT_KINDS / MESSAGE_KINDS against protocol.md §3 / §2, the shim's MCP tools against §5, the UI stream's
+                     # and the shim stream's event: names against §7 and §3, and dates on design.md §9's decisions. The names are read from the code
 npm run docs:index   # sends the roadmap item index to the Hub for the UI's Items ("Request work from roadmap items" above)
 npm run hub:dev   # watches for changes and restarts the Hub
 npm run ui:check  # checks the card states scene by scene with a Hub on another port and headless Chrome (needs Chrome; set its location with CHROME)

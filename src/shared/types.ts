@@ -69,6 +69,28 @@ export function normalizeProjectPath(p: string): string {
 export const MESSAGE_KINDS = ['request', 'reply', 'notice'] as const
 export type MessageKind = (typeof MESSAGE_KINDS)[number]
 
+// The `event:` names of the UI stream (GET /stream, protocol.md §7). Hub.emitUi takes only these (C124)
+export const UI_EVENT_NAMES = [
+  'event',
+  'message',
+  'message.deleted',
+  'event.deleted',
+  'mailbox.created',
+  'mailbox.deleted',
+  'mailbox.acked',
+  'attachment.attached',
+  'attachment.updated',
+  'attachment.detached',
+  'attachment.superseded',
+  'subscription.changed',
+  'index.updated',
+  'index.deleted',
+] as const
+export type UiEventName = (typeof UI_EVENT_NAMES)[number]
+
+// The `event:` names of the shim's stream (GET /attachments/:id/stream, protocol.md §3). The Hub sends these by name (C124)
+export const SHIM_STREAM_EVENTS = { message: 'message', heartbeat: 'heartbeat', terminated: 'terminated' } as const
+
 // user はどの Mailbox にも配信されず、UI にだけ出る (ブラウザへの返信先)
 export const ADDRESS_TYPES = ['mailbox', 'role', 'topic', 'user'] as const
 export type AddressType = (typeof ADDRESS_TYPES)[number]

@@ -1,5 +1,5 @@
 // Hub の振る舞い (配信・購読・Attachment)。HTTP から独立させ、app.ts は入出力の変換だけにする
-import { isValidName, mailboxFromFolder, normalizeProjectPath, type Address, type Attachment, type HubEvent, type InboxResult, type Mailbox, type Message, type PostMessageInput, type Sender } from '../shared/types.js'
+import { isValidName, mailboxFromFolder, normalizeProjectPath, type Address, type Attachment, type HubEvent, type InboxResult, type Mailbox, type Message, type PostMessageInput, type Sender, type UiEventName } from '../shared/types.js'
 import { CONVERTERS, DEFAULT_SOURCE } from './events.js'
 import { newId } from './ids.js'
 import type { Roles } from './roles.js'
@@ -17,7 +17,7 @@ export class HubError extends Error {
 
 // UI 向け SSE の 1 件 (protocol.md §7)
 export interface UiEvent {
-  event: string
+  event: UiEventName
   data: unknown
 }
 
@@ -166,7 +166,7 @@ export class Hub {
   }
 
   // Hub の外の状態 (roadmap の索引など) の変化も、同じ UI 向け SSE で流す
-  emitUi(event: string, data: unknown): void {
+  emitUi(event: UiEventName, data: unknown): void {
     for (const fn of this.uiListeners) fn({ event, data })
   }
 
