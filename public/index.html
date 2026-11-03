@@ -88,6 +88,7 @@
   .state.st-paused::before { content: "⏸ "; }
   .state.st-you, .state.st-stopped { color: var(--st-you); }
   /* 未読だけ (C71): Working と書くが、信号ではない。枠も脈打ちも光りもなく、色は既定の muted */
+  .state.st-move { color: var(--st-you); }
   .state.st-unread { color: var(--muted); }
   .state.st-offline::before { content: "○ "; }
   .mb .doing { font-size: 12px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -141,6 +142,8 @@
   .mapnode.st-you, .mapnode.st-stopped { box-shadow: 0 0 0 var(--st-ring) var(--st-you); }
   .mapnode.st-working, .mapnode.st-delegated { box-shadow: 0 0 0 var(--st-ring) var(--st-working); }
   .mapnode.st-offline { opacity: .6; }
+  /* 人の番ではなく、次に送るまで何も動かないとき (C127)。Needs you より細い枠で、薄く色を付ける。脈打たない */
+  .mapnode.st-move { box-shadow: 0 0 0 1px var(--st-you); background: color-mix(in srgb, var(--st-you) 10%, var(--panel)); }
   .mapnode.dropok { outline: 2px dashed var(--accent); }
   .mapchips { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
   .mapchips:empty { display: none; }
@@ -2856,7 +2859,7 @@ function renderMap(model) {
   }
   const cols = [...canvas.querySelectorAll('.mapcol')]
   // 人のノードの Needs you N は全プロジェクトの数。押すと、その中で最も古いもの (C106)。絞り込みで隠れていれば、飛ばずにそう言う
-  const human = mapHumanNode(model.human, oldestTargetOf(model.mailboxes, 'you'))
+  const human = mapHumanNode(model.human, oldestTargetOf(model.mailboxes, 'you'), yourMoveOf(model.mailboxes.filter(visibleCard), model.human.waiting))
   cols[0].append(human)
   nodes.set(HUMAN_KEY, { el: human, col: 0 })
   const shown = model.mailboxes.filter(visibleCard).sort((a, b) => a.name.localeCompare(b.name))
@@ -2884,12 +2887,30 @@ function renderMap(model) {
   }
   ensureRequests(model.edges)
 }
-function mapHumanNode(h, t) {
-  const n = el('div', `mapnode human${h.waiting ? ' st-you' : ''}`)
+// 地図の You ノードに「Your move」を出すか (C127)。Needs you が 1 件もなく、表示中のカードに接続しているものがあって、
+// どれも作業中・他者待ちでないとき。カードの状態は stateOf の結果をそのまま読む (地図と一覧が食い違わないように)。
+// Stopped は数えない (返信のない依頼があっても、動くのは人だと示さない理由にはしない)。状態が分からないカード (古い Hub) があれば出さない
+function yourMoveOf(shown, waiting) {
+  if (waiting > 0) return false
+  let connected = 0
+  for (const mb of shown) {
+    if (!mb.attachment) continue // 接続のない Mailbox は Offline。数えない
+    connected++
+    const key = mb.state && mb.state.key
+    if (!key || key === 'working' || key === 'delegated' || key === 'you' || key === 'paused') return false // you: a card that asks the human (C49) is a human's move; paused: it resumes by itself, not the human's either (C127)
+  }
+  return connected > 0
+}
+function mapHumanNode(h, t, move) {
+  const n = el('div', `mapnode human${h.waiting ? ' st-you' : move ? ' st-move' : ''}`)
   n.append(el('div', 'name', 'You'), el('div', 'meta', 'the human'))
   if (h.waiting) {
     const label = el('div', 'state st-you', `Needs you ${h.waiting}`)
     if (t) jumpChip(label, () => jumpTo(t), 'Click to find the oldest one in the thread.')
+    n.append(label)
+  } else if (move) {
+    const label = el('div', 'state st-move', 'Your move')
+    label.title = 'Every connected session is idle and nothing needs an answer, so the next move is yours (send a request).'
     n.append(label)
   }
   n.append(el('div', 'mapchips'))

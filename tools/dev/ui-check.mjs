@@ -82,6 +82,25 @@ async function screen() {
   return JSON.parse(r.result.value)
 }
 
+// 地図の You ノード (C127)。地図を出して、人のノードの状態の行と枠を読む。読んだあと、出す前の状態に戻す (本文の場面は一覧を見る)。
+// expect: 'Your move' (その行と薄い枠がある) / 'Needs you' (Needs you の行で、Your move はない) / 'none' (状態の行も Your move もない) / 'no move' (Your move はない)
+async function mapScene(label, expect) {
+  const was = (await cdp('Runtime.evaluate', { expression: "(() => { const was = !$('map').hidden; if (!was) $('mapToggle').click(); return was })()", returnByValue: true })).result.value
+  await sleep(1500)
+  const expr = `JSON.stringify((() => { const n = document.querySelector('#map .mapnode.human'); const s = n && n.querySelector('.state'); return { cls: n ? n.className : '', state: s ? s.textContent : '' } })())`
+  const got = JSON.parse((await cdp('Runtime.evaluate', { expression: expr, returnByValue: true })).result.value)
+  if (!was) await cdp('Runtime.evaluate', { expression: "$('mapToggle').click()", returnByValue: true })
+  const move = got.cls.includes('st-move')
+  const ok =
+    expect === 'Your move' ? got.state === 'Your move' && move && !got.cls.includes('st-you')
+    : expect === 'Needs you' ? got.state.startsWith('Needs you') && !move
+    : expect === 'none' ? got.state === '' && !move
+    : !move
+  if (!ok) failed++
+  console.log(`${ok ? 'ok' : 'NG'}  ${label}`)
+  if (!ok) console.log(`      ${JSON.stringify(got)} (期待は ${expect})`)
+}
+
 let failed = 0
 // expect: Mailbox 名 → 状態の行の先頭 (例 'Needs you (request)')、または { state, doing } (doing は作業中の要旨の行)。title は タブのタイトルの先頭
 async function scene(label, expect, title = 'agent-hub') {
@@ -151,10 +170,12 @@ try {
   await cdp('Page.navigate', { url: `${HUB}/?token=${TOKEN}` })
   await sleep(1000)
   await scene('2 人とも手が空いている', { 'demo.leader': 'Idle', 'demo.deployer': 'Idle' })
+  await mapScene('2 人とも手が空いている: 地図の You は Your move (C127)', 'Your move')
 
   await api('POST', '/messages', { kind: 'request', to: { type: 'user', id: 'browser' }, body: 'A か B か' }, asLead)
   await turnEnd('demo.leader', 's-lead')
   await scene('leader が Hub で人に尋ねてターンを終えた (C40)', { 'demo.leader': 'Needs you (request)', 'demo.deployer': 'Idle' }, '1 waiting')
+  await mapScene('人に尋ねた: 地図は Needs you だけで、Your move は出さない (C127)', 'Needs you')
 
   await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'demo.leader' }, body: 'A で進めて' })
   await scene('人が返信ではなく新しい依頼で答えた (C28 で質問が閉じる)', { 'demo.leader': 'Working' })
@@ -163,6 +184,7 @@ try {
   const job = await api('POST', '/messages', { kind: 'request', to: { type: 'role', id: 'deployer' }, body: 'GOAL: C1 を実装する' }, asLead)
   await turnEnd('demo.leader', 's-lead')
   await scene('leader が deployer に渡してターンを終えた', { 'demo.leader': 'Waiting on others (deployer)', 'demo.deployer': 'Working' })
+  await mapScene('deployer が作業中: 地図に Your move は出さない (C127)', 'none')
 
   await ackAll(dep.attachmentId)
   await api('POST', '/messages', { kind: 'reply', replyTo: job.id, body: 'CHANGED: …' }, asDep)
@@ -178,6 +200,7 @@ try {
   await api('POST', '/messages', { kind: 'reply', replyTo: order.id, body: reportEnAction }, asLead)
   await turnEnd('demo.leader', 's-lead')
   await scene('報告が戻り、leader が人に返した', { 'demo.leader': 'Idle', 'demo.deployer': 'Idle' })
+  await mapScene('作業が終わって Idle に戻った (SSE で再描画): 地図に Your move が出る (C127)', 'Your move')
   await sections('leader の返事の見出しを節ごとに色分けする (C42)', report, { decide: 2, op: 0, unverified: 1, hd: 5 })
   await sections('英語の見出しの返事も日本語と同じに色分けする (C64)', reportEn, { decide: 2, op: 0, unverified: 1, hd: 6 })
   await sections('英語の NEEDS ACTION に中身があれば見出しの色を付ける (C64)', reportEnAction, { decide: 0, op: 1, unverified: 0, hd: 2 })
@@ -192,6 +215,7 @@ try {
   }
   await turnEnd('demo.leader', 's-lead')
   await scene('leader が未接続の reviewer に送った依頼を待っている (C49)', { 'demo.leader': 'Needs you (demo.reviewer not connected)' }, '1 waiting')
+  await mapScene('leader が未接続の reviewer を待つ (C49): 地図は Needs you 1 で、Your move は出さない (C127)', 'Needs you')
   const rev2 = await api('POST', '/mailboxes/demo.reviewer/attach', { client: 'claude-code', role: 'reviewer', cwd, sessionId: 's-rev-2' })
   await scene('reviewer が attach した (Waiting on others に戻る)', { 'demo.leader': 'Waiting on others (reviewer)', 'demo.reviewer': 'Working' })
   await ackAll(rev2.attachmentId)
@@ -228,6 +252,7 @@ try {
   await api('POST', '/messages', { kind: 'request', to: { type: 'role', id: 'auditor' }, body: 'TARGET: C1 (未接続の役割へ)' }, { 'x-hub-attachment': stk.attachmentId })
   await api('POST', '/events/claude-code', { cwd: othCwd, hook_event_name: 'Stop', session_id: 's-stk' }, { 'x-hub-mailbox': 'stk.leader' })
   await scene('返信のない依頼を渡したままターンを終え、未接続の auditor にも依頼を出していた (C109)', { 'stk.leader': 'Stopped, no reply (auditor not connected)' })
+  await mapScene('Stopped のカードがあっても、ほかが Idle なら Your move が出る (C127)', 'Your move')
   const stkScreen = await screen()
   const stkBadgeCheck = JSON.parse((await cdp('Runtime.evaluate', { expression: `JSON.stringify({ states: $('states').textContent, tabStopped, tabWaiting, title: document.title })`, returnByValue: true })).result.value)
   const stoppedCards = stkScreen.cards.filter((c) => c.state.startsWith('Stopped')).length
@@ -259,6 +284,12 @@ try {
   for (let i = 0; i < 250; i++) await turnEnd('demo.noise', 's-noise')
   await cdp('Page.navigate', { url: `${HUB}/` })
   await sleep(1000)
+  // usage limit で止まった接続中のカードは、Your move を隠す (C127)。Paused は解けるまで待つだけで、人の番ではない。前後を比べる
+  const pz = await api('POST', '/mailboxes/pz.worker/attach', { client: 'claude-code', cwd, sessionId: 's-pz' })
+  await mapScene('接続中の別のカードが Idle: 地図に Your move が出る (C127)', 'Your move')
+  await hook('pz.worker', { hook_event_name: 'StopFailure', session_id: 's-pz', error: 'rate_limit', last_assistant_message: "You've hit your limit" })
+  await mapScene('同じカードが usage limit で Paused: 地図に Your move は出ない (C127)', 'none')
+  await api('DELETE', `/attachments/${pz.attachmentId}`)
   await scene('ターン終了を Event の窓から押し出して読み直した', { 'demo.leader': 'Idle', 'demo.deployer': 'Idle' })
 
   await hook('demo.leader', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'tu-1', session_id: 's-lead' })
@@ -1824,6 +1855,9 @@ try {
   verify('押しても何も送らず、既読にせず、状態も変えない (C106)', snap2After.msgs === snap2Before.msgs && snap2After.unread === snap2Before.unread, { snap2Before, snap2After })
   }
   }
+  // 接続しているセッションがひとつもない: Your move は出さない (C127)。すべて切り離してから地図を見る
+  for (const mb of (await api('GET', '/mailboxes')).mailboxes) if (mb.attachment) await api('DELETE', `/attachments/${mb.attachment.attachmentId}`)
+  await mapScene('接続しているセッションがない: Your move は出さない (C127)', 'no move')
 } catch (e) {
   failed++
   console.error(`NG  ${e.message}`)

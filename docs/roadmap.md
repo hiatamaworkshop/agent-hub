@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C126
-- [ ] C127
 
 (Items with a status line are listed under "Items".)
 
@@ -476,6 +475,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - The global `~/.claude/CLAUDE.md` "plans" block was left as is: it triggers the skill and carries two ledger-placement prohibitions, no item rule.
   - Not changed: docs/project-setup.md's table of who writes what (the human's first-team guide).
   - Checked: `npm test` 550 pass, 0 fail; `npm run docs:check` 0 errors, 0 warnings.
+- [x] C127 The You node shows when the ball is with the human (2026-11-03, closed by the planning session after the review)
+  - `public/index.html`: `yourMoveOf` decides from the cards' own states (`stateOf`) on each redraw, so it follows SSE with the cards. The map's You node shows `Your move` (`.mapnode.st-move`: 1px `--st-you` frame, 10% tint, no pulse) when Needs you is 0 in every project, a connected card is shown, and none is `working` (quiet unread included), `delegated`, `you`, `paused` or without a state. Stopped does not hide it. Needs you takes precedence.
+  - Review finding fixed: a connected `you` card (C49, waiting on an unconnected party) blocks `Your move`.
+  - Wording changed in the planning session on 2026-11-03 (the user's decision): Paused also hides it, since a usage-limit wait resumes by itself; code and a Paused scene followed.
+  - Checked: `npm run ui:check` 187 ok, 0 NG, exit 0 (run again by the planning session; 9 C127 scenes, including Working → Idle without a reload and Paused); `npm test` 550 pass, 0 fail; design.md §3.15 and docs/usage.md updated.
+  - Not verified: the tint and frame by eye on a live team, and dark mode.
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -836,16 +841,3 @@ Case differences on Windows (`Docs/Items.md` for git's `docs/items.md`) may be h
 - [ ] On a commit, the hook shows `push-index`'s warning about an unusable setting, and its message on a failed send gives the real reason
 - [ ] Tests: the non-ASCII hook path, each non-canonical spelling, and the warning shown by the hook; `npm test` passes
 - [ ] docs/usage.md (Items, the hook) says how the ledger path is matched
-
-### C127. The You node shows when the ball is with the human
-
-Decided 2026-11-03 by the user, from a screenshot: every session of the team had finished and sat Idle, waiting for the human's next request, and the map's You node looked the same as when work is going on. The human should see at a glance that nothing moves until they send.
-Today the You node is colored only for Needs you (a question, a permission prompt or a request to the human; `mapHumanNode` in `public/index.html`). A team that answered with a `reply` and went Idle leaves no Needs you, so the node stays plain.
-The new state is quieter than Needs you: it says "your move", not "someone is stuck on you". It uses the human-turn color family (`--st-you`, C71) but not Needs you's thick amber frame, and it does not pulse.
-
-#### Done when
-- [ ] The map's You node shows `Your move` (a tinted node in the human-turn color, thinner than Needs you's frame, not pulsing) when, in the project shown on the map (all projects when none is chosen), at least one session is connected, no card is Working or Waiting on others, and Needs you is 0
-- [ ] Needs you takes precedence: when Needs you is above 0 the node shows Needs you as today, not `Your move`; a Stopped card does not hide `Your move`
-- [ ] The state follows live updates (SSE) without a reload: a new request that makes a card Working clears it, and the last card going Idle sets it
-- [ ] `npm run ui:check` has scenes for all Idle (shows `Your move`), one card Working (does not), Needs you (shows Needs you only) and no session connected (does not), and passes; `npm test` passes
-- [ ] Docs: design.md §3.15 (card states) and docs/usage.md (reading card states) describe `Your move` and its condition
