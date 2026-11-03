@@ -2,10 +2,12 @@
 
 Each phase puts weight on "ending in a working state". Move on after the acceptance criteria are met.
 
-Open items are written as `### C<n>. Title` sections under "Items" at the end (design.md §3.15). Do not keep a separate bulleted "someday" list.
-- Right after the heading, write only an exceptional status, on one unindented line: `Status: proposed | held(<condition to resume>) | blocked(after C<n>)`. Without the line, the item is decided (may be started).
+Open items are written as `### C<n>. Title` sections under "Items" at the end (design.md §3.15). Do not keep a separate bulleted "someday" list. Nothing follows the title (no status or date). A request names the ID instead of copying the item; the one who works on it reads the latest from the ledger.
+- Right after the heading, write only an exceptional status, on one unindented line: `Status: proposed | held(<condition to resume>) | blocked(after C<n>)`. Without the line, the item is decided (may be started). An item the user has not decided is `proposed`: a writer's (AI's) idea is not filed as decided.
 - A decided item has `#### Done when` (a list of checkboxes). A request's `DONE WHEN` is copied from it.
-- Numbers are not reused. The close waits for the review (C102): after the review and its fixes, a closing request deletes the section, marks the phase line `[x] C<n> …`, writes the record of what was checked below it, and removes `blocked(after C<n>)` lines that waited for that item (status is progress, not a promise). The deployer does not close an item in its first run, because the reviewer reads the section.
+  - Each line can be checked within the item alone; conditions common to all work (tests pass, docs updated) are still written per item. Lines come from the current decision only; rejected ideas and history go in the body.
+  - An item is about one request in size; split it when its tests span two independent features. Working promises (commits wait for the word, do not touch data, stop at what is undecided) live in the project's CLAUDE.md, not in each item.
+- Numbers are not reused. The close waits for the review (C102): after the review and its fixes, a closing request deletes the section, marks the phase line `[x] C<n> …`, writes the record of what was checked below it, removes the item from `## Plan`, and removes `blocked(after C<n>)` lines that waited for that item (status is progress, not a promise; the one closing may fix them). Where closed lines live is up to the project (under a phase, a list at the end, and so on). The deployer does not close an item in its first run, because the reviewer reads the section.
 - Progress is shown by checking off done-when conditions and adding the facts checked to the section's body. **Changing the wording of done-when conditions is changing the promise**, so it is not done within a request. Approved wording is written by the planning session, not by the deployer; the leader returns it in the report.
 - **Who files items** (design.md §3.15, C96): new `### C<n>.` sections, changed done-when wording and rejections (`[-]`) are written only in the planning session (the human's session with Claude where the project is discussed; not a Hub role). The deployer, the leader and the reviewer do not write them, even when a request asks; they answer by naming the planning session. The deployer writes progress only, with the change.
 - When rejected, delete the section and leave `[-] C<n> Title (rejected YYYY-MM-DD, one-line reason)` under a phase or "Known issues". If the reason is long, write it in design.md §9 and point to it (design.md §3.16).
@@ -15,7 +17,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 - When asked about the plan, first check for breakage with `npm run -s docs:check`, then answer from the JSON of `npm run -s docs:check -- docs/roadmap.md --index` and the dates on closed lines. Do not read the whole ledger and reclassify it (the four-tier answer is in the skill `roadmap-items`).
 - The Japanese vocabulary (`状態: 提案 | 保留(…) | ブロック(C<n> の後)`, `#### 完了条件`, `## 予定`, `(却下 YYYY-MM-DD、…)`) is read the same way by the checker and the index (the mapping table is in design.md §3.15). The closed records below, from before 2026-10-29, are in Japanese.
 - Breakage of the rules is checked with `npm run docs:check` (`src/shared/roadmap.ts`). On this repository's own roadmap it also checks the other documents (the list is in design.md §3.12; `src/docs-check/repo.ts`, C9). When you change this file, run `npm run docs:check`.
-- An explanation for writing the same rules in other projects is in the global skill `roadmap-items` (`~/.claude/skills/roadmap-items/`). The source of truth is this header and `src/shared/roadmap.ts`.
+- These rules are the one home for every project's ledger, whatever its language. The global skill `roadmap-items` (`~/.claude/skills/roadmap-items/`) says when to read them, where a ledger goes and how to answer about the plan, and points here (C128). The checker is `src/shared/roadmap.ts`.
 
 ## Plan
 
@@ -23,7 +25,6 @@ In the order they will be taken up. Only items without a status line and blocked
 
 - [ ] C126
 - [ ] C127
-- [ ] C128
 
 (Items with a status line are listed under "Items".)
 
@@ -468,6 +469,13 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: `npm test` 550 pass, 0 fail; `npm run docs:check` 0 errors.
   - Done-when line 4 was checked on the user's instruction in the request (the item's own close reminder is not counted as a warning). After this close the reminder is gone, so `docs:check` shows 0 warnings.
   - Not changed (outside this item's done-when): the global ~/.claude/CLAUDE.md, the skills roadmap-items and clear-timing, and docs/usage.md:205 (who files items, restated in full).
+- [x] C128 Item rules in one place: the skill and usage.md point at the top of roadmap.md (2026-11-03, closed by the planning session; docs only, no review)
+  - The top of roadmap.md is the one home for every project's ledger. Rules that only the skill had moved there first: nothing after the title, a request names the ID, an undecided item is `proposed`, each done-when line checkable within the item and written from the current decision, about one request in size, working promises in CLAUDE.md, removing a closed item from `## Plan`, where closed lines live.
+  - The skill `roadmap-items` keeps when to read, the two layers, where a ledger goes, the four-tier answer and how to run `docs:check`; for writing and closing it points at the top of this file by absolute path.
+  - docs/usage.md (the team section) points at the top of roadmap.md for who files items and how an item is closed. design.md §3.12's table has a row for writing, filing or closing an item, naming the skill and usage.md as pointers, and states the test for a line (would deleting it make someone act wrongly).
+  - The global `~/.claude/CLAUDE.md` "plans" block was left as is: it triggers the skill and carries two ledger-placement prohibitions, no item rule.
+  - Not changed: docs/project-setup.md's table of who writes what (the human's first-team guide).
+  - Checked: `npm test` 550 pass, 0 fail; `npm run docs:check` 0 errors, 0 warnings.
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -841,16 +849,3 @@ The new state is quieter than Needs you: it says "your move", not "someone is st
 - [ ] The state follows live updates (SSE) without a reload: a new request that makes a card Working clears it, and the last card going Idle sets it
 - [ ] `npm run ui:check` has scenes for all Idle (shows `Your move`), one card Working (does not), Needs you (shows Needs you only) and no session connected (does not), and passes; `npm test` passes
 - [ ] Docs: design.md §3.15 (card states) and docs/usage.md (reading card states) describe `Your move` and its condition
-
-### C128. Item rules in one place: the skill and usage.md point at the top of roadmap.md
-
-Decided 2026-11-03 by the user (option A), following C125. The test for a line: if it were deleted, would someone act wrongly at some point? If not, delete it. If so, put it once where that reader already is at that moment: files always loaded carry only prohibitions that are broken before anyone thinks to look, and "before X, read Y" pointers; the full text lives in one home; what can be checked mechanically is checked by `docs:check`.
-Two copies of the item rules were left after C125: the global skill `roadmap-items` (Japanese, read by sessions in every project) restates them in full, and docs/usage.md (the team section, "Filing is not done by the team") restates who files items and the close. The full text stays at the top of agent-hub's docs/roadmap.md; readers in other projects are AI sessions, so reading it in English is fine.
-The skill (`~/.claude/skills/roadmap-items/SKILL.md`) and the global `~/.claude/CLAUDE.md` are outside this repository and are changed in the planning session.
-
-#### Done when
-- [ ] The skill `roadmap-items` keeps only when to use it, where the ledger goes, how to answer about the plan (the four tiers) and how to run `docs:check`; for how to write and close items it points at the top of agent-hub's docs/roadmap.md by absolute path, and restates none of those rules
-- [ ] docs/usage.md keeps what the human sees and does (the report's headings, where candidates appear, that you commit) and points at the top of docs/roadmap.md for who files items and how an item is closed, instead of restating them
-- [ ] The global `~/.claude/CLAUDE.md` "plans" block still triggers the skill and restates no item rule
-- [ ] design.md §3.12's table names the skill and usage.md as pointers to the row of the item rules, not homes
-- [ ] `npm run docs:check` passes with 0 errors (the item's own close reminder is not counted), and `npm test` passes
