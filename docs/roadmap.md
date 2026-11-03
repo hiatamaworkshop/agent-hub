@@ -677,7 +677,7 @@ Whether to connect the Hub with the flow that leaves what was learned at breaks 
 ### C10. Making the leader disposable
 Status: proposed
 
-The minimum version of the ledger (a list of unanswered requests), and who holds the trigger to discard it (the open questions of design.md §3.13).
+The minimum version of the ledger (a list of unanswered requests), and who holds the trigger to discard it (the open questions of design.md §3.13). C129 would cover the list without a ledger.
 
 ### C11. The request ledger and checkpoints
 Status: proposed
@@ -834,3 +834,12 @@ Status: proposed
 
 Split from C9 on 2026-11-03 (design.md §3.12, layer 1). The Hub does not read the working tree (§3.8), so the checks run on the host, in the leader's checking steps or a Stop hook, and their results would be sent to the Hub as a notice or Event and shown in the UI.
 The other half: a deployer's reply whose `CHANGED` lists `src/` but no `docs/`. Whether that is read by the Hub (the shape of `CHANGED` is not declared yet; C11) or by the leader's checking steps is open.
+
+
+### C129. After a context reset, let the session fetch which requests are still open
+Status: proposed
+
+Raised 2026-11-03 from the official page on what survives compaction (design.md §6.1z). Hub Messages arrive as conversation, so a context reset (compaction, `/clear`, or the like in other clients) loses who asked what and which replies are awaited: a leader can lose the deployer's open request, a deployer the request it is working on. The design is in design.md §3.13 ("Restoring delivery state after a reset"), split like §3.9 into common content and a per-client trigger.
+- Content (any MCP client): one shape for this Mailbox's requests owed a reply (`backlog.awaitingReply`) and awaiting one (`outgoing`), as pointers only (`id`, `seq`, the other side, `meta.item`; no bodies), the text made in one place in the shim. Through a shim tool or the head of `inbox()`. The shim's instructions say when to fetch it (at start, and whenever the session does not know what it is waiting on), which is the whole trigger for a client without hooks.
+- Trigger for Claude Code: a `SessionStart` command hook for the `compact` / `clear` / `resume` sources prints the same content into the new context. It prints nothing with no token, no Mailbox or nothing open, and never fails the start.
+Open before deciding: a new tool or the head of `inbox()`; whether the hook asks the Hub directly (like the Event hooks) or reuses the shim's text through a Hub endpoint; whether `startup` prints too; the exact text. Covers the list half of C10.

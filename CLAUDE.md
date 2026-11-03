@@ -4,6 +4,7 @@
 
 Use the one-line index below to pick the sections relevant to the question, find the heading with `Grep`, and `Read` only that section with offset / limit.
 When you add sections or change their numbers, fix this map in the same commit (`npm run docs:check` reports the drift; design.md §3.12).
+After compaction this map is back but the sections you read are not (the large docs return only as paths, design.md §6.1z): read the section again before acting on it.
 
 - [README.md](README.md) — the entrance (about 150 lines): goals, status, setup, first round trip, hooks, starting a team, using it in other repositories
 - [docs/project-setup.md](docs/project-setup.md) — a short guide for a project's first team: what to prepare, writing items, who writes what, one item end to end
@@ -22,12 +23,12 @@ When you add sections or change their numbers, fix this map in the same commit (
   - §3.8 How it runs — 127.0.0.1 only, Docker
   - §3.10 Images / §3.11 The request ledger and checkpoints (concept)
   - §3.12 Document conventions and how to check them — the table of when to read and add what, where NOTES go, the three layers of checking, requesting reviews by target rather than a stretch of conversation (concept)
-  - §3.13 Session lifetime and context — who starts and stops sessions, context and cache, the conditions for a disposable leader (concept)
+  - §3.13 Session lifetime and context — who starts and stops sessions, context and cache, what survives a context reset and restoring delivery state after one (vendor-neutral), the conditions for a disposable leader (concept)
   - §3.14 What the Hub holds and does not hold; retention — the conditions for deleting Messages automatically, manual deletion, compacting the log, the start-warnings record kept outside the Hub (C85)
   - §3.15 Showing the backlog, and requesting work from roadmap items — backlog badges, card states (the order of Needs you / Working / Waiting on others / Stopped), the reply format and its heading colors, the rules for writing items (C numbers), who files items and where a reviewer's findings go (the planning session, the three kinds of findings), the plan list and how to answer about the plan (`## Plan`, four tiers), the English vocabulary and the mapping table of reply-format headings, handling updates during implementation, where the index lives (`docs:index`) and `meta.item`, a project is a value (the conditions for making it an entity)
   - §3.16 The roadmap is the source of truth for progress; replies are delivery signals — the delivery and progress layers, sorting requests without items, rejected `[-] C<n>`, judging "reflected" (concept)
   - §4 Security / §5 Notes on design decisions (reasons for technology choices)
-  - §6 Unverified items — the verification records of the real behavior of Channels, hooks, Docker and tab openers (6.1-6.1y), unverified (6.2). **Facts of the specification start here**
+  - §6 Unverified items — the verification records of the real behavior of Channels, hooks, Docker and tab openers and what survives compaction (6.1-6.1z), unverified (6.2). **Facts of the specification start here**
   - §7 Relation to MCP Events (SEP-3415) / §8 Relation to existing mechanisms / §9 Open questions (decided ones carry the decision and date) / §10 References
 - [docs/protocol.md](docs/protocol.md) (about 450 lines)
   - §1 Common (authentication, names, error format) / §2 Data model (Mailbox, Role, Attachment, Event, Message)
