@@ -43,6 +43,8 @@ cp roles.example.json roles.json   # PowerShell: Copy-Item roles.example.json ro
 ```
 
 - `roles.json` gives each role (leader, deployer, reviewer) its description and default subscriptions. Without it the Hub applies neither (usage guide, [Role definitions](docs/usage.md#role-definitions-rolesjson)).
+- **A variable already set in your shell overrides `.env`**, without a warning. Node reads `.env` only for variables that are not set, so `HUB_TOKEN` (also `HUB_ROLE`, `HUB_MAILBOX`, `HUB_PORT`) from the environment wins over the value in the file. A Hub started with a token from the environment refuses the token in `.env`. Before step 2, check with `echo $HUB_TOKEN` (PowerShell: `echo $env:HUB_TOKEN`); if it prints a value and you meant `.env`, unset it in that terminal.
+- `npm install` may print an `install-scripts` warning about esbuild (npm 11). It is not an error: the build and the Hub ran without it (checked on Windows 11, 2026-11-03).
 - To have agents write to you in your language, uncomment `HUB_LANGUAGE=ja` (or another tag) in `.env` ([`HUB_LANGUAGE`](docs/usage.md#the-language-agents-write-to-the-human-in-hub_language)).
 
 ### 2. Start the Hub (terminal A)
@@ -76,7 +78,7 @@ claude --mcp-config tools/dev/mcp.json --dangerously-load-development-channels s
 
 - In the warning dialog, choose **I am using this for local development**.
 - Notifications arrive even if you see the warning `server:agent-hub · no MCP server configured with that name` (design.md §6.1c).
-- The Mailbox name is decided in this order: `HUB_MAILBOX` → `<folder name>.<role>` if `HUB_ROLE` is set → the folder name (here `agent-hub`).
+- The Mailbox name is decided in this order: `HUB_MAILBOX` → `<folder name>.<role>` if `HUB_ROLE` is set → the folder name (here `agent-hub`). A `HUB_MAILBOX` or `HUB_ROLE` already set in the shell counts too (see step 1).
 - The shim reads the token from agent-hub's `.env`, so the MCP configuration does not need it.
 
 ### 4. Check a round trip

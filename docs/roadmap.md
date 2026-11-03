@@ -19,8 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C118
-
 
 (Items with a status line are listed under "Items".)
 
@@ -427,6 +425,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - `tokenRefusal` (`src/team/agent.ts`): `runAgent` on its own with no token prints the reason, records `failed` (role, the default or given Mailbox, reason) and returns 1 before any Hub read or claude spawn. Run for real with agent-hub's `.env` set aside: exit 1 and the `failed` line in `logs/start-warnings.jsonl`. `agent` from `team` is not refused.
   - `onStartSignals` / `interrupted`: SIGINT and SIGHUP write the result line with `aborted: "interrupted by <signal>"` and exit 130 / 129. `runAgent` on its own installs it at the start and removes it just before the spawn, where SIGINT is ignored for claude as before; `runTeam` keeps it for the whole start and writes its outcome so far. docs/usage.md (team names, start warnings) says the refusal, the signal line, and that only a kill that cannot be caught leaves no line.
   - Checked: `npm test` 499/499 (refusal, `interrupted`, `onStartSignals` with a fake process); `npm run docs:check` 0 errors. A real Ctrl+C was not sent (unit tests only). No review.
+- [x] C118 Walk README and project-setup.md through from nothing, and fix what breaks (2026-11-03, closed by the user without a review)
+  - Walked by the deployer in scratch folders: a fresh clone of agent-hub (16fb15f) and a clone of ad_masker (382cabc, the original untouched), on spare ports. The Hub on 7777 was not touched. Documents fixed: `README.md` (step 1: a variable already set in the shell overrides `.env` without a warning; the npm 11 install-scripts warning; step 3 Mailbox note), `docs/project-setup.md` (§1.2 the PATH form for PowerShell and Git Bash; §2 how an own-format ledger is converted, from ad_masker's 29 `docs:check` errors to 0; §5 Mailbox names and `--tabs print`), `docs/usage.md` (Items; Role definitions).
+  - Role routing without `roles.json`: `role:leader` and `role:deployer` still reach their Mailboxes and the round trip completes; `GET /roles` is `{"roles":null}`. The file adds only the role description and the default subscriptions. Recorded in `docs/usage.md`.
+  - Checked: README steps 1, 2, 5 and 6 (with `--tabs print`); project-setup §1-§5 on the ad_masker clone (own-format ledger converted to 4 items, 0 errors; the git hook sent the index; `hub-team status`); user → leader → deployer → leader → user through the shim's tools and the Hub API; `npm run docs:check` 26 items, 0 errors. No review.
+  - **Not run, accepted by the user as closing anyway**: the channel delivery into an interactive Claude session (README step 3 with `--dangerously-load-development-channels`), the browser form and the Items modal's Draft request and Send, real tabs (`wt`), hook events fired by a real session (the hooks were written, not fired), macOS and Linux (C62). Done-when 1 and 2 were met at the Hub and shim level, not through those.
+  - Found, not filed (code changes; for the planning session): a variable set in the shell (`HUB_TOKEN`, `HUB_ROLE`, `HUB_MAILBOX`) overrides `.env` for the Hub, the shim and the team start with no warning; the esbuild install-scripts warning on npm 11; `claude --help` 2.1.316 does not list `--dangerously-load-development-channels` (hidden or removed, to check against design.md §6).
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -592,19 +596,6 @@ In the order they will be taken up. Only items without a status line and blocked
 ## Items
 
 Open items. How to write them is in the rules at the top (design.md §3.15). Integration by operating desktop apps' screens is out of scope and is not made an item.
-
-### C118. Walk README and project-setup.md through from nothing, and fix what breaks
-
-Filed 2026-11-03 in the planning session, after a read-through of the entrance documents. The commands they name all exist and the links hold, but nobody has followed them from a bare state since they changed. The one gap found by reading, the Hub started before `roles.json` existed, was fixed in fcaa5ea; the same kind of gap is likely elsewhere. C117 (cairn's adoption) is the precedent: one real walk-through found five gaps that reading had not.
-
-How: use only the documents, not what the walker already knows. Work in scratch folders under the OS temporary folder, never in a real project or this repository's `.env`, `roles.json`, `data/` or `logs/`. For the project walk-through, `git clone` ad_masker (a real project that has never used the Hub; its ledger has its own format, and `docs:check` reported 29 errors on it on 2026-11-03) into the scratch folder and work only in the clone. Changes made there (its `CLAUDE.md`, ledger, `.claude/`, the git hook) are for the walk-through and are thrown away; adopting the Hub in the real ad_masker is that project's own planning, and the record here is its guide. Content of ad_masker is not judged here. Run the Hub on a spare port (`HUB_PORT`) with a throwaway token, so the Hub that is running now is not touched. Windows only; macOS and Linux are C62's open point and stay out. Where a step needs knowledge the documents do not give, that is a finding too.
-
-#### Done when
-- [ ] README steps 1-6 are followed in order from a fresh clone of this repository (no `.env`, no `roles.json`, no `dist/`) up to a leader/deployer round trip. The body of this item records, per step, what the document said and what happened
-- [ ] `docs/project-setup.md` §1-§5 are followed in a scratch clone of a git project that has never used the Hub (`C:\Users\kazuh\Desktop\Various\programming\ad_masker`; the original repository is not touched): the document map, a ledger the index can read, hooks, a team start, and Draft request through to a reply. The body records what was missing or unclear, including what its own-format ledger needed (project-setup.md §2)
-- [ ] Whether `role:leader` reaches the leader Mailbox when the Hub started without `roles.json` is run and recorded in the body, and `docs/usage.md` (Role definitions) says what was seen
-- [ ] Every gap found in README, `docs/project-setup.md` or `docs/usage.md` is fixed there, and the steps that failed are run again and pass. A gap that needs a code change is not fixed here: it is listed in the report for the planning session to file
-- [ ] `npm run docs:check` reports 0 errors, and the documents changed are named in the same change
 
 ### C3. Check real clients other than Claude Code, and how receivers read
 Status: held(once an MCP client other than Claude Code is installed)

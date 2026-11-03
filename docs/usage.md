@@ -233,7 +233,7 @@ npm --prefix <agent-hub> run docs:check -- docs/items.md                 # check
 - The Hub holds only a copy of the index; the source of truth is the repository's roadmap. Send it again after changing it. Remove it with **Remove** in Items.
 - Items shows four tiers: **Plan** (the order under the ledger's `## Plan` / `## 予定`; blocked items show what they wait for), **Awaiting a decision** (proposed), **Parked** (held; collapsed by default), **Recently closed** (the five newest closed lines by date). For a ledger without a plan heading, decided and blocked items go into Plan in number order.
 - Cards show requested / reported, and the diff when the wording of the done-when conditions changed after sending.
-- For projects whose ledger has its own format, sending it may read every item as "decided". In that case do not index it; send a plain request (roadmap C27).
+- For projects whose ledger has its own format, sending it may read every item as "decided". Run `npm --prefix <agent-hub> run docs:check -- <ledger>` first: it names each line that needs changing (the required `## 予定` / `## Plan` heading, the status words, the date on each closed line). To keep the own format instead, do not index it; send a plain request (roadmap C27). [project-setup.md §2](project-setup.md#2-preparing-a-project-checklist) has the walk-through.
 
 **Send automatically after a commit that changed it** (optional): you can install a git post-commit hook that sends the index only on commits that changed the ledger (`docs/roadmap.md`, or the path in the project's `.agent-hub.json`; C107). A commit that changes other files sends nothing. The commit is not stopped if sending fails (if the Hub is stopped, it prints one line of warning and goes on).
 
@@ -262,7 +262,7 @@ npm run hub                               # read only at startup; restart after 
 - `description` goes into the shim's instructions. The shim attaches before initialize to fetch it (up to 3 seconds; after that it starts without the description).
   That Claude Code behaves as described was checked with three sessions, leader / deployer / reviewer (design.md §6.2-5).
 - Attaching with a role that is not defined is 400 `unknown_role`, and no Mailbox is created.
-- Without the file, role names are not checked and there are no default subscriptions (as before).
+- Without the file, role names are not checked and there are no default subscriptions (as before). What was seen when the Hub started without it (C118, 2026-11-03, a scratch Hub with no `roles.json`): `GET /roles` returns `{"roles":null}`; a Mailbox attached with `HUB_ROLE=leader` still received `role:leader` messages, and `role:deployer` reached the deployer Mailbox; the round trip user → leader → deployer → leader → user completed (run through the shim's tools, not a Claude session). So role routing does not depend on the file. What the file adds is the role's description and its default subscriptions.
 - If the file's shape is wrong, the Hub does not start; it prints the file name and where the problem is and stops (it does not silently fall back to defaults).
 - Topics of the default subscriptions cannot be removed with `unsubscribe`. To remove one, delete it from `roles.json` and restart the Hub.
 - To use a file elsewhere, set `HUB_ROLES_FILE` (default `roles.json` at the repository root).

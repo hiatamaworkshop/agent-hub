@@ -7,7 +7,7 @@ A short guide for a project that is about to run its first team. It lists what t
 1. Set up and start the Hub: README steps 1-2 (Docker: `docker compose up -d --build`). `HUB_TOKEN` in agent-hub's `.env` is at least 16 characters.
    - Copy `roles.example.json` to `roles.json` **before the first start** (README step 1). The Hub reads it only at startup and, without it, gives the roles no description and no default subscriptions; after adding it, restart the Hub.
    - If the human reads another language, set `HUB_LANGUAGE` in `.env` (for example `ja`; [usage.md](usage.md#the-language-agents-write-to-the-human-in-hub_language)). Agents then write to the human in it; the reply-format headings stay in English.
-2. Put [tools/bin/](../tools/bin/) on PATH, so `hub-team` runs from any project folder.
+2. Put [tools/bin/](../tools/bin/) on PATH, so `hub-team` runs from any project folder. On Windows, PowerShell: `$env:Path = '<agent-hub>\tools\bin;' + $env:Path` (this terminal only; add it to your profile to keep it). Git Bash: `export PATH="<agent-hub>/tools/bin:$PATH"`. Checked on Windows 11 with `hub-team status` run from another project's folder (2026-11-03).
 3. Open the UI with the URL a start prints (its last line).
 
 ## 2. Preparing a project (checklist)
@@ -33,7 +33,10 @@ A document map, in the shape both roles read:
 
 Check the ledger from the project's root with `npm --prefix <agent-hub> run docs:check -- docs/items.md` (a relative path is read from the folder you are in, as `docs:index` reads `--file`).
 
-A project whose ledger has its own format (states in headings, no done-when lists) is read as all "decided". Do not index it; send plain requests with the item number in the body (roadmap C27).
+A project whose ledger has its own format (states in headings, no done-when lists) is read as all "decided". There are two ways to deal with it, and the index needs the first:
+
+- **Convert it** to the format of section 3. The walk-through on ad_masker (2026-11-03) needed these changes, and `docs:check` reports each one as an error: a `## 予定` (or `## Plan`) heading listing the decided items; a status line only in the allowed words (`状態: 提案 | 保留(再開の条件) | ブロック(C<n> の後)`, or the English `Status:` form). `進行中` (in progress) is not one of them: progress is the checked boxes in the done-when list. Each closed line `- [x] C<n> … (YYYY-MM-DD, …)` needs its date, so undated history was moved to a separate file that is not the ledger. Name the ledger in `.agent-hub.json`.
+- **Keep it** and do not index it; send plain requests with the item number in the body (roadmap C27).
 
 ## 3. Writing items
 
@@ -87,7 +90,7 @@ A finding or an `OUT OF SCOPE:` line is a candidate. It becomes an item only whe
 5. After the review and its fixes, the leader sends a separate closing request (C102), then reports to you.
 6. You commit (and push) when you say so.
 
-Follow from a terminal with `npm run team -- status --project <dir>` (the Mailboxes and the latest report).
+The Mailboxes are named `<folder name>.<role>` (a project in `~/work/ad_masker` gets `ad_masker.leader`). Where no terminal can open tabs, `hub-team --tabs print` prints each role's command so you can run it yourself, in order. Follow from a terminal with `npm run team -- status --project <dir>` (the Mailboxes and the latest report).
 
 ## 6. Where things go
 
