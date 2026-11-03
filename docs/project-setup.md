@@ -5,6 +5,8 @@ A short guide for a project that is about to run its first team. It lists what t
 ## 1. Once per machine
 
 1. Set up and start the Hub: README steps 1-2 (Docker: `docker compose up -d --build`). `HUB_TOKEN` in agent-hub's `.env` is at least 16 characters.
+   - Copy `roles.example.json` to `roles.json` **before the first start** (README step 1). The Hub reads it only at startup and, without it, gives the roles no description and no default subscriptions; after adding it, restart the Hub.
+   - If the human reads another language, set `HUB_LANGUAGE` in `.env` (for example `ja`; [usage.md](usage.md#the-language-agents-write-to-the-human-in-hub_language)). Agents then write to the human in it; the reply-format headings stay in English.
 2. Put [tools/bin/](../tools/bin/) on PATH, so `hub-team` runs from any project folder.
 3. Open the UI with the URL a start prints (its last line).
 
@@ -79,7 +81,7 @@ A finding or an `OUT OF SCOPE:` line is a candidate. It becomes an item only whe
 ## 5. One item, end to end
 
 1. The planning session files and decides the item and commits the ledger (the index is sent by the hook, or by the next team start).
-2. Start a team in the project: `hub-team --roles leader,deployer` (add `reviewer` for reviews).
+2. Start a team in the project: `hub-team --roles leader,deployer`. Two roles are enough for the first item; add `reviewer` (`--roles leader,deployer,reviewer`) when you want a review. The reviewer reads only the documents (the map, the decisions, the facts, the item), so it is worth adding once those exist.
 3. In the UI: Items → the card → **Draft request** → Send.
 4. The leader sends the work to the deployer, checks the diff and the tests, and asks for a review if a reviewer is connected.
 5. After the review and its fixes, the leader sends a separate closing request (C102), then reports to you.

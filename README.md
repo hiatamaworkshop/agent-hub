@@ -22,7 +22,7 @@ The aim is to keep the human in the loop and remove only the "copy-and-paste hau
 
 ## Status
 
-- P0 (one round trip), P1 (detecting waits and turn ends) and P2 (several sessions, replacement, message passing, resident in Docker) are done and were checked in real sessions. Real teams (vcp, cite-bridge) have been run since.
+- P0 (one round trip), P1 (detecting waits and turn ends) and P2 (several sessions, replacement, message passing, resident in Docker) are done and were checked in real sessions. Real teams (vcp, cite-bridge, cairn) have been run since.
 - Open items are the `C<n>` sections under "Items" in [docs/roadmap.md](docs/roadmap.md).
 - The `inbox` path has only been checked with the test MCP client, not with a real client other than Claude Code (C3).
 - **Platforms**: developed and checked on Windows 11. `npm run team` is covered by unit tests on every OS, but it has not been run on a real Mac, and a real `claude` session has not been started by it on Linux (C62, design.md §6.2). Reports from those platforms are welcome.
@@ -39,7 +39,11 @@ Prerequisites: Node.js 24 or later, and the `claude` CLI working in a terminal (
 npm install
 cp .env.example .env          # PowerShell: Copy-Item .env.example .env. Set HUB_TOKEN to a random value of 16+ characters (.env.example shows how to generate one)
 npm run build                 # build the shim into dist/
+cp roles.example.json roles.json   # PowerShell: Copy-Item roles.example.json roles.json. The Hub reads it only at startup, so do this before step 2
 ```
+
+- `roles.json` gives each role (leader, deployer, reviewer) its description and default subscriptions. Without it the Hub applies neither (usage guide, [Role definitions](docs/usage.md#role-definitions-rolesjson)).
+- To have agents write to you in your language, uncomment `HUB_LANGUAGE=ja` (or another tag) in `.env` ([`HUB_LANGUAGE`](docs/usage.md#the-language-agents-write-to-the-human-in-hub_language)).
 
 ### 2. Start the Hub (terminal A)
 
@@ -93,7 +97,7 @@ It adds to `<project>/.claude/settings.local.json` only the Hub's hook events th
 
 ### 6. Start a team (leader / deployer)
 
-`npm run team` starts the Hub if it is stopped, then one `claude` per role, each in a tab of its own (the same on Windows, macOS and Linux). Roles come from `roles.json` (copy `roles.example.json`).
+`npm run team` starts the Hub if it is stopped, then one `claude` per role, each in a tab of its own (the same on Windows, macOS and Linux). Roles come from `roles.json` (copied in step 1).
 
 ```sh
 npm run team                                      # choose roles from roles.json by number (e.g. 1,2; all for every role)
