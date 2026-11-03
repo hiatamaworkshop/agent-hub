@@ -488,7 +488,7 @@ In the order they will be taken up. Only items without a status line and blocked
   - Review finding fixed: a connected `you` card (C49, waiting on an unconnected party) blocks `Your move`.
   - Wording changed in the planning session on 2026-11-03 (the user's decision): Paused also hides it, since a usage-limit wait resumes by itself; code and a Paused scene followed.
   - Checked: `npm run ui:check` 187 ok, 0 NG, exit 0 (run again by the planning session; 9 C127 scenes, including Working → Idle without a reload and Paused); `npm test` 550 pass, 0 fail; design.md §3.15 and docs/usage.md updated.
-  - Not verified: the tint and frame by eye on a live team, and dark mode.
+  - Seen by eye (2026-11-03, the user): on the live team in dark mode, three idle sessions and Needs you 0 show the frame, the tint and `Your move`. The compose Hub had to be rebuilt first (`docker compose up -d --build`); the image predated C127. Light mode not seen.
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
