@@ -12,13 +12,14 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 - A closed line (`[x] C<n>` / `[-] C<n>`) has the date it was closed (`YYYY-MM-DD`) at the head of the parentheses at the end of the line (e.g. `(2026-10-27, requested by the user)`; for a rejection `(rejected 2026-10-27, reason)`). A date inside the title does not count.
 - When asked about the plan, first check for breakage with `npm run -s docs:check`, then answer from the JSON of `npm run -s docs:check -- docs/roadmap.md --index` and the dates on closed lines. Do not read the whole ledger and reclassify it (the four-tier answer is in the skill `roadmap-items`).
 - The Japanese vocabulary (`状態: 提案 | 保留(…) | ブロック(C<n> の後)`, `#### 完了条件`, `## 予定`, `(却下 YYYY-MM-DD、…)`) is read the same way by the checker and the index (the mapping table is in design.md §3.15). The closed records below, from before 2026-10-29, are in Japanese.
-- Breakage of the rules is checked with `npm run docs:check` (`src/shared/roadmap.ts`).
+- Breakage of the rules is checked with `npm run docs:check` (`src/shared/roadmap.ts`). On this repository's own roadmap it also checks the other documents (CLAUDE.md's map, protocol.md's tables and kinds, dates in design.md §9; `src/docs-check/repo.ts`, C9).
 - An explanation for writing the same rules in other projects is in the global skill `roadmap-items` (`~/.claude/skills/roadmap-items/`). The source of truth is this header and `src/shared/roadmap.ts`.
 
 ## Plan
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C9
 
 (Items with a status line are listed under "Items".)
 
@@ -629,10 +630,19 @@ Status: proposed
 Whether to connect the Hub with the flow that leaves what was learned at breaks (commits, items done) in engram. Optional.
 
 ### C9. Checking the document conventions
-Status: proposed
 
-design.md §3.12. Layer 1 is a script of deterministic checks (`npm run docs:check`: map drift, drift between the API and enumeration tables, `CHANGED` missing docs, dates on §9's decisions). Results are shown in the UI as a notice or Event.
-The table of conventions becomes the source of truth, and CLAUDE.md, leader.md and deployer.md just point to it. For layer 2 (a lightweight judge), measure whether it is worth building once drift missed by layer 1 has accumulated as material.
+design.md §3.12, layer 1 (deterministic checks, no AI). Decided 2026-11-03 by the user, to settle the document rules early so they do not drift as the docs grow.
+This item builds the checks of agent-hub's own documents that run on the working tree. Sending the results to the Hub and the deployer's `CHANGED` missing docs are C123.
+Out of scope: making the table of conventions the single source of truth that CLAUDE.md, leader.md and deployer.md point to, and layer 2 (a lightweight judge; measure whether it is worth building once drift missed by layer 1 has accumulated as material).
+
+#### Done when
+- [x] Map drift: `npm run docs:check` reports as an error each `§<n>` on CLAUDE.md's document map with no numbered heading in the file it is listed under, and as a warning each numbered `##` / `###` heading of design.md and protocol.md the map does not cover (the heading itself, its parent or a child listed)
+- [x] Table drift: an error for each Hub route (`createApp` with every optional store) missing from protocol.md §3's tables and each row there with no route, and when `EVENT_KINDS` / `MESSAGE_KINDS` differ from the `kind` lists of Event and Message in protocol.md §2
+- [x] §9 dates: an error for each line in design.md §9 that labels a `Decision`, `Direction` or `Decided` without a `YYYY-MM-DD` on that line
+- [x] These checks run when the ledger checked is this repository's `docs/roadmap.md` (with or without the path); other projects' ledgers get only the roadmap rules, as today
+- [x] On today's tree `npm run docs:check` passes with 0 errors and 0 warnings (the documents are fixed for what the checks find)
+- [x] Tests: each check with a passing and a failing input; `npm test` passes
+- [x] Docs: design.md §3.12 says which layer-1 checks are built; docs/usage.md and the top of roadmap.md say what `docs:check` checks
 
 ### C10. Making the leader disposable
 Status: proposed
@@ -788,3 +798,9 @@ Status: proposed
 Found 2026-11-03 while checking C121. design.md §6.1 (checked 2026-10-16) says a channel "works only in interactive sessions. It is ignored with `-p` and the Agent SDK." The official Channels page read on 2026-11-03 now says: "When you run channels in non-interactive mode with `-p`, tools that need terminal input, such as multiple-choice questions and plan mode approval, are disabled so the session never stalls waiting for input." That reads as if `-p` sessions now receive channel messages.
 If so, it matters: a role could run without a terminal tab (the tab openers, C62/C116), but a `-p` session ends after its turn, so how it would stay to receive the next message is unknown.
 To decide after checking: on a real machine, whether a `claude -p` session started with `--dangerously-load-development-channels server:agent-hub` receives a Hub message, and whether it stays alive to receive another; record the result with the Claude Code version in design.md §6 and correct §6.1. Whether to use it for roles is a separate item.
+
+### C123. Send `docs:check` results to the Hub, and check `CHANGED` for missing docs
+Status: proposed
+
+Split from C9 on 2026-11-03 (design.md §3.12, layer 1). The Hub does not read the working tree (§3.8), so the checks run on the host, in the leader's checking steps or a Stop hook, and their results would be sent to the Hub as a notice or Event and shown in the UI.
+The other half: a deployer's reply whose `CHANGED` lists `src/` but no `docs/`. Whether that is read by the Hub (the shape of `CHANGED` is not declared yet; C11) or by the leader's checking steps is open.

@@ -3,7 +3,7 @@
 ## Document map (do not read everything at startup)
 
 Use the one-line index below to pick the sections relevant to the question, find the heading with `Grep`, and `Read` only that section with offset / limit.
-When you add sections or change their numbers, fix this map in the same commit.
+When you add sections or change their numbers, fix this map in the same commit (`npm run docs:check` reports drift between the map and the headings, C9).
 
 - [README.md](README.md) — the entrance (about 150 lines): goals, status, setup, first round trip, hooks, starting a team, using it in other repositories
 - [docs/project-setup.md](docs/project-setup.md) — a short guide for a project's first team: what to prepare, writing items, who writes what, one item end to end
@@ -13,6 +13,7 @@ When you add sections or change their numbers, fix this map in the same commit.
   - §1.1 Positioning — what we own and what we borrow, criteria for continuing
   - §1.2 Working conventions — the thesis, the input envelope, trust on evidence, and where each convention is enforced (or not yet; e.g. sycophancy → reviewer `breaks when:`)
   - §2 Requirements / Non-goals — no automatic forwarding, no autonomous orchestration
+  - §3.1 Why the Hub and the shim are separate
   - §3.2 Components — the roles of the Hub / shim / hooks / UI, details of the UI's behavior (including thread filtering)
   - §3.3 Mailbox and Attachment — replacement, takeover, leases
   - §3.4 Detection — the split between hooks and skills, resolving the Mailbox, the scope built in P1 (division of labor with Agent View)
@@ -27,7 +28,7 @@ When you add sections or change their numbers, fix this map in the same commit.
   - §3.16 The roadmap is the source of truth for progress; replies are delivery signals — the delivery and progress layers, sorting requests without items, rejected `[-] C<n>`, judging "reflected" (concept)
   - §4 Security / §5 Notes on design decisions (reasons for technology choices)
   - §6 Unverified items — the verification records of the real behavior of Channels, hooks, Docker and tab openers (6.1-6.1y), unverified (6.2). **Facts of the specification start here**
-  - §8 Relation to existing mechanisms / §9 Open questions (decided ones carry the decision and date)
+  - §7 Relation to MCP Events (SEP-3415) / §8 Relation to existing mechanisms / §9 Open questions (decided ones carry the decision and date) / §10 References
 - [docs/protocol.md](docs/protocol.md) (about 450 lines)
   - §1 Common (authentication, names, error format) / §2 Data model (Mailbox, Role, Attachment, Event, Message)
   - §3 HTTP API / §4 Delivery guarantees / §5 MCP tools / §6 Format of channel notifications / §7 The UI's SSE names / §8 Vocabulary mapping to MCP Events

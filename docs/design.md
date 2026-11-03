@@ -456,6 +456,7 @@ But written rules eventually fall apart without something that checks whether th
    - Drift between declarations and tables: are all of `app.ts`'s routes in protocol.md §3's tables? Do `EVENT_KINDS` / `MESSAGE_KINDS` match protocol.md?
    - Missing additions: the deployer's `CHANGED` (in DCP form, so the Hub can read it too) has `src/` but no `docs/`.
    - Breaks in how things are written: a "Decision" in §9 without a date.
+   **Built (2026-11-03, C9)** in `npm run docs:check` on this repository's own roadmap (`src/docs-check/repo.ts`): map drift (a § on the map with no heading is an error; a numbered `##` / `###` heading the map does not cover is a warning), the routes of `createApp` against §3's tables of protocol.md, `EVENT_KINDS` / `MESSAGE_KINDS` against §2's `kind` lists, and a `Decision` / `Direction` / `Decided` label in §9 without a date. Other projects' ledgers get only the roadmap rules. Not built: `CHANGED` missing docs and sending the results to the Hub (C123).
    What corresponds to the citation bridge's "if the text changes, go back to needs-re-confirming" is matching the code's declarations against the docs' tables.
 2. **A lightweight judge** (something like the thesis's Jev). Given only what layer 1 cannot decide, for example sorting "is this NOTES line a fact, a decision, or neither?".
 3. **The leader and humans.** Whether what the docs say matches the meaning of the implementation. Subtle drift remains here.
@@ -1212,7 +1213,7 @@ Observation: delivery, addresses and dashboards are converging, so the differenc
    The condition for closing awaiting reply was later extended with a request or reply from the other side (C28, 2026-10-23; protocol.md §2).
 9. **Whether to keep requests awaiting a reply that are tied to an item** (open question 1 of §3.16): the source of truth for progress was put in the roadmap (§3.16, 2026-10-19), so requests with `meta.item` can be followed on the item's card. Whether to narrow §9-8's decision a to requests without an item. Decide after building the "reflected" judgment (§3.16), by seeing whether a reason to keep them remains.
 
-(Decided: the token is passed to the browser by cookie; §4)
+(Decided 2026-10-16: the token is passed to the browser by cookie; §4)
 
 10. **Whether project filtering also leaves waits unhidden** (thread filtering in §3.2; came up in C59's implementation): the done-when condition is "questions, permission waits and requests to the human are not hidden by any combination of axes". C59 applied it to the Mailbox, kind, notification and collapse axes, and left project as before (waits in other projects are hidden and counted in `N waiting in other projects`). Extending it to project would show other projects' questions on the chosen project's screen. A human decides which.
 
