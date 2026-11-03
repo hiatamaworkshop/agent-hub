@@ -19,6 +19,8 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C118
+
 
 (Items with a status line are listed under "Items".)
 
@@ -590,6 +592,19 @@ In the order they will be taken up. Only items without a status line and blocked
 ## Items
 
 Open items. How to write them is in the rules at the top (design.md §3.15). Integration by operating desktop apps' screens is out of scope and is not made an item.
+
+### C118. Walk README and project-setup.md through from nothing, and fix what breaks
+
+Filed 2026-11-03 in the planning session, after a read-through of the entrance documents. The commands they name all exist and the links hold, but nobody has followed them from a bare state since they changed. The one gap found by reading, the Hub started before `roles.json` existed, was fixed in fcaa5ea; the same kind of gap is likely elsewhere. C117 (cairn's adoption) is the precedent: one real walk-through found five gaps that reading had not.
+
+How: use only the documents, not what the walker already knows. Work in scratch folders under the OS temporary folder, never in a real project or this repository's `.env`, `roles.json`, `data/` or `logs/`. Run the Hub on a spare port (`HUB_PORT`) with a throwaway token, so the Hub that is running now is not touched. Windows only; macOS and Linux are C62's open point and stay out. Where a step needs knowledge the documents do not give, that is a finding too.
+
+#### Done when
+- [ ] README steps 1-6 are followed in order from a fresh clone of this repository (no `.env`, no `roles.json`, no `dist/`) up to a leader/deployer round trip. The body of this item records, per step, what the document said and what happened
+- [ ] `docs/project-setup.md` §1-§5 are followed in an empty git project: the document map, a one-item ledger, hooks, a team start, and Draft request through to a reply. The body records what was missing or unclear
+- [ ] Whether `role:leader` reaches the leader Mailbox when the Hub started without `roles.json` is run and recorded in the body, and `docs/usage.md` (Role definitions) says what was seen
+- [ ] Every gap found in README, `docs/project-setup.md` or `docs/usage.md` is fixed there, and the steps that failed are run again and pass. A gap that needs a code change is not fixed here: it is listed in the report for the planning session to file
+- [ ] `npm run docs:check` reports 0 errors, and the documents changed are named in the same change
 
 ### C3. Check real clients other than Claude Code, and how receivers read
 Status: held(once an MCP client other than Claude Code is installed)
