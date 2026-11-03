@@ -442,12 +442,13 @@ But written rules eventually fall apart without something that checks whether th
 | The deployer's report | — | NOTES lines, sorted to the destinations below | This section, "Where NOTES go" (the report's format is in deployer.md) |
 | The leader checks | The sections related to the change | — | leader.md, "Finding things in the docs" |
 | The reviewer returns findings | The target (an item or a commit range), then the sections related to the change, as the reviewer chooses them | — | reviewer.md, "Reply format" |
+| Writing, filing or closing an item | The rules at the top of roadmap.md | The item, by the reader the rules name (the planning session files; the deployer records progress) | roadmap.md, the rules at its top (pointers only: the skill `roadmap-items` for sessions in every project, docs/usage.md for the human; C128) |
 | Something was decided | — | "Decision (date)" and the reason under the matching item of §9 | This section, "How to write §9" |
 | A break (commit, item done) | — | The checkboxes and facts in the item; the close after the review; what was learned to engram / memory | roadmap.md, the rules at its top (the engram and memory part: the global CLAUDE.md [engram] block and the clear-timing skill, outside the repository) |
 
 - **Where NOTES go**: facts checked (the real behavior of Channels and hooks and so on) to §6; what was decided to the decisions in §9; what could not be decided to the open questions in §9; later work to roadmap items (`### C<n>.`; how to write them is at the top of roadmap.md, §3.15).
 - **How to write §9**: keep the item's question, and add "Decision (YYYY-MM-DD)" and the reason below it. Do not delete it.
-- Each row's last column names the file where the convention is written in full; a file that mentions the convention points there instead of restating it. Some carriers are outside this repository (engram, the auto memory, the global CLAUDE.md and skills); they are not changed here.
+- Each row's last column names the file where the convention is written in full; a file that mentions the convention points there instead of restating it. Some carriers are outside this repository (engram, the auto memory, the global CLAUDE.md and skills); a team does not change them, the planning session does. The test for a line in any carrier: if it were deleted, would someone act wrongly at some point? If not, it goes; if so, it stays once, where that reader already is at that moment (files always loaded carry only prohibitions broken before anyone thinks to look, and "before X, read Y" pointers).
 
 **Three layers of checking**
 
