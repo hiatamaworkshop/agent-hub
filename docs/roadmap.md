@@ -20,6 +20,8 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C9
+- [ ] C124
+- [ ] C125
 
 (Items with a status line are listed under "Items".)
 
@@ -804,3 +806,27 @@ Status: proposed
 
 Split from C9 on 2026-11-03 (design.md §3.12, layer 1). The Hub does not read the working tree (§3.8), so the checks run on the host, in the leader's checking steps or a Stop hook, and their results would be sent to the Hub as a notice or Event and shown in the UI.
 The other half: a deployer's reply whose `CHANGED` lists `src/` but no `docs/`. Whether that is read by the Hub (the shape of `CHANGED` is not declared yet; C11) or by the leader's checking steps is open.
+
+### C124. Extend the table-drift checks to MCP tools and SSE event names
+
+Decided 2026-11-03 by the user, following C9 (design.md §3.12, layer 1). The same kind of check as C9's routes and kinds, added to `src/docs-check/repo.ts`.
+Known drift on 2026-11-03: protocol.md §5 lists `attach`, `list_topics` and `report_event`, but the shim publishes only `post_message`, `subscribe`, `unsubscribe`, `inbox` and `whoami` (`report_event` is deferred, design.md §3.4). Whether each row is wrong or not built yet is checked against the code and the docs when fixing.
+
+#### Done when
+- [ ] MCP tools: `npm run docs:check` reports an error for each tool the shim publishes that has no row in protocol.md §5's table, and for each row with no such tool unless the row says it is not built
+- [ ] SSE names: an error for each `event:` name the Hub sends on the UI stream (`/stream`) missing from protocol.md §7 and each name there it does not send; the same for the shim's stream against the table "SSE `event:` names for the shim" in §3
+- [ ] The names are read from the code (the shim's tool list, the Hub's emitters), not typed into the check
+- [ ] On today's tree `npm run docs:check` passes with 0 errors and 0 warnings (the documents are fixed for what the checks find)
+- [ ] Tests: each check with a passing and a failing input; `npm test` passes
+- [ ] Docs: the list of built checks in design.md §3.12 and the `docs:check` line in docs/usage.md include these
+
+### C125. One home per document convention, with the table in design.md §3.12 as the index
+
+Decided 2026-11-03 by the user (the part of C9 left out of scope). §3.12 says the carriers of the table of conventions are scattered across CLAUDE.md, the role descriptions, the global CLAUDE.md and skills, and should move toward pointing at the table.
+Constraint: the role descriptions in `tools/dev/roles/` are used by teams in other projects, so they stay project-neutral (they name the project's own map or table, with agent-hub as an example), as they do today.
+
+#### Done when
+- [ ] Each row of the table in design.md §3.12 names the one file where its convention is written in full; other files that mention it link there instead of restating it
+- [ ] No rule is written in full in two places among CLAUDE.md, the top of docs/roadmap.md and design.md §3.12 (a short pointer with the section is fine)
+- [ ] `tools/dev/roles/*.md` restate no agent-hub-only rule; where one is needed they point to the project's CLAUDE.md map or conventions table
+- [ ] `npm run docs:check` passes with 0 errors and 0 warnings, and `npm test` passes
