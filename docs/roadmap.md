@@ -22,6 +22,7 @@ In the order they will be taken up. Only items without a status line and blocked
 - [ ] C9
 - [ ] C124
 - [ ] C125
+- [ ] C126
 
 (Items with a status line are listed under "Items".)
 
@@ -385,6 +386,7 @@ In the order they will be taken up. Only items without a status line and blocked
   - The ledger is named in `.agent-hub.json` at the project's root (`"ledger"`, default `docs/roadmap.md`), read by `readLedgerSetting` (`src/shared/ledger.ts`) for the team start, `docs:index` and the post-commit hook (`docs:index -- --if-touched`, `touchesLedger`). The place and why are in design.md §3.15 (open question 2). `sendLedgerIndex` (`src/docs-check/send-index.ts`) never throws and returns the reason when it does not send.
   - Team start: after the Hub is up, sends the index when the ledger exists; the summary always prints `index: sent <file> (N items) to <Hub>` or `index: not sent: <reason>`; a failed send does not stop the start. Post-commit hook (`tools/hooks/post-commit-index.sh`): sends only when the commit changed the ledger. Items pane (`noIndexHint` in `public/index.html`): with no index for the chosen project, shows `npm run docs:index -- --project <folder>`, with no `--file`.
   - Checked: `npm test` 474/474 pass; `npm run ui:check` 157 ok, 0 NG (the empty-pane scene asserts the command has `--project`, no `--file`, and no `--file` hint); `npm run docs:check` 0 errors. The hook, the team-start summary and the pane command were checked by hand in a scratch git repo and a Hub on port 7797 (the earlier reports). The leader checked the diff against SCOPE. No reviewer was connected, so the item had no review.
+  - Late review (2026-11-03): the review request of 2026-11-01 stayed unread (it predates C113) and reached the first reviewer that attached, after the close. Lines 1, 2, 4 and 5 met; line 3 met for ASCII paths in git's canonical form. The two findings (non-ASCII ledger paths, paths not in canonical form) and three notes are C126.
 - [x] C113 A request the leader went on without stays open and arrives stale (2026-11-01, decided by the user)
   - `tools/dev/roles/leader.md` ("When the other side is not connected"): a request is left open only when the work is still due once the role starts (`NEEDS ACTION`); when the leader goes on without the other side (a review reported `NOT VERIFIED`, or work done another way), it closes its own request with a `reply` to the same address, one line why. `docs/usage.md` (teams in detail) says the same.
   - `src/hub/reply-target.test.ts`: a reply from the sender to its own request, addressed to an unattached role, is accepted, closes the request and reads as unread on that Mailbox. It passed on the existing Hub code; `src/hub` not changed.
@@ -830,3 +832,18 @@ Constraint: the role descriptions in `tools/dev/roles/` are used by teams in oth
 - [ ] No rule is written in full in two places among CLAUDE.md, the top of docs/roadmap.md and design.md §3.12 (a short pointer with the section is fine)
 - [ ] `tools/dev/roles/*.md` restate no agent-hub-only rule; where one is needed they point to the project's CLAUDE.md map or conventions table
 - [ ] `npm run docs:check` passes with 0 errors and 0 warnings, and `npm test` passes
+
+### C126. The ledger index misses non-ASCII and non-canonical ledger paths
+
+Decided 2026-11-03 by the user, from C107's late review (2026-11-03; the record is under `[x] C107`).
+- `tools/hooks/post-commit-index.sh` reads `git diff-tree --name-only` without `-z` or `core.quotePath=false`, so git C-quotes a path with non-ASCII characters and `touchesLedger` never matches it: with `"ledger": "docs/台帳.md"` a commit that changes it sends nothing and says nothing.
+- `parseLedgerSetting` (`src/shared/ledger.ts`) normalizes only `\` and a leading `./`, so `docs/./items.md` or `docs//items.md` pass (`existsSync` normalizes) but never match git's path in the hook; `docs:index --file ./docs/items.md` (`push-index.ts`) skips `normalizeSource` entirely and keys a second index for the same file.
+- The hook keeps `push-index`'s output only on failure, so a warning about an unusable `.agent-hub.json` is never seen on a commit (docs/usage.md Items says it prints one), and its first line on a failed send always blames "Hub stopped or no token" even when the reason is a missing file or no `### C<n>.` items.
+Case differences on Windows (`Docs/Items.md` for git's `docs/items.md`) may be handled by comparing as git reports or by saying in usage.md that the spelling must match git's.
+
+#### Done when
+- [ ] A commit that changes a ledger whose path has non-ASCII characters sends the index from the post-commit hook
+- [ ] A `ledger` setting and a `docs:index --file` value are put in one canonical form (`.` and repeated `/` removed), so the same file always has one `source`; a value that cannot be put in that form is a warning and the default is used
+- [ ] On a commit, the hook shows `push-index`'s warning about an unusable setting, and its message on a failed send gives the real reason
+- [ ] Tests: the non-ASCII hook path, each non-canonical spelling, and the warning shown by the hook; `npm test` passes
+- [ ] docs/usage.md (Items, the hook) says how the ledger path is matched
