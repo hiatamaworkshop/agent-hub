@@ -3,7 +3,29 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { DEFAULT_LEDGER, LEDGER_SETTING_FILE, normalizeSource, parseLedgerSetting, readLedgerSetting, touchesLedger } from './ledger.js'
+import { canonicalPath, DEFAULT_LEDGER, LEDGER_SETTING_FILE, parseLedgerSetting, readLedgerSetting, touchesLedger } from './ledger.js'
+
+test('canonicalPath: every spelling of one file is one form (C126)', () => {
+  for (const spelling of ['docs/items.md', 'docs/./items.md', 'docs//items.md', './docs/items.md', 'docs\\items.md', ' docs/items.md ', 'docs/items.md/', './docs//./items.md']) {
+    assert.equal(canonicalPath(spelling), 'docs/items.md', spelling)
+  }
+  assert.equal(canonicalPath('docs/台帳.md'), 'docs/台帳.md')
+  assert.equal(canonicalPath('docs/sub/../items.md'), 'docs/items.md')
+})
+
+test('canonicalPath: a value that cannot be put in the form is null', () => {
+  for (const bad of ['', '   ', '.', './', '..', '../x.md', 'docs/../../x.md', '/etc/x.md', 'C:/x.md', 'C:\\x.md']) {
+    assert.equal(canonicalPath(bad), null, JSON.stringify(bad))
+  }
+})
+
+test('the setting is read in the same form, so docs/./items.md and docs//items.md name docs/items.md (C126)', () => {
+  assert.deepEqual(parseLedgerSetting('{"ledger": "docs/./items.md"}'), { source: 'docs/items.md', from: 'file' })
+  assert.deepEqual(parseLedgerSetting('{"ledger": "docs//items.md"}'), { source: 'docs/items.md', from: 'file' })
+  assert.deepEqual(parseLedgerSetting('{"ledger": "docs/台帳.md"}'), { source: 'docs/台帳.md', from: 'file' })
+  assert.equal(parseLedgerSetting('{"ledger": "."}').from, 'default')
+  assert.match(parseLedgerSetting('{"ledger": "."}').warning ?? '', /inside the project/)
+})
 
 test('no setting keeps docs/roadmap.md, without a warning', () => {
   assert.deepEqual(parseLedgerSetting(null), { source: DEFAULT_LEDGER, from: 'default' })
@@ -54,6 +76,14 @@ test('touchesLedger: a commit that changed the ledger path (in git\'s form) send
   assert.equal(touchesLedger(['src/a.ts', 'docs/items.md'], 'docs/items.md'), true)
   assert.equal(touchesLedger(['./docs/items.md'], 'docs/items.md'), true)
   assert.equal(touchesLedger(['docs\\items.md'], 'docs/items.md'), true)
+  // git's paths for a non-ASCII name (-z gives them unquoted); a setting in a non-canonical spelling still matches
+  assert.equal(touchesLedger(['docs/台帳.md'], 'docs/台帳.md'), true)
+  assert.equal(touchesLedger(['docs/台帳.md'], 'docs//台帳.md'), true)
+  assert.equal(touchesLedger(['docs/items.md'], 'docs/./items.md'), true)
+})
+
+test('touchesLedger: the spelling must match git\'s (case included), so Docs/Items.md does not match docs/items.md', () => {
+  assert.equal(touchesLedger(['docs/items.md'], 'Docs/items.md'), false)
 })
 
 test('touchesLedger: a commit that changed only other files does not send', () => {
@@ -67,5 +97,5 @@ test('touchesLedger: a commit that changed only other files does not send', () =
 test('the default ledger: docs/roadmap.md is sent after a commit that changed it, and not otherwise', () => {
   assert.equal(touchesLedger(['docs/roadmap.md'], DEFAULT_LEDGER), true)
   assert.equal(touchesLedger(['docs/items.md'], DEFAULT_LEDGER), false)
-  assert.equal(normalizeSource(' docs\\roadmap.md '), 'docs/roadmap.md')
+  assert.equal(canonicalPath(' docs\\roadmap.md '), 'docs/roadmap.md')
 })

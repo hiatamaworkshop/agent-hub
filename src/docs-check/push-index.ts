@@ -2,14 +2,15 @@
 // npm run docs:index [-- --project <フォルダ>] [--file <project からの相対パス>] [--if-touched]
 //   --project: 既定は npm を呼んだフォルダ (INIT_CWD)。別のプロジェクトは `npm --prefix <agent-hub> run docs:index` をそのルートで呼ぶ
 //   --file: 既定はそのプロジェクトの .agent-hub.json の "ledger" (なければ docs/roadmap.md。C107、src/shared/ledger.ts)
-//   --if-touched: 標準入力の変わったパス (git diff-tree の出力) に台帳があるときだけ送る。post-commit フックが使う (C52, C107)
+//   --if-touched: 標準入力の変わったパス (git diff-tree -z の出力、NUL 区切り) に台帳があるときだけ送る。post-commit フックが使う (C52, C107, C126)
+//   台帳の path は src/shared/ledger.ts の canonicalPath の形にそろえて比べる (--file も同じ。書き方は docs/usage.md)
 // 接続先とトークンは shim と同じ (HUB_URL か HUB_PORT、HUB_TOKEN。なければ agent-hub の .env を読む)
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { envValue } from '../shim/config.js'
 import { envOverrides, overrideWarning, tokenFromEnvironment } from '../shared/env-override.js'
-import { readLedgerSetting, touchesLedger } from '../shared/ledger.js'
+import { canonicalPath, readLedgerSetting, touchesLedger } from '../shared/ledger.js'
 import { sendLedgerIndex } from './send-index.js'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -28,11 +29,20 @@ function option(name: string): string | undefined {
 const project = resolve(option('--project') ?? process.env.INIT_CWD ?? process.cwd())
 const setting = readLedgerSetting(project)
 if (setting.warning) console.warn(`${join(project, '.agent-hub.json')}: ${setting.warning}`)
-const source = (option('--file') ?? setting.source).replace(/\\/g, '/')
+// --file と設定は同じ形にそろえる (C126)。同じファイルは 1 つの source になる。形にできない --file は警告を出し、
+// プロジェクトの台帳 (設定、なければ docs/roadmap.md) を使う。送るかどうかは、その台帳で決まる
+const fileOption = option('--file')
+let source = setting.source
+if (fileOption !== undefined) {
+  const named = canonicalPath(fileOption)
+  if (named === null) console.warn(`--file ${fileOption} is not a path inside the project (relative, without ..), so ${setting.source} (the project's ledger) is used`)
+  else source = named
+}
 
 // フックから呼ばれたとき: この commit で台帳が変わっていなければ、何も送らずに終わる
 if (process.argv.includes('--if-touched')) {
-  const changed = readFileSync(0, 'utf8').split(/\r?\n/)
+  // 標準入力は git diff-tree -z の出力 (NUL 区切り。引用されないので、非 ASCII・空白・改行のあるパスもそのまま) (C126)
+  const changed = readFileSync(0, 'utf8').split('\0')
   if (!touchesLedger(changed, source)) process.exit(0)
 }
 

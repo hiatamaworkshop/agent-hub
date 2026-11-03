@@ -23,7 +23,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C126
 
 (Items with a status line are listed under "Items".)
 
@@ -468,6 +467,15 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: `npm test` 550 pass, 0 fail; `npm run docs:check` 0 errors.
   - Done-when line 4 was checked on the user's instruction in the request (the item's own close reminder is not counted as a warning). After this close the reminder is gone, so `docs:check` shows 0 warnings.
   - Not changed (outside this item's done-when): the global ~/.claude/CLAUDE.md, the skills roadmap-items and clear-timing, and docs/usage.md:205 (who files items, restated in full).
+- [x] C126 The ledger index misses non-ASCII and non-canonical ledger paths (2026-11-03, closed by the closing request after the review, which had no findings)
+  - The hook passes `git diff-tree -z` output to `docs:index --if-touched` NUL-separated, so a non-ASCII ledger path (`docs/台帳.md`) reaches the send. Checked with the real hook under git's sh in a scratch repository (the previous hook sent nothing; the new one sends).
+  - One form for the `ledger` setting, `docs:index --file` and the hook's comparison: `canonicalPath` (`src/shared/ledger.ts`). `docs/./items.md`, `docs//items.md`, `./docs/items.md` and `docs\items.md` name one file with one `source`.
+  - A bad setting or a bad `--file` value (empty, absolute, a drive letter, `..`) prints a warning and falls back to the project's ledger: the setting when it is usable, else `docs/roadmap.md`. Done-when line 2 is met as written for both.
+  - The hook shows push-index's warning on every commit (an unusable setting too), and a failed send prints the real reason (`docs/items.md を送れない: …`), not "Hub stopped or no token".
+  - `docs/usage.md` says how the path is matched (one form, the spelling must match git's, non-ASCII works, the `--file` fallback).
+  - Checked: `npm test` 563 pass, 0 fail; `npm run docs:check` 0 errors, 0 warnings.
+  - Review (2026-11-03): no findings.
+  - Left as they are: a different letter case on Windows is not folded (usage.md says the spelling must match git's); a real send to a running Hub from the hook was not run (the tests use an unreachable Hub); the hook's `grep -v '^npm \(error\|warn\)'` uses `\|` in a basic regex (GNU grep, as in Git for Windows), not checked with a BSD grep.
 - [x] C128 Item rules in one place: the skill and usage.md point at the top of roadmap.md (2026-11-03, closed by the planning session; docs only, no review)
   - The top of roadmap.md is the one home for every project's ledger. Rules that only the skill had moved there first: nothing after the title, a request names the ID, an undecided item is `proposed`, each done-when line checkable within the item and written from the current decision, about one request in size, working promises in CLAUDE.md, removing a closed item from `## Plan`, where closed lines live.
   - The skill `roadmap-items` keeps when to read, the two layers, where a ledger goes, the four-tier answer and how to run `docs:check`; for writing and closing it points at the top of this file by absolute path.
@@ -826,18 +834,3 @@ Status: proposed
 
 Split from C9 on 2026-11-03 (design.md §3.12, layer 1). The Hub does not read the working tree (§3.8), so the checks run on the host, in the leader's checking steps or a Stop hook, and their results would be sent to the Hub as a notice or Event and shown in the UI.
 The other half: a deployer's reply whose `CHANGED` lists `src/` but no `docs/`. Whether that is read by the Hub (the shape of `CHANGED` is not declared yet; C11) or by the leader's checking steps is open.
-
-### C126. The ledger index misses non-ASCII and non-canonical ledger paths
-
-Decided 2026-11-03 by the user, from C107's late review (2026-11-03; the record is under `[x] C107`).
-- `tools/hooks/post-commit-index.sh` reads `git diff-tree --name-only` without `-z` or `core.quotePath=false`, so git C-quotes a path with non-ASCII characters and `touchesLedger` never matches it: with `"ledger": "docs/台帳.md"` a commit that changes it sends nothing and says nothing.
-- `parseLedgerSetting` (`src/shared/ledger.ts`) normalizes only `\` and a leading `./`, so `docs/./items.md` or `docs//items.md` pass (`existsSync` normalizes) but never match git's path in the hook; `docs:index --file ./docs/items.md` (`push-index.ts`) skips `normalizeSource` entirely and keys a second index for the same file.
-- The hook keeps `push-index`'s output only on failure, so a warning about an unusable `.agent-hub.json` is never seen on a commit (docs/usage.md Items says it prints one), and its first line on a failed send always blames "Hub stopped or no token" even when the reason is a missing file or no `### C<n>.` items.
-Case differences on Windows (`Docs/Items.md` for git's `docs/items.md`) may be handled by comparing as git reports or by saying in usage.md that the spelling must match git's.
-
-#### Done when
-- [ ] A commit that changes a ledger whose path has non-ASCII characters sends the index from the post-commit hook
-- [ ] A `ledger` setting and a `docs:index --file` value are put in one canonical form (`.` and repeated `/` removed), so the same file always has one `source`; a value that cannot be put in that form is a warning and the default is used
-- [ ] On a commit, the hook shows `push-index`'s warning about an unusable setting, and its message on a failed send gives the real reason
-- [ ] Tests: the non-ASCII hook path, each non-canonical spelling, and the warning shown by the hook; `npm test` passes
-- [ ] docs/usage.md (Items, the hook) says how the ledger path is matched

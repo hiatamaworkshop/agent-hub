@@ -2,7 +2,7 @@
 // One file in the project's root, `.agent-hub.json`, read by `hub-team` / `npm run team` (team start), `npm run docs:index`
 // (without --file) and the post-commit hook (through `docs:index --if-touched`). A project with no file, or no `ledger` key, keeps docs/roadmap.md.
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, posix } from 'node:path'
 
 export const LEDGER_SETTING_FILE = '.agent-hub.json'
 export const DEFAULT_LEDGER = 'docs/roadmap.md'
@@ -33,8 +33,8 @@ export function parseLedgerSetting(text: string | null): LedgerSetting {
   const value = (data as { ledger: unknown }).ledger
   const bad = (why: string): LedgerSetting => ({ ...fallback, warning: `"ledger" in ${LEDGER_SETTING_FILE} ${why}, so ${DEFAULT_LEDGER} is used` })
   if (typeof value !== 'string' || value.trim() === '') return bad('must be a non-empty string')
-  const source = normalizeSource(value)
-  if (source.startsWith('/') || /^[A-Za-z]:/.test(source) || source.split('/').includes('..')) return bad('must be a path inside the project (relative, without ..)')
+  const source = canonicalPath(value)
+  if (source === null) return bad('must be a path inside the project (relative, without ..)')
   return { source, from: 'file' }
 }
 
@@ -49,13 +49,21 @@ export function readLedgerSetting(projectDir: string): LedgerSetting {
   }
 }
 
-// Paths as git and the setting write them: `/` separators and no leading `./`
-export function normalizeSource(p: string): string {
-  return p.trim().replace(/\\/g, '/').replace(/^(\.\/)+/, '')
+// The one form of a project's path (C126): `/` separators, `.` segments and repeated `/` removed, no leading `./` and no trailing `/`,
+// relative to the project. The setting, `docs:index --file` and the hook's comparison all use it, so one file has one `source`.
+// Matching is by spelling as git writes it (case included). null when the value cannot be put in that form: empty, absolute,
+// a drive letter, or leaving the project with `..`
+export function canonicalPath(p: string): string | null {
+  const s = p.trim().replace(/\\/g, '/').replace(/\/+$/, '')
+  if (s === '') return null
+  const n = posix.normalize(s)
+  if (n === '.' || n === '..' || n.startsWith('../') || n.startsWith('/') || /^[A-Za-z]:/.test(n)) return null
+  return n
 }
 
-// The post-commit hook's test (C107): did this commit change the ledger? `changed` is the list of paths from `git diff-tree`
+// The post-commit hook's test (C107): did this commit change the ledger? `changed` is the list of paths from `git diff-tree -z` (git's form)
 export function touchesLedger(changed: readonly string[], source: string): boolean {
-  const want = normalizeSource(source)
-  return changed.some((p) => normalizeSource(p) === want)
+  const want = canonicalPath(source)
+  if (want === null) return false
+  return changed.some((p) => canonicalPath(p) === want)
 }
