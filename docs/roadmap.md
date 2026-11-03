@@ -19,7 +19,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C119
 - [ ] C120
 
 (Items with a status line are listed under "Items".)
@@ -436,6 +435,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: README steps 1, 2, 5 and 6 (with `--tabs print`); project-setup §1-§5 on the ad_masker clone (own-format ledger converted to 4 items, 0 errors; the git hook sent the index; `hub-team status`); user → leader → deployer → leader → user through the shim's tools and the Hub API; `npm run docs:check` 26 items, 0 errors. No review.
   - **Not run, accepted by the user as closing anyway**: the channel delivery into an interactive Claude session (README step 3 with `--dangerously-load-development-channels`), the browser form and the Items modal's Draft request and Send, real tabs (`wt`), hook events fired by a real session (the hooks were written, not fired), macOS and Linux (C62). Done-when 1 and 2 were met at the Hub and shim level, not through those.
   - Found, not filed (code changes; for the planning session): a variable set in the shell (`HUB_TOKEN`, `HUB_ROLE`, `HUB_MAILBOX`) overrides `.env` for the Hub, the shim and the team start with no warning; the esbuild install-scripts warning on npm 11; `claude --help` 2.1.316 does not list `--dangerously-load-development-channels` (hidden or removed, to check against design.md §6).
+- [x] C119 Warn when a variable set in the shell overrides `.env` (2026-11-03, closed by the closing request; no review)
+  - Checked: `npm run typecheck` pass; `npm test` 525 pass, 0 fail (the leader checked it too); `npm run docs:check` 0 errors.
+  - Scratch-Hub runs in a temp copy of the repository (Hub on 7795; the shell's `HUB_TOKEN`, `HUB_PORT` or `HUB_URL` differing from the copy's `.env`): `npm run hub` warns for the variable only and listens on the shell's port; `team status` warns and its 401 message names the environment, exit 1; `docs:index` warns and its refusal names the environment, and `--if-touched` on a non-ledger path is silent; team start (`--tabs print`) warns, the mailbox-list error names the environment, and the result line keeps `warnings`; `agent` warns and stops before spawning anything. No token in any output or in `logs/start-warnings.jsonl`.
+  - Not verified: the team-start UI 401 line (unit test only, since a start with a refused token stops earlier); the Docker side; real Claude sessions (NVM blocks `claude` in the shell here, so a test-only `claude.exe` stood in for the claude check); macOS and Linux.
+  - No review (no reviewer connected).
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -774,22 +778,6 @@ To decide: where the seqs come from (`seqs` on the receiver's `awaitingReply` an
 Status: held(after the user has run teams in two projects side by side)
 
 Raised 2026-11-01 by the user: projects where a team was started could show as tab-like buttons, so switching is one press (today it is the project selector above the sidebar). The user wants to run two teams first and decide then. design.md §3.2 chose a selector over tabs so waits in other projects are not missed (`N waiting in other projects`); buttons have to keep that.
-
-### C119. Warn when a variable set in the shell overrides `.env`
-
-Found 2026-11-03 in C118's walk-through. A `HUB_TOKEN`, `HUB_PORT` or `HUB_URL` left in the shell wins over agent-hub's `.env`, silently. The walker lost time to it: the team start then says "HUB_TOKEN in .env does not match the Hub", which points at the wrong place. README step 1 says so and how to check (`echo $HUB_TOKEN`), but a person who has not read it still meets the silent override.
-Decided 2026-11-03 (the user, "as recommended"): warn, naming the variable only, from one shared check on the host side.
-Facts from the look before deciding (2026-11-03):
-- Each reader takes the environment first, in its own way: `npm run hub` with `--env-file-if-exists=.env` (Node keeps a variable already set); the team (`src/team/env.ts` `envSetting`, per variable); the shim (`src/shim/config.ts`) and `docs:index` (`src/docs-check/push-index.ts`) load `.env` only when `HUB_TOKEN` is not set, so a token in the shell also hides `HUB_PORT` and `HUB_URL` in `.env`.
-- The Hub in Docker reads `.env` through `env_file`, which the shell does not override (only `${HUB_PORT}` in the compose file is interpolated from the shell). So with Docker, the mismatch shows on the host side: a token in the shell is refused by the Hub.
-- `HUB_ROLE` and `HUB_MAILBOX` are left out: the team sets them on purpose in each role's environment, and `.env` does not normally hold them.
-
-#### Done when
-- [ ] One shared function lists the variables among `HUB_TOKEN`, `HUB_PORT` and `HUB_URL` that are set in the environment and also in agent-hub's `.env`, with different values. It returns names only; no value (above all no token) reaches its output. Unit tests: same value, different value, only in one of the two, `.env` missing, quoted values in `.env`
-- [ ] `npm run team` / `hub-team` (team start, `agent`, `status`) and `docs:index` print one warning per listed variable, saying the environment's value is used instead of `.env`'s and how to unset it in that terminal. A team start also records it in its start warnings (`logs/start-warnings.jsonl`, C85)
-- [ ] `npm run hub` (direct start) prints the same warning at start
-- [ ] When the Hub refuses the token (401) and `HUB_TOKEN` came from the environment, the team start's and `status`'s message says the token came from the environment, not ".env does not match"
-- [ ] README step 1 and usage.md mention the warning; `npm test` and `npm run docs:check` pass
 
 ### C120. The esbuild install-scripts warning on `npm install` (npm 11)
 

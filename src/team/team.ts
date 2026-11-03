@@ -7,6 +7,7 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { sendLedgerIndex } from '../docs-check/send-index.js'
 import { readLedgerSetting } from '../shared/ledger.js'
+import { envOverrides, overrideWarning, refusedTokenMessage, tokenFromEnvironment } from '../shared/env-override.js'
 import { chooseMailboxName, defaultMailboxName, normalizeProjectPath } from '../shared/types.js'
 import { clearStartStatus, interrupted, onStartSignals, readHubMailboxes, type HubMailbox } from './agent.js'
 import { checkClaudeCli, checkoutWarnings, hookWarning, startStatusPath } from './checks.js'
@@ -49,7 +50,7 @@ export function hooksForStart(projectDir: string, root: string, noHooks: boolean
 // the one line for the summary: what was sent, or why not (no file, Hub not reachable, token refused, an old Hub)
 export async function sendStartIndex(projectDir: string, source: string, hubUrl: string, token: string): Promise<string> {
   try {
-    const r = await sendLedgerIndex({ project: projectDir, source, hubUrl, token })
+    const r = await sendLedgerIndex({ project: projectDir, source, hubUrl, token, tokenFromEnv: tokenFromEnvironment() })
     if (!r.sent) return `not sent: ${r.reason}`
     for (const w of r.warnings) console.warn(`WARNING: ${w}`)
     return `sent ${r.source} (${r.items} items) to ${hubUrl}`
@@ -71,10 +72,15 @@ export async function chooseStartNames(
   projectDir: string,
   token: string,
   read: (token: string) => Promise<HubMailbox[] | null>,
+  tokenFromEnv = false,
 ): Promise<Map<string, string>> {
   const list = await read(token)
   if (token && list === null) {
-    throw new Error('The Hub\'s Mailbox list cannot be read, so no Mailbox name is chosen and nothing is started. Check that the Hub is up and HUB_TOKEN in .env')
+    // When the token came from the environment, the message says so rather than pointing at .env (C119)
+    const check = tokenFromEnv
+      ? 'Check that the Hub is up. HUB_TOKEN is set in this terminal\'s environment, and that value is used, not .env\'s (to use .env\'s, unset it in this terminal: PowerShell Remove-Item Env:HUB_TOKEN; bash unset HUB_TOKEN)'
+      : 'Check that the Hub is up and HUB_TOKEN in .env'
+    throw new Error(`The Hub's Mailbox list cannot be read, so no Mailbox name is chosen and nothing is started. ${check}`)
   }
   const known = list ?? []
   return new Map(roles.map((role) => [role, chooseMailboxName(projectDir, role, known)]))
@@ -185,6 +191,12 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
   const unknown = known ? roles.filter((r) => !known.includes(r)) : []
   if (unknown.length) throw new Error(`Roles not in the roles file (${rolesFile}): ${unknown.join(', ')}`)
 
+  // A variable set in this terminal that overrides agent-hub's .env (C119): one warning each, names only, printed before the checks
+  // below so a start that stops early still shows it, and kept in the start record (notes)
+  const notes: string[] = []
+  for (const name of envOverrides(ROOT)) { const w = overrideWarning(name); console.warn(`WARNING: ${w}`); notes.push(w) }
+  // The warnings reach the result line if the start stops before its pre-start line (see recordStart below)
+  outcome.warnings = notes
   // --- checks before starting. If claude does not run (blocked by NVM, an exe being replaced), start no role (C56)
   const cli = checkClaudeCli()
   if (cli.problem) {
@@ -192,7 +204,6 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
     outcome.aborted = `claude does not run, so no role is started: ${cli.problem}`
     return 1
   }
-  const notes: string[] = []
   const infos: string[] = []
   // A warning is printed as WARNING; a repeat is only a plain note in the summary. The start record keeps every note (C111)
   const note = (w: string, loud = true) => { if (loud) console.warn(`WARNING: ${w}`); notes.push(w) }
@@ -236,7 +247,7 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
   const indexLine = await sendStartIndex(o.projectDir, setting.source, hubUrl, token)
   // The names are chosen only now, with the Hub up, so a Mailbox that exists on a Hub that was down is seen (C103).
   // A Hub list that cannot be read with a token stops the start here: the default name is not guessed
-  const names = await chooseStartNames(roles, o.projectDir, token, readHubMailboxes)
+  const names = await chooseStartNames(roles, o.projectDir, token, readHubMailboxes, tokenFromEnvironment())
   const nameOf = (role: string) => names.get(role)!
   const connected = new Set<string>()
   if (token && !o.force) {
@@ -254,6 +265,7 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
     warnings: notes,
     time: startTime,
   })
+  outcome.warnings = undefined // now in the pre-start line; the result line does not repeat them
   if (!token) console.warn('WARNING: no HUB_TOKEN, so attach cannot be checked. Starting without waiting')
   if (print) {
     console.log(`No way to open tabs here. Run each command below in a terminal of its own, in this order (waiting up to ${o.attachTimeoutSec} seconds for each to attach):`)
@@ -319,7 +331,7 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
   console.log(`status: ${statusCommand(o.projectDir)} (the project's Mailboxes and latest report)`)
   for (const n of notes) console.log(`note: ${n}`)
   for (const f of outcome.failed) console.log(`failed: ${f.reason}`)
-  await printUiUrl(hubUrl, token, o.projectDir)
+  await printUiUrl(hubUrl, token, o.projectDir, tokenFromEnvironment())
   if (outcome.failed.length) return 1
   console.log('Done')
   return 0
@@ -333,12 +345,17 @@ export function uiUrl(hubUrl: string, token: string, projectDir: string): string
 
 // Print the UI's URL only when the token gets through to the Hub
 
-async function printUiUrl(hubUrl: string, token: string, projectDir: string): Promise<void> {
+// tokenFromEnv: the token came from the environment, so the 401 message says so instead of blaming .env (C119)
+export async function printUiUrl(hubUrl: string, token: string, projectDir: string, tokenFromEnv = false): Promise<void> {
   if (!token) { console.log('No HUB_TOKEN, so the UI URL cannot be built (check .env)'); return }
   try {
     const r = await fetch(`${hubUrl}/mailboxes`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3000) })
     if (r.ok) { console.log(`UI: ${uiUrl(hubUrl, token, projectDir)}`); return }
-    if (r.status === 401) { console.warn('WARNING: HUB_TOKEN in .env does not match the Hub. The UI URL is in the Hub\'s log (with compose: docker compose logs hub)'); return }
+    if (r.status === 401) {
+      if (tokenFromEnv) console.warn(`WARNING: ${refusedTokenMessage(true)}`)
+      else console.warn('WARNING: HUB_TOKEN in .env does not match the Hub. The UI URL is in the Hub\'s log (with compose: docker compose logs hub)')
+      return
+    }
     console.warn(`WARNING: the Hub answered ${r.status}, so the UI URL cannot be checked`)
   } catch {
     console.warn(`WARNING: cannot reach the Hub (${hubUrl}), so the UI URL cannot be checked`)

@@ -2,6 +2,7 @@
 // It never throws: a failure comes back as { sent: false, reason }, so a start or a commit is not stopped by it.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { refusedTokenMessage } from '../shared/env-override.js'
 import { checkRoadmap, parseRoadmap } from '../shared/roadmap.js'
 import { normalizeProjectPath } from '../shared/types.js'
 
@@ -10,6 +11,8 @@ export interface SendOptions {
   source: string
   hubUrl: string
   token: string
+  // the token came from the environment, so a refusal says so (C119)
+  tokenFromEnv?: boolean
 }
 
 export type SendResult =
@@ -45,7 +48,7 @@ export async function sendLedgerIndex(o: SendOptions): Promise<SendResult> {
   } catch (e) {
     return { sent: false, source: o.source, reason: `Hub not reachable (${o.hubUrl}): ${(e as Error).message}` }
   }
-  if (res.status === 401) return { sent: false, source: o.source, reason: 'the Hub refused the token (HUB_TOKEN in agent-hub\'s .env)' }
+  if (res.status === 401) return { sent: false, source: o.source, reason: refusedTokenMessage(!!o.tokenFromEnv) }
   // 404 は /indexes を持たない古い Hub
   if (res.status === 404) return { sent: false, source: o.source, reason: 'the Hub has no /indexes (an old Hub; restart it)' }
   if (!res.ok) {

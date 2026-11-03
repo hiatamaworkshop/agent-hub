@@ -12,8 +12,12 @@ import { loadRoles, RolesError, type Roles } from './roles.js'
 import { SettingsStore } from './settings.js'
 import { Store } from './store.js'
 import { normalizeLanguage } from '../shared/language.js'
+import { envOverrides, overrideWarning } from '../shared/env-override.js'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
+
+// A variable in this terminal that overrides agent-hub's .env (C119): the environment's value is the one the Hub uses. Names only
+for (const name of envOverrides(ROOT)) console.warn(`[hub] WARNING: ${overrideWarning(name)}`)
 
 const host = process.env.HUB_HOST ?? '127.0.0.1'
 const port = Number(process.env.HUB_PORT ?? 7777)

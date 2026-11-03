@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { envOverrides, overrideWarning, tokenFromEnvironment } from '../shared/env-override.js'
 import { chooseMailboxName, defaultMailboxName } from '../shared/types.js'
 import { checkClaudeCli, checkoutWarnings, claudeCommand, hookWarning, spawnArgs, startStatusPath, testClaudeCli } from './checks.js'
 import { envSetting, hubRolesFile, readRoleNames, ROOT } from './env.js'
@@ -230,7 +231,10 @@ export async function chooseAgentMailbox(
   if (o.mailbox) return o.mailbox
   const list = await read(token)
   if (token && list === null) {
-    throw new Error(`The Hub's Mailbox list cannot be read, so no Mailbox name is chosen. Start the Hub (or check HUB_TOKEN in .env), or pass --mailbox`)
+    const check = tokenFromEnvironment()
+      ? 'Start the Hub (or check the token: HUB_TOKEN is set in this terminal\'s environment and that value is used, not .env\'s; unset it to use .env\'s), or pass --mailbox'
+      : 'Start the Hub (or check HUB_TOKEN in .env), or pass --mailbox'
+    throw new Error(`The Hub's Mailbox list cannot be read, so no Mailbox name is chosen. ${check}`)
   }
   return chooseMailboxName(o.projectDir, o.role, list ?? [])
 }
@@ -244,6 +248,8 @@ export async function runAgent(o: AgentOptions): Promise<number> {
   const offSignals = o.fromTeam ? () => {} : onStartSignals((signal) => record(interrupted(emptyOutcome(), signal)))
   try {
     return await withResult(record, async () => {
+      // A variable in this terminal that overrides agent-hub's .env (C119): this tab's own terminal, so it is printed here too
+      for (const name of envOverrides(ROOT)) console.warn(`WARNING: ${overrideWarning(name)}`)
       const token = envSetting('HUB_TOKEN', '')
       const refusal = tokenRefusal(token, o.fromTeam)
       if (refusal) {

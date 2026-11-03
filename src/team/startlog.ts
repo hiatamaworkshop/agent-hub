@@ -190,6 +190,9 @@ export interface StartOutcome {
   printed: RoleRef[]
   failed: (RoleRef & { reason: string })[]
   aborted: string | null
+  // The start's warnings, set only while the pre-start line has not been written (a start that stops early). The result line then
+  // keeps them, so a warning seen before the stop (e.g. C119's environment check) is in the record (C119)
+  warnings?: string[]
 }
 export function emptyOutcome(): StartOutcome {
   return { started: [], skipped: [], printed: [], failed: [], aborted: null }
@@ -215,6 +218,7 @@ export function buildResultRecord(start: string, project: string, outcome: Start
     printed: outcome.printed,
     failed: outcome.failed,
     aborted: outcome.aborted,
+    ...(outcome.warnings?.length ? { warnings: outcome.warnings } : {}),
   }
 }
 

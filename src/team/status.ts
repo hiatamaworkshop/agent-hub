@@ -2,6 +2,7 @@
 // It reads the Hub's delivery facts (GET /mailboxes and GET /messages) and prints them. It does not derive the card states again: those are
 // made in the page (cardState in public/index.html), so this prints what they are derived from.
 // The connection is the same as docs:index's: HUB_URL, else HUB_PORT on 127.0.0.1, and HUB_TOKEN (the environment, else agent-hub's .env).
+import { envOverrides, overrideWarning, refusedTokenMessage, tokenFromEnvironment } from '../shared/env-override.js'
 import { normalizeProjectPath } from '../shared/types.js'
 import { quoteForPlatform } from './quote.js'
 import { envSetting, ROOT } from './env.js'
@@ -56,7 +57,8 @@ export function pickReport(best: StatusMessage | null, m: StatusMessage, names: 
   return !best || m.seq > best.seq ? m : best
 }
 
-export interface HubConn { hubUrl: string; token: string }
+// tokenFromEnv: the token came from the environment (C119), so a refusal says so
+export interface HubConn { hubUrl: string; token: string; tokenFromEnv?: boolean }
 export interface StatusResult { code: number; lines: string[] }
 
 // Reads the Hub and returns what to print. code 0 when read; 1 with one line of reason when the Hub cannot be read or refuses the token
@@ -69,7 +71,7 @@ export async function readStatus(projectDir: string, conn: HubConn, fetchFn: typ
     } catch (e) {
       return { ok: false, reason: `Hub not reachable (${conn.hubUrl}): ${e instanceof Error ? e.message : String(e)}` }
     }
-    if (res.status === 401) return { ok: false, reason: 'the Hub refused the token (HUB_TOKEN in agent-hub\'s .env)' }
+    if (res.status === 401) return { ok: false, reason: refusedTokenMessage(!!conn.tokenFromEnv) }
     if (!res.ok) return { ok: false, reason: `the Hub answered ${res.status} for ${path}` }
     return { ok: true, json: await res.json() }
   }
@@ -105,7 +107,9 @@ export function statusCommand(projectDir: string): string {
 export async function runStatus(projectDir: string, root = ROOT): Promise<number> {
   const port = envSetting('HUB_PORT', '7777', root)
   const hubUrl = (envSetting('HUB_URL', '', root) || `http://127.0.0.1:${port}`).replace(/\/+$/, '')
-  const r = await readStatus(projectDir, { hubUrl, token: envSetting('HUB_TOKEN', '', root) })
+  // A variable in this terminal that overrides agent-hub's .env (C119): one warning each, names only
+  for (const name of envOverrides(root)) console.error(`WARNING: ${overrideWarning(name)}`)
+  const r = await readStatus(projectDir, { hubUrl, token: envSetting('HUB_TOKEN', '', root), tokenFromEnv: tokenFromEnvironment() })
   for (const line of r.lines) {
     if (r.code) console.error(line)
     else console.log(line)

@@ -8,6 +8,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { envValue } from '../shim/config.js'
+import { envOverrides, overrideWarning, tokenFromEnvironment } from '../shared/env-override.js'
 import { readLedgerSetting, touchesLedger } from '../shared/ledger.js'
 import { sendLedgerIndex } from './send-index.js'
 
@@ -35,12 +36,16 @@ if (process.argv.includes('--if-touched')) {
   if (!touchesLedger(changed, source)) process.exit(0)
 }
 
+// A variable in this terminal that overrides agent-hub's .env (C119): one warning each, names only. Printed after the --if-touched exit,
+// so a commit that does not change the ledger stays silent
+for (const name of envOverrides(ROOT)) console.warn(`WARNING: ${overrideWarning(name)}`)
+
 const envFile = join(ROOT, '.env')
 if (!envValue(process.env, 'HUB_TOKEN') && existsSync(envFile)) process.loadEnvFile(envFile)
 const hubUrl = (envValue(process.env, 'HUB_URL') ?? `http://127.0.0.1:${envValue(process.env, 'HUB_PORT') ?? '7777'}`).replace(/\/+$/, '')
 const token = envValue(process.env, 'HUB_TOKEN') ?? ''
 
-const r = await sendLedgerIndex({ project, source, hubUrl, token })
+const r = await sendLedgerIndex({ project, source, hubUrl, token, tokenFromEnv: tokenFromEnvironment() })
 if (!r.sent) {
   console.error(`${source} を送れない: ${r.reason}`)
   process.exit(1)
