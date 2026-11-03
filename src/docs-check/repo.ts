@@ -159,9 +159,11 @@ export function checkKinds(protocol: string, declared: { Event: readonly string[
 export function checkDecisionDates(design: string): DocProblem[] {
   const problems: DocProblem[] = []
   for (const { line, text } of section(design, '## 9.')) {
-    const label = /(?:\*\*|\()(Decision|Direction|Decided)\b/.exec(text)
+    // A label after `**` or `(` anywhere on the line, or at the start of the text after indent / list marks (plain `Decision (...)`)
+    const label = /(?:\*\*|\()(Decision|Direction|Decided)\b|^\s*(?:[-*]\s+)?(Decision|Direction|Decided)\b/.exec(text)
     if (label && !/\d{4}-\d{2}-\d{2}/.test(text)) {
-      problems.push({ file: 'docs/design.md', line, level: 'error', message: `"${label[1]}" in §9 has no date (YYYY-MM-DD) on its line` })
+      const name = label[1] ?? label[2]
+      problems.push({ file: 'docs/design.md', line, level: 'error', message: `"${name}" in §9 has no date (YYYY-MM-DD) on its line` })
     }
   }
   return problems

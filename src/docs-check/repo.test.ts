@@ -102,6 +102,20 @@ describe('checkDecisionDates', () => {
       { file: 'docs/design.md', line: 5, level: 'error', message: '"Decided" in §9 has no date (YYYY-MM-DD) on its line' },
     ])
   })
+
+  it('errors on a plain-text label without a date (indent or list mark before it)', () => {
+    assert.deepEqual(checkDecisionDates(text('   Decision (user): narrow them')), [
+      { file: 'docs/design.md', line: 5, level: 'error', message: '"Decision" in §9 has no date (YYYY-MM-DD) on its line' },
+    ])
+    assert.deepEqual(checkDecisionDates(text('- Decided by the user: keep it')), [
+      { file: 'docs/design.md', line: 5, level: 'error', message: '"Decided" in §9 has no date (YYYY-MM-DD) on its line' },
+    ])
+  })
+
+  it('passes a plain-text label that has a date', () => {
+    assert.deepEqual(checkDecisionDates(text('   Decision (2026-10-17, user): narrow them')), [])
+    assert.deepEqual(checkDecisionDates(text('- Decided 2026-10-17 by the user: keep it')), [])
+  })
 })
 
 describe('the repository', () => {

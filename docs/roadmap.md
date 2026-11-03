@@ -19,10 +19,10 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C9
 - [ ] C124
 - [ ] C125
 - [ ] C126
+- [ ] C127
 
 (Items with a status line are listed under "Items".)
 
@@ -448,6 +448,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: npm 11.19.1 `npm ci` printed the esbuild install-scripts warning before the change (`allowScripts` absent) and none after; `npm test` 525 pass, 0 fail (the leader checked it too, after the change); `docker compose build` exit 0, and the built image started the Hub; `package-lock.json` unchanged; `npm run docs:check` 0 errors.
   - Not verified: npm versions other than 11.19.1; the image's own npm version. The scratch build ran outside the working tree; its move of the `agent-hub` image tag was reverted by hand.
   - No review (no reviewer connected).
+- [x] C9 Checking the document conventions (2026-11-03, closed by the planning session after the review)
+  - `src/docs-check/repo.ts` (run by `npm run docs:check` on this repository's ledger only): CLAUDE.md's map against the numbered headings of design.md and protocol.md; the Hub routes (`createApp`) against protocol.md §3's tables; `EVENT_KINDS` / `MESSAGE_KINDS` against §2's kind lists; a `YYYY-MM-DD` on each `Decision` / `Direction` / `Decided` line of design.md §9. The first run found 5 drifts, fixed in the docs.
+  - Review finding: plain-text labels (`Decision (user): ...`, `- Decided by ...`) escaped the §9 check; the deployer's fix also matches a label at the start of the line, with tests for both.
+  - Done-when line 5 (0 errors and 0 warnings): the deployer left it unchecked because the one warning left was the roadmap rule's close reminder for C9 itself. The planning session read that warning as part of closing, not drift in the documents, so the line is met; after this close the run reports 0 errors and 0 warnings.
+  - Checked: `npm test` 538 pass, 0 fail; `npm run typecheck` pass; `npm run docs:check` 0 errors, 0 warnings.
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -632,21 +637,6 @@ Once a real client is installed, also check with `tools/probe/resources-probe.mj
 Status: proposed
 
 Whether to connect the Hub with the flow that leaves what was learned at breaks (commits, items done) in engram. Optional.
-
-### C9. Checking the document conventions
-
-design.md §3.12, layer 1 (deterministic checks, no AI). Decided 2026-11-03 by the user, to settle the document rules early so they do not drift as the docs grow.
-This item builds the checks of agent-hub's own documents that run on the working tree. Sending the results to the Hub and the deployer's `CHANGED` missing docs are C123.
-Out of scope: making the table of conventions the single source of truth that CLAUDE.md, leader.md and deployer.md point to, and layer 2 (a lightweight judge; measure whether it is worth building once drift missed by layer 1 has accumulated as material).
-
-#### Done when
-- [x] Map drift: `npm run docs:check` reports as an error each `§<n>` on CLAUDE.md's document map with no numbered heading in the file it is listed under, and as a warning each numbered `##` / `###` heading of design.md and protocol.md the map does not cover (the heading itself, its parent or a child listed)
-- [x] Table drift: an error for each Hub route (`createApp` with every optional store) missing from protocol.md §3's tables and each row there with no route, and when `EVENT_KINDS` / `MESSAGE_KINDS` differ from the `kind` lists of Event and Message in protocol.md §2
-- [x] §9 dates: an error for each line in design.md §9 that labels a `Decision`, `Direction` or `Decided` without a `YYYY-MM-DD` on that line
-- [x] These checks run when the ledger checked is this repository's `docs/roadmap.md` (with or without the path); other projects' ledgers get only the roadmap rules, as today
-- [x] On today's tree `npm run docs:check` passes with 0 errors and 0 warnings (the documents are fixed for what the checks find)
-- [x] Tests: each check with a passing and a failing input; `npm test` passes
-- [x] Docs: design.md §3.12 says which layer-1 checks are built; docs/usage.md and the top of roadmap.md say what `docs:check` checks
 
 ### C10. Making the leader disposable
 Status: proposed
@@ -847,3 +837,16 @@ Case differences on Windows (`Docs/Items.md` for git's `docs/items.md`) may be h
 - [ ] On a commit, the hook shows `push-index`'s warning about an unusable setting, and its message on a failed send gives the real reason
 - [ ] Tests: the non-ASCII hook path, each non-canonical spelling, and the warning shown by the hook; `npm test` passes
 - [ ] docs/usage.md (Items, the hook) says how the ledger path is matched
+
+### C127. The You node shows when the ball is with the human
+
+Decided 2026-11-03 by the user, from a screenshot: every session of the team had finished and sat Idle, waiting for the human's next request, and the map's You node looked the same as when work is going on. The human should see at a glance that nothing moves until they send.
+Today the You node is colored only for Needs you (a question, a permission prompt or a request to the human; `mapHumanNode` in `public/index.html`). A team that answered with a `reply` and went Idle leaves no Needs you, so the node stays plain.
+The new state is quieter than Needs you: it says "your move", not "someone is stuck on you". It uses the human-turn color family (`--st-you`, C71) but not Needs you's thick amber frame, and it does not pulse.
+
+#### Done when
+- [ ] The map's You node shows `Your move` (a tinted node in the human-turn color, thinner than Needs you's frame, not pulsing) when, in the project shown on the map (all projects when none is chosen), at least one session is connected, no card is Working or Waiting on others, and Needs you is 0
+- [ ] Needs you takes precedence: when Needs you is above 0 the node shows Needs you as today, not `Your move`; a Stopped card does not hide `Your move`
+- [ ] The state follows live updates (SSE) without a reload: a new request that makes a card Working clears it, and the last card going Idle sets it
+- [ ] `npm run ui:check` has scenes for all Idle (shows `Your move`), one card Working (does not), Needs you (shows Needs you only) and no session connected (does not), and passes; `npm test` passes
+- [ ] Docs: design.md §3.15 (card states) and docs/usage.md (reading card states) describe `Your move` and its condition
