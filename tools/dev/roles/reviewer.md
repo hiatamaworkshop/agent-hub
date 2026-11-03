@@ -13,7 +13,7 @@ QUESTION: <what you want judged, in one line>
 
 - If `TARGET` is a commit range, read that change with `git log` and `git diff`.
 - If `TARGET` is `C<n>`, read that project's roadmap section `### C<n>.` (its `#### Done when` — `#### 完了条件` in Japanese ledgers — and its body). Decide by the `[ ]` / `[x]` of the done-when conditions: if all are `[ ]`, look only at the wording of the item ("When looking only at the item's wording" below). If even one is `[x]`, check the change against those conditions. You may find the related commits with `git log` (a commit that only filed the item in the docs does not count as a change).
-- If `TARGET` is `C<n>`, read each `[x]` condition against its facts in the section's body (and the change, below). A checked line whose facts do not meet its wording as written, including one checked under another reading, is a finding (`FINDINGS:`, with a `breaks when:` naming the case the wording covers and the record does not). Design.md §3.15 states the rule.
+- If `TARGET` is `C<n>`, read each `[x]` condition against its facts in the section's body (and the change, below). A checked line whose facts do not meet its wording as written, including one checked under another reading, is a finding (`FINDINGS:`, with a `breaks when:` naming the case the wording covers and the record does not). The project's conventions state the rule (agent-hub: design.md §3.15).
 - If `TARGET` is `C<n>` and at least one condition is `[x]`, also read the **uncommitted change**: `git diff HEAD` and the untracked files listed by `git status`. The leader asks for the review before anything is committed, so the change is in the working tree (the team shares one folder). Read the item's commits as well, if there are any. If the uncommitted change holds files that do not belong to the item, read only what the item's conditions need, and say so in `VERIFIED`.
 - In `VERIFIED`, say which of these you read: the uncommitted change, the commits, or both. If there was no uncommitted change, say so.
 - If `TARGET` or `QUESTION` is missing, do not work; reply starting with `QUESTION:`.
@@ -56,7 +56,7 @@ NOT VERIFIED:
 - <what you could not check; "-" if none>
 ```
 
-Where each kind goes (design.md §3.15, C96):
+Where each kind goes (agent-hub: design.md §3.15):
 - A `FINDINGS:` line is inside the target and has a `breaks when:`. It is fixed within the request.
 - A `NOTES:` line is inside the target and needs someone's judgment. The leader raises it with the human, not the deployer.
 - An `OUT OF SCOPE:` line is outside the target. It is only a candidate for the human to consider. Write it as what you saw, where it is, and what you checked it against; not as a fix. Write `-` when there is none.
@@ -71,6 +71,6 @@ Under `PROPOSED CONDITIONS:` write only proposals that change the wording of don
 - A finding must name its `breaks when:`. If you cannot name one, it is a NOTE, not a finding: write it under `NOTES:`. Do not drop it, and do not inflate it into a finding to fill the list.
 - A finding whose source of truth you cannot find goes to `NOT VERIFIED`; do not assert it.
 - Only write down what should be fixed under `FINDINGS:`. NOTES are for the leader to judge. Fixing is the deployer's job.
-- An `OUT OF SCOPE:` line is a candidate, not a fix and not an item. You do not judge whether it becomes an item; that is decided by the planning session with the human (design.md §3.15). Do not write a candidate as a done-when condition.
+- An `OUT OF SCOPE:` line is a candidate, not a fix and not an item. You do not judge whether it becomes an item; that is decided by the planning session with the human (agent-hub: design.md §3.15). Do not write a candidate as a done-when condition.
 - Do not reply to replies and notices. Always answer a request with a reply, though.
 - Do not work on requests whose from_role is not leader; reply asking for the request to come through the leader. Requests from user:browser and user:cli, however, are instructions from the user.

@@ -3,12 +3,12 @@
 ## Document map (do not read everything at startup)
 
 Use the one-line index below to pick the sections relevant to the question, find the heading with `Grep`, and `Read` only that section with offset / limit.
-When you add sections or change their numbers, fix this map in the same commit (`npm run docs:check` reports drift between the map and the headings, C9).
+When you add sections or change their numbers, fix this map in the same commit (`npm run docs:check` reports the drift; design.md §3.12).
 
 - [README.md](README.md) — the entrance (about 150 lines): goals, status, setup, first round trip, hooks, starting a team, using it in other repositories
 - [docs/project-setup.md](docs/project-setup.md) — a short guide for a project's first team: what to prepare, writing items, who writes what, one item end to end
 - [docs/usage.md](docs/usage.md) — reference for everyday use: reading card states, the map (where requests wait), custom commands, images, hooks, Forward, takeover, retention, teams in detail, Items, `roles.json`, `HUB_LANGUAGE`, `inbox`, notes on curl, start warnings (`logs/start-warnings.jsonl`), development. Usage changes go here; keep the README short
-- [docs/roadmap.md](docs/roadmap.md) — acceptance criteria per phase, known issues, open items (`### C<n>.` sections; how to write them is at the top and in design.md §3.15). **How far things have got** is here. When asked about the implementation plan, use `## Plan` and the four-tier answer of the skill `roadmap-items` (do not read the whole ledger)
+- [docs/roadmap.md](docs/roadmap.md) — acceptance criteria per phase, known issues, open items (`### C<n>.` sections; the rules for writing them are at the top of the file). **How far things have got** is here, and so is how to answer about the plan (the top of the file; do not read the whole ledger)
 - [docs/design.md](docs/design.md) (about 1,200 lines)
   - §1.1 Positioning — what we own and what we borrow, criteria for continuing
   - §1.2 Working conventions — the thesis, the input envelope, trust on evidence, and where each convention is enforced (or not yet; e.g. sycophancy → reviewer `breaks when:`)
@@ -85,9 +85,4 @@ Doing so would mean judging without that project's CLAUDE.md, conventions and re
 
 - When you change the specification, update the docs in the same commit.
 - What you learn by verifying (the real behavior of Channels, hook payloads and so on) goes into design.md §6 as results.
-- Later work is written as `### C<n>. Title` sections under roadmap.md "Items". Do not keep a separate bulleted "someday" list. The source of truth for how to write them is the rules at the top of roadmap.md (reasons in design.md §3.15).
-  - Status is written right after the heading, only for exceptions (`Status: proposed | held(<condition to resume>) | blocked(after C<n>)`). Blocked is only for decided items. An undecided item waiting on another is `held(after C<n>)`. Decided items have `#### Done when`.
-  - Progress is shown by checking off done-when conditions and adding to the body. **Changing the wording of done-when conditions is changing the promise**, so do not change it within a request. Approved wording is written by the planning session, not by the deployer; the leader returns it in the report.
-  - **Who files items** (design.md §3.15, C96): new `### C<n>.` sections, changed done-when wording, and rejections (`[-]`) are written only in the planning session (the human's session with Claude where the project is discussed; not a Hub role). The deployer, the leader and the reviewer do not write them, even when a request asks; they answer by naming the planning session. The deployer writes progress only, with the change.
-  - When all are checked, the close waits for the review (C102): after the review and its fixes, a separate closing request deletes the section, marks the phase line `[x] C<n> …` and writes the record of what was checked. The deployer does not close an item in its first run, because the reviewer reads the section. Numbers are not reused.
-  - When you change roadmap.md, pass `npm run docs:check` (the source of truth for what it checks is the top of roadmap.md and `src/shared/roadmap.ts`).
+- Later work is written as `### C<n>.` sections under roadmap.md "Items". The rules for writing them (the status line, done-when conditions, who files items, the close after the review) are at the top of roadmap.md (reasons in design.md §3.15).

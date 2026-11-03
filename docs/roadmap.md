@@ -2,24 +2,25 @@
 
 Each phase puts weight on "ending in a working state". Move on after the acceptance criteria are met.
 
-Open items are written as `### C<n>. Title` sections under "Items" at the end (design.md §3.15).
+Open items are written as `### C<n>. Title` sections under "Items" at the end (design.md §3.15). Do not keep a separate bulleted "someday" list.
 - Right after the heading, write only an exceptional status, on one unindented line: `Status: proposed | held(<condition to resume>) | blocked(after C<n>)`. Without the line, the item is decided (may be started).
 - A decided item has `#### Done when` (a list of checkboxes). A request's `DONE WHEN` is copied from it.
-- Numbers are not reused. The close waits for the review (C102): after the review and its fixes, a closing request deletes the section, marks the phase line `[x] C<n> …`, writes the record of what was checked below it, and removes `blocked(after C<n>)` lines that waited for that item (status is progress, not a promise).
+- Numbers are not reused. The close waits for the review (C102): after the review and its fixes, a closing request deletes the section, marks the phase line `[x] C<n> …`, writes the record of what was checked below it, and removes `blocked(after C<n>)` lines that waited for that item (status is progress, not a promise). The deployer does not close an item in its first run, because the reviewer reads the section.
+- Progress is shown by checking off done-when conditions and adding the facts checked to the section's body. **Changing the wording of done-when conditions is changing the promise**, so it is not done within a request. Approved wording is written by the planning session, not by the deployer; the leader returns it in the report.
+- **Who files items** (design.md §3.15, C96): new `### C<n>.` sections, changed done-when wording and rejections (`[-]`) are written only in the planning session (the human's session with Claude where the project is discussed; not a Hub role). The deployer, the leader and the reviewer do not write them, even when a request asks; they answer by naming the planning session. The deployer writes progress only, with the change.
 - When rejected, delete the section and leave `[-] C<n> Title (rejected YYYY-MM-DD, one-line reason)` under a phase or "Known issues". If the reason is long, write it in design.md §9 and point to it (design.md §3.16).
 - The plan list: the ledger has one `## Plan`, listing the items without a status line and the `blocked(after C<n>)` items in the order they will be taken up, as `- [ ] C<n>`. No titles. These two kinds are always listed, and nothing else. Blocked items go after the item they wait for. Reordering is a human's decision (design.md §3.15).
 - How states are split: each of the four tiers corresponds to one state. `proposed` is only "awaiting a human's decision". `blocked(after C<n>)` is only for decided items (with done-when conditions) waiting on another item, with `C<n>` in the reason. An undecided item waiting on another is `held(after C<n>)`. Something waiting on an outside event (an update to the official docs, the next time a usage limit is hit and so on) is `held(<condition to resume>)` even if decided, and the reason is not omitted. Something accepted but not to be worked on is not held but rejected, `[-]`.
 - A closed line (`[x] C<n>` / `[-] C<n>`) has the date it was closed (`YYYY-MM-DD`) at the head of the parentheses at the end of the line (e.g. `(2026-10-27, requested by the user)`; for a rejection `(rejected 2026-10-27, reason)`). A date inside the title does not count.
 - When asked about the plan, first check for breakage with `npm run -s docs:check`, then answer from the JSON of `npm run -s docs:check -- docs/roadmap.md --index` and the dates on closed lines. Do not read the whole ledger and reclassify it (the four-tier answer is in the skill `roadmap-items`).
 - The Japanese vocabulary (`状態: 提案 | 保留(…) | ブロック(C<n> の後)`, `#### 完了条件`, `## 予定`, `(却下 YYYY-MM-DD、…)`) is read the same way by the checker and the index (the mapping table is in design.md §3.15). The closed records below, from before 2026-10-29, are in Japanese.
-- Breakage of the rules is checked with `npm run docs:check` (`src/shared/roadmap.ts`). On this repository's own roadmap it also checks the other documents (CLAUDE.md's map, protocol.md's tables and kinds, dates in design.md §9; `src/docs-check/repo.ts`, C9).
+- Breakage of the rules is checked with `npm run docs:check` (`src/shared/roadmap.ts`). On this repository's own roadmap it also checks the other documents (the list is in design.md §3.12; `src/docs-check/repo.ts`, C9). When you change this file, run `npm run docs:check`.
 - An explanation for writing the same rules in other projects is in the global skill `roadmap-items` (`~/.claude/skills/roadmap-items/`). The source of truth is this header and `src/shared/roadmap.ts`.
 
 ## Plan
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C125
 - [ ] C126
 - [ ] C127
 
@@ -458,6 +459,14 @@ In the order they will be taken up. Only items without a status line and blocked
   - Review finding: a name left in `UI_EVENT_NAMES` after its last emitter was removed passed. Fix: the literal names of `emitUi(` calls in `src/hub` are compared with the list both ways, and a non-literal call is an error; checked by renaming the `index.deleted` emitter and restoring it.
   - Done-when line 4 (0 errors and 0 warnings): left unchecked by the deployer for the same reason as C9 (the only warning was C124's own close reminder); read as met, and after this close the run reports 0 warnings.
   - Checked: `npm test` 550 pass, 0 fail; `npm run typecheck` pass; `npm run docs:check` 0 errors, 0 warnings.
+- [x] C125 One home per document convention, with the table in design.md §3.12 as the index (2026-11-03, closed by the closing request after the review)
+  - design.md §3.12: the table's last column, "Written in full in", names one file per row; the other files point there. The Read / Add cells are shortened, and the intro line points at CLAUDE.md for reading the map.
+  - The item rules moved from CLAUDE.md "Updating the docs" to the top of roadmap.md (progress and the wording-is-a-promise rule, who files items, the deployer's first-run close, `docs:check` on this file); CLAUDE.md keeps one pointer. The roadmap top's docs:check bullet points at design.md §3.12 for the list of checks.
+  - tools/dev/roles: stay project-neutral. Item numbers removed; design.md §3.15 citations marked as agent-hub examples or "the project's planning session"; the PROPOSED CONDITIONS rule points at the top of the project's roadmap.
+  - Review findings fixed: the 'A break' row had lost the engram / memory step (restored, with the outside home named); two bare citations in leader.md; the reviewer row's Read cell let the request decide what is read (now the reviewer chooses).
+  - Checked: `npm test` 550 pass, 0 fail; `npm run docs:check` 0 errors.
+  - Done-when line 4 was checked on the user's instruction in the request (the item's own close reminder is not counted as a warning). After this close the reminder is gone, so `docs:check` shows 0 warnings.
+  - Not changed (outside this item's done-when): the global ~/.claude/CLAUDE.md, the skills roadmap-items and clear-timing, and docs/usage.md:205 (who files items, restated in full).
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -803,17 +812,6 @@ Status: proposed
 
 Split from C9 on 2026-11-03 (design.md §3.12, layer 1). The Hub does not read the working tree (§3.8), so the checks run on the host, in the leader's checking steps or a Stop hook, and their results would be sent to the Hub as a notice or Event and shown in the UI.
 The other half: a deployer's reply whose `CHANGED` lists `src/` but no `docs/`. Whether that is read by the Hub (the shape of `CHANGED` is not declared yet; C11) or by the leader's checking steps is open.
-
-### C125. One home per document convention, with the table in design.md §3.12 as the index
-
-Decided 2026-11-03 by the user (the part of C9 left out of scope). §3.12 says the carriers of the table of conventions are scattered across CLAUDE.md, the role descriptions, the global CLAUDE.md and skills, and should move toward pointing at the table.
-Constraint: the role descriptions in `tools/dev/roles/` are used by teams in other projects, so they stay project-neutral (they name the project's own map or table, with agent-hub as an example), as they do today.
-
-#### Done when
-- [ ] Each row of the table in design.md §3.12 names the one file where its convention is written in full; other files that mention it link there instead of restating it
-- [ ] No rule is written in full in two places among CLAUDE.md, the top of docs/roadmap.md and design.md §3.12 (a short pointer with the section is fine)
-- [ ] `tools/dev/roles/*.md` restate no agent-hub-only rule; where one is needed they point to the project's CLAUDE.md map or conventions table
-- [ ] `npm run docs:check` passes with 0 errors and 0 warnings, and `npm test` passes
 
 ### C126. The ledger index misses non-ASCII and non-canonical ledger paths
 

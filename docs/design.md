@@ -432,22 +432,22 @@ Open questions:
 What turned out to work in co-developing with AI was, in the end, document conventions (when to read what and add what). This is the center of the "conventions" in §1.1, and the Hub can become the board that checks them.
 But written rules eventually fall apart without something that checks whether they were followed. So the conventions are put in a table, and checking is split into three layers.
 
-**The table of conventions** (the map is the "document map" in CLAUDE.md; do not read everything at startup; Grep the section, then Read)
+**The table of conventions** (the map is the "document map" in CLAUDE.md, which says how to read it)
 
-| Moment | Read | Add | Carried by today |
+| Moment | Read | Add | Written in full in |
 |---|---|---|---|
-| Session start | The document map | — | CLAUDE.md (loaded automatically) |
-| The leader writes a request | The related sections (the decisions in §9, the non-goals in §2) | If it touches the spec, docs in SCOPE and the docs update in DONE WHEN | leader.md |
-| Before the deployer implements | The verification record in §6 | If unverified, check the official docs and add to §6 | CLAUDE.md |
-| The deployer's report | — | NOTES lines (sorted to the destinations below) | The deployer standard format |
-| The leader checks | The sections related to the change | — (see whether docs are in `git diff --name-only` and whether the content matches the implementation) | leader.md |
-| The reviewer returns findings | The request's target (a commit range, or an item: for an item, its done-when conditions and body, and when any condition is `[x]`, the uncommitted change in the working tree as well as its commits (C97)); the sections related to the change; the non-goals in §2; the decisions in §9; rejected `[-] C<n>`. If all of an item's done-when conditions are `[ ]`, look only at the item's wording, not a change (if even one is `[x]`, check the change) | — (each finding carries the location of the source of truth it was checked against (file and section), and a `breaks when:` (the input or state that breaks it). A finding without one is a NOTE, not dropped (C82). Proposed corrections to done-when conditions are made only after a human approves. The leader relays them as NEEDS DECISION, with no change as the default) | reviewer.md, leader.md |
-| Something was decided | — | "Decision (date)" and the reason under the matching item of §9 | Custom |
-| A break (commit, item done) | — | Checking off the roadmap's done-when conditions; the close (delete the section, mark `[x] C<n>`) is a separate closing request after the review (C102), engram, MEMORY | The rules at the top of roadmap.md, the clear-timing skill, the global CLAUDE.md |
+| Session start | The document map | — | CLAUDE.md, "Document map" |
+| The leader writes a request | The related sections | If it touches the spec, the docs in SCOPE and their update in DONE WHEN | leader.md, "Finding things in the docs" |
+| Before the deployer implements | The verification record in §6 | If unverified, the result of checking the official docs, in §6 | CLAUDE.md, "Before implementing" |
+| The deployer's report | — | NOTES lines, sorted to the destinations below | This section, "Where NOTES go" (the report's format is in deployer.md) |
+| The leader checks | The sections related to the change | — | leader.md, "Finding things in the docs" |
+| The reviewer returns findings | The target (an item or a commit range), then the sections related to the change, as the reviewer chooses them | — | reviewer.md, "Reply format" |
+| Something was decided | — | "Decision (date)" and the reason under the matching item of §9 | This section, "How to write §9" |
+| A break (commit, item done) | — | The checkboxes and facts in the item; the close after the review; what was learned to engram / memory | roadmap.md, the rules at its top (the engram and memory part: the global CLAUDE.md [engram] block and the clear-timing skill, outside the repository) |
 
 - **Where NOTES go**: facts checked (the real behavior of Channels and hooks and so on) to §6; what was decided to the decisions in §9; what could not be decided to the open questions in §9; later work to roadmap items (`### C<n>.`; how to write them is at the top of roadmap.md, §3.15).
 - **How to write §9**: keep the item's question, and add "Decision (YYYY-MM-DD)" and the reason below it. Do not delete it.
-- Today the carriers of this table are scattered across CLAUDE.md, leader.md, deployer.md, the global CLAUDE.md and skills. Each file will move toward just pointing at this table.
+- Each row's last column names the file where the convention is written in full; a file that mentions the convention points there instead of restating it. Some carriers are outside this repository (engram, the auto memory, the global CLAUDE.md and skills); they are not changed here.
 
 **Three layers of checking**
 
