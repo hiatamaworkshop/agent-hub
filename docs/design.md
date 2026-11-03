@@ -791,6 +791,7 @@ Source: <https://code.claude.com/docs/en/channels-reference.md>
 - **Queueing**: notifications that arrive while Claude is working accumulate in the session and are handed over together on the next turn.
 - **Research preview**: a self-made channel is not on the allowlist, so start with `claude --dangerously-load-development-channels server:<name>` (with a full-screen warning dialog).
   **It works only in interactive sessions. It is ignored with `-p` and the Agent SDK.** Team/Enterprise needs `channelsEnabled` turned on in the organization.
+  Neither `--channels` nor `--dangerously-load-development-channels` is listed in `claude --help` while Channels are in preview; the official Channels page says they work although unlisted (checked 2026-11-03 against code.claude.com/docs/en/channels, "Research preview"; `claude --help` of 2.1.316 lists neither, and a team started with the flag on 2.1.316 the same day attached; C121).
 - **Registration**: written as an ordinary MCP server in the project's `.mcp.json` or the user's `~/.claude.json`.
 - **permission relay**: declaring `capabilities.experimental['claude/channel/permission']: {}` makes tool-execution permission prompts arrive as
   `notifications/claude/channel/permission_request` (`request_id`, `tool_name`, `description`, `input_preview`), and they can be answered with

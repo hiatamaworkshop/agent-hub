@@ -19,6 +19,8 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C119
+- [ ] C120
 
 (Items with a status line are listed under "Items".)
 
@@ -425,6 +427,9 @@ In the order they will be taken up. Only items without a status line and blocked
   - `tokenRefusal` (`src/team/agent.ts`): `runAgent` on its own with no token prints the reason, records `failed` (role, the default or given Mailbox, reason) and returns 1 before any Hub read or claude spawn. Run for real with agent-hub's `.env` set aside: exit 1 and the `failed` line in `logs/start-warnings.jsonl`. `agent` from `team` is not refused.
   - `onStartSignals` / `interrupted`: SIGINT and SIGHUP write the result line with `aborted: "interrupted by <signal>"` and exit 130 / 129. `runAgent` on its own installs it at the start and removes it just before the spawn, where SIGINT is ignored for claude as before; `runTeam` keeps it for the whole start and writes its outcome so far. docs/usage.md (team names, start warnings) says the refusal, the signal line, and that only a kill that cannot be caught leaves no line.
   - Checked: `npm test` 499/499 (refusal, `interrupted`, `onStartSignals` with a fake process); `npm run docs:check` 0 errors. A real Ctrl+C was not sent (unit tests only). No review.
+- [x] C121 Is `--dangerously-load-development-channels` still in Claude Code? (2026-11-03, closed by the planning session: a fact check with no code change)
+  - The official Channels page (code.claude.com/docs/en/channels, "Research preview", read 2026-11-03) says neither `--channels` nor `--dangerously-load-development-channels` appears in `claude --help` during the preview, and that they work although unlisted. So the flag is hidden, not removed; nothing in the start path, the README or the verified-version line changes. Recorded in design.md §6.1.
+  - Also read on the MCP page: the v2 client runtime does not register a channel server that negotiates protocol `2026-07-28`. Already in design.md §6.1 and the SDK 1.x pin (§5); nothing new.
 - [x] C118 Walk README and project-setup.md through from nothing, and fix what breaks (2026-11-03, closed by the user without a review)
   - Walked by the deployer in scratch folders: a fresh clone of agent-hub (16fb15f) and a clone of ad_masker (382cabc, the original untouched), on spare ports. The Hub on 7777 was not touched. Documents fixed: `README.md` (step 1: a variable already set in the shell overrides `.env` without a warning; the npm 11 install-scripts warning; step 3 Mailbox note), `docs/project-setup.md` (§1.2 the PATH form for PowerShell and Git Bash; §2 how an own-format ledger is converted, from ad_masker's 29 `docs:check` errors to 0; §5 Mailbox names and `--tabs print`), `docs/usage.md` (Items; Role definitions).
   - Role routing without `roles.json`: `role:leader` and `role:deployer` still reach their Mailboxes and the round trip completes; `GET /roles` is `{"roles":null}`. The file adds only the role description and the default subscriptions. Recorded in `docs/usage.md`.
@@ -771,19 +776,36 @@ Status: held(after the user has run teams in two projects side by side)
 Raised 2026-11-01 by the user: projects where a team was started could show as tab-like buttons, so switching is one press (today it is the project selector above the sidebar). The user wants to run two teams first and decide then. design.md §3.2 chose a selector over tabs so waits in other projects are not missed (`N waiting in other projects`); buttons have to keep that.
 
 ### C119. Warn when a variable set in the shell overrides `.env`
-Status: proposed
 
-Found 2026-11-03 in C118's walk-through. Node reads `.env` only for variables that are not already set, so a `HUB_TOKEN`, `HUB_ROLE`, `HUB_MAILBOX` or `HUB_PORT` left in the shell wins over the file, silently. A Hub started with the shell's token refuses the token in `.env`, which looks like a Hub fault; the walker lost time to it. README step 1 now says so and how to check (`echo $HUB_TOKEN`), but a person who has not read it still meets the silent override.
-To decide: whether to warn at all (README may be enough), and where: the Hub's start, the shim's attach and the team start each read the variables, so one shared check that names each variable set in the environment whose value differs from `.env` would serve all three. It should only name the variable, never print the token.
+Found 2026-11-03 in C118's walk-through. A `HUB_TOKEN`, `HUB_PORT` or `HUB_URL` left in the shell wins over agent-hub's `.env`, silently. The walker lost time to it: the team start then says "HUB_TOKEN in .env does not match the Hub", which points at the wrong place. README step 1 says so and how to check (`echo $HUB_TOKEN`), but a person who has not read it still meets the silent override.
+Decided 2026-11-03 (the user, "as recommended"): warn, naming the variable only, from one shared check on the host side.
+Facts from the look before deciding (2026-11-03):
+- Each reader takes the environment first, in its own way: `npm run hub` with `--env-file-if-exists=.env` (Node keeps a variable already set); the team (`src/team/env.ts` `envSetting`, per variable); the shim (`src/shim/config.ts`) and `docs:index` (`src/docs-check/push-index.ts`) load `.env` only when `HUB_TOKEN` is not set, so a token in the shell also hides `HUB_PORT` and `HUB_URL` in `.env`.
+- The Hub in Docker reads `.env` through `env_file`, which the shell does not override (only `${HUB_PORT}` in the compose file is interpolated from the shell). So with Docker, the mismatch shows on the host side: a token in the shell is refused by the Hub.
+- `HUB_ROLE` and `HUB_MAILBOX` are left out: the team sets them on purpose in each role's environment, and `.env` does not normally hold them.
+
+#### Done when
+- [ ] One shared function lists the variables among `HUB_TOKEN`, `HUB_PORT` and `HUB_URL` that are set in the environment and also in agent-hub's `.env`, with different values. It returns names only; no value (above all no token) reaches its output. Unit tests: same value, different value, only in one of the two, `.env` missing, quoted values in `.env`
+- [ ] `npm run team` / `hub-team` (team start, `agent`, `status`) and `docs:index` print one warning per listed variable, saying the environment's value is used instead of `.env`'s and how to unset it in that terminal. A team start also records it in its start warnings (`logs/start-warnings.jsonl`, C85)
+- [ ] `npm run hub` (direct start) prints the same warning at start
+- [ ] When the Hub refuses the token (401) and `HUB_TOKEN` came from the environment, the team start's and `status`'s message says the token came from the environment, not ".env does not match"
+- [ ] README step 1 and usage.md mention the warning; `npm test` and `npm run docs:check` pass
 
 ### C120. The esbuild install-scripts warning on `npm install` (npm 11)
-Status: proposed
 
 Found 2026-11-03 in C118's walk-through. `npm install` on npm 11 prints an install-scripts warning for esbuild; the build, the Hub and the tests run without it. README step 1 says it is not an error. A first-time reader may still stop at a warning.
-To decide: whether to silence it in `package.json` (for example by allowing the script, if npm 11 has such a setting that holds on the supported Node and npm versions), or to leave the README note as it is and reject this item. Check the cause before choosing: it is not yet known whether `tsx` or `sharp` pulls esbuild in.
+Facts from the look before deciding (2026-11-03, npm 11.19.1, Node 26.10.0, `npm ci` in a scratch copy of `package.json` and the lock): esbuild 0.28.2 comes in through `tsx` 4.23.15 (not `sharp`). The warning reads `1 package has install scripts not yet covered by allowScripts: esbuild@0.28.2 (postinstall: node install.js)`. With `--foreground-scripts` the postinstall still ran, so on this npm the warning changes nothing. npm's own doc (`npm help install-scripts`) says unlisted scripts are blocked by default; either way esbuild worked. `npm install-scripts approve esbuild` writes a pinned `"allowScripts": { "esbuild@0.28.2": true }`, which goes stale when `tsx` moves esbuild; a name-only `"allowScripts": { "esbuild": true }` also silenced it.
+Decided 2026-11-03 (the user, "as recommended"): allow esbuild's script by name in `package.json`.
 
-### C121. Is `--dangerously-load-development-channels` still in Claude Code?
+#### Done when
+- [ ] `package.json` has `"allowScripts": { "esbuild": true }` (name only, so a new esbuild version from `tsx` stays covered)
+- [ ] `npm ci` on npm 11 prints no install-scripts warning, and `npm test` passes after it
+- [ ] The Docker image still builds (`docker compose build`), as its npm may be another version
+- [ ] README step 1's note on the warning is removed or reduced to what is still true; `npm run docs:check` passes
+
+### C122. Do channels now work with `claude -p`?
 Status: proposed
 
-Found 2026-11-03 in C118's walk-through: `claude --help` of 2.1.316 does not list `--dangerously-load-development-channels`. It is the flag README step 3, `hub-team` and `npm run team` rely on. Whether it is hidden or removed is not settled. The team started the same day on 2.1.316 worked, so it is at least still accepted there.
-To decide after checking the official docs for Channels and the CLI reference (design.md §6: the official docs win): whether the flag is documented, hidden or removed, and the result is written in design.md §6 together with the Claude Code version. If it is gone, the start path, the README and the verified-version line (2.1.310) need a follow-up item; this one only records the fact.
+Found 2026-11-03 while checking C121. design.md §6.1 (checked 2026-10-16) says a channel "works only in interactive sessions. It is ignored with `-p` and the Agent SDK." The official Channels page read on 2026-11-03 now says: "When you run channels in non-interactive mode with `-p`, tools that need terminal input, such as multiple-choice questions and plan mode approval, are disabled so the session never stalls waiting for input." That reads as if `-p` sessions now receive channel messages.
+If so, it matters: a role could run without a terminal tab (the tab openers, C62/C116), but a `-p` session ends after its turn, so how it would stay to receive the next message is unknown.
+To decide after checking: on a real machine, whether a `claude -p` session started with `--dangerously-load-development-channels server:agent-hub` receives a Hub message, and whether it stays alive to receive another; record the result with the Claude Code version in design.md §6 and correct §6.1. Whether to use it for roles is a separate item.
