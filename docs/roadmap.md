@@ -23,6 +23,7 @@ In the order they will be taken up. Only items without a status line and blocked
 
 - [ ] C126
 - [ ] C127
+- [ ] C128
 
 (Items with a status line are listed under "Items".)
 
@@ -840,3 +841,16 @@ The new state is quieter than Needs you: it says "your move", not "someone is st
 - [ ] The state follows live updates (SSE) without a reload: a new request that makes a card Working clears it, and the last card going Idle sets it
 - [ ] `npm run ui:check` has scenes for all Idle (shows `Your move`), one card Working (does not), Needs you (shows Needs you only) and no session connected (does not), and passes; `npm test` passes
 - [ ] Docs: design.md §3.15 (card states) and docs/usage.md (reading card states) describe `Your move` and its condition
+
+### C128. Item rules in one place: the skill and usage.md point at the top of roadmap.md
+
+Decided 2026-11-03 by the user (option A), following C125. The test for a line: if it were deleted, would someone act wrongly at some point? If not, delete it. If so, put it once where that reader already is at that moment: files always loaded carry only prohibitions that are broken before anyone thinks to look, and "before X, read Y" pointers; the full text lives in one home; what can be checked mechanically is checked by `docs:check`.
+Two copies of the item rules were left after C125: the global skill `roadmap-items` (Japanese, read by sessions in every project) restates them in full, and docs/usage.md (the team section, "Filing is not done by the team") restates who files items and the close. The full text stays at the top of agent-hub's docs/roadmap.md; readers in other projects are AI sessions, so reading it in English is fine.
+The skill (`~/.claude/skills/roadmap-items/SKILL.md`) and the global `~/.claude/CLAUDE.md` are outside this repository and are changed in the planning session.
+
+#### Done when
+- [ ] The skill `roadmap-items` keeps only when to use it, where the ledger goes, how to answer about the plan (the four tiers) and how to run `docs:check`; for how to write and close items it points at the top of agent-hub's docs/roadmap.md by absolute path, and restates none of those rules
+- [ ] docs/usage.md keeps what the human sees and does (the report's headings, where candidates appear, that you commit) and points at the top of docs/roadmap.md for who files items and how an item is closed, instead of restating them
+- [ ] The global `~/.claude/CLAUDE.md` "plans" block still triggers the skill and restates no item rule
+- [ ] design.md §3.12's table names the skill and usage.md as pointers to the row of the item rules, not homes
+- [ ] `npm run docs:check` passes with 0 errors (the item's own close reminder is not counted), and `npm test` passes
