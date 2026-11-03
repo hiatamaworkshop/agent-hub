@@ -769,3 +769,21 @@ To decide: where the seqs come from (`seqs` on the receiver's `awaitingReply` an
 Status: held(after the user has run teams in two projects side by side)
 
 Raised 2026-11-01 by the user: projects where a team was started could show as tab-like buttons, so switching is one press (today it is the project selector above the sidebar). The user wants to run two teams first and decide then. design.md §3.2 chose a selector over tabs so waits in other projects are not missed (`N waiting in other projects`); buttons have to keep that.
+
+### C119. Warn when a variable set in the shell overrides `.env`
+Status: proposed
+
+Found 2026-11-03 in C118's walk-through. Node reads `.env` only for variables that are not already set, so a `HUB_TOKEN`, `HUB_ROLE`, `HUB_MAILBOX` or `HUB_PORT` left in the shell wins over the file, silently. A Hub started with the shell's token refuses the token in `.env`, which looks like a Hub fault; the walker lost time to it. README step 1 now says so and how to check (`echo $HUB_TOKEN`), but a person who has not read it still meets the silent override.
+To decide: whether to warn at all (README may be enough), and where: the Hub's start, the shim's attach and the team start each read the variables, so one shared check that names each variable set in the environment whose value differs from `.env` would serve all three. It should only name the variable, never print the token.
+
+### C120. The esbuild install-scripts warning on `npm install` (npm 11)
+Status: proposed
+
+Found 2026-11-03 in C118's walk-through. `npm install` on npm 11 prints an install-scripts warning for esbuild; the build, the Hub and the tests run without it. README step 1 says it is not an error. A first-time reader may still stop at a warning.
+To decide: whether to silence it in `package.json` (for example by allowing the script, if npm 11 has such a setting that holds on the supported Node and npm versions), or to leave the README note as it is and reject this item. Check the cause before choosing: it is not yet known whether `tsx` or `sharp` pulls esbuild in.
+
+### C121. Is `--dangerously-load-development-channels` still in Claude Code?
+Status: proposed
+
+Found 2026-11-03 in C118's walk-through: `claude --help` of 2.1.316 does not list `--dangerously-load-development-channels`. It is the flag README step 3, `hub-team` and `npm run team` rely on. Whether it is hidden or removed is not settled. The team started the same day on 2.1.316 worked, so it is at least still accepted there.
+To decide after checking the official docs for Channels and the CLI reference (design.md §6: the official docs win): whether the flag is documented, hidden or removed, and the result is written in design.md §6 together with the Claude Code version. If it is gone, the start path, the README and the verified-version line (2.1.310) need a follow-up item; this one only records the fact.
