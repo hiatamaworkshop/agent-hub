@@ -23,6 +23,9 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C134
+- [ ] C132
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -864,17 +867,32 @@ Raised 2026-11-05 from the vcp check (C130). Paths on Windows (and macOS by defa
 - docs/project-setup.md §7 already describes the pitfall; that line would point at the new message once built.
 
 ### C132. Point the starting session at how requests and closes work, at the moment it starts a team
-Status: proposed
 
 Raised 2026-11-05 from a cite-bridge session that started a team (hub-team) and then acted as the planning session and checker. What that session read, in order: the global CLAUDE.md agent-hub block (run hub-team, give the UI URL, requests go from the browser, this session does not do the work), hub-team's summary (index sent, status command, UI URL), the skill `roadmap-items` and the rules at the top of this file. None of them says that a request is drafted from the item card (**Draft request**, usage.md "Request work from roadmap items"), or the order of review and close (usage.md "Try a round trip between roles", the review order). As a result the session drafted request texts by hand, repeating the done-when lines and the project's CLAUDE.md promises, and asked the deployer to close the item inside the implementation request. It reached usage.md only by searching after the user pointed this out.
 - Idea: hub-team's summary prints one line for the session that started it, e.g. `planning session: requests are drafted from the item card (Draft request); review and close order: usage.md "Try a round trip between roles", the review order`. When `--roles` has no reviewer, one more line: `no reviewer: the leader closes with NOT VERIFIED`. This is where that reader is at that moment (design.md §3.12, the carrier test).
 - Also 1–2 lines in the global CLAUDE.md agent-hub block, for days the team is not started in this session (a carrier outside this repository; the planning session changes it).
 - Considered and not preferred: letting the planning session pull guidance from the Hub over MCP. A server's instructions load into every session where it is registered, Hub or not, and a pull tool still needs a pointer saying when to call it.
+- Decided 2026-11-06 by the user: both carriers. The no-reviewer line in the idea above predates C133 and is replaced: with no reviewer the leader stops before the close and waits for the user's word.
+- The global CLAUDE.md lines were written by the planning session on 2026-11-06 (outside this repository; not part of a team's request).
+
+#### Done when
+- [ ] `src/team/team.ts`: the summary under `--- summary ---` has one line for the session that started the team: requests are drafted from the item card (**Draft request**), and the review and close order is in docs/usage.md "Try a round trip between roles", named by a path that opens from the started project (this repository's absolute path).
+- [ ] When no reviewer of the project is connected at the end of the start (none in `--roles` and none already connected), one more summary line says the leader reports and waits for the user's "close C<n>" before the close (C133). With a reviewer connected, the line is not printed.
+- [ ] Unit tests cover both lines, and the no-reviewer line's absence with a reviewer.
+- [ ] docs/usage.md (the team start's summary) describes the new lines.
+- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C134. Two checker messages read from a ledger whose items are all proposed
-Status: proposed
 
 Raised 2026-11-05 (cite-bridge). (1) With items but no `## 予定` / `## Plan`, the error says to list the decided items in order; when every item is proposed, it does not say whether a heading alone is enough (it is: an empty plan passes). Adding "a heading alone is fine when nothing is decided" to the message in `src/shared/roadmap.ts` would answer it. (2) The rules say plan lines carry no titles, but `- [ ] C12 <title>` lines passed `docs:check`. Whether to warn is open.
+- Decided 2026-11-06 by the user: (1) as suggested; (2) a warning, not an error, so existing ledgers do not break.
+
+#### Done when
+- [ ] `src/shared/roadmap.ts`: the error for items without `## 予定` / `## Plan` also says that the heading alone is enough when no item is decided.
+- [ ] A plan line with text after `C<n>` (e.g. `- [ ] C12 <title>`) is a warning naming that line; `- [ ] C12` alone gives none, and the line is still read as C12 in the plan.
+- [ ] `src/shared/roadmap.test.ts` covers both.
+- [ ] The plan-list rule at the top of this file says a title on a plan line is warned about.
+- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C135. Let the planning session receive the leader's reports
 Status: proposed
