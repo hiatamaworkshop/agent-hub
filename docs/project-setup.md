@@ -101,3 +101,26 @@ The Mailboxes are named `<folder name>.<role>` (a project in `~/work/ad_masker` 
 | Later work | A new `### C<n>.` (planning session only) |
 | A rejected idea | `[-] C<n>` with a one-line reason |
 | Knowledge across projects | engram / memory, not the Hub (the Hub holds only delivery state) |
+
+## 7. Checking whether a project is ready (read-only)
+
+When the human asks in chat whether a project is ready for the Hub, agent-hub's own session checks it in this order and changes nothing. Run the commands from the agent-hub folder.
+
+1. `npm run docs:check -- <the ledger's absolute path>`, **without `--index`**. Note the exit code and the error count. With `--index` it prints only the JSON, no errors, and exits 0, so it cannot show that the ledger is broken.
+2. `npm run team -- hooks --project <dir>`: lists the Hub hooks the project lacks (writes nothing without `--write`).
+3. `npm run team -- git-hook --project <dir>`: says whether the post-commit hook is there (writes nothing without `--write`).
+4. What no command checks, by reading:
+   - The document map in `CLAUDE.md` names where the decisions and the verified facts are.
+   - The working rules in `CLAUDE.md` give the test command, "do not commit/push until told", and what not to touch.
+   - `.agent-hub.json` names the ledger when it is not `docs/roadmap.md`.
+   - Closed lines have the form `- [x] C<n> … (YYYY-MM-DD, …)` (rejected: `- [-] C<n> … (rejected YYYY-MM-DD, …)`).
+
+Answer with one table:
+
+| What | Result | Evidence |
+|---|---|---|
+| Ledger (`docs:check`) | OK / NG / missing | exit code, error count, one line per kind of error |
+| … | | |
+
+- The check covers the delivery layer only: whether the Hub can read the ledger, start the team and see the hooks. The result names what fails; fixing the project's ledger content (statuses, done-when lines, closed lines) is requested of that project's leader, not done or judged here (agent-hub's `CLAUDE.md`, "When running another project's team").
+- On Windows, paths are case-insensitive: with no `.agent-hub.json`, the default `docs/roadmap.md` opens a `docs/ROADMAP.md` if there is one. The summary then says `docs/roadmap.md has no ### C<n>. items` although another file was read (seen in vcp, 2026-11-05). If the project's ledger is a different file, it needs `.agent-hub.json` either way.

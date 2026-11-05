@@ -489,6 +489,13 @@ In the order they will be taken up. Only items without a status line and blocked
   - Wording changed in the planning session on 2026-11-03 (the user's decision): Paused also hides it, since a usage-limit wait resumes by itself; code and a Paused scene followed.
   - Checked: `npm run ui:check` 187 ok, 0 NG, exit 0 (run again by the planning session; 9 C127 scenes, including Working → Idle without a reload and Paused); `npm test` 550 pass, 0 fail; design.md §3.15 and docs/usage.md updated.
   - Seen by eye (2026-11-03, the user): on the live team in dark mode, three idle sessions and Needs you 0 show the frame, the tint and `Your move`. The compose Hub had to be rebuilt first (`docker compose up -d --build`); the image predated C127. Light mode not seen.
+- [x] C130 A read-only procedure for checking whether a project is ready for the Hub (2026-11-05, decided and closed by the planning session; docs only, no review)
+  - Raised from a check of vcp that was first answered from `docs:check --index`, which shows no errors and exits 0.
+  - docs/project-setup.md §7: the order (`docs:check` without `--index`, `team -- hooks`, `team -- git-hook`, both without `--write`, then four things read by hand: where the map names decisions and facts, the working rules, `.agent-hub.json`, the shape of closed lines) and a result table (what / result / evidence).
+  - Scope written in: the delivery layer only; the other project's ledger content goes to its leader. The Windows case-insensitive `docs/ROADMAP.md` hit is written in (seen in vcp).
+  - Decided against: a global skill (only agent-hub's own session runs the check) and a combined command (added only if running the commands by hand turns out to fail).
+  - CLAUDE.md's map names §7 on the project-setup.md line.
+  - Checked: `npm run docs:check` 0 errors, 0 warnings.
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -843,13 +850,3 @@ Raised 2026-11-03 from the official page on what survives compaction (design.md 
 - Content (any MCP client): one shape for this Mailbox's requests owed a reply (`backlog.awaitingReply`) and awaiting one (`outgoing`), as pointers only (`id`, `seq`, the other side, `meta.item`; no bodies), the text made in one place in the shim. Through a shim tool or the head of `inbox()`. The shim's instructions say when to fetch it (at start, and whenever the session does not know what it is waiting on), which is the whole trigger for a client without hooks.
 - Trigger for Claude Code: a `SessionStart` command hook for the `compact` / `clear` / `resume` sources prints the same content into the new context. It prints nothing with no token, no Mailbox or nothing open, and never fails the start.
 Open before deciding: a new tool or the head of `inbox()`; whether the hook asks the Hub directly (like the Event hooks) or reuses the shim's text through a Hub endpoint; whether `startup` prints too; the exact text. Covers the list half of C10.
-
-
-### C130. A read-only procedure for checking whether a project is ready for the Hub
-Status: proposed
-
-Raised 2026-11-05 from a check of vcp, which was answered wrong at first: `docs:check -- <ledger> --index` prints no errors and exits 0, and the session skipped the plain run that the top of this file asks for. docs/project-setup.md §2 lists what a project needs, but not how to check an existing project when the human asks in chat ("is X ready for the Hub?").
-- Only agent-hub's own session does this check, so the procedure lives in project-setup.md (a new section, named in CLAUDE.md's document map), not in a global skill or a new command. The agent runs the existing commands itself; a combined command is added only if running them by hand turns out to fail.
-- Order: `docs:check -- <ledger>` without `--index` (exit code and error count), `npm run team -- hooks --project <dir>`, `npm run team -- git-hook --project <dir>` (both without `--write`), then what no command checks: where the map names decisions and verified facts, the working rules (test command, commit rule, what not to touch), whether `.agent-hub.json` is needed (ledger not at `docs/roadmap.md`), and the shape of closed lines (`[x] C<n> … (YYYY-MM-DD, …)`). A table of results (item / OK, NG, missing / evidence).
-- Scope: the delivery layer only. The procedure says the result names what fails, and fixing another project's ledger content (statuses, done-when lines) is requested of that project's leader (CLAUDE.md, "When running another project's team").
-- Windows pitfall to write in: paths are case-insensitive, so the default `docs/roadmap.md` opens a `docs/ROADMAP.md` (seen in vcp, 2026-11-05: `existsSync` true, the real file `ROADMAP.md`, "has no `### C<n>.` items").

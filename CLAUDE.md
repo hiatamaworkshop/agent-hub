@@ -7,7 +7,7 @@ When you add sections or change their numbers, fix this map in the same commit (
 After compaction this map is back but the sections you read are not (the large docs return only as paths, design.md §6.1z): read the section again before acting on it.
 
 - [README.md](README.md) — the entrance (about 150 lines): goals, status, setup, first round trip, hooks, starting a team, using it in other repositories
-- [docs/project-setup.md](docs/project-setup.md) — a short guide for a project's first team: what to prepare, writing items, who writes what, one item end to end
+- [docs/project-setup.md](docs/project-setup.md) — a short guide for a project's first team: what to prepare, writing items, who writes what, one item end to end, checking whether a project is ready (read-only, §7)
 - [docs/usage.md](docs/usage.md) — reference for everyday use: reading card states, the map (where requests wait), custom commands, images, hooks, Forward, takeover, retention, teams in detail, Items, `roles.json`, `HUB_LANGUAGE`, `inbox`, notes on curl, start warnings (`logs/start-warnings.jsonl`), development. Usage changes go here; keep the README short
 - [docs/roadmap.md](docs/roadmap.md) — acceptance criteria per phase, known issues, open items (`### C<n>.` sections; the rules for writing them are at the top of the file). **How far things have got** is here, and so is how to answer about the plan (the top of the file; do not read the whole ledger)
 - [docs/design.md](docs/design.md) (about 1,200 lines)
