@@ -6,7 +6,9 @@ export const SHIM_TOOLS = [
   {
     name: 'post_message',
     description:
-      'agent-hub にメッセージを送る。受け取ったメッセージ (<channel> / <hub-message>) への返信は kind="reply" と reply_to=<その id> を指定する (to を省略すると送り手に返る)。',
+      'agent-hub にメッセージを送る。受け取ったメッセージ (<channel> / <hub-message>) への返信は kind="reply" と reply_to=<その id> を指定する (to を省略すると送り手に返る)。' +
+      '結果は id / seq / to と、user 宛てなら delivered (UI に表示される)、それ以外は recipients (届けた Mailbox)。recipients が空なら warning が付く。' +
+      '相手が全員未接続なら unattached と warning が付く。受け付けは済んでおり、相手が接続したときに未読として届く。item が C<n> の形でなければエラーになる。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -21,13 +23,14 @@ export const SHIM_TOOLS = [
   },
   {
     name: 'subscribe',
-    description: 'トピックを購読する。以後そのトピック宛てのメッセージを受け取る',
-    inputSchema: { type: 'object', properties: { topic: { type: 'string', description: '例: user.message' } }, required: ['topic'] },
+    description:
+      'トピックを個別に購読する。以後そのトピック宛てのメッセージを受け取る。role の既定購読 (roles.json) にあるトピックは購読しなくても届く。今の購読は whoami で確認できる',
+    inputSchema: { type: 'object', properties: { topic: { type: 'string', description: 'トピック名。例: user.message、review.request' } }, required: ['topic'] },
   },
   {
     name: 'unsubscribe',
     description: 'トピックの個別購読を解除する。role の既定購読 (roles.json) は解除されない',
-    inputSchema: { type: 'object', properties: { topic: { type: 'string' } }, required: ['topic'] },
+    inputSchema: { type: 'object', properties: { topic: { type: 'string', description: '解除するトピック名' } }, required: ['topic'] },
   },
   {
     name: 'inbox',
