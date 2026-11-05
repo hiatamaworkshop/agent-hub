@@ -250,7 +250,24 @@ describe('checkRoadmap', () => {
 
   it('項目があるのに `## 予定` がない', () => {
     const text = ['### C1. a', '#### 完了条件', '- [ ] x'].join('\n')
-    assert.deepEqual(messages(text), [['error', 1, '項目があるのに `## 予定` (英語の台帳では `## Plan`) がない (決定の項目を取りかかる順に `- [ ] C<n>` で並べる)']])
+    assert.deepEqual(messages(text), [['error', 1, '項目があるのに `## 予定` (英語の台帳では `## Plan`) がない (決定の項目を取りかかる順に `- [ ] C<n>` で並べる。決定の項目がなければ見出しだけでよい)']])
+  })
+
+  it('決定の項目がなければ、見出しだけの予定で通る', () => {
+    const text = ['### C1. a', '状態: 提案', '## 予定'].join('\n')
+    assert.deepEqual(messages(text), [])
+  })
+
+  it('予定の行に題がある (`- [ ] C12 題`) は warning で、C12 としては読む', () => {
+    const text = ['### C12. a', '#### 完了条件', '- [ ] x', '## 予定', '- [ ] C12 題'].join('\n')
+    assert.deepEqual(messages(text), [['warning', 5, 'C12: 予定の行に題を書かない (`- [ ] C<n>` だけにする。題は項目の節にある)']])
+    assert.deepEqual(parseRoadmap(text).plan, [{ id: 'C12', line: 5 }])
+  })
+
+  it('予定の行が `- [ ] C12` だけなら warning はなく、C12 として読む', () => {
+    const text = ['### C12. a', '#### 完了条件', '- [ ] x', '## 予定', '- [ ] C12'].join('\n')
+    assert.deepEqual(messages(text), [])
+    assert.deepEqual(parseRoadmap(text).plan, [{ id: 'C12', line: 5 }])
   })
 
   it('決定の項目 (状態の行がないものと、ブロック) が予定にない。ブロックは決定として載せる', () => {

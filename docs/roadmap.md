@@ -11,7 +11,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 - Progress is shown by checking off done-when conditions and adding the facts checked to the section's body. **Changing the wording of done-when conditions is changing the promise**, so it is not done within a request. Approved wording is written by the planning session, not by the deployer; the leader returns it in the report.
 - **Who files items** (design.md §3.15, C96): new `### C<n>.` sections, changed done-when wording and rejections (`[-]`) are written only in the planning session (the human's session with Claude where the project is discussed; not a Hub role). The deployer, the leader and the reviewer do not write them, even when a request asks; they answer by naming the planning session. The deployer writes progress only, with the change.
 - When rejected, delete the section and leave `[-] C<n> Title (rejected YYYY-MM-DD, one-line reason)` under a phase or "Known issues". If the reason is long, write it in design.md §9 and point to it (design.md §3.16).
-- The plan list: the ledger has one `## Plan`, listing the items without a status line and the `blocked(after C<n>)` items in the order they will be taken up, as `- [ ] C<n>`. No titles. These two kinds are always listed, and nothing else. Blocked items go after the item they wait for. Reordering is a human's decision (design.md §3.15).
+- The plan list: the ledger has one `## Plan`, listing the items without a status line and the `blocked(after C<n>)` items in the order they will be taken up, as `- [ ] C<n>`. No titles: a title after `C<n>` on a plan line is a warning in `docs:check` (the line is still read as `C<n>`; the title belongs in the item's section). These two kinds are always listed, and nothing else. Blocked items go after the item they wait for. Reordering is a human's decision (design.md §3.15).
 - How states are split: each of the four tiers corresponds to one state. `proposed` is only "awaiting a human's decision". `blocked(after C<n>)` is only for decided items (with done-when conditions) waiting on another item, with `C<n>` in the reason. An undecided item waiting on another is `held(after C<n>)`. Something waiting on an outside event (an update to the official docs, the next time a usage limit is hit and so on) is `held(<condition to resume>)` even if decided, and the reason is not omitted. Something accepted but not to be worked on is not held but rejected, `[-]`.
 - A closed line (`[x] C<n>` / `[-] C<n>`) has the date it was closed (`YYYY-MM-DD`) at the head of the parentheses at the end of the line (e.g. `(2026-10-27, requested by the user)`; for a rejection `(rejected 2026-10-27, reason)`). A date inside the title does not count.
 - When asked about the plan, first check for breakage with `npm run -s docs:check`, then answer from the JSON of `npm run -s docs:check -- docs/roadmap.md --index` and the dates on closed lines. Do not read the whole ledger and reclassify it (the four-tier answer is in the skill `roadmap-items`).
@@ -23,7 +23,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C134
 - [ ] C132
 
 (Items with a status line are listed under "Items".)
@@ -503,6 +502,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: `tools/dev/roles/leader.md`, `docs/usage.md` (review order), `docs/roadmap.md` (the close rule at the top), `docs/design.md` §3.15 (C97 bullet), `docs/project-setup.md` §5 step 4.
   - Checked: `npm test` 563 pass, 0 fail; `npm run docs:check` 32 items, 0 errors (the all-conditions-checked warning was gone after the close).
   - No review (no reviewer connected). Not checked: a live team run with no reviewer and the user's "close C133". Done-when wording not changed.
+- [x] C134 Two checker messages read from a ledger whose items are all proposed (2026-11-06, closed by the closing request; no review)
+  - Decided 2026-11-06 by the user: (1) the missing-heading error also says a heading alone is enough when nothing is decided; (2) a title after `C<n>` on a plan line is a warning, not an error.
+  - Changed: `src/shared/roadmap.ts`, `src/shared/roadmap.test.ts`, `docs/roadmap.md` (the plan-list rule at the top).
+  - Checked: `npm test` 566 pass, 0 fail (563 before, +3 new); `npm run docs:check` 31 items, 0 errors (the all-conditions-checked warning was gone after the close).
+  - No review (no reviewer connected). Not checked: a ledger with a titled plan line and real items outside the tests. Done-when wording not changed.
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -880,18 +884,6 @@ Raised 2026-11-05 from a cite-bridge session that started a team (hub-team) and 
 - [ ] When no reviewer of the project is connected at the end of the start (none in `--roles` and none already connected), one more summary line says the leader reports and waits for the user's "close C<n>" before the close (C133). With a reviewer connected, the line is not printed.
 - [ ] Unit tests cover both lines, and the no-reviewer line's absence with a reviewer.
 - [ ] docs/usage.md (the team start's summary) describes the new lines.
-- [ ] `npm test` and `npm run docs:check` pass.
-
-### C134. Two checker messages read from a ledger whose items are all proposed
-
-Raised 2026-11-05 (cite-bridge). (1) With items but no `## 予定` / `## Plan`, the error says to list the decided items in order; when every item is proposed, it does not say whether a heading alone is enough (it is: an empty plan passes). Adding "a heading alone is fine when nothing is decided" to the message in `src/shared/roadmap.ts` would answer it. (2) The rules say plan lines carry no titles, but `- [ ] C12 <title>` lines passed `docs:check`. Whether to warn is open.
-- Decided 2026-11-06 by the user: (1) as suggested; (2) a warning, not an error, so existing ledgers do not break.
-
-#### Done when
-- [ ] `src/shared/roadmap.ts`: the error for items without `## 予定` / `## Plan` also says that the heading alone is enough when no item is decided.
-- [ ] A plan line with text after `C<n>` (e.g. `- [ ] C12 <title>`) is a warning naming that line; `- [ ] C12` alone gives none, and the line is still read as C12 in the plan.
-- [ ] `src/shared/roadmap.test.ts` covers both.
-- [ ] The plan-list rule at the top of this file says a title on a plan line is warned about.
 - [ ] `npm test` and `npm run docs:check` pass.
 
 ### C135. Let the planning session receive the leader's reports

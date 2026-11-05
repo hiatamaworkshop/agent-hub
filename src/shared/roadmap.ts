@@ -195,11 +195,13 @@ function rejectedReason(text: string): string | null {
 
 // `## 予定` の節 (次の ## 以上の見出しまで)。節の行は refs に入れない。
 // headings は予定の見出しの行 (2 つ以上は error)、stray は `- [ ] C<n>` の形でない箇条書きの行 (checkRoadmap が error にする)
+// titled は `- [ ] C<n> 題` のように C<n> の後に字がある行 (checkRoadmap が warning にする。C<n> としては読む)
 interface PlanRead {
   plan: PlanEntry[] | null
   planLines: Set<number>
   headings: Line[]
   stray: Line[]
+  titled: { id: string; no: number }[]
 }
 function readPlan(lines: Line[]): PlanRead {
   let inPlan = false
@@ -207,6 +209,7 @@ function readPlan(lines: Line[]): PlanRead {
   const entries: PlanEntry[] = []
   const planLines = new Set<number>()
   const stray: Line[] = []
+  const titled: { id: string; no: number }[] = []
   for (const l of lines) {
     const lv = headingLevel(l.text)
     if (lv > 0 && lv <= 2) {
@@ -218,10 +221,13 @@ function readPlan(lines: Line[]): PlanRead {
     planLines.add(l.no)
     if (!PLAN_LIST.test(l.text)) continue // 説明の文は読まない
     const m = PLAN_ITEM.exec(l.text)
-    if (m) entries.push({ id: `C${m[1]}`, line: l.no })
-    else stray.push(l)
+    if (m) {
+      const id = `C${m[1]}`
+      entries.push({ id, line: l.no })
+      if (l.text.slice(m[0].length).trim() !== '') titled.push({ id, no: l.no })
+    } else stray.push(l)
   }
-  return { plan: headings.length ? entries : null, planLines, headings, stray }
+  return { plan: headings.length ? entries : null, planLines, headings, stray, titled }
 }
 
 export function parseRoadmap(text: string): RoadmapIndex {
@@ -316,9 +322,10 @@ export function checkRoadmap(text: string): RoadmapProblem[] {
   }
 
   const planRead = readPlan(contentLines(text))
-  if (items.length > 0 && !plan) err(1, '項目があるのに `## 予定` (英語の台帳では `## Plan`) がない (決定の項目を取りかかる順に `- [ ] C<n>` で並べる)')
+  if (items.length > 0 && !plan) err(1, '項目があるのに `## 予定` (英語の台帳では `## Plan`) がない (決定の項目を取りかかる順に `- [ ] C<n>` で並べる。決定の項目がなければ見出しだけでよい)')
   if (planRead.headings.length > 1) err(planRead.headings[1]!.no, '`## 予定` が 2 つ以上ある。1 つにまとめる')
   for (const s of planRead.stray) err(s.no, '予定の行は `- [ ] C<n>` の形にする (完了や却下は並べない)')
+  for (const t of planRead.titled) warn(t.no, `${t.id}: 予定の行に題を書かない (\`- [ ] C<n>\` だけにする。題は項目の節にある)`)
   const planAt = new Map<string, PlanEntry>()
   for (const p of plan ?? []) {
     const prev = planAt.get(p.id)
