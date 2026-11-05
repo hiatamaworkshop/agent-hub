@@ -7,7 +7,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 - A decided item has `#### Done when` (a list of checkboxes). A request's `DONE WHEN` is copied from it.
   - Each line can be checked within the item alone; conditions common to all work (tests pass, docs updated) are still written per item. Lines come from the current decision only; rejected ideas and history go in the body.
   - An item is about one request in size; split it when its tests span two independent features. Working promises (commits wait for the word, do not touch data, stop at what is undecided) live in the project's CLAUDE.md, not in each item.
-- Numbers are not reused. The close waits for the review (C102): after the review and its fixes, a closing request deletes the section, marks the phase line `[x] C<n> …`, writes the record of what was checked below it, removes the item from `## Plan`, and removes `blocked(after C<n>)` lines that waited for that item (status is progress, not a promise; the one closing may fix them). Where closed lines live is up to the project (under a phase, a list at the end, and so on). The deployer does not close an item in its first run, because the reviewer reads the section.
+- Numbers are not reused. The close waits for the review (C102): after the review and its fixes, a closing request deletes the section, marks the phase line `[x] C<n> …`, writes the record of what was checked below it, removes the item from `## Plan`, and removes `blocked(after C<n>)` lines that waited for that item (status is progress, not a promise; the one closing may fix them). Where closed lines live is up to the project (under a phase, a list at the end, and so on). The deployer does not close an item in its first run, because the reviewer reads the section. With no reviewer connected, the leader sends no closing request after its own check: its report says the item had no review, and the close waits for the user's word (C133).
 - Progress is shown by checking off done-when conditions and adding the facts checked to the section's body. **Changing the wording of done-when conditions is changing the promise**, so it is not done within a request. Approved wording is written by the planning session, not by the deployer; the leader returns it in the report.
 - **Who files items** (design.md §3.15, C96): new `### C<n>.` sections, changed done-when wording and rejections (`[-]`) are written only in the planning session (the human's session with Claude where the project is discussed; not a Hub role). The deployer, the leader and the reviewer do not write them, even when a request asks; they answer by naming the planning session. The deployer writes progress only, with the change.
 - When rejected, delete the section and leave `[-] C<n> Title (rejected YYYY-MM-DD, one-line reason)` under a phase or "Known issues". If the reason is long, write it in design.md §9 and point to it (design.md §3.16).
@@ -22,8 +22,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 ## Plan
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
-
-- [ ] C133
 
 (Items with a status line are listed under "Items".)
 
@@ -497,6 +495,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Decided against: a global skill (only agent-hub's own session runs the check) and a combined command (added only if running the commands by hand turns out to fail).
   - CLAUDE.md's map names §7 on the project-setup.md line.
   - Checked: `npm run docs:check` 0 errors, 0 warnings.
+- [x] C133 When the planning session does the review, the team stops before the close (2026-11-06, closed by the closing request; no review)
+  - Decided 2026-11-06 by the user: (b). With no reviewer connected, the leader reports and stops before the closing request; the close waits for the user's word. The reviewer order is unchanged.
+  - Changed: `tools/dev/roles/leader.md`, `docs/usage.md` (review order), `docs/roadmap.md` (the close rule at the top), `docs/design.md` §3.15 (C97 bullet), `docs/project-setup.md` §5 step 4.
+  - Checked: `npm test` 563 pass, 0 fail; `npm run docs:check` 32 items, 0 errors (the all-conditions-checked warning was gone after the close).
+  - No review (no reviewer connected). Not checked: a live team run with no reviewer and the user's "close C133". Done-when wording not changed.
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -867,19 +870,6 @@ Raised 2026-11-05 from a cite-bridge session that started a team (hub-team) and 
 - Idea: hub-team's summary prints one line for the session that started it, e.g. `planning session: requests are drafted from the item card (Draft request); review and close order: usage.md "Try a round trip between roles", the review order`. When `--roles` has no reviewer, one more line: `no reviewer: the leader closes with NOT VERIFIED`. This is where that reader is at that moment (design.md §3.12, the carrier test).
 - Also 1–2 lines in the global CLAUDE.md agent-hub block, for days the team is not started in this session (a carrier outside this repository; the planning session changes it).
 - Considered and not preferred: letting the planning session pull guidance from the Hub over MCP. A server's instructions load into every session where it is registered, Hub or not, and a pull tool still needs a pointer saying when to call it.
-
-### C133. When the planning session does the review, the team stops before the close
-
-Raised 2026-11-05 (cite-bridge). The global CLAUDE.md starts teams with `--roles leader,deployer`, so no reviewer is connected, and the leader goes on to the closing request with `NOT VERIFIED` (usage.md "Try a round trip between roles", the review order). The user had the planning session check each item, so the check came after the close: C12 and C17 arrived closed. C10 arrived with every done-when box checked but not closed, so the team's behaviour was not consistent either.
-- Options to decide: (a) put reviewer in the default roles of the global CLAUDE.md; (b) a rule for the leader: with no reviewer, report and stop before the closing request, and the planning session closes or sends the closing request; (c) leave it, and have the planning session check after the close.
-- Decided 2026-11-06 by the user: (b). It adds no session, and the close stays after a check, as C102 intends. (a) and (c) are not taken.
-
-#### Done when
-- [ ] `tools/dev/roles/leader.md`: when no reviewer is connected, the leader sends no closing request after its own check. Its report to the user says under `NOT VERIFIED` that the item had no review, and under `NEEDS ACTION` that the close waits for the user's word (e.g. "close C<n>").
-- [ ] `tools/dev/roles/leader.md`: when the user then asks to close `C<n>`, the leader sends the closing request as it does today (its content unchanged).
-- [ ] With a reviewer connected, the order is unchanged (review → fixes → closing request → report).
-- [ ] docs/usage.md (the review order in "Try a round trip between roles") and the close rule at the top of this file say the same.
-- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C134. Two checker messages read from a ledger whose items are all proposed
 Status: proposed

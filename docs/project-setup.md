@@ -86,7 +86,7 @@ A finding or an `OUT OF SCOPE:` line is a candidate. It becomes an item only whe
 1. The planning session files and decides the item and commits the ledger (the index is sent by the hook, or by the next team start).
 2. Start a team in the project: `hub-team --roles leader,deployer`. Two roles are enough for the first item; add `reviewer` (`--roles leader,deployer,reviewer`) when you want a review. The reviewer reads only the documents (the map, the decisions, the facts, the item), so it is worth adding once those exist.
 3. In the UI: Items → the card → **Draft request** → Send.
-4. The leader sends the work to the deployer, checks the diff and the tests, and asks for a review if a reviewer is connected.
+4. The leader sends the work to the deployer, checks the diff and the tests, and asks for a review if a reviewer is connected. Without a reviewer it reports first and sends the closing request when you say so (C133).
 5. After the review and its fixes, the leader sends a separate closing request (C102), then reports to you.
 6. You commit (and push) when you say so.
 
