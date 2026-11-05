@@ -850,3 +850,11 @@ Raised 2026-11-03 from the official page on what survives compaction (design.md 
 - Content (any MCP client): one shape for this Mailbox's requests owed a reply (`backlog.awaitingReply`) and awaiting one (`outgoing`), as pointers only (`id`, `seq`, the other side, `meta.item`; no bodies), the text made in one place in the shim. Through a shim tool or the head of `inbox()`. The shim's instructions say when to fetch it (at start, and whenever the session does not know what it is waiting on), which is the whole trigger for a client without hooks.
 - Trigger for Claude Code: a `SessionStart` command hook for the `compact` / `clear` / `resume` sources prints the same content into the new context. It prints nothing with no token, no Mailbox or nothing open, and never fails the start.
 Open before deciding: a new tool or the head of `inbox()`; whether the hook asks the Hub directly (like the Event hooks) or reuses the shim's text through a Hub endpoint; whether `startup` prints too; the exact text. Covers the list half of C10.
+
+
+### C131. Name the file actually read when the default ledger matches by letter case only
+Status: proposed
+
+Raised 2026-11-05 from the vcp check (C130). Paths on Windows (and macOS by default) are case-insensitive, so with no `.agent-hub.json` the default `docs/roadmap.md` opens a `docs/ROADMAP.md`: in vcp `existsSync('docs/roadmap.md')` is true and `realpathSync.native` gives `docs\ROADMAP.md`. `src/docs-check/send-index.ts` then says "docs/roadmap.md has no `### C<n>.` items", naming a file that was not the one read.
+- Idea: when the real name differs from the configured one only by case, name the real file in the reason (and in the team start's summary, which passes the same reason on), e.g. "docs/roadmap.md opened docs/ROADMAP.md (letter case differs), which has no items". Whether to also warn when such a file does have items is open.
+- docs/project-setup.md §7 already describes the pitfall; that line would point at the new message once built.
