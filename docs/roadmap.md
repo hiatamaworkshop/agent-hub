@@ -858,3 +858,29 @@ Status: proposed
 Raised 2026-11-05 from the vcp check (C130). Paths on Windows (and macOS by default) are case-insensitive, so with no `.agent-hub.json` the default `docs/roadmap.md` opens a `docs/ROADMAP.md`: in vcp `existsSync('docs/roadmap.md')` is true and `realpathSync.native` gives `docs\ROADMAP.md`. `src/docs-check/send-index.ts` then says "docs/roadmap.md has no `### C<n>.` items", naming a file that was not the one read.
 - Idea: when the real name differs from the configured one only by case, name the real file in the reason (and in the team start's summary, which passes the same reason on), e.g. "docs/roadmap.md opened docs/ROADMAP.md (letter case differs), which has no items". Whether to also warn when such a file does have items is open.
 - docs/project-setup.md §7 already describes the pitfall; that line would point at the new message once built.
+
+### C132. Point the starting session at how requests and closes work, at the moment it starts a team
+Status: proposed
+
+Raised 2026-11-05 from a cite-bridge session that started a team (hub-team) and then acted as the planning session and checker. What that session read, in order: the global CLAUDE.md agent-hub block (run hub-team, give the UI URL, requests go from the browser, this session does not do the work), hub-team's summary (index sent, status command, UI URL), the skill `roadmap-items` and the rules at the top of this file. None of them says that a request is drafted from the item card (**Draft request**, usage.md "Request work from roadmap items"), or the order of review and close (usage.md "Try a round trip between roles", the review order). As a result the session drafted request texts by hand, repeating the done-when lines and the project's CLAUDE.md promises, and asked the deployer to close the item inside the implementation request. It reached usage.md only by searching after the user pointed this out.
+- Idea: hub-team's summary prints one line for the session that started it, e.g. `planning session: requests are drafted from the item card (Draft request); review and close order: usage.md "Try a round trip between roles", the review order`. When `--roles` has no reviewer, one more line: `no reviewer: the leader closes with NOT VERIFIED`. This is where that reader is at that moment (design.md §3.12, the carrier test).
+- Also 1–2 lines in the global CLAUDE.md agent-hub block, for days the team is not started in this session (a carrier outside this repository; the planning session changes it).
+- Considered and not preferred: letting the planning session pull guidance from the Hub over MCP. A server's instructions load into every session where it is registered, Hub or not, and a pull tool still needs a pointer saying when to call it.
+
+### C133. When the planning session does the review, the team stops before the close
+Status: proposed
+
+Raised 2026-11-05 (cite-bridge). The global CLAUDE.md starts teams with `--roles leader,deployer`, so no reviewer is connected, and the leader goes on to the closing request with `NOT VERIFIED` (usage.md "Try a round trip between roles", the review order). The user had the planning session check each item, so the check came after the close: C12 and C17 arrived closed. C10 arrived with every done-when box checked but not closed, so the team's behaviour was not consistent either.
+- Options to decide: (a) put reviewer in the default roles of the global CLAUDE.md; (b) a rule for the leader: with no reviewer, report and stop before the closing request, and the planning session closes or sends the closing request; (c) leave it, and have the planning session check after the close.
+
+### C134. Two checker messages read from a ledger whose items are all proposed
+Status: proposed
+
+Raised 2026-11-05 (cite-bridge). (1) With items but no `## 予定` / `## Plan`, the error says to list the decided items in order; when every item is proposed, it does not say whether a heading alone is enough (it is: an empty plan passes). Adding "a heading alone is fine when nothing is decided" to the message in `src/shared/roadmap.ts` would answer it. (2) The rules say plan lines carry no titles, but `- [ ] C12 <title>` lines passed `docs:check`. Whether to warn is open.
+
+### C135. Let the planning session receive the leader's reports
+Status: proposed
+
+Raised 2026-11-05 (cite-bridge). The planning session is not connected to the Hub (design.md §3.15: it is not a Hub role), so after each item the user typed "C10 done" into it before it could check. The friction is the relay, not the guidance.
+- Idea: a read-only connection for the planning session that receives reports addressed to the user (no requests, no role), or the Hub notifying it when a report arrives. This revisits "the planning session is not a Hub role", so it needs a decision on that first.
+- Background from the same session, on how long the planning session stays needed. Its work split into three: relaying reports (should move to the Hub), checking independently (re-running tests with pymupdf hidden, reading callers the team did not mention; shrinks as the reviewer and `docs:check` grow), and deciding promises with the human (filing, done-when wording, order). The third is a separate seat from a leader that may be disposable (§3.13), and is expected to stay, maybe inside the UI later. A measure for the second: the share of items where the planning session's check found something the team's report did not (2026-11-05: 1 of 3, C10's close).
