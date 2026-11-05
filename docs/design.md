@@ -444,6 +444,7 @@ But written rules eventually fall apart without something that checks whether th
 | The reviewer returns findings | The target (an item or a commit range), then the sections related to the change, as the reviewer chooses them | — | reviewer.md, "Reply format" |
 | Writing, filing or closing an item | The rules at the top of roadmap.md | The item, by the reader the rules name (the planning session files; the deployer records progress) | roadmap.md, the rules at its top (pointers only: the skill `roadmap-items` for sessions in every project, docs/usage.md for the human; C128) |
 | Something was decided | — | "Decision (date)" and the reason under the matching item of §9 | This section, "How to write §9" |
+| Drift between docs and code was found by someone, not by `docs:check` | — | A row in the drift record, by the planning session | This section, "Drift layer 1 missed" |
 | A break (commit, item done) | — | The checkboxes and facts in the item; the close after the review; what was learned to engram / memory | roadmap.md, the rules at its top (the engram and memory part: the global CLAUDE.md [engram] block and the clear-timing skill, outside the repository) |
 
 - **Where NOTES go**: facts checked (the real behavior of Channels and hooks and so on) to §6; what was decided to the decisions in §9; what could not be decided to the open questions in §9; later work to roadmap items (`### C<n>.`; how to write them is at the top of roadmap.md, §3.15).
@@ -469,6 +470,16 @@ But written rules eventually fall apart without something that checks whether th
 - Warnings only. Its place is "a watchdog for blatant drift".
 
 **How to proceed**: build layer 1 first. For layer 2, measure whether it is worth building once drift missed by layer 1 has accumulated. While there is no material, what to prepare for it to work properly is undecided, so it is not built (criterion 2 of §1.1).
+
+**Drift layer 1 missed** (the material for layer 2; collected from 2026-11-05)
+
+A row is added when a person or an agent (the leader's check, a review, an audit, the human) finds drift between documents and code, or between two documents, that `docs:check` passed. The planning session writes it, from a report or its own finding; teams do not. Write it when the drift is found, not afterwards from memory: material made after the fact inflates the score (above).
+- `Kind` sorts what a judge would have had to do: `name` (a name or a list that layer 1 could check but does not yet; a candidate for layer 1, not for a judge), `meaning` (the names match but what the text says does not), `missing` (something the code does is not written anywhere).
+- `Pair` names the two sides compared, so a judge's input could be cut out the same way (above).
+
+| Found | Kind | Pair | What drifted | Found by | Fixed in |
+|---|---|---|---|---|---|
+| 2026-11-05 | meaning | `src/shim/tools.ts` `post_message` description ↔ protocol.md §5 `post_message` | The description named no result fields (`recipients`, `unattached`, `warning`, `delivered`) or the `item` error, while leader.md acts on them; `docs:check` compares only the tool names with §5 | A prompt audit in the planning session | 3ed14c8 |
 
 **Send review requests by target, not by a stretch of conversation** (concept, 2026-10-26; C45, C46, C47)
 
