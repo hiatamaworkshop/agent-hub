@@ -23,8 +23,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C132
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -507,6 +505,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: `src/shared/roadmap.ts`, `src/shared/roadmap.test.ts`, `docs/roadmap.md` (the plan-list rule at the top).
   - Checked: `npm test` 566 pass, 0 fail (563 before, +3 new); `npm run docs:check` 31 items, 0 errors (the all-conditions-checked warning was gone after the close).
   - No review (no reviewer connected). Not checked: a ledger with a titled plan line and real items outside the tests. Done-when wording not changed.
+- [x] C132 Point the starting session at how requests and closes work, at the moment it starts a team (2026-11-06, closed by the closing request; no review)
+  - Decided 2026-11-06 by the user: both carriers. The team start's summary gets a `planning session:` line (Draft request, and the absolute path to docs/usage.md's review and close order); with no reviewer connected at the end of the start, a `no reviewer:` line says the close waits for the user's word (C133). The global CLAUDE.md lines are written by the planning session, outside this repository.
+  - Changed: `src/team/summary-lines.ts` (new), `src/team/summary-lines.test.ts` (new), `src/team/team.ts`, `docs/usage.md` (the team start's summary).
+  - Checked: `npm test` 569 pass, 0 fail (566 before, +3 new); `npx tsc --noEmit` clean; `npm run docs:check` 30 items, 0 errors (the all-conditions-checked warning was gone after the close).
+  - No review (no reviewer connected). Not checked: a real team start against a Hub (the summary printed end to end, and the reviewer attach result). Done-when wording not changed.
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -870,25 +873,25 @@ Raised 2026-11-05 from the vcp check (C130). Paths on Windows (and macOS by defa
 - Idea: when the real name differs from the configured one only by case, name the real file in the reason (and in the team start's summary, which passes the same reason on), e.g. "docs/roadmap.md opened docs/ROADMAP.md (letter case differs), which has no items". Whether to also warn when such a file does have items is open.
 - docs/project-setup.md §7 already describes the pitfall; that line would point at the new message once built.
 
-### C132. Point the starting session at how requests and closes work, at the moment it starts a team
-
-Raised 2026-11-05 from a cite-bridge session that started a team (hub-team) and then acted as the planning session and checker. What that session read, in order: the global CLAUDE.md agent-hub block (run hub-team, give the UI URL, requests go from the browser, this session does not do the work), hub-team's summary (index sent, status command, UI URL), the skill `roadmap-items` and the rules at the top of this file. None of them says that a request is drafted from the item card (**Draft request**, usage.md "Request work from roadmap items"), or the order of review and close (usage.md "Try a round trip between roles", the review order). As a result the session drafted request texts by hand, repeating the done-when lines and the project's CLAUDE.md promises, and asked the deployer to close the item inside the implementation request. It reached usage.md only by searching after the user pointed this out.
-- Idea: hub-team's summary prints one line for the session that started it, e.g. `planning session: requests are drafted from the item card (Draft request); review and close order: usage.md "Try a round trip between roles", the review order`. When `--roles` has no reviewer, one more line: `no reviewer: the leader closes with NOT VERIFIED`. This is where that reader is at that moment (design.md §3.12, the carrier test).
-- Also 1–2 lines in the global CLAUDE.md agent-hub block, for days the team is not started in this session (a carrier outside this repository; the planning session changes it).
-- Considered and not preferred: letting the planning session pull guidance from the Hub over MCP. A server's instructions load into every session where it is registered, Hub or not, and a pull tool still needs a pointer saying when to call it.
-- Decided 2026-11-06 by the user: both carriers. The no-reviewer line in the idea above predates C133 and is replaced: with no reviewer the leader stops before the close and waits for the user's word.
-- The global CLAUDE.md lines were written by the planning session on 2026-11-06 (outside this repository; not part of a team's request).
-
-#### Done when
-- [ ] `src/team/team.ts`: the summary under `--- summary ---` has one line for the session that started the team: requests are drafted from the item card (**Draft request**), and the review and close order is in docs/usage.md "Try a round trip between roles", named by a path that opens from the started project (this repository's absolute path).
-- [ ] When no reviewer of the project is connected at the end of the start (none in `--roles` and none already connected), one more summary line says the leader reports and waits for the user's "close C<n>" before the close (C133). With a reviewer connected, the line is not printed.
-- [ ] Unit tests cover both lines, and the no-reviewer line's absence with a reviewer.
-- [ ] docs/usage.md (the team start's summary) describes the new lines.
-- [ ] `npm test` and `npm run docs:check` pass.
-
 ### C135. Let the planning session receive the leader's reports
 Status: proposed
 
 Raised 2026-11-05 (cite-bridge). The planning session is not connected to the Hub (design.md §3.15: it is not a Hub role), so after each item the user typed "C10 done" into it before it could check. The friction is the relay, not the guidance.
 - Idea: a read-only connection for the planning session that receives reports addressed to the user (no requests, no role), or the Hub notifying it when a report arrives. This revisits "the planning session is not a Hub role", so it needs a decision on that first.
 - Background from the same session, on how long the planning session stays needed. Its work split into three: relaying reports (should move to the Hub), checking independently (re-running tests with pymupdf hidden, reading callers the team did not mention; shrinks as the reviewer and `docs:check` grow), and deciding promises with the human (filing, done-when wording, order). The third is a separate seat from a leader that may be disposable (§3.13), and is expected to stay, maybe inside the UI later. A measure for the second: the share of items where the planning session's check found something the team's report did not (2026-11-05: 1 of 3, C10's close).
+
+### C136. Give each working convention its lineage and function, and re-check its status
+Status: proposed
+
+Raised 2026-11-06 in the planning session, after the comparison with mcp_agent_mail and open-agent-bridge (design.md §8.6). Direction from the user: agent-hub is meant to be adopted by others, and to embody the practices that have supported development in a form that still holds when the practitioner is an AI (stateless, replaceable, inclined to agree). §1.2 already sorts conventions by what they do, but its table does not say which traditional practice each one descends from, its statuses were last checked on 2026-10-31, and it does not say which enforcement runs in a project other than this repository (the repository-specific checks of `docs:check` do not; other projects get the roadmap rules only).
+- Idea: add the columns "Descends from" and "Function it keeps" to the §1.2 table; re-check each Status against the repository; list the practices the table lacks, with a reason for each one not added. Candidates to judge, not to assume: the definition of done (the ledger's done-when), handoff and onboarding documents, release and rollback. Commit trailers (C81) and approval levels by reversibility (C83) were rejected on 2026-10-30; do not reopen them here without new evidence.
+- Why: the lineage is what an adopter understands at a glance ("this is code review, for reviewers who agree too easily"), and it is the part that a copy of the documents does not carry without the checks behind it.
+- Documentation only. Which "Partly" row to strengthen first is decided afterwards, as separate items.
+
+#### Done when
+- [ ] design.md §1.2's table has, for every row, the traditional practice it descends from and the function it keeps.
+- [ ] Every row's Status was re-checked against the repository (the named files and checks) and corrected where stale; the section records the date of the check.
+- [ ] Each practice the table lacks was either added as a row or listed with a one-line reason for leaving it out.
+- [ ] The table says, for each enforcement, whether it runs in a project other than this repository.
+- [ ] Each row that is not fully enforced either points to a `C<n>` item (proposed) or says it is not planned, with the reason.
+- [ ] `npm run docs:check` passes.

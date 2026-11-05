@@ -18,6 +18,7 @@ import { checkClaudeVersion, emptyOutcome, parseVersion, recordResult, recordSta
 import { ask } from './prompt.js'
 import { commandLine } from './quote.js'
 import { openTab, TMUX_SESSION, type Opener } from './tabs.js'
+import { startSummaryLines, usageDocPath } from './summary-lines.js'
 
 export interface TeamOptions {
   roles: string[]
@@ -331,6 +332,12 @@ async function teamStart(o: TeamOptions, startTime: string, outcome: StartOutcom
   console.log(`status: ${statusCommand(o.projectDir)} (the project's Mailboxes and latest report)`)
   for (const n of notes) console.log(`note: ${n}`)
   for (const f of outcome.failed) console.log(`failed: ${f.reason}`)
+  // C132: the session that started the team is pointed at how requests and closes work. No reviewer connected at the end
+  // (none in --roles and none attached or already connected) means the close waits for the user's word (C133)
+  const reviewerConnected = roles.includes('reviewer')
+    ? [...outcome.started, ...outcome.skipped].some((r) => r.role === 'reviewer')
+    : Boolean(token && (await attachmentId(defaultMailboxName(o.projectDir, 'reviewer'))))
+  for (const line of startSummaryLines(usageDocPath(), reviewerConnected)) console.log(line)
   await printUiUrl(hubUrl, token, o.projectDir, tokenFromEnvironment())
   if (outcome.failed.length) return 1
   console.log('Done')
