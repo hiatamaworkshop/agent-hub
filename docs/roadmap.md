@@ -23,6 +23,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C133
 
 (Items with a status line are listed under "Items".)
 
@@ -868,10 +869,17 @@ Raised 2026-11-05 from a cite-bridge session that started a team (hub-team) and 
 - Considered and not preferred: letting the planning session pull guidance from the Hub over MCP. A server's instructions load into every session where it is registered, Hub or not, and a pull tool still needs a pointer saying when to call it.
 
 ### C133. When the planning session does the review, the team stops before the close
-Status: proposed
 
 Raised 2026-11-05 (cite-bridge). The global CLAUDE.md starts teams with `--roles leader,deployer`, so no reviewer is connected, and the leader goes on to the closing request with `NOT VERIFIED` (usage.md "Try a round trip between roles", the review order). The user had the planning session check each item, so the check came after the close: C12 and C17 arrived closed. C10 arrived with every done-when box checked but not closed, so the team's behaviour was not consistent either.
 - Options to decide: (a) put reviewer in the default roles of the global CLAUDE.md; (b) a rule for the leader: with no reviewer, report and stop before the closing request, and the planning session closes or sends the closing request; (c) leave it, and have the planning session check after the close.
+- Decided 2026-11-06 by the user: (b). It adds no session, and the close stays after a check, as C102 intends. (a) and (c) are not taken.
+
+#### Done when
+- [ ] `tools/dev/roles/leader.md`: when no reviewer is connected, the leader sends no closing request after its own check. Its report to the user says under `NOT VERIFIED` that the item had no review, and under `NEEDS ACTION` that the close waits for the user's word (e.g. "close C<n>").
+- [ ] `tools/dev/roles/leader.md`: when the user then asks to close `C<n>`, the leader sends the closing request as it does today (its content unchanged).
+- [ ] With a reviewer connected, the order is unchanged (review → fixes → closing request → report).
+- [ ] docs/usage.md (the review order in "Try a round trip between roles") and the close rule at the top of this file say the same.
+- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C134. Two checker messages read from a ledger whose items are all proposed
 Status: proposed
