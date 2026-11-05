@@ -895,3 +895,12 @@ Raised 2026-11-06 in the planning session, after the comparison with mcp_agent_m
 - [ ] The table says, for each enforcement, whether it runs in a project other than this repository.
 - [ ] Each row that is not fully enforced either points to a `C<n>` item (proposed) or says it is not planned, with the reason.
 - [ ] `npm run docs:check` passes.
+
+### C137. Give a project's planning session a thin block that points at the ledger rules
+Status: proposed
+
+Raised 2026-11-06 in the planning session, from mcp_agent_mail's paste-in block (design.md §8.6). The team roles get their instructions through the Hub. The planning session does not (it is outside the Hub, yet it files items, writes done-when wording and decides the close), and in another person's setup nothing tells it agent-hub's conventions. On this machine they come from the user's own global instructions and the `roadmap-items` skill, which an adopter does not have.
+- Idea: a short block an adopter pastes into the instruction file their planning agent reads. It points and does not copy: the ledger's path, where the rules live (the top of roadmap.md, usage.md's "Try a round trip between roles"), and the check command (`docs:check`). Copied rule text drifts: when C133 changed the close order, the user's global instructions had to be fixed by hand. The same idea as the thin post-commit hook that calls agent-hub's script (project-setup.md §2).
+- Not tied to one vendor (design.md §3.7): the planning agent is not always Claude Code. The block is plain text with plain shell commands, without one vendor's tool names, skills or file conventions. Which file it goes in (`AGENTS.md`, `CLAUDE.md` and so on) is the adopter's choice; the guide names the common ones without preferring one.
+- To decide: whether the block goes in the project's file (committed and read by collaborators who may not use agent-hub, while agent-hub's path differs per machine), in the user's own instructions, or split between them; whether project-setup.md §7's readiness check looks for it.
+- After C136: the conventions its table finds not reaching other projects are the candidates for what the block points at.

@@ -33,6 +33,12 @@ Direction of the structure (2026-10-16, user):
 - **Build the GUI ourselves.** The UI is the human's decision point itself, and there is little reason to depend on an outside app. Other tools serve only as references for features.
 - **Assume the CLI as the LLM's workplace.** There is a view that the main battlefield will move to the official GUIs (the author of Relay, 2026-10), but rather than dropping the CLI, we take care of it as the place where LLMs work best. The LLM writes text; the Hub and UI take care of presenting it in HTML (§3.11).
 
+Direction of adoption (2026-11-06, user; the comparison behind it is §8.6):
+
+- **agent-hub is meant to be adopted by others, not only to run my own operation.** This widens "only my own operation" above: what is made general now includes the conventions' documents and the checks behind them, in a form others can take up.
+- **Grow toward the ecosystem rather than toward more features.** Near term the work is how documents are placed and how conventions are adopted (C136, C137). Features are expected to converge across tools (§8.5); the difference left is the philosophy and the checks that carry it.
+- **Embody the practices that have supported development, in a form that still holds when the practitioner is an AI** (stateless, replaceable, inclined to agree; §1.2). The aim is to work out what implementation is. An adopter's agents are not assumed to be Claude Code (§3.7).
+
 If practicality were the only goal, adding a UI to something existing (mcp_agent_mail and the like) would be cheaper. We continue with our own because three things are missing from the existing ones: "a human presses", "a role can be an address", and "the sender's attributes are kept apart from the body with `meta`". If these stop being needed, we will consider switching.
 
 ### 1.2 Working conventions (2026-10-31, C80)
@@ -1207,6 +1213,27 @@ Found by web search; what is written comes from the listing pages' summaries and
 | **A2A protocol** (Agent2Agent) | A standard for agents to talk across vendors. Tasks pause in `input-required` (more input needed) or `auth-required` (authentication needed) | The vocabulary for "waiting on the human": a question ≈ `input-required`; a permission wait is near `auth-required` but not the same. Not used for local coding sessions as far as found. A candidate to map to, like MCP Events (§7) |
 
 Observation: delivery, addresses and dashboards are converging, so the difference stays in §1.1's own layers (records, conventions, the human's decision points), not in features.
+
+### 8.6 A closer look at the two nearest mechanisms (2026-11-06; READMEs and docs only, the code was not read)
+
+Read through fetched README / docs text, so details are unverified. Read with the direction of adoption in §1.1 (2026-11-06): agent-hub is meant to be adopted by others, and grows toward the ecosystem rather than toward more features.
+
+**mcp_agent_mail** (`Dicklesworthstone/mcp_agent_mail_rust`; the Python original is deprecated and superseded by it)
+
+- Pull delivery, but with a durable cursor feed (`fetch_inbox_events`). Per-recipient read and ack (`get_message_delivery_receipt`). **Broadcast is rejected by design**, the opposite of our role / topic fan-out.
+- HumanOverseer sends from the browser as a high-importance message with a "pause, handle, resume" preamble. It is a human commanding agents, not a human gating messages between agents, so the policy of §1 stays unique.
+- File reservations are advisory (glob + TTL + `exclusive`; a pre-commit guard that `--no-verify` bypasses). Its own 60-agent smoke test missed the p99 budget on reserve / release.
+- **Adoption by copy-paste**: the README gives a block to paste into a project's `AGENTS.md` / `CLAUDE.md` (register, reserve before editing, thread, release). Its examples use a Beads issue ID as `thread_id`, which ties messages to work items like our `meta.item` and C<n>.
+- **License caution**: "MIT with OpenAI/Anthropic Rider". The rider grants no rights to Anthropic, OpenAI, their affiliates, or anyone acting for them, and counts copying, testing and analyzing as use. Whether a Claude Code session reading its code falls under that is unclear (a reading of the text, not legal advice). **Take in ideas from the README only; do not have sessions read or copy its code.**
+
+**open-agent-bridge** (`kevinArgueta96/open-agent-bridge`, 0.1.0, single maintainer, last push 2026-10-16)
+
+- Now five clients (Claude Code, Codex, OpenCode, pi, agy), each with its own last-step delivery. For Claude Code it writes an `auth` frame then a `user` frame to `CLAUDE_CODE_MESSAGING_SOCKET`, the route §9-5 left alone as private. Useful as evidence for §6.1g; still beta there.
+- Reliability (`docs/channel-reliability.md`): the persisted ack ledger is the truth; `messageId` makes creation idempotent; terminal states are not shown again; the sweeper writes `failed` for expired awaiting-reply messages; conversations idle for 30 days are deleted. Admitted gaps: push is best-effort, part of the dedupe is memory only, `queued` has no TTL.
+- The injected prompt is a user template (`oab prompt init`), and **a per-project template is refused on purpose**: a cloned repository could ship one telling agents to obey their peers. A model for §4 when conventions or `roles.json` live in a repository.
+- No human gate (the dashboard chat sends straight to an agent), no authentication, no role / topic. The §8.4 verdict stands.
+
+**For the ecosystem direction**: from the READMEs, neither checks its documents mechanically. What we have that they do not is the `C<n>` ledger with checkable done-when conditions and `docs:check`. A paste-in adoption block like mcp_agent_mail's is worth considering as the entrance of `docs/project-setup.md`, pointing rather than copying and not tied to one vendor (C137, proposed). The pass that gives each convention of §1.2 its lineage and function, and re-checks its status, is C136.
 
 ## 9. Open questions (design)
 

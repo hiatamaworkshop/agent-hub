@@ -11,7 +11,7 @@ After compaction this map is back but the sections you read are not (the large d
 - [docs/usage.md](docs/usage.md) — reference for everyday use: reading card states, the map (where requests wait), custom commands, images, hooks, Forward, takeover, retention, teams in detail, Items, `roles.json`, `HUB_LANGUAGE`, `inbox`, notes on curl, start warnings (`logs/start-warnings.jsonl`), development. Usage changes go here; keep the README short
 - [docs/roadmap.md](docs/roadmap.md) — acceptance criteria per phase, known issues, open items (`### C<n>.` sections; the rules for writing them are at the top of the file). **How far things have got** is here, and so is how to answer about the plan (the top of the file; do not read the whole ledger)
 - [docs/design.md](docs/design.md) (about 1,200 lines)
-  - §1.1 Positioning — what we own and what we borrow, criteria for continuing
+  - §1.1 Positioning — what we own and what we borrow, criteria for continuing, the direction of adoption by others (2026-11-06)
   - §1.2 Working conventions — the thesis, the input envelope, trust on evidence, and where each convention is enforced (or not yet; e.g. sycophancy → reviewer `breaks when:`)
   - §2 Requirements / Non-goals — no automatic forwarding, no autonomous orchestration
   - §3.1 Why the Hub and the shim are separate
@@ -38,6 +38,7 @@ After compaction this map is back but the sections you read are not (the large d
 
 1. **Check facts of the specification (Channels, hooks, MCP) in design.md §6.** If they are not there or are unverified, check the official docs and add the result to §6. If they disagree, the official docs win; update design.md / protocol.md.
 2. Start only on roadmap.md "Items" that **have no status line (are decided)**. When a request points at an item (`C<n>`), finish by meeting that section's `#### Done when`.
+3. **Do not read, copy or run the code of mcp_agent_mail** (`Dicklesworthstone/mcp_agent_mail_rust` and its Python original). Its license rider grants no rights to Anthropic, OpenAI or anyone acting for them, and counts copying, testing and analyzing as use. Ideas from its README are fine (design.md §8.6).
 
 ## Technology stack (defaults)
 
