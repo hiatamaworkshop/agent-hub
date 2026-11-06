@@ -880,6 +880,9 @@ Raised 2026-11-05 (cite-bridge). The planning session is not connected to the Hu
 - Idea: a read-only connection for the planning session that receives reports addressed to the user (no requests, no role), or the Hub notifying it when a report arrives. This revisits "the planning session is not a Hub role", so it needs a decision on that first.
 - Background from the same session, on how long the planning session stays needed. Its work split into three: relaying reports (should move to the Hub), checking independently (re-running tests with pymupdf hidden, reading callers the team did not mention; shrinks as the reviewer and `docs:check` grow), and deciding promises with the human (filing, done-when wording, order). The third is a separate seat from a leader that may be disposable (§3.13), and is expected to stay, maybe inside the UI later. A measure for the second: the share of items where the planning session's check found something the team's report did not (2026-11-05: 1 of 3, C10's close).
 
+- Premise from the user (2026-11-06): the planning session must be able to grasp the Hub's state quickly. Reading it on demand (C139) comes first and does not need the planning session to be a Hub role; receiving reports here is the push side and can follow.
+- A second case, 2026-11-06 (cite-bridge C22): the leader's `NEEDS DECISION` on done-when wording went to the user, who pasted it into the planning session; the planning session fixed the ledger; the request then went out stale (C138) and the leader asked the same question again. One decision took two relays by hand and one wasted round trip.
+
 ### C136. Give each working convention its lineage and function, and re-check its status
 Status: proposed
 
@@ -904,3 +907,18 @@ Raised 2026-11-06 in the planning session, from mcp_agent_mail's paste-in block 
 - Not tied to one vendor (design.md §3.7): the planning agent is not always Claude Code. The block is plain text with plain shell commands, without one vendor's tool names, skills or file conventions. Which file it goes in (`AGENTS.md`, `CLAUDE.md` and so on) is the adopter's choice; the guide names the common ones without preferring one.
 - To decide: whether the block goes in the project's file (committed and read by collaborators who may not use agent-hub, while agent-hub's path differs per machine), in the user's own instructions, or split between them; whether project-setup.md §7's readiness check looks for it.
 - After C136: the conventions its table finds not reaching other projects are the candidates for what the block points at.
+
+### C138. Do not let an item card draft a request from an index older than the ledger
+Status: proposed
+
+Raised 2026-11-06 (cite-bridge C22). The planning session fixed C22's done-when wording in the working tree without committing. The index reaches the Hub only at the team start and after a commit that touches the ledger (post-commit hook), so the item card still showed the old wording, and the user sent it again. The leader read the request against the code, not against the ledger file, and stopped with the same question as before (#1010, #1013). The fix was a manual `npm run docs:index` from the project.
+- Ideas, not decided: (a) the card or the draft says when the ledger file changed after the index was sent (file mtime or hash beside the index); (b) the Hub or the team re-sends the index when the ledger file changes (a file watch while the team runs); (c) the planning-session guidance (C137's block) says to run `docs:index` after editing the ledger without a commit; (d) the leader compares a request's DONE WHEN with the ledger's current text and, when they differ, says the request came from an old index instead of re-asking the decision.
+- (a) or (b) removes the cause; (c) and (d) only soften it. (d) also matters on its own: the ledger is the source, and a request is a copy of it.
+
+### C139. Let `status` show what is happening per item, for the planning session
+Status: proposed
+
+Raised 2026-11-06 (cite-bridge C22), from the user's premise that the planning session must grasp the Hub's state quickly (C135). `team status` (C108) gives per-Mailbox counts and the newest report to the human only. In C22 the planning session could not tell from it which item the leader was waiting on (`awaiting reply 1 (oldest #1014)`), what the earlier exchange was (deployer's question #1008, leader's hold #1009, the two reports #1010 and #1013), or that the item card was drafting from an old index (C138). It read `/messages` with curl after searching the Hub's source.
+- Idea: `status --item C<n>` lists that item's thread in order (requests carrying `meta.item`, the replies under them: seq, sender, first line), and plain `status` adds one line per open item with a request in flight (item, who holds it, waiting since). It also says when the ledger file changed after the index was sent (C138's (a), shared code).
+- Read-only, like C108; the card states stay the page's job. Whether `status` should also show the newest `NEEDS DECISION` per item is open.
+
