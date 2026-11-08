@@ -23,6 +23,8 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C140
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -923,11 +925,17 @@ Raised 2026-11-06 (cite-bridge C22), from the user's premise that the planning s
 - Read-only, like C108; the card states stay the page's job. Whether `status` should also show the newest `NEEDS DECISION` per item is open.
 
 ### C140. Keep a record of convention changes, with reading notes for old forms
-Status: proposed
 
-Raised 2026-11-08 in the planning session. A change to the conventions reaches every registered project at once; the policy is in design.md §3.12, "When the conventions change" (old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note). Not settled: where the record lives and how readers reach it.
-- Idea: one record of convention changes, a line per change: date, layer (format or practice), what changed, how to read the old form, the `C<n>` that made it. A reader who meets an old form checks it there; project-setup.md §7's readiness check could list a project's warnings against it.
-- Idea: `docs:index` sends a format number with the index, so the Hub can tell an old sender from a broken one.
-- To decide: where the record lives (the top of roadmap.md is read before any item is written, but grows; a file of its own needs a line on the map and a pointer from the rules); whether earlier changes are written in from the start (the English vocabulary of C64, C133's close order, C134's plan-line warning); whether the format number is worth it before a second sender version exists.
-- Not here: pinning a version per project (design.md §3.12 says when to reconsider it).
+Raised 2026-11-08 in the planning session; decided the same day by the user. A change to the conventions reaches every registered project at once; the policy is in design.md §3.12, "When the conventions change" (old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note). This item gives the reading notes a home.
+- Survey (2026-11-08, from git): the rules at the top of this file changed in 17 commits between 2026-10-18 and 2026-11-06, and `src/shared/roadmap.ts` in 10. Two new restrictions entered as errors at once, before the warning-first policy: a ledger with items but no `## Plan` (C51, 2026-10-27) and an indented status line (C25, 2026-10-20). C134's titled plan lines entered as a warning.
+- A file of its own, not the top of this file: at that rate the top would grow by a line every two days, and the record also covers formats outside the ledger (the index, the reply headings).
+- Only the changes whose old form a reader could misread are written back, not all 17.
+- No format number on the index for now: there is one sender version (`docs:index` from the same checkout), and the Hub already tells old indexes by missing fields. It is reconsidered with the version pin (design.md §3.12). Listing a project's old forms in project-setup.md §7's readiness check is not part of this item.
+
+#### Done when
+- [ ] `docs/conventions-log.md` exists: its purpose in a few lines, then one line per change with the date, the layer (format or practice), what changed, how to read the old form, and the `C<n>`. CLAUDE.md's document map has a line for it
+- [ ] It has lines for C51 (no `## Plan` before 2026-10-27), C64 and C65 (Japanese vocabulary and records before 2026-10-29), C102 (items closed before 2026-11-01 were closed in the first run, without a review), C133 (with no reviewer the close waits for the user, from 2026-11-06) and C134 (titled plan lines are a warning, from 2026-11-06), each date checked against that item's closed line or commit
+- [ ] The top of roadmap.md has one line saying older items and closed records may follow earlier rules and pointing at the file, and design.md §3.12's table has a row "A convention changed" (a line in the file, added in the same commit as the change, by whoever makes it)
+- [ ] design.md §3.12 "When the conventions change" names the file in place of "is C140", and says no format number is sent yet, with the condition to reconsider
+- [ ] `npm run docs:check` reports 0 errors, and no warnings other than C140's own reminder to close once every line is checked
 
