@@ -24,8 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C140
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -513,6 +511,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: `src/team/summary-lines.ts` (new), `src/team/summary-lines.test.ts` (new), `src/team/team.ts`, `docs/usage.md` (the team start's summary).
   - Checked: `npm test` 569 pass, 0 fail (566 before, +3 new); `npx tsc --noEmit` clean; `npm run docs:check` 30 items, 0 errors (the all-conditions-checked warning was gone after the close).
   - No review (no reviewer connected). Not checked: a real team start against a Hub (the summary printed end to end, and the reviewer attach result). Done-when wording not changed.
+- [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
+  - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
+  - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
+  - Survey from git: the rules at the top of this file changed in 17 commits between 2026-10-18 and 2026-11-06; two restrictions entered as errors at once (C25, C51), C134 as a warning. C25 was not written back, since the checker reads an indented status line as a status.
+  - Checked: `npm run docs:check` 0 errors (before the close, only C140's own all-conditions-checked warning). No review. Done-when wording not changed.
 - [x] C112 The C78 dragend scene in `ui:check` waits 800 ms before counting renders (2026-11-01, decided by the user)
   - `tools/dev/ui-check.mjs`: the dragend scene dispatches `dragend` and reads the render count, `isConnected` and the chip count in one evaluate, with no wait (the C101 fix); checks and verify text unchanged. `public/index.html` not changed (`ondragend` calls `flushMap()` synchronously).
   - Audit of the other C78 scenes: `released` and `dropped` read in the same evaluate as their action. `held` and `dragging` wait 2 s after an SSE post before expecting `renders === 0`; the wait is needed to let the update arrive, and a render in that window is a failure, so both stay (reason in the item's body, now removed with the section).
@@ -924,20 +927,4 @@ Status: proposed
 Raised 2026-11-06 (cite-bridge C22), from the user's premise that the planning session must grasp the Hub's state quickly (C135). `team status` (C108) gives per-Mailbox counts and the newest report to the human only. In C22 the planning session could not tell from it which item the leader was waiting on (`awaiting reply 1 (oldest #1014)`), what the earlier exchange was (deployer's question #1008, leader's hold #1009, the two reports #1010 and #1013), or that the item card was drafting from an old index (C138). It read `/messages` with curl after searching the Hub's source.
 - Idea: `status --item C<n>` lists that item's thread in order (requests carrying `meta.item`, the replies under them: seq, sender, first line), and plain `status` adds one line per open item with a request in flight (item, who holds it, waiting since). It also says when the ledger file changed after the index was sent (C138's (a), shared code).
 - Read-only, like C108; the card states stay the page's job. Whether `status` should also show the newest `NEEDS DECISION` per item is open.
-
-### C140. Keep a record of convention changes, with reading notes for old forms
-
-Raised 2026-11-08 in the planning session; decided the same day by the user. A change to the conventions reaches every registered project at once; the policy is in design.md §3.12, "When the conventions change" (old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note). This item gives the reading notes a home.
-- Survey (2026-11-08, from git): the rules at the top of this file changed in 17 commits between 2026-10-18 and 2026-11-06, and `src/shared/roadmap.ts` in 10. Two new restrictions entered as errors at once, before the warning-first policy: a ledger with items but no `## Plan` (C51, 2026-10-27) and an indented status line (C25, 2026-10-20). C134's titled plan lines entered as a warning.
-- A file of its own, not the top of this file: at that rate the top would grow by a line every two days, and the record also covers formats outside the ledger (the index, the reply headings).
-- Only the changes whose old form a reader could misread are written back, not all 17.
-- Done 2026-11-08 in the planning session: `docs/conventions-log.md` (six lines, each date checked against the item's closed line and its commit: 2a1f94c, c923a62, a724cce, 69123be, eb5f700, ae7ba76; for C134 the commit showed that a titled plan line had been an error and not read as part of the plan). C25's indented status line was not written back: the checker reads it as a status now, so nothing is misread. Pointers: CLAUDE.md's map, the top of this file, design.md §3.12's table and its "When the conventions change".
-- No format number on the index for now: there is one sender version (`docs:index` from the same checkout), and the Hub already tells old indexes by missing fields. It is reconsidered with the version pin (design.md §3.12). Listing a project's old forms in project-setup.md §7's readiness check is not part of this item.
-
-#### Done when
-- [x] `docs/conventions-log.md` exists: its purpose in a few lines, then one line per change with the date, the layer (format or practice), what changed, how to read the old form, and the `C<n>`. CLAUDE.md's document map has a line for it
-- [x] It has lines for C51 (no `## Plan` before 2026-10-27), C64 and C65 (Japanese vocabulary and records before 2026-10-29), C102 (items closed before 2026-11-01 were closed in the first run, without a review), C133 (with no reviewer the close waits for the user, from 2026-11-06) and C134 (titled plan lines are a warning, from 2026-11-06), each date checked against that item's closed line or commit
-- [x] The top of roadmap.md has one line saying older items and closed records may follow earlier rules and pointing at the file, and design.md §3.12's table has a row "A convention changed" (a line in the file, added in the same commit as the change, by whoever makes it)
-- [x] design.md §3.12 "When the conventions change" names the file in place of "is C140", and says no format number is sent yet, with the condition to reconsider
-- [x] `npm run docs:check` reports 0 errors, and no warnings other than C140's own reminder to close once every line is checked
 
