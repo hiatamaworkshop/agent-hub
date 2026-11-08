@@ -1,4 +1,4 @@
-// Claude Code Channels への依存はこのファイルに閉じ込める (研究プレビューで契約が変わりうる。plan-p0.md リスク)
+// Claude Code Channels への依存はこのファイルに閉じ込める (研究プレビューで契約が変わりうる。design.md §3.9)
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { toChannelParams } from '../shared/format.js'
 import type { Message } from '../shared/types.js'

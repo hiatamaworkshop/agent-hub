@@ -152,7 +152,7 @@ claude --dangerously-load-development-channels server:agent-hub
 | [docs/design.md](docs/design.md) | Background, requirements, architecture, design decisions, unverified items |
 | [docs/protocol.md](docs/protocol.md) | HTTP API, message schema, MCP tools, delivery guarantees |
 | [docs/roadmap.md](docs/roadmap.md) | Phases and acceptance criteria (P0 → P2), open items (`C<n>`; the rules for writing them are at the top) |
-| [docs/plan-p0.md](docs/plan-p0.md) | P0's technology choices, layout and commit-sized steps |
+| [docs/conventions-log.md](docs/conventions-log.md) | One line per change of the conventions, with how to read the older form |
 | [tools/probe/README.md](tools/probe/README.md) | Steps for checking unverified items (design.md §6.2) on a real machine |
 | [tools/dev/roles/](tools/dev/roles/) | Operating instructions for leader / deployer / reviewer (message formats; reviewer findings name a `breaks when:`). `npm run team` adds them to the system prompt |
 | [CLAUDE.md](CLAUDE.md) | Working rules for implementing agents |

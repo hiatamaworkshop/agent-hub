@@ -810,6 +810,7 @@ In messages, **strings from other agents or the browser become an agent's input*
 | HTTP with Hono (`@hono/node-server`) | Same as cairn in the same DockerFiles folder. Can be tested without the network through `app.request()`, and has an SSE helper (`streamSSE`) |
 | The shim is pinned to MCP TypeScript SDK 1.x | SDK 2.x negotiates protocol `2026-07-28`, and such a channel server is not registered by the v2 runtime (§6.1). The latest supported by the 1.32 line is `2025-11-25` |
 | Hooks send directly to the Hub with HTTP hooks | No script is needed, avoiding shell differences on Windows (Git Bash / PowerShell). The token and Mailbox name can be passed through environment variable expansion in headers |
+| The Hub and the shim live in one package | They are separate at run time (§3.1), which is what matters. The package is split only once there is a reason: shipping them separately, or dependencies that conflict |
 | Only the Hub goes into Docker; P0 starts directly on the host | The shims/hooks run on the host by structure. Running resident (daemonizing on Windows) can be solved by compose's restart, but during development iteration speed comes first |
 | A framework-less UI in P0 | To verify as fast as possible. Introduce one when needed |
 | Persistence starts with JSONL | The implementation is minimal, and a human can follow it with `tail` |

@@ -33,7 +33,7 @@ In the order they will be taken up. Only items without a status line and blocked
 - [x] Channels の仕様を公式資料で確認し、結果を design.md §6.1 に追記
 - [x] hook・MCP の仕様を公式資料で確認し、design.md §6.1b に追記
 - [x] design.md §6.2 の Channels・hook 関連をプローブ (`tools/probe/`) で実機確認し、結果を §6.1c に記録
-- [x] プロジェクト雛形 (package.json, tsconfig。作業順は [plan-p0.md](plan-p0.md))
+- [x] プロジェクト雛形 (package.json, tsconfig。作業順は plan-p0.md。2026-11-08 に削除し、git の履歴にある)
 - [x] Hub: 認証付き HTTP (Bearer + ブラウザ向け cookie)、`/messages`、`/stream` (SSE)、JSONL 追記ログ
 - [x] Hub: Message の `kind` (`request` / `reply` / `notice`) の検証と、`from` の Hub 側付与
 - [x] Hub: Mailbox の最小実装 (attach で作成、購読、cursor)。リースと takeover は P2
