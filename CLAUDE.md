@@ -87,5 +87,6 @@ Doing so would mean judging without that project's CLAUDE.md, conventions and re
 ## Updating the docs
 
 - When you change the specification, update the docs in the same commit.
+- When the change alters a convention other projects follow (what `src/shared/roadmap.ts` accepts, the index sent by `docs:index`, the reply-format headings, the rules at the top of roadmap.md), add a line to docs/conventions-log.md in the same commit, with how to read the older form. A new restriction enters as a warning first (design.md §3.12, "When the conventions change").
 - What you learn by verifying (the real behavior of Channels, hook payloads and so on) goes into design.md §6 as results.
 - Later work is written as `### C<n>.` sections under roadmap.md "Items". The rules for writing them (the status line, done-when conditions, who files items, the close after the review) are at the top of roadmap.md (reasons in design.md §3.15).
