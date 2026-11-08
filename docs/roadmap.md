@@ -922,3 +922,12 @@ Raised 2026-11-06 (cite-bridge C22), from the user's premise that the planning s
 - Idea: `status --item C<n>` lists that item's thread in order (requests carrying `meta.item`, the replies under them: seq, sender, first line), and plain `status` adds one line per open item with a request in flight (item, who holds it, waiting since). It also says when the ledger file changed after the index was sent (C138's (a), shared code).
 - Read-only, like C108; the card states stay the page's job. Whether `status` should also show the newest `NEEDS DECISION` per item is open.
 
+### C140. Keep a record of convention changes, with reading notes for old forms
+Status: proposed
+
+Raised 2026-11-08 in the planning session. A change to the conventions reaches every registered project at once; the policy is in design.md §3.12, "When the conventions change" (old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note). Not settled: where the record lives and how readers reach it.
+- Idea: one record of convention changes, a line per change: date, layer (format or practice), what changed, how to read the old form, the `C<n>` that made it. A reader who meets an old form checks it there; project-setup.md §7's readiness check could list a project's warnings against it.
+- Idea: `docs:index` sends a format number with the index, so the Hub can tell an old sender from a broken one.
+- To decide: where the record lives (the top of roadmap.md is read before any item is written, but grows; a file of its own needs a line on the map and a pointer from the rules); whether earlier changes are written in from the start (the English vocabulary of C64, C133's close order, C134's plan-line warning); whether the format number is worth it before a second sender version exists.
+- Not here: pinning a version per project (design.md §3.12 says when to reconsider it).
+

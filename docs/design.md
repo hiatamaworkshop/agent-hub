@@ -487,6 +487,23 @@ A row is added when a person or an agent (the leader's check, a review, an audit
 |---|---|---|---|---|---|
 | 2026-11-05 | meaning | `src/shim/tools.ts` `post_message` description ↔ protocol.md §5 `post_message` | The description named no result fields (`recipients`, `unattached`, `warning`, `delivered`) or the `item` error, while leader.md acts on them; `docs:check` compares only the tool names with §5 | A prompt audit in the planning session | 3ed14c8 |
 
+**When the conventions change** (concept, 2026-11-08; C140)
+
+The conventions are the template every registered project's documents follow, so a change here reaches all of them at once: the rules are pointed at, not copied (C137), and role instructions are delivered through the Hub. What breaks depends on who reads.
+
+| Layer | Examples | Read by | A change shows up as |
+|---|---|---|---|
+| Formats | The ledger's syntax (`### C<n>.`, the status line, `## Plan`, closed lines), the index sent to `PUT /indexes`, `meta.item`, the reply-format headings | `src/shared/roadmap.ts`, the Hub, the UI | Errors in every project's `docs:check`, post-commit hook and team start |
+| Practices | How done-when lines are worded, who files, the close order | Agents and humans | Nothing fails; old documents are read under the new rules |
+
+The answer is not one set of rules per version but old documents that stay readable: both kinds of reader are told how to read the older form, and documents are not rewritten into the new one.
+- Readers accept old forms for good. Closed lines are history and are never rewritten, so the parser reads every form they were written in. Already the case: an index without `plan` or `conditionChecks` is accepted, and the Japanese and English status words are read the same.
+- A new restriction enters as a warning, and becomes an error only after the projects that trip it have moved (C134's titled plan lines).
+- A change to practices applies to what is written from then on; existing items are not reclassified. Where an old form could be misread, a reading note says how to read it. An AI reader switches how it reads on such a note, which costs far less than versioned rules. The line at the top of roadmap.md saying that the closed records before 2026-10-29 are in Japanese is one. When C133 changed the close order, no note said so, and the user's global instructions had to be found and fixed by hand.
+- Where the reading notes and the record of changes live, and whether the index carries a format number so the Hub can tell an old sender from a broken one, is C140.
+
+Not built: pinning a version per project (for example a `conventions` field in `.agent-hub.json`, with `docs:check` keeping the rules of N and N-1). It costs a parser per version, and practices cannot be pinned the same way, because agents read the current rules. Reconsider it when a change cannot be staged as warning-then-error, or when people outside this machine pull agent-hub on their own schedule (the direction of §1.1), so that the Hub image, the scripts and a project's ledger can be at different versions.
+
 **Send review requests by target, not by a stretch of conversation** (concept, 2026-10-26; C45, C46, C47)
 
 kanary's /relay (§8.1) sends the conversation since the previous relay as a stretch, to have another vendor's agent evaluate it. The idea is to grow the receiver's thread as a copy of the sender's conversation, adding only what is new; while the receiver's context continues, it is cheap and correct.
