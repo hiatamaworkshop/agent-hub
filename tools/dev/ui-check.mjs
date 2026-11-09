@@ -24,14 +24,35 @@ writeFileSync(
   JSON.stringify({ op: 'message', message: { id: 'm_ui_check_old', seq: 1, ts: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(), kind: 'request', from: { type: 'user', id: 'browser', role: null }, to: { type: 'mailbox', id: 'demo.old' }, body: OLD_BODY } }) + '\n',
 )
 
-const hub = spawn(process.execPath, ['--import', 'tsx', 'src/hub/main.ts'], {
-  cwd: ROOT,
-  env: { ...process.env, HUB_DATA_DIR: join(work, 'hub'), HUB_PORT: String(PORT), HUB_TOKEN: TOKEN, HUB_READ_RETENTION_HOURS: '0' },
-  stdio: ['ignore', 'pipe', 'pipe'],
-})
+// 同じ port に別の Hub が答えているなら、この場面はその Hub の状態を読んでしまう (C142 の見直し)。始める前に止める
+if (await fetch(`${HUB}/mailboxes`).then(() => true, () => false)) {
+  console.error(`NG  port ${PORT} is already answered by a Hub that this check did not start. Stop that Hub (node ... src/hub/main.ts) and run again`)
+  rmSync(work, { recursive: true, force: true })
+  process.exit(1)
+}
 let hubLog = ''
-hub.stdout.on('data', (d) => (hubLog += d))
-hub.stderr.on('data', (d) => (hubLog += d))
+const hubs = [] // この場面で起動した Hub すべて。終わりに止める (起動し直すたびに増える)
+const startHub = () => {
+  const child = spawn(process.execPath, ['--import', 'tsx', 'src/hub/main.ts'], {
+    cwd: ROOT,
+    env: { ...process.env, HUB_DATA_DIR: join(work, 'hub'), HUB_PORT: String(PORT), HUB_TOKEN: TOKEN, HUB_READ_RETENTION_HOURS: '0' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  hubs.push(child)
+  child.stdout.on('data', (d) => (hubLog += d))
+  child.stderr.on('data', (d) => (hubLog += d))
+  return child
+}
+let hub = startHub()
+// 起動し直す (C142): 今の Hub を止め、同じデータで立て直す。止まった Hub の分は Mailbox の接続が消えている
+async function restartHub() {
+  const old = hub
+  const exited = new Promise((r) => old.once('exit', r))
+  old.kill()
+  await exited
+  hub = startHub()
+  await until(async () => (await fetch(`${HUB}/mailboxes`, { headers: { authorization: `Bearer ${TOKEN}` } })).ok, 'hub restarted')
+}
 let chrome
 let ws
 
@@ -1020,9 +1041,11 @@ try {
   verify('信号: 変わらない描き直しでは光らない (C71)', unchanged.length === 0, unchanged)
 
   await hook('demo.sig', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: 'tu-sig', session_id: 's-sig' })
-  await sleep(2500)
+  // 光りが出るのを待ち、光りが終わって枠が止まるまで待つ。固定の待ち時間だと、再描画で光りが掛け直されたとき、光りの途中の枠を読んでしまう
+  let youFlash = []
+  await until(async () => { youFlash = await flashes(); return youFlash.includes('demo.sig flash-you') }, 'flash shown', 40)
+  await until(async () => (await sigCard())?.anim === 'none', 'flash ended', 60)
   const you = await sigCard()
-  const youFlash = await flashes()
   verify('信号: 人の番 (Needs you) に変わると琥珀に光り、枠は脈打たない太い琥珀 (C71)', you !== null && you.state.startsWith('Needs you') && youFlash.includes('demo.sig flash-you') && you.anim === 'none' && you.shadow.includes('154, 91, 0'), { you, youFlash })
 
   // 動きを減らす設定: 作業中は脈打たず、枠だけ残す。光りも出さない
@@ -1711,19 +1734,30 @@ try {
 
   // 押す。結果は押した印の見た目 (カーソル・title)、押した後に強調されたもの、表示 (Map か Messages)、ステータス
   const press = (sel) => evaluate(`(async () => {
+    // 描き直しが済むまで待つ: カードとチップが 300 ms 変わらないこと。SSE の取り直しで押す前後に描き直されると、押した先が外れて強調が消える (C142 の調べ)
+    const quiet = () => [...document.querySelectorAll('#mailboxes .mb, #map .mapnode, #states .stc')]
+    let snap = quiet()
+    for (let i = 0; i < 15; i++) {
+      await new Promise((r) => setTimeout(r, 300))
+      const now = quiet()
+      if (now.length === snap.length && now.every((n, j) => n === snap[j])) break
+      snap = now
+    }
     const el = document.querySelector(${JSON.stringify(sel)})
     if (!el) return null
     const cursor = getComputedStyle(el).cursor
     const title = el.title
     document.querySelectorAll('.hit').forEach((e) => e.classList.remove('hit'))
+    const before = [...document.querySelectorAll('#mailboxes .mb, #map .mapnode')]
     el.click()
     await new Promise((r) => setTimeout(r, 400))
+    const replaced = before.filter((n) => !n.isConnected).length // 押した後に描き直されて外れたカードの数 (C142 の調べ)
     const hits = [...document.querySelectorAll('.hit')].map((h) => ({
       kind: h.classList.contains('msg') ? 'msg' : h.classList.contains('evt') ? 'evt' : h.classList.contains('mb') ? 'mb' : 'mapnode',
       seq: h.dataset.seq ?? null,
       who: (h.querySelector('.chip, .name') || {}).textContent || null,
     }))
-    return { cursor, title, status: $('status').textContent, hits, map: !$('map').hidden }
+    return { cursor, title, status: $('status').textContent, hits, replaced, map: !$('map').hidden }
   })()`)
   const unreadOf = async (name) => (await api('GET', '/mailboxes')).mailboxes.find((m) => m.name === name).unread
   const snapBefore = { msgs: await countMessages(), unread: await unreadOf('jb.leader') }
@@ -1736,7 +1770,8 @@ try {
     you && you.cursor === 'pointer' && you.hits.length === 1 && you.hits[0].kind === 'evt' && you.hits[0].who === 'jb.leader', you)
   const working = await press('#states .stc.st-working')
   verify('Working バッジ: 押すと、その状態の最初のカード (サイドバー) が強調される。メッセージ欄は動かさない (C106)',
-    working && working.cursor === 'pointer' && working.hits.length === 1 && working.hits[0].kind === 'mb' && working.hits[0].who === 'jb.deployer', working)
+    working && working.cursor === 'pointer' && working.hits.length === 1 && working.hits[0].kind === 'mb' && working.hits[0].who === 'jb.deployer',
+    { working, cardsNow: await evaluate("[...document.querySelectorAll('#mailboxes .mb')].map((b) => [(b.querySelector('.name') || {}).textContent, (b.querySelector('.state') || {}).textContent, b.className])"), chips: await evaluate("[...document.querySelectorAll('#states .stc')].map((c) => c.className + ' ' + c.textContent)") })
   const snapAfter = { msgs: await countMessages(), unread: await unreadOf('jb.leader') }
   verify('押しても何も送らず、既読にせず、状態も変えない (C106)', snapAfter.msgs === snapBefore.msgs && snapAfter.unread === snapBefore.unread, { snapBefore, snapAfter })
 
@@ -1766,19 +1801,30 @@ try {
   // Kind で隠れた飛び先 (状態は変えない)、最新 200 件より古い Event (手元にない)。押すたびに、印・送らない・既読にしない・状態を変えないを見る
   {
   const press2 = (sel) => evaluate(`(async () => {
+    // 描き直しが済むまで待つ: カードとチップが 300 ms 変わらないこと。SSE の取り直しで押す前後に描き直されると、押した先が外れて強調が消える (C142 の調べ)
+    const quiet = () => [...document.querySelectorAll('#mailboxes .mb, #map .mapnode, #states .stc')]
+    let snap = quiet()
+    for (let i = 0; i < 15; i++) {
+      await new Promise((r) => setTimeout(r, 300))
+      const now = quiet()
+      if (now.length === snap.length && now.every((n, j) => n === snap[j])) break
+      snap = now
+    }
     const el = document.querySelector(${JSON.stringify(sel)})
     if (!el) return null
     const cursor = getComputedStyle(el).cursor
     const title = el.title
     document.querySelectorAll('.hit').forEach((e) => e.classList.remove('hit'))
+    const before = [...document.querySelectorAll('#mailboxes .mb, #map .mapnode')]
     el.click()
     await new Promise((r) => setTimeout(r, 400))
+    const replaced = before.filter((n) => !n.isConnected).length // 押した後に描き直されて外れたカードの数 (C142 の調べ)
     const hits = [...document.querySelectorAll('.hit')].map((h) => ({
       kind: h.classList.contains('msg') ? 'msg' : h.classList.contains('evt') ? 'evt' : h.classList.contains('mb') ? 'mb' : 'mapnode',
       seq: h.dataset.seq ?? null,
       who: (h.querySelector('.chip, .name') || {}).textContent || null,
     }))
-    return { cursor, title, status: $('status').textContent, hits, map: !$('map').hidden, states: $('states').textContent }
+    return { cursor, title, status: $('status').textContent, hits, replaced, map: !$('map').hidden, states: $('states').textContent }
   })()`)
   const unread2 = async (name) => (await api('GET', '/mailboxes')).mailboxes.find((m) => m.name === name).unread
   // 止まった依頼 (jb.deployer は JB-AWAIT を渡したままターンを終えた)。委ねる側 (jb.waiter) は jb.filler に依頼を出して終える
@@ -1855,6 +1901,91 @@ try {
   verify('押しても何も送らず、既読にせず、状態も変えない (C106)', snap2After.msgs === snap2Before.msgs && snap2After.unread === snap2Before.unread, { snap2Before, snap2After })
   }
   }
+  // Hub が止まって起動し直した場面 (C142)。渡した依頼に返信がないまま Hub が止まり、起動し直した後も返事もターン終了も届いていない
+  {
+    // 同じ project (demo) に置く。ページは選んだ project のカードだけを出すため。タブのタイトルの件数は全 project の数なので、場面の前後の差で確かめる
+    const waitingOf = (t) => Number((/^(\d+) waiting/.exec(t) || [0, 0])[1])
+    const rstCwd = join(work, 'demo')
+    const rstAt = await api('POST', '/mailboxes/rst.deployer/attach', { client: 'claude-code', role: 'deployer', cwd: rstCwd, sessionId: 's-rst' })
+    const rstReq = await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'rst.deployer' }, body: 'GOAL: 返信のない依頼 (C142 の場面)' })
+    await api('POST', `/attachments/${rstAt.attachmentId}/ack`, { upTo: rstReq.seq })
+    // 前の場面の絞り込み (Mailbox・Kind・project) で隠れないよう、Reset と同じ既定に戻す (C59)
+    await cdp('Runtime.evaluate', { expression: 'resetFilters()', returnByValue: true })
+    await sleep(500)
+    await scene('返信のない依頼を渡した (Hub が止まる前。作業中)', { 'rst.deployer': 'Working' }, '')
+    const waitingBase = waitingOf((await screen()).title)
+
+    await restartHub()
+    const rstAgain = await api('POST', '/mailboxes/rst.deployer/attach', { client: 'claude-code', role: 'deployer', cwd: rstCwd, sessionId: 's-rst' })
+    await until(async () => (await evaluate("$('conn').className")) === 'ok', 'page connected', 80)
+    await scene('Hub が起動し直した後も、返信のない依頼が残っている (Stopped で、再起動を理由に添える。C142)', { 'rst.deployer': 'Stopped, no reply (Hub restarted after the hand-over)' }, '')
+    const shownNow = { tab: await evaluate('tabStopped'), cards: await evaluate('teamModel().human.stopped'), title: (await screen()).title }
+    verify('Hub が起動し直した後: タブの Stopped はカードの Stopped の数と同じで、タイトルの件数は変わらない (C109)', shownNow.tab === shownNow.cards && shownNow.cards >= 1 && waitingOf(shownNow.title) === waitingBase, { waitingBase, shownNow })
+
+    // Health check (C76) は、その Mailbox に、いちばん古い返信のない依頼 (この依頼) を指す cue を 1 通送る。新しい種類の cue は足さない
+    const stoppedNow = JSON.parse(await evaluate("JSON.stringify(stoppedMailboxes().map((m) => [m.name, m.awaitingSeq]))"))
+    const cueAfter = (await api('GET', '/messages?after=0&limit=1000')).messages.at(-1).seq
+    const healthBefore = await evaluate("({ text: $('health').textContent, disabled: $('health').disabled })")
+    await cdp('Runtime.evaluate', { expression: "$('health').click()", returnByValue: true })
+    await sleep(1500)
+    const cue = (await api('GET', `/messages?after=${cueAfter}&limit=100`)).messages.find((m) => m.kind === 'notice' && m.to.id === 'rst.deployer')
+    verify(
+      'Health check: 起動し直した後も、その Mailbox を数えて、返信のない依頼を指す cue を送る (C76, C142)',
+      stoppedNow.some(([n, s]) => n === 'rst.deployer' && s === rstReq.seq) && healthBefore.text === `Health check (${stoppedNow.length})` && !healthBefore.disabled && !!cue && cue.body.includes(`#${rstReq.seq}`),
+      { stoppedNow, healthBefore, cue: cue && cue.body },
+    )
+
+    // 起動の後に渡し直すと、その受け渡しで作業中に戻る (C142)
+    const rstNew = await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'rst.deployer' }, body: 'GOAL: 起動の後に渡した依頼 (C142 の場面)' })
+    await api('POST', `/attachments/${rstAgain.attachmentId}/ack`, { upTo: rstNew.seq })
+    await scene('起動の後に渡し直した (作業中に戻る。C142)', { 'rst.deployer': 'Working' }, '')
+    verify('起動の後に渡し直した: タブの件数は元に戻る (Working は数えない)', waitingOf((await screen()).title) === waitingBase, { waitingBase })
+
+    // 起動の後にターンが終わると、再起動の理由は出ず、ふつうの Stopped になる (C142)
+    await api('POST', '/events/claude-code', { cwd: rstCwd, hook_event_name: 'Stop', session_id: 's-rst' }, { 'x-hub-mailbox': 'rst.deployer' })
+    await scene('起動の後にターンが終わり、返信はない (Stopped。再起動の理由は出ない。C142)', { 'rst.deployer': 'Stopped, no reply' }, '')
+    const shownEnd = { tab: await evaluate('tabStopped'), cards: await evaluate('teamModel().human.stopped'), title: (await screen()).title }
+    verify('ターン終了で Stopped に戻る: タブの Stopped はカードの Stopped の数と同じで、タイトルの件数は変わらない', shownEnd.tab === shownEnd.cards && shownEnd.cards >= 1 && waitingOf(shownEnd.title) === waitingBase, { waitingBase, shownEnd })
+    const restartShown = (await screen()).cards.find((c) => c.name === 'rst.deployer').state.includes('Hub restarted')
+    verify('ターンの終わりを読んだあと、「Hub restarted」は出ない (C142)', !restartShown, { restartShown })
+  }
+  // 再起動の見直し (C142): 再起動の前に、(1) 作業を渡して終えた leader と、(2) 返事なしでターンを終えた deployer を作る。
+  // 再起動の後も、(1) は委任中 (Waiting on others) のままで Health check に数えない。(2) は既定の Stopped で、再起動の理由は出ない
+  {
+    const dCwd = join(work, 'demo')
+    const dl = await api('POST', '/mailboxes/dlg.leader/attach', { client: 'claude-code', role: 'leader', cwd: dCwd, sessionId: 's-dlg-l' })
+    const dd = await api('POST', '/mailboxes/dlg.deployer/attach', { client: 'claude-code', role: 'deployer', cwd: dCwd, sessionId: 's-dlg-d' })
+    const tn = await api('POST', '/mailboxes/tn.deployer/attach', { client: 'claude-code', role: 'deployer', cwd: dCwd, sessionId: 's-tn' })
+    const dlgReq = await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'dlg.leader' }, body: 'GOAL: 委任する依頼 (C142 の見直し)' })
+    await api('POST', `/attachments/${dl.attachmentId}/ack`, { upTo: dlgReq.seq })
+    // leader が deployer に作業を渡し、ターンを終える (終えたのは渡したあと)
+    const handOff = await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'dlg.deployer' }, body: 'GOAL: leader が渡した作業 (C142 の見直し)' }, { 'x-hub-attachment': dl.attachmentId })
+    await api('POST', `/attachments/${dd.attachmentId}/ack`, { upTo: handOff.seq })
+    const tnReq = await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'tn.deployer' }, body: 'GOAL: 返事なしで終える依頼 (C142 の見直し)' })
+    await api('POST', `/attachments/${tn.attachmentId}/ack`, { upTo: tnReq.seq })
+    await api('POST', '/events/claude-code', { cwd: dCwd, hook_event_name: 'Stop', session_id: 's-dlg-l' }, { 'x-hub-mailbox': 'dlg.leader' })
+    await api('POST', '/events/claude-code', { cwd: dCwd, hook_event_name: 'Stop', session_id: 's-tn' }, { 'x-hub-mailbox': 'tn.deployer' })
+    await scene('再起動の前: 作業を渡して終えた leader は委任中、返事なしで終えた deployer は Stopped', { 'dlg.leader': 'Waiting on others (dlg.deployer)', 'dlg.deployer': 'Working', 'tn.deployer': 'Stopped, no reply' }, '')
+
+    await restartHub()
+    await api('POST', '/mailboxes/dlg.leader/attach', { client: 'claude-code', role: 'leader', cwd: dCwd, sessionId: 's-dlg-l' })
+    await api('POST', '/mailboxes/dlg.deployer/attach', { client: 'claude-code', role: 'deployer', cwd: dCwd, sessionId: 's-dlg-d' })
+    await api('POST', '/mailboxes/tn.deployer/attach', { client: 'claude-code', role: 'deployer', cwd: dCwd, sessionId: 's-tn' })
+    await until(async () => (await evaluate("$('conn').className")) === 'ok', 'page connected', 80)
+    await scene('再起動の後も、委任中の leader は Waiting on others のまま (C142 の見直し)', { 'dlg.leader': 'Waiting on others (dlg.deployer)' }, '')
+    await scene('再起動の後、渡した作業が返っていない deployer は、再起動を理由に Stopped (C142)', { 'dlg.deployer': 'Stopped, no reply (Hub restarted after the hand-over)' }, '')
+    await scene('返事なしで終えた deployer は、既定の Stopped。再起動の理由は出ない (C142 の見直し)', { 'tn.deployer': 'Stopped, no reply' }, '')
+    const cardsNow = (await screen()).cards
+    const tnText = (cardsNow.find((c) => c.name === 'tn.deployer') || {}).state || ''
+    verify('tn.deployer の状態に「Hub restarted」は出ない (C142 の見直し)', tnText.length > 0 && !tnText.includes('Hub restarted'), { tnText })
+    // Health check は、再起動の理由で止まった deployer だけを数え、委任中の leader は数えない (cue を送るのも同じ一覧)
+    const stoppedAfter = JSON.parse(await evaluate("JSON.stringify(stoppedMailboxes().map((m) => m.name))"))
+    verify(
+      'Health check: 委任中の leader は数えず cue も送らない。返っていない deployer は数える (C142 の見直し)',
+      !stoppedAfter.includes('dlg.leader') && stoppedAfter.includes('dlg.deployer') && stoppedAfter.includes('tn.deployer'),
+      { stoppedAfter },
+    )
+  }
   // 接続しているセッションがひとつもない: Your move は出さない (C127)。すべて切り離してから地図を見る
   for (const mb of (await api('GET', '/mailboxes')).mailboxes) if (mb.attachment) await api('DELETE', `/attachments/${mb.attachment.attachmentId}`)
   await mapScene('接続しているセッションがない: Your move は出さない (C127)', 'no move')
@@ -1867,7 +1998,7 @@ try {
     ws?.close()
   } catch {}
   if (chrome) spawnSync('taskkill', ['/PID', String(chrome.pid), '/T', '/F'])
-  spawnSync('taskkill', ['/PID', String(hub.pid), '/T', '/F'])
+  for (const h of hubs) spawnSync('taskkill', ['/PID', String(h.pid), '/T', '/F'])
   if (process.platform !== 'win32') {
     chrome?.kill()
     hub.kill()

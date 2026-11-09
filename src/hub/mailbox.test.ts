@@ -677,16 +677,18 @@ describe('溜まりの材料 (backlog。design.md §3.15)', () => {
     const order = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'lead' }, body: 'C2' }, user)
     assert.equal(of('lead').lastHanded, null, '未読のうちは渡していない')
     hub.ack(lead.attachmentId, order.seq)
-    assert.deepEqual(of('lead').lastHanded, { seq: order.seq, ts: order.ts })
+    assert.deepEqual(of('lead').lastHanded, { seq: order.seq, ts: order.ts, open: true }, '返信のない request は open (C142)')
 
     const ask = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'dep' }, body: 'do C2' }, hub.senderOf(lead.attachmentId))
     hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'dep' }, body: 'from the user' }, user)
     assert.deepEqual(of('lead').outgoing, { count: 1, oldestAt: ask.ts, oldestSeq: ask.seq, to: [{ type: 'mailbox', id: 'dep', recipients: ['dep'], seqs: [ask.seq], count: 1, oldestAt: ask.ts, oldestSeq: ask.seq }] })
     assert.equal(of('dep').outgoing.count, 0)
-    assert.deepEqual(of('lead').lastHanded, { seq: order.seq, ts: order.ts }, '自分が出したものは渡した分に入らない')
+    assert.deepEqual(of('lead').lastHanded, { seq: order.seq, ts: order.ts, open: true }, '自分が出したものは渡した分に入らない')
 
     hub.postMessage({ kind: 'reply', replyTo: ask.id, body: 'done' }, hub.senderOf(dep.attachmentId))
     assert.equal(of('lead').outgoing.count, 0, '返信で外れる')
+    hub.postMessage({ kind: 'reply', replyTo: order.id, body: 'C2 done' }, hub.senderOf(lead.attachmentId))
+    assert.deepEqual(of('lead').lastHanded, { seq: order.seq, ts: order.ts, open: false }, '返信で、渡した request は open でなくなる (C142)')
   })
 })
 

@@ -324,3 +324,13 @@ describe('GET /stream', () => {
     assert.ok(text.includes(': ping'))
   })
 })
+
+describe('GET /mailboxes: the Hub start time (C142)', () => {
+  it('returns startedAt, the time this Hub process started, next to the Mailboxes', async () => {
+    const hub = new Hub(new Store(), { now: () => new Date('2026-11-09T11:02:00.000Z') })
+    const app = createApp({ hub, token: TOKEN, uiHtml: async () => '<html>ui</html>' })
+    const body = (await (await app.request('/mailboxes', { headers: bearer })).json()) as { mailboxes: unknown[]; startedAt: string }
+    assert.equal(body.startedAt, '2026-11-09T11:02:00.000Z')
+    assert.deepEqual(body.mailboxes, [])
+  })
+})

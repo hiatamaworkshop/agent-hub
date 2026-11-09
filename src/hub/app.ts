@@ -195,7 +195,7 @@ export function createApp(opts: AppOptions) {
     return c.json({ events: hub.store.listEvents(limit) })
   })
 
-  app.get('/mailboxes', (c) => c.json({ mailboxes: hub.describeMailboxes() }))
+  app.get('/mailboxes', (c) => c.json({ mailboxes: hub.describeMailboxes(), startedAt: hub.startedAt }))
   // UI が、Mailbox のまだないプロジェクトでも role 宛てを選べるようにする (design.md §3.15 の「プロジェクトは値」)
   app.get('/roles', (c) => c.json({ roles: hub.listRoles() }))
   // hub.config.json の検証済みの値と警告 (読み取りだけ。書く API はない。protocol.md §3)

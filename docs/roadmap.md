@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C142
 - [ ] C141
 
 (Items with a status line are listed under "Items".)
@@ -514,6 +513,14 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: `src/team/summary-lines.ts` (new), `src/team/summary-lines.test.ts` (new), `src/team/team.ts`, `docs/usage.md` (the team start's summary).
   - Checked: `npm test` 569 pass, 0 fail (566 before, +3 new); `npx tsc --noEmit` clean; `npm run docs:check` 30 items, 0 errors (the all-conditions-checked warning was gone after the close).
   - No review (no reviewer connected). Not checked: a real team start against a Hub (the summary printed end to end, and the reviewer attach result). Done-when wording not changed.
+- [x] C142 After a Hub outage, a session stays `Working` forever and its lost reply is never asked for (2026-11-09, closed after the review)
+  - Raised 2026-11-09 (arb-sentinel C15): the Hub stopped after a hand-over; the session's reply and turn end were lost, so the card stayed `Working` and Health check could not see it. Decided option (b) only: the Hub records its start time, and a hand-over before the start that the existing rules would show as Working, with no reply and no turn end since the start, shows `Stopped, no reply (Hub restarted after the hand-over)`. Health check counts it and sends the existing cue. Options (a) and (c) were not taken (design.md §3.1, §3.15).
+  - Changed: `src/hub/hub.ts` (startedAt), `src/hub/app.ts` (`GET /mailboxes` returns startedAt), `src/hub/store.ts` (`backlog.lastHanded.open`), `src/hub/app.test.ts`, `src/hub/mailbox.test.ts`, `src/hub/store.test.ts`, `public/index.html` (`stateOf`), `tools/dev/ui-check.mjs` (restart scenes, the two review scenes, the C71 flash wait, the C106 helper wait), `docs/protocol.md` §3, `docs/design.md` §3.15.
+  - Checked: `npm test` 582/582 pass; `npm run docs:check` 0 errors; `npm run ui:check` 202 ok, 0 NG in 3 runs in a row (the leader and reviewer reran, no NG).
+  - Review (uncommitted change, read twice by the reviewer): one finding fixed. The restart rule hit a leader that had handed work to a deployer and ended its turn, and a session that ended its turn without replying. It now requires `handedWorking`, and two ui:check scenes cover those cases.
+  - C106 Working-badge check: it raced a redraw. The helpers now wait until the cards stop being rebuilt before the click. The source of the redraw was not identified; a HEAD run passed the check 2 of 2, and this tree failed it before the helper fix.
+  - Not run: a live Hub restart in a team; the reply path as a ui:check scene (covered by the Hub test and by reading `open`); the older-Hub path (no `startedAt`).
+  - Known limit (design.md §3.15): the time compared is the Message's own time, not the hand-over time; only the last hand-over is judged.
 - [x] C143 The Hub's own log is lost when its tab closes (2026-11-09, closed after the review)
   - Raised 2026-11-09, split from C142's (d): the Hub's stdout went only to its tab, so why the Hub stopped during arb-sentinel C15 left no trace.
   - Changed: `src/hub/log.ts` (new: the logger, one rotation, the exit handlers), `src/hub/log.test.ts` (new, 12 tests), `src/hub/main.ts` (installs the log outside Docker only), `docs/usage.md` ("Hub log outside Docker"), `docs/design.md` §3.14 ("Hub log (C143)").
@@ -958,20 +965,15 @@ Raised 2026-11-09 (arb-sentinel C10, C11 and C12, closed the same day). Each clo
 - [ ] The closing request's instructions (where the team tells the deployer how to close: role text or the close draft) end with running `docs:check` on the ledger and fixing what it names before reporting.
 - [ ] Tests in `src/shared/roadmap.test.ts` cover the two messages; `npm test` and `npm run docs:check` pass.
 
-### C142. After a Hub outage, a session stays `Working` forever and its lost reply is never asked for
+### C144. `ui:check`'s test Hubs write into the real `logs/hub.log`
+Status: proposed
 
-Raised 2026-11-09 (arb-sentinel C15). The Hub stopped right after handing #286 to `arb-sentinel.deployer` (last record 10:13:16Z, `data/hub.jsonl`); nothing was recorded until it was started again at about 11:02Z. Meanwhile the deployer finished the work (files written 10:14–10:16Z), but its reply, its `UserPromptSubmit` and its `turn.end` never reached the Hub and were not sent again. After the restart both shims attached again by themselves, yet the Hub's last facts for the deployer were "handed #286", so the card stayed `Working`. Health check (C76) counts only `Stopped, no reply`, so the button stayed `(0)` and could not help. The human recovered by writing a request to the deployer to reply again (#287 → #288).
-- Why it stopped is unknown: the Hub started by the team runs in a tab of its own and logs only to that tab, so nothing was left to read.
-- A timer (C79) would not have caught it: it looks at the same states.
-- Ideas, not decided, in the order of how directly they hit the cause: (a) on attach, the shim (or a hook) tells the Hub the session's current state (turn ended or not), so a session idle since before the outage becomes `Stopped, no reply` and Health check counts it; (b) the Hub records its own start, and requests handed before it with no reply are shown as "may have been lost in a Hub restart" and are counted by Health check; (c) the shim and the Event hooks keep what they could not send (replies first) and send it again after attaching, without sending it twice; (d) the Hub's log goes to a file under `logs/` as well as the tab, so the next stop can be explained.
-- (a) and (b) let the human see and ask; (c) removes the loss; (d) is the precondition for finding why the Hub stopped.
-- Decided 2026-11-09: (b) here; (d) is C143 (independent, goes first). (a) is not taken: the card's turn state comes from vendor hooks, and the shim (an MCP server) does not know it, so (a) would only work where hooks exist. (c) is not taken: queuing unsent replies gives the shim state, against design.md §3.1; reconsider only if (b) proves not enough.
-- Accepted cost: a session still working across a short restart also shows the new state until its `turn.end` arrives. Health check only offers the cue; a human presses Send.
+Raised 2026-11-09 by the reviewer of C142 (#322). Every Hub that `ui:check` starts runs from the agent-hub folder, outside Docker, so C143's log appends its start and stop lines (with the token masked) to the same `logs/hub.log` the human reads after an outage. C142 added two more starts per run (`restartHub`).
+- Ideas, not decided: (a) the Hub takes the log path from an environment variable, and `ui:check` (and other test starts) points it into its own work folder; (b) the Hub writes no file when `HUB_DATA_DIR` is not the default; (c) each line names the port, so test lines can be told apart (softens only).
 
-#### Done when
-- [ ] The Hub records the time it started and returns it where the UI already reads the Mailboxes (`GET /mailboxes` or the response the UI polls); protocol.md §3 documents the field.
-- [ ] The card of an attached Mailbox whose open handed request (`backlog.lastHanded`, no reply) is from before the Hub's start, and which has had no `turn.end` since the start, shows `Stopped, no reply` with a detail saying the Hub restarted after the hand-over, instead of `Working`.
-- [ ] Health check counts that card and sends its existing cue for the request.
-- [ ] A `turn.end`, a reply or a new hand-over after the start ends that state by the existing rules (the card becomes Idle, Stopped or Working as today).
-- [ ] design.md §3.15 (card states) describes the new case and the accepted cost above.
-- [ ] A Hub test covers the start time in the response; `npm run ui:check` has a scene for the restart case (handed before the start, no `turn.end` after it); `npm test` passes.
+### C145. Pressing a state chip during a redraw loses the highlight
+Status: proposed
+
+Raised 2026-11-09 by the reviewer of C142 (#322). The C106 jump highlights a card, and a redraw driven by SSE within the highlight's 3 seconds replaces the card nodes, so the highlight is gone and the press seems to do nothing (measured in `ui:check` run 14: `replaced: 2`). `ui:check`'s `press` / `press2` now wait for the redraw to settle before clicking, so the check no longer covers this case.
+- The C106 failures during C142 were most likely the port clash (two `ui:check` runs on 7793 and a leftover Hub), not C142's code: the planning session ran the strict check without the wait on HEAD's page and on C142's page, 2 of 2 passing each.
+- Ideas, not decided: (a) the jump re-applies the highlight to the rebuilt card (keyed by Mailbox name) until its time ends; (b) the card rebuild keeps nodes whose content did not change; (c) a `ui:check` scene that redraws right after the press.

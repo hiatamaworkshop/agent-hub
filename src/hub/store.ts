@@ -104,7 +104,8 @@ export interface Backlog {
   // この Mailbox が出して、まだ返信のない request (ほかの層と重ならない。宛先の側の数ではない)
   outgoing: Outgoing
   // この Mailbox 宛てで最後に渡した (seq ≤ cursor) Message。UI が最後のターン終了と比べて作業中かを導く (design.md §3.15)
-  lastHanded: { seq: number; ts: string } | null
+  // open: the Message is a request that still has no reply (C142). The UI reads it with ts and the Hub's start to tell a hand-over lost in a restart
+  lastHanded: { seq: number; ts: string; open: boolean } | null
   // この Mailbox の最新の Event と最新のターン終了 (takeover で切り離されたセッションの分を除く)。UI が読むのは最近の Event だけ
   // なので、静かな Mailbox の分も Hub から渡す。作業中と人が動く番を導く材料 (design.md §3.15)
   // sessionId は、今つながっているのと別のセッションの質問待ちを UI が数えないため
@@ -584,7 +585,7 @@ export class Store {
       if (m.seq <= mb.cursor && this.isRecipient(name, m)) add(backlog.awaitingReply, m)
     }
     const handed = this.lastHandedOf(mb)
-    if (handed) backlog.lastHanded = { seq: handed.seq, ts: handed.ts }
+    if (handed) backlog.lastHanded = { seq: handed.seq, ts: handed.ts, open: this.openRequests.has(handed.id) }
     const ev = this.lastEventByMailbox.get(name)
     if (ev) {
       const detail = eventDetail(ev)

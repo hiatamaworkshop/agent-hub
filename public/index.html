@@ -1000,6 +1000,7 @@ let defaultTo = null // GET /settings の defaultTo。読めなければ null (�
 let toBuilt = false // buildTo が一度走ったか (初回判定用)
 let autoTo = false // 今の宛先が自動で選ばれたもので、まだ人が選んでいないか
 let mailboxList = [] // 最後に取得した Mailbox 一覧 (送信後の警告に使う)
+let hubStartedAt = null // 今の Hub の起動時刻 (ms)。/mailboxes の startedAt。古い Hub や読めないときは null (C142)
 function readLastTo() { try { return localStorage.getItem(LAST_TO_KEY) } catch { return null } }
 function saveLastTo(v) { try { localStorage.setItem(LAST_TO_KEY, v) } catch {} }
 function initialTo(mailboxes) {
@@ -1545,8 +1546,10 @@ $('cmdCancel').onclick = () => $('cmdDialog').close()
 $('body').addEventListener('input', updateHint)
 
 async function loadMailboxes() {
-  const { mailboxes } = await api('/mailboxes')
+  const { mailboxes, startedAt } = await api('/mailboxes')
   mailboxList = mailboxes
+  const started = startedAt ? Date.parse(startedAt) : NaN
+  hubStartedAt = Number.isNaN(started) ? null : started
   mailboxesLoaded = true
   buildProjects()
   renderItems() // 前回の選択が戻ると Items の絞り込みも変わる
@@ -1995,6 +1998,14 @@ function stateOf(mb) {
   const handed = b.lastHanded
   const fresh = handed && Date.now() - Date.parse(handed.ts) < staleHandedHours() * 3600000
   const handedWorking = handed && (end ? Date.parse(handed.ts) > Date.parse(end.ts) : fresh)
+  // Hub が起動し直したあとも、渡した request に返信がなく (open)、起動の前に渡し、起動の後にターン終了がない (C142)。
+  // ただし既存の判定がこの渡したものを Working と言う場合 (handedWorking) に限る。ターンを終えたあとの渡しは、
+  // 委任中 (Waiting on others) や Stopped の既存の判定に任せ、止まった Hub のせいにはしない。
+  // 起動の前に渡した作業中の分は、返事もターン終了も届かなかったとみなし、作業中とは書かず止まったと出す (Health check が数える)。
+  // ターン終了・返信・起動の後の渡し直しで、この状態は解ける (ほかの判定に戻る)
+  if (handedWorking && handed.open && hubStartedAt !== null && Date.parse(handed.ts) < hubStartedAt && !(end && Date.parse(end.ts) >= hubStartedAt)) {
+    return { key: 'stopped', since: handed.ts, detail: 'Hub restarted after the hand-over' }
+  }
   // 接続中の未読は、渡す直前 (Channels) か、inbox で取りに来るのを待っている (ほかのクライアント)。どちらもエージェントの番。
   // ただし信号は人の番だけ (C71、2026-10-30 の決定)。未読だけのときは Working と書くが、枠も脈打ちも光りもない (quiet)。渡した後の Working は信号
   if (b.unread.count && !handedWorking) return { key: 'working', since: b.unread.oldestAt, quiet: true }

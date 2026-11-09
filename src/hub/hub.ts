@@ -132,6 +132,8 @@ export class Hub {
   // detach 後も残す (セッションは shim が切れても続きうる)。永続化はしない
   private readonly sessionMailbox = new Map<string, string>()
   private readonly now: () => Date
+  // When this Hub process started (ISO). GET /mailboxes returns it, so the UI can tell a hand-over made before a restart (C142)
+  readonly startedAt: string
   private readonly disconnectGraceMs: number
   private readonly leaseMs: number
   private readonly roles: Roles | null
@@ -145,6 +147,7 @@ export class Hub {
     opts: HubOptions = {},
   ) {
     this.now = opts.now ?? (() => new Date())
+    this.startedAt = this.now().toISOString()
     this.roles = opts.roles ?? null
     this.disconnectGraceMs = opts.disconnectGraceMs ?? 15_000
     this.leaseMs = opts.leaseMs ?? 2 * 60_000
