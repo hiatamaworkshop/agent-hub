@@ -245,7 +245,17 @@ describe('checkRoadmap', () => {
 
   it('閉じた日が行末の括弧の先頭にない行は error (題の中の日付では通さない)', () => {
     const text = ['- [x] C7 題 (2026-10-19) 末尾に文'].join('\n')
-    assert.deepEqual(messages(text), [['error', 1, '`[x] C7` の行末の括弧の先頭に日付 (YYYY-MM-DD) がない']])
+    assert.deepEqual(messages(text), [['error', 1, '`[x] C7` の行末の括弧の先頭に日付 (YYYY-MM-DD) がない。末尾の括弧は半角の `(` `)` で囲み、日付を先頭にする。例: `(2026-11-09、ユーザーの依頼)`。括弧の中の括弧は全角でよい']])
+  })
+
+  it('案内の言葉 (C141): 閉じた行の日付がない (日本語の台帳)、行末が全角の `）` (日本語)、英語の台帳 (`## Plan`) の 2 つ', () => {
+    const ja = ['- [x] C7 題 （2026-10-19）'].join('\n')
+    assert.deepEqual(messages(ja), [['error', 1, '`[x] C7` の行末は全角の `）` で閉じている。末尾の括弧は半角の `(` `)` で囲み、日付 (YYYY-MM-DD) を先頭にする。例: `(2026-11-09、ユーザーの依頼)`。括弧の中の括弧は全角でよい']])
+    const en = ['### C1. a', '#### Done when', '- [ ] x', '## Plan', '- [ ] C1', '## Closed', '- [x] C7 title (2026-10-19) trailing text', '- [x] C8 title （2026-10-19）'].join('\n')
+    assert.deepEqual(messages(en).map((m) => m[2]), [
+      '`[x] C7` has no date (YYYY-MM-DD) at the head of the trailing parentheses. Write the trailing group with ASCII parentheses and the date first, for example `(2026-11-09, closed after the review)`. Parentheses inside it may be full-width',
+      '`[x] C8` ends with a full-width `）`. The trailing group must use ASCII parentheses `(` `)`, with the date (YYYY-MM-DD) first, for example `(2026-11-09, closed after the review)`. Parentheses inside it may be full-width',
+    ])
   })
 
   it('項目があるのに `## 予定` がない', () => {
@@ -305,8 +315,16 @@ describe('checkRoadmap', () => {
   it('予定に `[ ]` でない行がある (完了・却下の行)', () => {
     const text = ['### C1. a', '#### 完了条件', '- [ ] x', '## 予定', '- [ ] C1', '- [x] C1', '- [-] C9 却下 (2026-10-27)'].join('\n')
     assert.deepEqual(messages(text), [
-      ['error', 6, '予定の行は `- [ ] C<n>` の形にする (完了や却下は並べない)'],
-      ['error', 7, '予定の行は `- [ ] C<n>` の形にする (完了や却下は並べない)'],
+      ['error', 6, '`C1` は `## 予定` に残さない。予定の行から外し、記録は閉じた項目の一覧に書く'],
+      ['error', 7, '`C9` は `## 予定` に残さない。予定の行から外し、記録は閉じた項目の一覧に書く'],
+    ])
+  })
+
+  it('予定に閉じた行を残すと、外して閉じた項目の一覧に書くよう言う (英語の台帳では英語で)。予定の他の行は従来の案内', () => {
+    const en = ['### C1. a', '#### Done when', '- [ ] x', '## Plan', '- [ ] C1', '- [x] C1', '- other note'].join('\n')
+    assert.deepEqual(messages(en), [
+      ['error', 6, '`C1` stays under `## Plan`. Remove the line from the plan and keep the record in the closed list'],
+      ['error', 7, 'A plan line must be `- [ ] C<n>` (do not list finished or rejected items)'],
     ])
   })
 
@@ -339,9 +357,9 @@ describe('checkRoadmap', () => {
   it('日付のない `[x] C<n>` と `[-] C<n>` の行', () => {
     const text = ['- [x] C1 終わった', '- [-] C2 却下 (2026-10-27)', '- [-] C3 却下'].join('\n')
     assert.deepEqual(messages(text), [
-      ['error', 1, '`[x] C1` の行末の括弧の先頭に日付 (YYYY-MM-DD) がない'],
+      ['error', 1, '`[x] C1` の行末の括弧の先頭に日付 (YYYY-MM-DD) がない。末尾の括弧は半角の `(` `)` で囲み、日付を先頭にする。例: `(2026-11-09、ユーザーの依頼)`。括弧の中の括弧は全角でよい'],
       ['error', 2, '`[-] C2` の行末の括弧は `(却下 YYYY-MM-DD、理由)` か `(rejected YYYY-MM-DD, reason)` の形にする'],
-      ['error', 3, '`[-] C3` の行末の括弧の先頭に日付 (YYYY-MM-DD) がない'],
+      ['error', 3, '`[-] C3` の行末の括弧の先頭に日付 (YYYY-MM-DD) がない。末尾の括弧は半角の `(` `)` で囲み、日付を先頭にする。例: `(2026-11-09、ユーザーの依頼)`。括弧の中の括弧は全角でよい'],
     ])
   })
 

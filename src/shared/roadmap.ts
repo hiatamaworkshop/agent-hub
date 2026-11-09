@@ -269,6 +269,28 @@ export function parseRoadmap(text: string): RoadmapIndex {
   return { items, refs, plan, closed }
 }
 
+// 案内の言葉 (C141)。台帳の予定の見出しが `## Plan` だけなら英語、それ以外 (`## 予定` があるか、見出しがない) は日本語。語彙の読み方は行ごとだが、案内の言葉は台帳ごとに 1 つ
+const pick = (english: boolean, ja: string, en: string): string => (english ? en : ja)
+
+// 閉じた行の日付がないときの案内 (C141)。行末が全角の `）` なら、末尾の括弧は半角で囲むと言う。どちらも形の例を出す
+function closedDateMessage(line: string, mark: string, id: string, english: boolean): string {
+  const head = `\`[${mark}] ${id}\``
+  const example = '`(2026-11-09、ユーザーの依頼)`'
+  const exampleEn = '`(2026-11-09, closed after the review)`'
+  if (line.trimEnd().endsWith('）')) {
+    return pick(
+      english,
+      `${head} の行末は全角の \`）\` で閉じている。末尾の括弧は半角の \`(\` \`)\` で囲み、日付 (YYYY-MM-DD) を先頭にする。例: ${example}。括弧の中の括弧は全角でよい`,
+      `${head} ends with a full-width \`）\`. The trailing group must use ASCII parentheses \`(\` \`)\`, with the date (YYYY-MM-DD) first, for example ${exampleEn}. Parentheses inside it may be full-width`,
+    )
+  }
+  return pick(
+    english,
+    `${head} の行末の括弧の先頭に日付 (YYYY-MM-DD) がない。末尾の括弧は半角の \`(\` \`)\` で囲み、日付を先頭にする。例: ${example}。括弧の中の括弧は全角でよい`,
+    `${head} has no date (YYYY-MM-DD) at the head of the trailing parentheses. Write the trailing group with ASCII parentheses and the date first, for example ${exampleEn}. Parentheses inside it may be full-width`,
+  )
+}
+
 // 規則の崩れ。error は直すべきもの、warning は人が見て判断するもの
 export function checkRoadmap(text: string): RoadmapProblem[] {
   const problems: RoadmapProblem[] = []
@@ -277,6 +299,8 @@ export function checkRoadmap(text: string): RoadmapProblem[] {
 
   const { sections } = split(contentLines(text))
   const { items, refs, plan, closed } = parseRoadmap(text)
+  const lineText = new Map(contentLines(text).map((l) => [l.no, l.text]))
+  const english = /^##\s+Plan\s*$/m.test(text) && !/^##\s+予定\s*$/m.test(text)
   // 状態の行が崩れた項目は、決定とみなした検査を重ねない
   const badStatus = new Set<number>()
 
@@ -324,7 +348,14 @@ export function checkRoadmap(text: string): RoadmapProblem[] {
   const planRead = readPlan(contentLines(text))
   if (items.length > 0 && !plan) err(1, '項目があるのに `## 予定` (英語の台帳では `## Plan`) がない (決定の項目を取りかかる順に `- [ ] C<n>` で並べる。決定の項目がなければ見出しだけでよい)')
   if (planRead.headings.length > 1) err(planRead.headings[1]!.no, '`## 予定` が 2 つ以上ある。1 つにまとめる')
-  for (const s of planRead.stray) err(s.no, '予定の行は `- [ ] C<n>` の形にする (完了や却下は並べない)')
+  for (const s of planRead.stray) {
+    // 閉じた行 (`[x]` / `[-]`) は予定から外す。記録は閉じた項目の一覧に残す (C141)
+    const closedLine = CLOSED.exec(s.text)
+    if (closedLine) {
+      const id = `C${closedLine[2]}`
+      err(s.no, pick(english, `\`${id}\` は \`## 予定\` に残さない。予定の行から外し、記録は閉じた項目の一覧に書く`, `\`${id}\` stays under \`## Plan\`. Remove the line from the plan and keep the record in the closed list`))
+    } else err(s.no, pick(english, '予定の行は `- [ ] C<n>` の形にする (完了や却下は並べない)', 'A plan line must be `- [ ] C<n>` (do not list finished or rejected items)'))
+  }
   for (const t of planRead.titled) warn(t.no, `${t.id}: 予定の行に題を書かない (\`- [ ] C<n>\` だけにする。題は項目の節にある)`)
   const planAt = new Map<string, PlanEntry>()
   for (const p of plan ?? []) {
@@ -360,7 +391,7 @@ export function checkRoadmap(text: string): RoadmapProblem[] {
 
   const closedAt = new Map<string, number>()
   for (const c of closed) {
-    if (!c.date) err(c.line, `\`[${c.mark}] ${c.id}\` の行末の括弧の先頭に日付 (YYYY-MM-DD) がない`)
+    if (!c.date) err(c.line, closedDateMessage(lineText.get(c.line) ?? '', c.mark, c.id, english))
     else if (c.mark === '-' && !c.reason) {
       err(c.line, `\`[-] ${c.id}\` の行末の括弧は \`(却下 YYYY-MM-DD、理由)\` か \`(rejected YYYY-MM-DD, reason)\` の形にする`)
     }
