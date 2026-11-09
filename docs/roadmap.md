@@ -24,6 +24,10 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C143
+- [ ] C142
+- [ ] C141
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -933,19 +937,49 @@ Raised 2026-11-06 (cite-bridge C22), from the user's premise that the planning s
 
 
 ### C141. Closing writes a line the checker rejects in a ledger without phases or with full-width parentheses
-Status: proposed
 
 Raised 2026-11-09 (arb-sentinel C10, C11 and C12, closed the same day). Each close by the deployer left two errors in `docs:check`, and the planning session fixed the ledger by hand three times. That ledger has `## 予定` and `## 閉じた項目` and no phases.
 - The plan line was kept and checked (`- [x] C12 …` under `## 予定`) and the same record was also written under the closed list. The rule at the top says a close "marks the phase line `[x] C<n> …`" and "removes the item from `## Plan`"; with no phase line, the deployer marked the plan line. The leader returned it as a NEEDS DECISION (default: leave both) instead of fixing it.
 - The record ended in full-width parentheses (`（閉じ 2026-11-09。…（…））`). The checker reads only an ASCII group with no ASCII parentheses inside (`TRAILING_PAREN` in `src/shared/roadmap.ts`), and the date must be first. The rule says "the date at the head of the parentheses at the end of the line" without saying ASCII; a Japanese ledger writes `（）` and nests `(1)` freely. The working form was ` (2026-11-09。…)` with every inner parenthesis full-width.
 - Ideas, not decided: (a) the rule says where a closed line goes when the ledger has no phases (the project's closed list; the plan line is removed, never checked); (b) the checker accepts a full-width trailing group, or its error shows the expected form with an example; (c) the closing request (or the deployer's role text) ends with `docs:check` on the ledger and fixes what it names before reporting; (d) the leader treats a `docs:check` error after a close as its own check failing, not as a decision for the human.
 - (b) and (a) remove the cause; (c) and (d) catch it.
+- Decided 2026-11-09: (a), the error-message half of (b), and (c). The checker does not accept a full-width trailing group: that would widen a convention other projects follow, for a ledger that can be fixed by the message. (d) is covered by (c). The `roadmap-items` skill already carries (a) and the ASCII rule on this machine.
+
+#### Done when
+- [ ] The rules at the top of this file say that in a ledger without phase lines a close removes the line from `## Plan` (never checks it there) and writes the closed line in the project's list of closed items, and that the trailing group is ASCII ` (YYYY-MM-DD, …)` with any parentheses inside it full-width.
+- [ ] docs/conventions-log.md has a line for that wording (a clarification: closed lines already in a ledger keep reading the same).
+- [ ] `docs:check`'s error for a closed line with no date shows the expected form with an example, and, when the line ends in a full-width `）`, says the trailing group must use ASCII parentheses. Both vocabularies (Japanese and English) get the message.
+- [ ] `docs:check`'s error for a non-`- [ ] C<n>` line under `## Plan` says, when the line is `- [x] C<n>` or `- [-] C<n>`, to remove it there and keep the record in the closed list.
+- [ ] The closing request's instructions (where the team tells the deployer how to close: role text or the close draft) end with running `docs:check` on the ledger and fixing what it names before reporting.
+- [ ] Tests in `src/shared/roadmap.test.ts` cover the two messages; `npm test` and `npm run docs:check` pass.
 
 ### C142. After a Hub outage, a session stays `Working` forever and its lost reply is never asked for
-Status: proposed
 
 Raised 2026-11-09 (arb-sentinel C15). The Hub stopped right after handing #286 to `arb-sentinel.deployer` (last record 10:13:16Z, `data/hub.jsonl`); nothing was recorded until it was started again at about 11:02Z. Meanwhile the deployer finished the work (files written 10:14–10:16Z), but its reply, its `UserPromptSubmit` and its `turn.end` never reached the Hub and were not sent again. After the restart both shims attached again by themselves, yet the Hub's last facts for the deployer were "handed #286", so the card stayed `Working`. Health check (C76) counts only `Stopped, no reply`, so the button stayed `(0)` and could not help. The human recovered by writing a request to the deployer to reply again (#287 → #288).
 - Why it stopped is unknown: the Hub started by the team runs in a tab of its own and logs only to that tab, so nothing was left to read.
 - A timer (C79) would not have caught it: it looks at the same states.
 - Ideas, not decided, in the order of how directly they hit the cause: (a) on attach, the shim (or a hook) tells the Hub the session's current state (turn ended or not), so a session idle since before the outage becomes `Stopped, no reply` and Health check counts it; (b) the Hub records its own start, and requests handed before it with no reply are shown as "may have been lost in a Hub restart" and are counted by Health check; (c) the shim and the Event hooks keep what they could not send (replies first) and send it again after attaching, without sending it twice; (d) the Hub's log goes to a file under `logs/` as well as the tab, so the next stop can be explained.
 - (a) and (b) let the human see and ask; (c) removes the loss; (d) is the precondition for finding why the Hub stopped.
+- Decided 2026-11-09: (b) here; (d) is C143 (independent, goes first). (a) is not taken: the card's turn state comes from vendor hooks, and the shim (an MCP server) does not know it, so (a) would only work where hooks exist. (c) is not taken: queuing unsent replies gives the shim state, against design.md §3.1; reconsider only if (b) proves not enough.
+- Accepted cost: a session still working across a short restart also shows the new state until its `turn.end` arrives. Health check only offers the cue; a human presses Send.
+
+#### Done when
+- [ ] The Hub records the time it started and returns it where the UI already reads the Mailboxes (`GET /mailboxes` or the response the UI polls); protocol.md §3 documents the field.
+- [ ] The card of an attached Mailbox whose open handed request (`backlog.lastHanded`, no reply) is from before the Hub's start, and which has had no `turn.end` since the start, shows `Stopped, no reply` with a detail saying the Hub restarted after the hand-over, instead of `Working`.
+- [ ] Health check counts that card and sends its existing cue for the request.
+- [ ] A `turn.end`, a reply or a new hand-over after the start ends that state by the existing rules (the card becomes Idle, Stopped or Working as today).
+- [ ] design.md §3.15 (card states) describes the new case and the accepted cost above.
+- [ ] A Hub test covers the start time in the response; `npm run ui:check` has a scene for the restart case (handed before the start, no `turn.end` after it); `npm test` passes.
+
+### C143. The Hub's own log is lost when its tab closes
+
+Raised 2026-11-09, split from C142's (d). The Hub started by the team (`npm run team`) runs `npm run hub` in a tab of its own and prints only there, so why it stopped during arb-sentinel C15 (10:13–11:02Z) left no trace. `src/hub/main.ts` prints startup lines, sweeps and request errors (`app.ts`), and installs no handler for uncaught errors or signals.
+- The UI line printed at startup carries `?token=`; the file must not.
+- Docker is unchanged: its output already goes to `docker logs`.
+
+#### Done when
+- [ ] When the Hub runs outside Docker (`npm run hub`, directly or in the team's tab), what it prints is also appended to a file under `logs/` with an ISO timestamp per line, and the token in the UI line is masked in the file.
+- [ ] An uncaught exception, an unhandled rejection, and SIGINT / SIGTERM / SIGHUP are written to that file with the time before the process exits.
+- [ ] The file does not grow without bound (a size cap with one rotation, or what design.md §3.14 already uses for `logs/start-warnings.jsonl`).
+- [ ] docs/usage.md says where the Hub's log is; design.md §3.14 lists it among what is kept outside the Hub.
+- [ ] Tests cover the masking and the line format; `npm test` passes.
