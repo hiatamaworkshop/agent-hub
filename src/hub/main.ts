@@ -1,10 +1,12 @@
 // Hub の起動。設定は環境変数だけで受け取る (design.md §3.8)
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
 import { createApp } from './app.js'
 import { FileStore } from './files.js'
+import { HubLogFile, installExitHandlers, teeConsole } from './log.js'
 import { Hub } from './hub.js'
 import { IndexStore } from './indexes.js'
 import { loadConfig } from './config.js'
@@ -15,6 +17,15 @@ import { normalizeLanguage } from '../shared/language.js'
 import { envOverrides, overrideWarning } from '../shared/env-override.js'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
+
+// Outside Docker, the console output is also kept in logs/hub.log (C143). Docker keeps its output in `docker logs` and is left as it is.
+// The file is installed before anything else prints, so the start's warnings are in it too
+if (!existsSync('/.dockerenv')) {
+  const log = new HubLogFile(join(ROOT, 'logs', 'hub.log'), [process.env.HUB_TOKEN ?? ''])
+  teeConsole(log)
+  installExitHandlers(log)
+  log.write(`[hub] start: pid ${process.pid}, node ${process.version}`)
+}
 
 // A variable in this terminal that overrides agent-hub's .env (C119): the environment's value is the one the Hub uses. Names only
 for (const name of envOverrides(ROOT)) console.warn(`[hub] WARNING: ${overrideWarning(name)}`)

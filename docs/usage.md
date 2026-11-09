@@ -2,7 +2,7 @@
 
 Reference for running agent-hub day to day. The first start (setup, Hub, one session, a round trip) is in the [README](../README.md).
 
-Sections: [Reading the cards](#reading-the-cards-in-the-browser-state-and-backlog) · [Custom commands](#custom-commands) · [Pasting images](#pasting-images) · [Hooks](#show-question-waits-permission-waits-and-turn-ends-in-the-browser-hooks) · [Forward](#carry-an-agents-output-to-another-agent-forward) · [Subscriptions](#subscribing-once-per-mailbox-is-enough) · [Takeover](#replacing-an-agent-takeover) · [Deleting Mailboxes](#deleting-mailboxes-you-no-longer-use) · [Retention](#message-retention-and-deletion) · [Teams](#try-a-round-trip-between-roles-with-two-agents-leader--deployer) · [Items](#request-work-from-roadmap-items-items) · [roles.json](#role-definitions-rolesjson) · [hub.config.json](#hub-settings-hubconfigjson) · [HUB_LANGUAGE](#the-language-agents-write-to-the-human-in-hub_language) · [inbox](#using-it-with-agents-other-than-claude-code-inbox) · [curl](#using-curl-notes-for-windows) · [Start warnings](#start-warnings-logsstart-warningsjsonl) · [Development](#development)
+Sections: [Reading the cards](#reading-the-cards-in-the-browser-state-and-backlog) · [Custom commands](#custom-commands) · [Pasting images](#pasting-images) · [Hooks](#show-question-waits-permission-waits-and-turn-ends-in-the-browser-hooks) · [Forward](#carry-an-agents-output-to-another-agent-forward) · [Subscriptions](#subscribing-once-per-mailbox-is-enough) · [Takeover](#replacing-an-agent-takeover) · [Deleting Mailboxes](#deleting-mailboxes-you-no-longer-use) · [Retention](#message-retention-and-deletion) · [Teams](#try-a-round-trip-between-roles-with-two-agents-leader--deployer) · [Items](#request-work-from-roadmap-items-items) · [roles.json](#role-definitions-rolesjson) · [hub.config.json](#hub-settings-hubconfigjson) · [HUB_LANGUAGE](#the-language-agents-write-to-the-human-in-hub_language) · [inbox](#using-it-with-agents-other-than-claude-code-inbox) · [curl](#using-curl-notes-for-windows) · [Start warnings](#start-warnings-logsstart-warningsjsonl) · [Hub log](#hub-log-outside-docker-logshublog) · [Development](#development)
 
 ## Reading the cards in the browser (state and backlog)
 
@@ -349,6 +349,17 @@ When something breaks, read it against the history:
 3. Check `claudeVersion` against `lastVerified`. If the version was newer, that line's warning is the first thing to look at; the behaviour is outside the verified envelope (design.md §1.2, §6.1).
 
 What is not in the file, and where to look instead: changes and decisions are in git and the roadmap; rejected proposals are `[-] C<n>` lines in the roadmap (design.md §3.16).
+
+## Hub log outside Docker (logs/hub.log)
+
+When the Hub runs outside Docker (`npm run hub`, or the Hub that `npm run team` starts in its own tab), everything it prints is also appended to `logs/hub.log` in agent-hub (gitignored). The console output of what the Hub prints normally is the same as before; the file has one line per printed line, each starting with the time in ISO format (UTC). The file is written by the Hub; nothing reads it back. Two console outputs differ from Node's defaults: an uncaught exception and an unhandled rejection print `[hub] uncaught exception, exiting:` or `[hub] unhandled rejection, exiting:` before the error and its stack, where Node would print its own report.
+
+- **Token**: the file never holds the token. Every occurrence of its value is written as `***`, including the UI line at startup (`?token=***`).
+- **Events**: each start writes `[hub] start: pid …, node …` to the file (not to the console). An uncaught exception (with its stack), an unhandled rejection (with its stack), and SIGINT / SIGTERM / SIGHUP (`[hub] SIGINT received, exiting`) are written before the process exits. The exit codes are as before for errors (1); a signal exits with 128 plus the signal's number (SIGINT 130, SIGHUP 129, SIGTERM 143).
+- **Not written**: a kill that cannot be caught (Task Manager, `taskkill /F`, a crash of Node itself, a power cut). After such a stop the last line is the trace, and nothing says why it ended.
+- **Size**: at 1 MiB the file moves to `logs/hub.log.1`, replacing the previous `.1`, and a new `hub.log` starts. So at most about 2 MiB is kept. If the move fails (Windows refuses it while a reader such as `Get-Content -Wait` holds the file open), no line is lost: they keep going to `hub.log`, which stays over the cap, the move is tried again on the next write, and the failure is printed once on stderr. The file grows only with what the Hub prints (the sweeps print only when they remove something).
+- **Docker** is unchanged: its output goes to `docker logs`, and no file is written. The Hub decides by the file `/.dockerenv`, which Docker creates in its containers.
+- **Reading it**: `Get-Content logs\hub.log -Tail 50` (PowerShell) for the latest lines; `Get-Content logs\hub.log.1` for the part before the last rotation. Times are UTC. Start warnings of `npm run team` are in [their own file](#start-warnings-logsstart-warningsjsonl).
 
 ## Development
 

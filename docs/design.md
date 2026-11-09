@@ -595,6 +595,8 @@ The compacted file's head records the last `seq`, so seq never rolls back (rolli
 - **Not covered**: sessions started by hand (Claude Code run directly, without `team` or `agent`), since nothing runs these checks there. `agent` started by `team` does not write its own line; `team`'s line covers it.
 - How to read it against the history: usage.md ("Start warnings").
 
+**Hub log (C143, 2026-11-09)**: a record kept outside the Hub, of the same kind as the start warnings. Outside Docker, what the Hub prints is also appended to `logs/hub.log` (gitignored), one timestamped line per printed line, with the token masked. The Hub writes it and never reads it back, so it is not part of delivery. An uncaught exception, an unhandled rejection, and SIGINT / SIGTERM / SIGHUP are written before the process exits. The file keeps one rotation at 1 MiB (`logs/hub.log.1`). Not recorded: a kill that cannot be caught. Docker's output stays in `docker logs`, and the Hub writes no file there. How to read it: usage.md ("Hub log outside Docker"). Why the log exists: the Hub stopped during arb-sentinel C15 and left no trace, so its stop could not be explained.
+
 ### 3.15 Showing the backlog, and requesting work from roadmap items (concept 2026-10-18; implemented in C6, C8, C26, C37, C42)
 
 What lies beyond the Hub and Mailboxes, kept within what the Hub does not hold (the non-goals in §2, §3.14).

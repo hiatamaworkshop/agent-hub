@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C143
 - [ ] C142
 - [ ] C141
 
@@ -515,6 +514,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: `src/team/summary-lines.ts` (new), `src/team/summary-lines.test.ts` (new), `src/team/team.ts`, `docs/usage.md` (the team start's summary).
   - Checked: `npm test` 569 pass, 0 fail (566 before, +3 new); `npx tsc --noEmit` clean; `npm run docs:check` 30 items, 0 errors (the all-conditions-checked warning was gone after the close).
   - No review (no reviewer connected). Not checked: a real team start against a Hub (the summary printed end to end, and the reviewer attach result). Done-when wording not changed.
+- [x] C143 The Hub's own log is lost when its tab closes (2026-11-09, closed after the review)
+  - Raised 2026-11-09, split from C142's (d): the Hub's stdout went only to its tab, so why the Hub stopped during arb-sentinel C15 left no trace.
+  - Changed: `src/hub/log.ts` (new: the logger, one rotation, the exit handlers), `src/hub/log.test.ts` (new, 12 tests), `src/hub/main.ts` (installs the log outside Docker only), `docs/usage.md` ("Hub log outside Docker"), `docs/design.md` §3.14 ("Hub log (C143)").
+  - Checked: `npm test` 581/581 pass; `npm run docs:check` 0 errors (the close reminder is gone after this close). `npm run hub` on a spare port wrote each console line to `logs/hub.log` with an ISO time, the UI line with `?token=***`. Exit paths (SIGINT 130, SIGHUP 129, an unhandled rejection and an uncaught exception 1) were checked by emitting the events in-process, each line in the file.
+  - Review (uncommitted change): one finding, a failed rotation rename dropped lines; fixed (the append runs anyway, the size is re-read) and tested with a directory at `hub.log.1`.
+  - Not checked: real OS signals (Ctrl+C, closing the tab, `taskkill`); a live Windows file lock during rotation (`Get-Content -Wait`); the logger inside a Docker container. Done-when wording not changed.
 - [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
   - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
   - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
@@ -970,16 +975,3 @@ Raised 2026-11-09 (arb-sentinel C15). The Hub stopped right after handing #286 t
 - [ ] A `turn.end`, a reply or a new hand-over after the start ends that state by the existing rules (the card becomes Idle, Stopped or Working as today).
 - [ ] design.md §3.15 (card states) describes the new case and the accepted cost above.
 - [ ] A Hub test covers the start time in the response; `npm run ui:check` has a scene for the restart case (handed before the start, no `turn.end` after it); `npm test` passes.
-
-### C143. The Hub's own log is lost when its tab closes
-
-Raised 2026-11-09, split from C142's (d). The Hub started by the team (`npm run team`) runs `npm run hub` in a tab of its own and prints only there, so why it stopped during arb-sentinel C15 (10:13–11:02Z) left no trace. `src/hub/main.ts` prints startup lines, sweeps and request errors (`app.ts`), and installs no handler for uncaught errors or signals.
-- The UI line printed at startup carries `?token=`; the file must not.
-- Docker is unchanged: its output already goes to `docker logs`.
-
-#### Done when
-- [ ] When the Hub runs outside Docker (`npm run hub`, directly or in the team's tab), what it prints is also appended to a file under `logs/` with an ISO timestamp per line, and the token in the UI line is masked in the file.
-- [ ] An uncaught exception, an unhandled rejection, and SIGINT / SIGTERM / SIGHUP are written to that file with the time before the process exits.
-- [ ] The file does not grow without bound (a size cap with one rotation, or what design.md §3.14 already uses for `logs/start-warnings.jsonl`).
-- [ ] docs/usage.md says where the Hub's log is; design.md §3.14 lists it among what is kept outside the Hub.
-- [ ] Tests cover the masking and the line format; `npm test` passes.
