@@ -829,6 +829,8 @@ Status: held(decide after using C76's Health check button for a while)
 
 Raised 2026-10-30 as the second step of C76. A separate, non-LLM program and ordinary API client with its own Mailbox (e.g. `hub.watcher`), not code in the Hub: the Hub stays address-and-delivery only and never writes text itself; nudges are visibly from the watcher, and stopping it stops them. Every interval it reads `backlog` (the same derivation as the cards) and sends C76's cue (what the Health check button sends) to a Mailbox that holds a handed request with no reply and has shown no activity for T. Skips: a Mailbox waiting on others, and a request already nudged (one per request). Vendor signals (Claude's `turn.end`) may only make it faster, never required.
 
+- 2026-11-09: a timer would not have caught C142's case (the deployer stayed `Working` after a Hub outage, so it was never `Stopped, no reply`). C142 goes first.
+
 Open: the opt-in setting that allows sending without a human's Send, and the boundary it needs in design.md §2; how "no activity" is judged without vendor hooks (last Message sent, last `inbox` call, attachment heartbeat); how it is run (`npm run watcher`, a second compose service). Decide after using C76's button for a while.
 
 ### C87. The tab icon lags while the tab is in the background
@@ -920,6 +922,7 @@ Status: proposed
 Raised 2026-11-06 (cite-bridge C22). The planning session fixed C22's done-when wording in the working tree without committing. The index reaches the Hub only at the team start and after a commit that touches the ledger (post-commit hook), so the item card still showed the old wording, and the user sent it again. The leader read the request against the code, not against the ledger file, and stopped with the same question as before (#1010, #1013). The fix was a manual `npm run docs:index` from the project.
 - Ideas, not decided: (a) the card or the draft says when the ledger file changed after the index was sent (file mtime or hash beside the index); (b) the Hub or the team re-sends the index when the ledger file changes (a file watch while the team runs); (c) the planning-session guidance (C137's block) says to run `docs:index` after editing the ledger without a commit; (d) the leader compares a request's DONE WHEN with the ledger's current text and, when they differ, says the request came from an old index instead of re-asking the decision.
 - (a) or (b) removes the cause; (c) and (d) only soften it. (d) also matters on its own: the ledger is the source, and a request is a copy of it.
+- Recurred 2026-11-09 (arb-sentinel C12). The planning session reworded and unchecked done-when lines in the working tree (an addendum after 429s in production); the card still showed the team-start index (`0/4 done`, the old line number) until a manual `docs:index`. That project had no post-commit hook, but the hook would not have helped: the edit was not committed. The `roadmap-items` skill now says to run `docs:index` after editing a ledger ((c), on this machine only).
 
 ### C139. Let `status` show what is happening per item, for the planning session
 Status: proposed
@@ -928,3 +931,21 @@ Raised 2026-11-06 (cite-bridge C22), from the user's premise that the planning s
 - Idea: `status --item C<n>` lists that item's thread in order (requests carrying `meta.item`, the replies under them: seq, sender, first line), and plain `status` adds one line per open item with a request in flight (item, who holds it, waiting since). It also says when the ledger file changed after the index was sent (C138's (a), shared code).
 - Read-only, like C108; the card states stay the page's job. Whether `status` should also show the newest `NEEDS DECISION` per item is open.
 
+
+### C141. Closing writes a line the checker rejects in a ledger without phases or with full-width parentheses
+Status: proposed
+
+Raised 2026-11-09 (arb-sentinel C10, C11 and C12, closed the same day). Each close by the deployer left two errors in `docs:check`, and the planning session fixed the ledger by hand three times. That ledger has `## 予定` and `## 閉じた項目` and no phases.
+- The plan line was kept and checked (`- [x] C12 …` under `## 予定`) and the same record was also written under the closed list. The rule at the top says a close "marks the phase line `[x] C<n> …`" and "removes the item from `## Plan`"; with no phase line, the deployer marked the plan line. The leader returned it as a NEEDS DECISION (default: leave both) instead of fixing it.
+- The record ended in full-width parentheses (`（閉じ 2026-11-09。…（…））`). The checker reads only an ASCII group with no ASCII parentheses inside (`TRAILING_PAREN` in `src/shared/roadmap.ts`), and the date must be first. The rule says "the date at the head of the parentheses at the end of the line" without saying ASCII; a Japanese ledger writes `（）` and nests `(1)` freely. The working form was ` (2026-11-09。…)` with every inner parenthesis full-width.
+- Ideas, not decided: (a) the rule says where a closed line goes when the ledger has no phases (the project's closed list; the plan line is removed, never checked); (b) the checker accepts a full-width trailing group, or its error shows the expected form with an example; (c) the closing request (or the deployer's role text) ends with `docs:check` on the ledger and fixes what it names before reporting; (d) the leader treats a `docs:check` error after a close as its own check failing, not as a decision for the human.
+- (b) and (a) remove the cause; (c) and (d) catch it.
+
+### C142. After a Hub outage, a session stays `Working` forever and its lost reply is never asked for
+Status: proposed
+
+Raised 2026-11-09 (arb-sentinel C15). The Hub stopped right after handing #286 to `arb-sentinel.deployer` (last record 10:13:16Z, `data/hub.jsonl`); nothing was recorded until it was started again at about 11:02Z. Meanwhile the deployer finished the work (files written 10:14–10:16Z), but its reply, its `UserPromptSubmit` and its `turn.end` never reached the Hub and were not sent again. After the restart both shims attached again by themselves, yet the Hub's last facts for the deployer were "handed #286", so the card stayed `Working`. Health check (C76) counts only `Stopped, no reply`, so the button stayed `(0)` and could not help. The human recovered by writing a request to the deployer to reply again (#287 → #288).
+- Why it stopped is unknown: the Hub started by the team runs in a tab of its own and logs only to that tab, so nothing was left to read.
+- A timer (C79) would not have caught it: it looks at the same states.
+- Ideas, not decided, in the order of how directly they hit the cause: (a) on attach, the shim (or a hook) tells the Hub the session's current state (turn ended or not), so a session idle since before the outage becomes `Stopped, no reply` and Health check counts it; (b) the Hub records its own start, and requests handed before it with no reply are shown as "may have been lost in a Hub restart" and are counted by Health check; (c) the shim and the Event hooks keep what they could not send (replies first) and send it again after attaching, without sending it twice; (d) the Hub's log goes to a file under `logs/` as well as the tab, so the next stop can be explained.
+- (a) and (b) let the human see and ask; (c) removes the loss; (d) is the precondition for finding why the Hub stopped.
