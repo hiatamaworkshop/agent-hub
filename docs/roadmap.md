@@ -1035,12 +1035,12 @@ Raised 2026-11-10 in the planning session. The repository has no CI: `npm run ty
 - Linux check before the push: `git archive HEAD` (commit a7b3ccc, clean tree at the start) into a scratch folder outside the repository, mounted into `docker run node:lts` (Node v26.13.0, npm 11.20.0). `npm ci` added 108 packages. `npm run typecheck` exit 0. `npm test` 599 tests, 599 pass, 0 fail, 0 skipped, exit 0. `npm run docs:check` 39 items, 0 errors, 0 warnings. The scratch folder and the container were removed afterwards.
 - Tests that failed on Linux: none. No test was fixed or skipped, and no production code was changed.
 - On the development machine (Windows 11): `npm test` 599 pass, 0 fail, 0 skipped (the 584 in the first paragraph is the count of 2026-11-10 when the item was raised); `npx tsc --noEmit` exit 0; `npm run docs:check` 39 items, 0 errors, 0 warnings.
-- Not checked here: the GitHub run (the third box, after the user's push); the `core.autocrlf` step on a real Windows runner.
+- GitHub run after the user's push of 6804953 (2026-11-10): https://github.com/hiatamaworkshop/agent-hub/actions/runs/42824589941 — `check (windows-latest)` and `check (ubuntu-latest)` both succeeded (`npm ci`, typecheck, `npm test`, `docs:check`). The `core.autocrlf` step ran on the Windows runner without failing the job. Annotations only: Node.js 20 deprecation for `actions/checkout@v4` / `actions/setup-node@v4` (forced to Node 24), and the `ubuntu-latest` label migrating to Ubuntu 26.
 
 #### Done when
 - [x] A workflow under `.github/workflows/` runs on push and pull request to `main`, with a matrix of `windows-latest` and `ubuntu-latest` on Node LTS, running `npm ci`, `npm run typecheck`, `npm test` and `npm run docs:check`.
 - [x] Tests that failed on Linux are fixed, or skipped on that OS with the reason in the test; the body lists them.
-- [ ] A run on GitHub Actions passed on both systems (after the user's push), and its URL is in the body.
+- [x] A run on GitHub Actions passed on both systems (after the user's push), and its URL is in the body.
 - [x] The README's Status says what CI runs, and design.md §6.2-8 says the unit tests are covered by CI while a real `claude` session on Linux or a Mac stays unchecked.
 - [x] `npm test` and `npm run docs:check` pass.
 
