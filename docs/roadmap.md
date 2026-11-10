@@ -25,6 +25,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C153
+- [ ] C157
 - [ ] C156
 - [ ] C146
 - [ ] C151
@@ -1108,10 +1109,11 @@ Raised 2026-11-10 with C153. After a run, what waits for the human is spread ove
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
 
 ### C156. Messages from the user during a run: stop, correct, ask
+Status: blocked(after C157)
 
 Decided 2026-11-10 by the user in the planning session, from the reviewer's notes on C153 ("stopping the leader was not thought through; handle it").
 C153 says that while a run goes on the leader sends the user no `request` or `reply`, so that the `RUN:` request stays awaiting a reply. Nothing says what the leader does when the user writes to it during the run: a stop, a correction, or a question. Two readings both fail today: a reply to the `RUN:` request closes it after the first answer (protocol.md §2), and no answer leaves the user with none. There is also no way to call a run off.
-- **Answer the message itself.** "Awaiting a reply" is kept per Message (`replyTo`), so a `reply` whose `reply_to` is the user's mid-run message closes only that message, not the `RUN:` request. That is the one exception to "no other `reply`" in a run. Rejected: answering by `notice` (the user's message would stay awaiting a reply until the retention period); answering in the next item's notice (late, and mixes two things).
+- **Answer the message itself.** A `reply` whose `reply_to` is the user's mid-run message should close only that message, not the `RUN:` request. Correction (2026-11-10, planning session): this was filed as if the Hub already worked that way; it does not (the review fix below), and the user chose to change the Hub, which is C157. That is the one exception to "no other `reply`" in a run. Rejected: answering by `notice` (the user's message would stay awaiting a reply until the retention period); answering in the next item's notice (late, and mixes two things).
 - **Stop.** A message that asks to stop the run (one starting `STOP`, or one that says so in words) makes the leader start no further item. The item in progress ends as items end: the deployer's report already asked for is awaited (no new request to the deployer), the leader does its check, and the item is committed if the tests pass, or left uncommitted and named. Then the last report goes as the reply to the `RUN:` request, naming the later items as not started (stopped by the user). The stop takes effect when the leader next reads its messages; stopping at once is Esc in the leader's terminal, outside the Hub (C14). Rejected: a cancel state or a `kind` in the Hub. The Hub holds addresses and delivery, not the state of work (design.md §3.14), and the run's state is in the ledger and `git log` (C153).
 - **Correct.** A correction about the item in progress applies from the leader's next request to the deployer. One about a later item applies when that item starts. Either way it is recorded in that item's section body as `changed by the user during the run: …`. A correction that would change a done-when line's meaning leaves that item open, as C153's rule does, because the wording is the planning session's. A request to add an item to the run is not followed (C153, membership); the reply says so.
 - **Unclear.** The run goes on, and the leader asks in a reply to that message.
@@ -1127,3 +1129,19 @@ C153 says that while a run goes on the leader sends the user no `request` or `re
 - [x] design.md §3.15's paragraph on runs says that mid-run messages are answered on their own and that a stop is a message to the leader, not a state in the Hub, with the reason.
 - [x] docs/conventions-log.md has a `practice` line for messages during a run.
 - [x] `npm test` and `npm run docs:check` pass.
+- [ ] After C157, the known-gap sentences in `leader.md` "Runs", usage.md and design.md §3.15 are removed or replaced by a pointer to C157, and a message sent to the leader during a real run is answered with a reply to it while `GET /mailboxes` still shows the `RUN:` request awaiting a reply; design.md §6 records the seqs seen.
+
+### C157. A reply with `reply_to` closes only the request it names
+
+Decided 2026-11-10 by the user in the planning session (C156's review). Today a conversation Message (`request` or `reply`) from the receiver of a request to its sender closes every request from that sender still awaiting a reply, whatever its `replyTo` (protocol.md §2 "Awaiting reply"; `src/hub/store.ts` `answeredBy()`). In a run (C153) the leader then cannot answer a mid-run message without closing the `RUN:` request too (C156).
+- **The rule.** A conversation Message whose `replyTo` names a request that its sender received from the Message's receiver, and that is still awaiting a reply, closes that request only. A conversation Message with no `replyTo`, or whose `replyTo` names anything else, closes as today (every open request from that party). The sweep stays as the safety net for agents that forget `reply_to`, which is why it was there (C28, C39).
+- Confirmed receipt (protocol.md §2 point 2, §4) is unchanged.
+- **Logs written before the change.** Closing is derived from the order of the log on every start (protocol.md §2). Replaying an older log under the new rule would reopen requests that the sweep had closed, so a restart would show old requests as awaiting a reply again. The new rule applies only to Messages written after the change; how the Hub tells them apart (for example a marker written once in the log, or a field on new Messages) is the implementer's choice, written in protocol.md.
+- Rejected: answering mid-run messages by `notice` (the user's message stays awaiting a reply), and in the last report (late). C156 records the three options.
+
+#### Done when
+- [ ] The Hub closes awaiting replies by the rule above: a conversation Message whose `replyTo` names an open request from its receiver closes that request only; one without such a `replyTo` closes every open request from that party, as today. Unit tests cover both, and two open requests from the same sender where a reply to one leaves the other awaiting a reply.
+- [ ] A log written before the change replays to the same awaiting-reply state as before it (a test with such a log), and so does a log compacted before the change.
+- [ ] protocol.md §2 "Awaiting reply" states the new rule, drops the sentence that parallel requests are all closed by a reply to one of them, and says how Messages written before the change are told apart.
+- [ ] docs/conventions-log.md has a line for the change, saying how a log or a closing from before it reads.
+- [ ] `npm test`, `npm run docs:check` and `npm run ui:check` pass (the card states read awaiting replies).
