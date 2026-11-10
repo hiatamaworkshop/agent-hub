@@ -1109,6 +1109,16 @@ From code.claude.com/docs/en/context-window, "What survives compaction". Compact
 - **What the last report listed** (seq 362): RESULT, one line per item (C156 left open at `682c70d`; C152 committed at `de1e303` and closed). VERIFIED: the tests after each item (584, then 588, 0 fail), `docs:check`, the SCOPE of each commit, the `GET /mailboxes` reading, and the reviewer's findings (two per item) checked and fixed. NOT VERIFIED: no mid-run message from the user was sent. NEEDS DECISION: four numbered points, each with its item and its default (C156's Hub premise, default: the item stays open; C156's stop rule reading; this §6 record; the C153 reviewer notes). NEEDS ACTION: the push of `682c70d` and `de1e303`, no closes waiting for the user's word, and this record.
 - **Not observed in this run** (the rules are written, not run): a message from the user during a run; the stop rules (a dirty tree before an item, failing tests, the deployer not attached); an item with a default taken by the leader; a listed item with a status line.
 
+### 6.1ab A mid-run message from the user, answered on its own (2026-11-10, leader, deployer and reviewer; version not recorded)
+
+- **What was sent**: during `RUN: C151, C156` (Message seq 419, from `user:browser`, id `m_01M72HQWW2EBQ828BRJJD58JBJ`), the leader was waiting for the deployer's report on C151 (its request to the deployer, seq 420). The user then sent a `request` from `user:cli` (seq 421, id `m_01M72HS4Y3X6NFX5HHY9VDP5AH`): which item is in progress, answer once by reply, and let the run go on.
+- **The reply**: the leader answered with one `reply` whose `reply_to` is that request (seq 422, to `user:cli`): C151 in progress, C156 next. No notice and no second reply.
+- **`GET /mailboxes`, `agent-hub.leader` `backlog.awaitingReply`**: before the reply, count 2 with `oldestSeq` 419 (the `RUN:` request and request 421); after it, count 1 with `oldestSeq` 419. So the reply closed only the request it named (421), and the `RUN:` request stayed awaiting a reply. A reading made while writing this record (after seqs 423 to 425, with no new user request) is also count 1, `oldestSeq` 419.
+- **Which Hub**: the Hub on 7777 that answered seqs 419 to 422 started at 2026-11-10T10:55:57Z (pid 14344, the start line in `logs/hub.log`). C157 was committed at 08:30:28Z (`332745c`), before that start. It was started again at 11:19:55Z (pid 8932, after a SIGHUP at 11:19:13Z), after these messages.
+- **Rule**: a reply with `reply_to` closes only that request (C157). Under the old rule (before C157) the same reply would have closed the `RUN:` request too (§6.1aa, protocol.md §2).
+- **Identity**: the message came from `user:cli`, not the browser; the Hub treats the two as the same person (protocol.md §2).
+- **Not observed**: a user `reply` or `notice` sent during a run; a `STOP`; a correction; an unclear message; the leader answering several awaiting requests before the last report (the run was still going when this record was written).
+
 ### 6.2 Unverified
 
 1. **Windows-specific**: path notation, line endings. That publishing in Docker Desktop is loopback only was confirmed (§6.1l).
