@@ -1,20 +1,66 @@
 // カードの状態 (design.md §3.15) を、別のポートの Hub とヘッドレスの Chrome で場面ごとに確かめる。
 // API で場面を作り、CDP で DOM を読んで、期待する状態と照らす。UI には単体テストがないので、UI を変えたら流す。
-// 使い方: npm run ui:check  (Chrome の場所は CHROME、ポートは UI_CHECK_PORT / UI_CHECK_CDP_PORT で変えられる)
+// 使い方: npm run ui:check  (Chrome の場所は CHROME。ポートは既定で空いているものを取って表示する。UI_CHECK_PORT / UI_CHECK_CDP_PORT で固定できる)
 import { spawn, spawnSync } from 'node:child_process'
+import { connect, createServer } from 'node:net'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
-const PORT = Number(process.env.UI_CHECK_PORT ?? 7793)
-const CDP_PORT = Number(process.env.UI_CHECK_CDP_PORT ?? 9333)
 const CHROME = process.env.CHROME ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe'
 const TOKEN = 'ui-check-token-0123456789'
-const HUB = `http://127.0.0.1:${PORT}`
-const work = mkdtempSync(join(tmpdir(), 'agent-hub-ui-check-'))
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// n ports the system gives out now. All n are held at once, so no two of them are the same; then they are released (C151)
+async function freePorts(n) {
+  const servers = Array.from({ length: n }, () => createServer())
+  try {
+    await Promise.all(servers.map((s) => new Promise((ok, fail) => { s.once('error', fail); s.listen(0, '127.0.0.1', ok) })))
+    return servers.map((s) => s.address().port)
+  } finally {
+    await Promise.all(servers.map((s) => new Promise((ok) => s.close(ok))))
+  }
+}
+const pickFree = async (avoid) => {
+  for (;;) {
+    const [p] = await freePorts(1)
+    if (p !== avoid) return p
+  }
+}
+// Does something accept a connection on 127.0.0.1:port within a second? (a port set by hand that answers stops the check, C151)
+const answers = (port) =>
+  new Promise((resolve) => {
+    const s = connect({ host: '127.0.0.1', port })
+    s.setTimeout(1000)
+    s.once('connect', () => { s.destroy(); resolve(true) })
+    s.once('error', () => resolve(false))
+    s.once('timeout', () => { s.destroy(); resolve(false) })
+  })
+
+// The ports: free ones from the system unless UI_CHECK_PORT / UI_CHECK_CDP_PORT set them (C151)
+const setHub = process.env.UI_CHECK_PORT ? Number(process.env.UI_CHECK_PORT) : null
+const setCdp = process.env.UI_CHECK_CDP_PORT ? Number(process.env.UI_CHECK_CDP_PORT) : null
+for (const [name, p] of [['UI_CHECK_PORT', setHub], ['UI_CHECK_CDP_PORT', setCdp]]) {
+  if (p !== null && !(Number.isInteger(p) && p > 0 && p < 65536)) {
+    console.error(`NG  ${name} is not a port number: ${process.env[name]}`)
+    process.exit(1)
+  }
+}
+if (setHub !== null && setHub === setCdp) {
+  console.error(`NG  UI_CHECK_PORT and UI_CHECK_CDP_PORT are both ${setHub}. Give them different ports, or unset one`)
+  process.exit(1)
+}
+let PORT, CDP_PORT
+if (setHub === null && setCdp === null) [PORT, CDP_PORT] = await freePorts(2)
+else {
+  PORT = setHub ?? (await pickFree(setCdp))
+  CDP_PORT = setCdp ?? (await pickFree(PORT))
+}
+const HUB = `http://127.0.0.1:${PORT}`
+console.log(`ports: Hub ${PORT} (${setHub === null ? 'free from the system' : 'set by UI_CHECK_PORT'}), Chrome debugging ${CDP_PORT} (${setCdp === null ? 'free from the system' : 'set by UI_CHECK_CDP_PORT'})`)
+const work = mkdtempSync(join(tmpdir(), 'agent-hub-ui-check-'))
 
 // 5 日前に出され、まだ返信のない依頼 (C44)。Hub は ts を今の時刻で付けるので、起動の前にログへ直接書いておく
 mkdirSync(join(work, 'hub'), { recursive: true })
@@ -25,8 +71,16 @@ writeFileSync(
 )
 
 // 同じ port に別の Hub が答えているなら、この場面はその Hub の状態を読んでしまう (C142 の見直し)。始める前に止める
-if (await fetch(`${HUB}/mailboxes`).then(() => true, () => false)) {
-  console.error(`NG  port ${PORT} is already answered by a Hub that this check did not start. Stop that Hub (node ... src/hub/main.ts) and run again`)
+// Any listener counts (C151): a port set by hand that answers but is not a Hub would also break the start
+if ((await answers(PORT)) || (await fetch(`${HUB}/mailboxes`).then(() => true, () => false))) {
+  console.error(`NG  port ${PORT} is already answered by something this check did not start (a Hub, or another process). Stop it (a Hub: node ... src/hub/main.ts) and run again`)
+  rmSync(work, { recursive: true, force: true })
+  process.exit(1)
+}
+// A Chrome debugging port set by hand that already answers would be read as this run's page (C151). Stop before Chrome starts.
+// A free port from the system is not checked: it was free a moment ago, and it is held by no one else
+if (setCdp !== null && (await answers(CDP_PORT))) {
+  console.error(`NG  UI_CHECK_CDP_PORT ${CDP_PORT} already answers, so Chrome cannot take its debugging port there. Stop what listens on it, or unset UI_CHECK_CDP_PORT to take a free port`)
   rmSync(work, { recursive: true, force: true })
   process.exit(1)
 }

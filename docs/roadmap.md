@@ -25,7 +25,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C156
-- [ ] C151
 - [ ] C149
 - [ ] C147
 - [ ] C148
@@ -567,6 +566,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: `npm test` 599 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 0 errors. The review found two defects, both fixed: an unquoted folder broke on a space, and a shim started before C146 had no fallback in the closing step. Done-when wording not changed.
   - Not checked: a folder with a space in a real shell; a live session started after the change showing the line. Shims started before it, including this team's, do not carry the line; the closing step now says what to do then.
   - Reviewer note: the line puts the host's absolute path (for example, the user's name) into every role's instructions on both routes, including clients of other vendors. It is local configuration, not a received body.
+- [x] C151 `ui:check` takes free ports and guards a hand-set Chrome debugging port (2026-11-10, closed after the review)
+  - Raised 2026-11-10 in the planning session: C142's guard covered only the Hub port, and the Chrome debugging port was fixed with no check, so two runs on one machine could read each other's page. Decided the same day: free ports from the system by default, and a guard for a port set by hand.
+  - Changed: `tools/dev/ui-check.mjs` (`freePorts`, which holds the Hub and Chrome ports together before releasing them; `pickFree`; `answers`). A port set by hand is used as given and stops the check before Chrome when it answers, naming the port. The Hub-port check now stops on any listener, not only a Hub. A value that is not a port number, or the same port for both, stops the check. The header comment says the ports are free by default.
+  - Checked: `npm test` 599 pass, 0 fail; `npm run ui:check` 202 ok, 0 NG alone, and two runs started at the same moment both 202 ok, 0 NG, with different ports (the deployer's and the reviewer's); `UI_CHECK_CDP_PORT` set to a listener stops before Chrome, naming the port; `npm run docs:check` 0 errors. The review found no finding. Done-when wording not changed.
+  - Not checked: a freed port taken by another process before Chrome or the Hub binds it; two runs sharing a hand-set port started at the same moment; unit tests for the helpers (they sit in an `.mjs` the tests cannot import).
+  - Reviewer notes, for what follows: the page is still the first `type: page` target in `/json/list`, with no check that it belongs to this run; the same window exists for a shared hand-set `UI_CHECK_PORT`.
 - [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
   - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
   - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
@@ -1056,20 +1061,6 @@ Raised 2026-11-10 in the planning session. The card state (Needs you / Working /
 - [ ] design.md §5 records the reason for serving a shared module to the page before the change, and CLAUDE.md's "Technology stack" line on the UI says what the page loads besides the HTML file.
 - [ ] The card state derivation (`stateOf` and what it needs) is a module under `src/shared/` without Node APIs; the Hub serves it to the page, started directly and in Docker, and `public/index.html` uses it instead of its own copy.
 - [ ] Unit tests beside the module cover Needs you, Working, Waiting on others, Stopped and Paused, with cases taken from the `ui:check` scenes.
-- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
-
-### C151. `ui:check` has no guard on Chrome's debugging port
-
-Raised 2026-11-10 in the planning session. C142 made `ui:check` stop when its Hub port (7793, `UI_CHECK_PORT`) is already answered by another Hub. The Chrome it starts still uses a fixed debugging port (9333, `UI_CHECK_CDP_PORT`) with no such check, and the page is found by asking that port for its list of targets. A second run on the same machine (a team's deployer and the planning session, or a leftover Chrome) could read the other run's page. Not reproduced; the failures during C142 were put down to the Hub port (C145's body).
-- The Hub-port check also has a gap when two runs start at the same moment: both see the port free.
-- Ideas, not decided: (a) check the debugging port the same way before starting Chrome; (b) pick free ports for both when the environment variables are not set, so two runs do not meet; (c) a lock file in the temporary folder that names the run holding the ports.
-- Decided 2026-11-10 in the planning session (the user left the choice to it): (b) by default and (a) when a port is set by hand. Free ports from the system also close the gap of two runs starting at once. Not (c): a run that crashes leaves its lock behind.
-
-#### Done when
-- [ ] With `UI_CHECK_PORT` and `UI_CHECK_CDP_PORT` unset, `ui:check` takes free ports from the system for its Hub and for Chrome's debugging port, and prints them.
-- [ ] With either set, `ui:check` stops before starting Chrome when that port already answers, and names the port, as it does today for the Hub port.
-- [ ] Two `ui:check` runs started at the same time on one machine both pass; the body records the run.
-- [ ] The docs that name the fixed ports (7793, 9333) say what happens now.
 - [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
 
 ### C154. Draft a run from the plan in the UI
