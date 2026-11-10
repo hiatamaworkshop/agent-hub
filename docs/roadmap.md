@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C148
 - [ ] C150
 
 (Items with a status line are listed under "Items".)
@@ -591,6 +590,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: `npm test` 599 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 0 errors; `npm run ui:check` 202 ok, 0 NG (free ports 54939 and 54940); `logs/hub.log` 87329 bytes before and after the run. The review found two defects, both fixed: a docs quote left in `docs/usage.md` (the old docs:index line), and the `reply` kind wording narrowed to requests (now `reply` answers a message, `request` asks for work or a reply, as in design.md §3.6; `instructions.ts` and `tools.ts`). Done-when wording not changed.
   - Not checked: a live session showing the new instructions; the translated Hub messages as shown in the browser.
   - Reviewer notes: the per-file counts in this record are string literals, not lines. Out of scope, for the planning session: `tools/hooks/post-commit-index.sh:23` prints a Japanese line on every failed ledger send (`agent-hub: roadmap の索引を送れなかった。コミットは止めない。`); it is outside `src/` and pinned by `src/docs-check/post-commit.test.ts:99`.
+- [x] C148 Run the checks in CI on Windows and Linux (2026-11-10, closed after the review)
+  - Decided 2026-11-10 in the planning session (the user left the choice to it): `windows-latest` and `ubuntu-latest`; macOS joins when someone uses agent-hub on a Mac; `ui:check` stays off CI (C151). The closing request came on the user's word "close C148".
+  - Changed: `.github/workflows/ci.yml` (new: push and pull request to `main`, matrix of both systems with `fail-fast: false`, `lts/*`, `npm ci`, `npm run typecheck`, `npm test`, `npm run docs:check`; `permissions: contents: read`, no secrets), `README.md` (Status: what CI runs, and that `npm run team`'s unit tests run on Windows and Linux), `docs/design.md` §6.2-8 (unit tests covered by CI; a real `claude` session on Linux or a Mac stays unchecked). Commits `6804953`, `46f580c`. No production code changed.
+  - Checked: on Linux (`node:lts` container, Node v26.13.0) `npm test` 599 pass, 0 fail, 0 skipped, so no test was fixed or skipped. On GitHub: run 42824589941 (`6804953`) and run 42825334940 (`46f580c`), both jobs succeeded each time: https://github.com/hiatamaworkshop/agent-hub/actions/runs/42825334940. Done-when wording not changed.
+  - The review found no defect. Its two notes: the checkout-time CRLF step (and its comment) was redundant because `.gitattributes` (`* text=auto eol=lf`) already fixes LF, so it was removed and the second run passed without it; the README's present-tense CI sentence was true once the first run passed.
+  - Not checked: macOS; a real `claude` session on Linux or a Mac (design.md §6.2-8). Annotations only on the runs: Node.js 20 deprecation for `actions/checkout@v4` and `actions/setup-node@v4` (forced to Node 24), and the `ubuntu-latest` label migrating to Ubuntu 26 (not filed).
 - [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
   - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
   - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
@@ -1024,25 +1029,6 @@ Status: proposed
 Raised 2026-11-09 by the reviewer of C142 (#322). The C106 jump highlights a card, and a redraw driven by SSE within the highlight's 3 seconds replaces the card nodes, so the highlight is gone and the press seems to do nothing (measured in `ui:check` run 14: `replaced: 2`). `ui:check`'s `press` / `press2` now wait for the redraw to settle before clicking, so the check no longer covers this case.
 - The C106 failures during C142 were most likely the port clash (two `ui:check` runs on 7793 and a leftover Hub), not C142's code: the planning session ran the strict check without the wait on HEAD's page and on C142's page, 2 of 2 passing each.
 - Ideas, not decided: (a) the jump re-applies the highlight to the rebuilt card (keyed by Mailbox name) until its time ends; (b) the card rebuild keeps nodes whose content did not change; (c) a `ui:check` scene that redraws right after the press.
-
-### C148. Run the checks in CI on Windows and Linux
-
-Raised 2026-11-10 in the planning session. The repository has no CI: `npm run typecheck`, `npm test` (584 tests on 2026-11-10) and `npm run docs:check` have only been run on the development machine (Windows 11). The README's Status says `npm run team` "is covered by unit tests on every OS", but nothing runs the tests on another OS. Whether they pass on Linux or macOS is not known.
-- Idea: one GitHub Actions workflow on push and pull request, with a matrix of `windows-latest` and `ubuntu-latest`, running the three commands. It backs the README's sentence with a run, and covers the unit-test half of design.md §6.2-8 (a real `claude` session on Linux or a Mac stays unchecked).
-- Decided 2026-11-10 in the planning session (the user left the choice to it): `windows-latest` and `ubuntu-latest`; macOS joins when someone uses agent-hub on a Mac. `ui:check` stays off CI (it needs Chrome and free ports; C151). A test that cannot pass on Linux is fixed, or skipped on that OS with the reason written in the test. The tests can be tried on Linux before the push in a Node container (Docker is on the development machine).
-
-- Done 2026-11-10 (deployer): `.github/workflows/ci.yml` added. It runs on push and pull request to `main`, on `windows-latest` and `ubuntu-latest` (`fail-fast: false`) with `lts/*`, and runs `npm ci`, `npm run typecheck`, `npm test` and `npm run docs:check`. `permissions: contents: read`, no secrets, `actions/checkout@v4` and `actions/setup-node@v4` (`cache: npm`). The first version had a step before checkout that ran `git config --global core.autocrlf false` and `core.eol lf`; the review (2026-11-10) noted that the repository's `.gitattributes` (`* text=auto eol=lf`) already fixes LF at checkout, so the step was removed (the first green run below still had it).
-- Linux check before the push: `git archive HEAD` (commit a7b3ccc, clean tree at the start) into a scratch folder outside the repository, mounted into `docker run node:lts` (Node v26.13.0, npm 11.20.0). `npm ci` added 108 packages. `npm run typecheck` exit 0. `npm test` 599 tests, 599 pass, 0 fail, 0 skipped, exit 0. `npm run docs:check` 39 items, 0 errors, 0 warnings. The scratch folder and the container were removed afterwards.
-- Tests that failed on Linux: none. No test was fixed or skipped, and no production code was changed.
-- On the development machine (Windows 11): `npm test` 599 pass, 0 fail, 0 skipped (the 584 in the first paragraph is the count of 2026-11-10 when the item was raised); `npx tsc --noEmit` exit 0; `npm run docs:check` 39 items, 0 errors, 0 warnings.
-- GitHub run after the user's push of 6804953 (2026-11-10): https://github.com/hiatamaworkshop/agent-hub/actions/runs/42824589941 — `check (windows-latest)` and `check (ubuntu-latest)` both succeeded (`npm ci`, typecheck, `npm test`, `docs:check`). That run still had the `core.autocrlf` step. Second run on 46f580c, without the step: https://github.com/hiatamaworkshop/agent-hub/actions/runs/42825334940 — both jobs succeeded, so `.gitattributes` alone is enough on the Windows runner. Annotations only: Node.js 20 deprecation for `actions/checkout@v4` / `actions/setup-node@v4` (forced to Node 24), and the `ubuntu-latest` label migrating to Ubuntu 26.
-
-#### Done when
-- [x] A workflow under `.github/workflows/` runs on push and pull request to `main`, with a matrix of `windows-latest` and `ubuntu-latest` on Node LTS, running `npm ci`, `npm run typecheck`, `npm test` and `npm run docs:check`.
-- [x] Tests that failed on Linux are fixed, or skipped on that OS with the reason in the test; the body lists them.
-- [x] A run on GitHub Actions passed on both systems (after the user's push), and its URL is in the body.
-- [x] The README's Status says what CI runs, and design.md §6.2-8 says the unit tests are covered by CI while a real `claude` session on Linux or a Mac stays unchecked.
-- [x] `npm test` and `npm run docs:check` pass.
 
 ### C150. Make the card state derivation testable and usable outside the page
 
