@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { appendFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
@@ -65,7 +65,8 @@ describe('Store: 復元', () => {
     assert.equal(s2.lastSeq, 1)
     s2.appendMessage(msg({ type: 'topic', id: 't' }))
     assert.equal(new Store({ file }).lastSeq, 2)
-    assert.equal(readFileSync(file, 'utf8').split('\n').filter(Boolean).length, 3)
+    // 閉じ方の印 (C157) の行を除いて数える。切れた行にくっつかず、追記は 2 件とも行の頭から書かれている
+    assert.equal(readFileSync(file, 'utf8').split('\n').filter((l) => l.startsWith('{"op":"message"')).length, 2)
   })
 
   it('CRLF の行でも読める', () => {
@@ -189,7 +190,7 @@ describe('Store: 溜まりの材料 (summary)', () => {
   function naive(s: Store, name: string) {
     const mb = s.getMailbox(name)!
     const tally = () => ({ count: 0, oldestAt: null as string | null, oldestSeq: null as number | null })
-    const outgoing = { ...tally(), to: [] as Array<{ type: Address['type']; id: string; seqs: number[] } & ReturnType<typeof tally>> }
+    const outgoing = { ...tally(), to: [] as Array<{ type: Address['type']; id: string; recipients: string[]; seqs: number[] } & ReturnType<typeof tally>> }
     const backlog = {
       unread: tally(),
       awaitingReply: tally(),
@@ -217,9 +218,10 @@ describe('Store: 溜まりの材料 (summary)', () => {
         outgoing.oldestAt ??= m.ts
         outgoing.oldestSeq ??= m.seq
         let to = outgoing.to.find((a) => a.type === m.to.type && a.id === m.to.id)
-        if (!to) outgoing.to.push((to = { type: m.to.type, id: m.to.id, seqs: [], count: 0, oldestAt: null, oldestSeq: null }))
+        if (!to) outgoing.to.push((to = { type: m.to.type, id: m.to.id, recipients: [], seqs: [], count: 0, oldestAt: null, oldestSeq: null }))
         to.count++
         to.seqs.push(m.seq)
+        for (const r of s.recipientsOf(m)) if (!to.recipients.includes(r)) to.recipients.push(r)
         to.oldestAt ??= m.ts
         to.oldestSeq ??= m.seq
       }
@@ -386,17 +388,117 @@ describe('Store: 溜まりの材料 (summary)', () => {
     s.advanceCursor('dep', fix.seq)
     const done = s.appendMessage({ kind: 'reply', from: { type: 'mailbox', id: 'dep', role: 'deployer' }, to: { type: 'mailbox', id: 'lead' }, body: 'r', replyTo: first.id })
     const open = (st: Store) => st.listMessages(0, Infinity).filter((m) => st.isAwaitingReply(m))
-    assert.deepEqual(open(s), [])
+    // 返信は replyTo が指す first だけを閉じる (C157)。fix は開いたまま
+    assert.deepEqual(open(s).map((m) => m.id), [fix.id])
     assert.equal(s.getMailbox('dep')!.received, fix.seq, '渡してあった依頼の seq まで確認になる')
 
     const again = new Store({ file })
-    assert.deepEqual(open(again), [], '再起動後')
+    assert.deepEqual(open(again).map((m) => m.id), [fix.id], '再起動後も同じ')
     for (const name of ['lead', 'dep']) assert.deepEqual(again.summary(name), naive(again, name))
     // 閉じた Message が消えても、詰め直しの replied の行で閉じたまま残る
     again.deleteMessages([done.id])
     assert.ok(again.compact())
     const compacted = new Store({ file })
-    assert.deepEqual(open(compacted).map((m) => m.id), [])
+    assert.deepEqual(open(compacted).map((m) => m.id), [fix.id])
     assert.equal(compacted.getMailbox('dep')!.received, fix.seq)
+  })
+})
+
+describe('Store: 返信の閉じ方 (C157)', () => {
+  const asLead = { type: 'mailbox', id: 'lead', role: 'leader' } as const
+  const asDep = { type: 'mailbox', id: 'dep', role: 'deployer' } as const
+  const toDep = { type: 'mailbox', id: 'dep' } as const
+  const toLead = { type: 'mailbox', id: 'lead' } as const
+  // 送り手と受け手の Mailbox を作る (受け手の判定に要る)
+  const withTeam = (s: Store): Store => {
+    s.ensureMailbox('lead', 'leader')
+    s.ensureMailbox('dep', 'deployer')
+    return s
+  }
+  const request = (s: Store, body: string) => s.appendMessage({ kind: 'request', from: asLead, to: toDep, body })
+  const replyTo = (s: Store, id: string, body = 'r') => s.appendMessage({ kind: 'reply', from: asDep, to: toLead, body, replyTo: id })
+  const open = (s: Store) => s.listMessages(0, Infinity).filter((m) => s.isAwaitingReply(m)).map((m) => m.body)
+  // 前の形式の行 (印も recipients もない)。前の規則で閉じた log を作るために使う
+  const row = (rec: object) => JSON.stringify(rec) + '\n'
+  const oldMessage = (seq: number, id: string, extra: Record<string, unknown> = {}) =>
+    row({ op: 'message', message: { id, seq, ts: '2026-11-10T00:00:00.000Z', kind: 'request', from: asLead, to: toDep, body: id, ...extra } })
+  const mailboxRow = (name: string, role: string) => row({ op: 'mailbox.create', name, role, createdAt: '2026-11-10T00:00:00.000Z', cursor: 0, received: 0, seq: 0 })
+  const oldTeam = mailboxRow('lead', 'leader') + mailboxRow('dep', 'deployer')
+
+  it('replyTo が指す依頼だけを閉じ、並行した依頼は開いたまま', () => {
+    const s = withTeam(new Store())
+    const a = request(s, 'a')
+    request(s, 'b')
+    replyTo(s, a.id)
+    assert.deepEqual(open(s), ['b'])
+  })
+
+  it('replyTo のない依頼は、相手の返信待ちをすべて閉じる (今までどおり)', () => {
+    const s = withTeam(new Store())
+    request(s, 'a')
+    request(s, 'b')
+    s.appendMessage({ kind: 'request', from: asDep, to: toLead, body: 'さらに質問' })
+    assert.deepEqual(open(s), ['さらに質問'], 'a と b は閉じた。質問は返信待ち')
+  })
+
+  it('replyTo が返信待ちでない依頼を指すときも、replyTo のない依頼と同じく相手の依頼をすべて閉じる', () => {
+    const s = withTeam(new Store())
+    const a = request(s, 'a')
+    request(s, 'b')
+    replyTo(s, a.id, 'first')
+    assert.deepEqual(open(s), ['b'])
+    replyTo(s, a.id, 'again') // a はもう返信待ちでない
+    assert.deepEqual(open(s), [])
+  })
+
+  it('印より前の Message (前の形式の log) は、前の規則で閉じたまま再生し、印のあとの Message は今の規則', () => {
+    const file = tmpFile()
+    // 前の形式: 2 つの依頼に、片方を replyTo にした返信。前の規則では両方が閉じる
+    writeFileSync(file, oldTeam + oldMessage(1, 'ma') + oldMessage(2, 'mb') + oldMessage(3, 'mr', { kind: 'reply', from: asDep, to: toLead, replyTo: 'ma' }))
+    const s = new Store({ file })
+    assert.deepEqual(open(s), [], '前の規則: 返信が両方を閉じる')
+    const again = new Store({ file })
+    assert.deepEqual(open(again), [], '再起動しても同じ')
+    const c = request(again, 'c')
+    request(again, 'd')
+    replyTo(again, c.id)
+    assert.deepEqual(open(again), ['d'], '印のあとの Message は replyTo が指す依頼だけを閉じる')
+    assert.deepEqual(open(new Store({ file })), ['d'], '再起動後も今の規則で再生する')
+    assert.equal(readFileSync(file, 'utf8').split('\n').filter((l) => l.includes('"op":"closing"')).length, 1, '印は 1 度だけ書く')
+  })
+
+  it('前の形式で詰め直した log も、閉じた依頼は閉じたまま再生し、そのあとの Message は今の規則', () => {
+    const file = tmpFile()
+    writeFileSync(
+      file,
+      row({ op: 'seq', seq: 3, answered: true }) +
+        oldTeam +
+        oldMessage(1, 'ma') +
+        oldMessage(2, 'mb') +
+        oldMessage(3, 'mr', { kind: 'reply', from: asDep, to: toLead, replyTo: 'ma' }) +
+        row({ op: 'replied', id: 'ma' }) +
+        row({ op: 'replied', id: 'mb' }),
+    )
+    const s = new Store({ file })
+    assert.deepEqual(open(s), [])
+    const c = request(s, 'c')
+    request(s, 'd')
+    replyTo(s, c.id)
+    assert.deepEqual(open(new Store({ file })), ['d'])
+  })
+
+  it('印のあとで詰め直したログも、詰め直しの後の Message は今の規則で再生する', () => {
+    const file = tmpFile()
+    const s = withTeam(new Store({ file }))
+    const a = request(s, 'a')
+    request(s, 'b')
+    replyTo(s, a.id)
+    const noise = s.appendMessage({ kind: 'notice', from: asLead, to: toDep, body: '消す' })
+    s.deleteMessages([noise.id])
+    assert.ok(s.compact())
+    const c = request(s, 'c')
+    replyTo(s, c.id)
+    assert.deepEqual(open(s), ['b'])
+    assert.deepEqual(open(new Store({ file })), ['b'], '詰め直しの後の再起動でも同じ')
   })
 })

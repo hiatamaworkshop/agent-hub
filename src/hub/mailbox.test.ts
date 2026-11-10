@@ -722,7 +722,7 @@ describe('やりとりの Message で request を閉じ、受領の確認にす�
     assert.deepEqual(hub.store.listMessages(0, Infinity).filter((m) => hub.store.isAwaitingReply(m)), [], '保存期間で消せる')
   })
 
-  it('まとめた返信は、渡してあった後の依頼も閉じて受領の確認にする (role 宛ても)', () => {
+  it('返信は replyTo が指す依頼だけを閉じる (C157)。replyTo のない依頼は、渡してあった後の依頼も閉じて受領の確認にする (role 宛ても)', () => {
     const { hub, dep, of, asLead, asDep } = team()
     const first = hub.postMessage({ kind: 'request', to: { type: 'role', id: 'deployer' }, body: 'C4' }, asLead)
     const fix = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'dep' }, body: 'C4 の手直し' }, asLead)
@@ -733,8 +733,16 @@ describe('やりとりの Message で request を閉じ、受領の確認にす�
       { type: 'mailbox', id: 'dep', recipients: ['dep'], seqs: [fix.seq], count: 1, oldestAt: fix.ts, oldestSeq: fix.seq },
     ])
 
-    hub.postMessage({ kind: 'reply', replyTo: first.id, body: 'CHANGED: 両方' }, asDep)
-    assert.equal(of('lead').backlog.outgoing.count, 0)
+    hub.postMessage({ kind: 'reply', replyTo: first.id, body: 'CHANGED: first' }, asDep)
+    assert.deepEqual(
+      of('lead').backlog.outgoing.to,
+      [{ type: 'mailbox', id: 'dep', recipients: ['dep'], seqs: [fix.seq], count: 1, oldestAt: fix.ts, oldestSeq: fix.seq }],
+      '返信は first だけを閉じる。fix は開いたまま',
+    )
+    assert.equal(of('dep').backlog.awaitingReply.count, 1)
+
+    hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'lead' }, body: 'fix はどうする' }, asDep)
+    assert.equal(of('lead').backlog.outgoing.count, 0, 'replyTo のない依頼は fix も閉じる')
     assert.equal(of('dep').backlog.awaitingReply.count, 0)
     assert.equal(of('dep').received, fix.seq, '閉じた依頼の seq まで確認になる')
     assert.equal(of('dep').unconfirmed, 0, '閉じた依頼を確認待ちに移さない')
@@ -764,20 +772,24 @@ describe('やりとりの Message で request を閉じ、受領の確認にす�
     ])
   })
 
-  it('seqs は count と同じ数え方 (古い順)。相手の後の Message で閉じた request は外す (C78)', () => {
+  it('seqs は count と同じ数え方 (古い順)。閉じた request は外す (C78、C157 では返信が閉じるのは replyTo の 1 件)', () => {
     const { hub, dep, of, asLead, asDep } = team()
     const a = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'dep' }, body: 'C4' }, asLead)
     hub.ack(dep.attachmentId, a.seq)
     const b = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'dep' }, body: 'C5' }, asLead)
-    hub.postMessage({ kind: 'reply', replyTo: a.id, body: 'CHANGED: C4' }, asDep) // 返信で a と、まだ渡していない b も閉じる (まとめた返信の規則)
-    assert.deepEqual(of('lead').backlog.outgoing.to, [], '返信のあとは開いたものがない')
+    hub.postMessage({ kind: 'reply', replyTo: a.id, body: 'CHANGED: C4' }, asDep) // a だけを閉じる。まだ渡していない b は開いたまま
+    assert.deepEqual(
+      of('lead').backlog.outgoing.to,
+      [{ type: 'mailbox', id: 'dep', recipients: ['dep'], seqs: [b.seq], count: 1, oldestAt: b.ts, oldestSeq: b.seq }],
+      '返信は a だけを閉じる',
+    )
     const c = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'dep' }, body: 'C6' }, asLead)
     const d = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'dep' }, body: 'C7' }, asLead)
     const to = of('lead').backlog.outgoing.to
-    assert.deepEqual(to, [{ type: 'mailbox', id: 'dep', recipients: ['dep'], seqs: [c.seq, d.seq], count: 2, oldestAt: c.ts, oldestSeq: c.seq }])
+    assert.deepEqual(to, [{ type: 'mailbox', id: 'dep', recipients: ['dep'], seqs: [b.seq, c.seq, d.seq], count: 3, oldestAt: b.ts, oldestSeq: b.seq }])
     assert.equal(to[0]!.seqs.length, to[0]!.count, 'seqs と count は同じ数')
-    assert.equal(of('lead').backlog.outgoing.count, 2)
-    assert.ok(!to[0]!.seqs.includes(b.seq), '閉じた b は含まない')
+    assert.equal(of('lead').backlog.outgoing.count, 3)
+    assert.ok(!to[0]!.seqs.includes(a.seq), '閉じた a は含まない')
   })
 
   it('notice・無編集転送・同じ向きの依頼では閉じない', () => {
@@ -804,7 +816,7 @@ describe('やりとりの Message で request を閉じ、受領の確認にす�
     const later = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'dep' }, body: 'C5' }, asLead)
 
     hub.postMessage({ kind: 'reply', replyTo: first.id, body: 'done' }, hub.senderOf(poller.attachmentId))
-    assert.equal(hub.store.isAwaitingReply(later), false, '閉じる (並行した依頼は早く閉じる。規則の限界)')
+    assert.equal(hub.store.isAwaitingReply(later), true, '返信は first だけを閉じる。並行した later は開いたまま (C157)')
     assert.equal(of('dep').received, first.seq)
     assert.deepEqual(hub.store.unread('dep').map((m) => m.id), [later.id])
   })

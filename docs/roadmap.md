@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C157
 - [ ] C156
 - [ ] C146
 - [ ] C151
@@ -551,6 +550,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - Decided 2026-11-10 by the user in the planning session: a `RUN:` request names several items, and the leader takes them one at a time in the listed order. The queue is in the ledger, not in the Hub (design.md §3.15).
   - Changed: `tools/dev/roles/leader.md` ("Runs" section; the Commitments line, the step 3 pointer and the three "the user commits" lines qualified for a run), `docs/design.md` (§1.2 row 1, §2, §3.15, §6.1aa), `docs/usage.md` ("Several items in one request (a run)"), `docs/conventions-log.md` (one `practice` line).
   - Checked: `npm test` 588 pass, 0 fail; `npm run docs:check` 0 errors. The review of the first pass found two gaps, both fixed in the item's commit `eeb25af`: a default taken on a closed item (now recorded through the closing request), and a deployer not attached (now stops the run). The second review found no finding and three notes: three statements in design.md §6.1aa come from the leader's own account, and the last report said more than the readings show. The first real run, `RUN: C156, C152`, is recorded in design.md §6.1aa. Not observed in that run: the stop rules, a message from the user during a run, a default taken by the leader, a listed item with a status line. Done-when wording not changed.
+- [x] C157 A reply with `reply_to` closes only the request it names (2026-11-10, closed after the review)
+  - Raised 2026-11-10 by the user in the planning session (C156's review): a reply to a mid-run message also closed the `RUN:` request, because the Hub's closing swept every open request from that party.
+  - Changed: `src/hub/store.ts` (`closedBy` and `answers`; the `closing` log line, written once at the first start and after the `seq` line in `compact()`), `src/hub/store.test.ts` (6 new cases in "Store: 返信の閉じ方 (C157)"; 2 expectations changed), `src/hub/mailbox.test.ts` (3 expectations changed to the new rule), `docs/protocol.md` §2, `docs/design.md` (two bullets), `docs/conventions-log.md` (one `format` line).
+  - Checked: `npm test` 594 pass, 0 fail; `npx tsc --noEmit` clean; `npm run ui:check` 202 ok, 0 NG; `npm run docs:check` 0 errors. The review found no finding. Done-when wording not changed.
+  - Not checked: a live Hub across the change (the compose Hub on 7777 runs the old code until it is restarted; it then writes the closing line once); an older Hub reading a log with a `closing` line.
+  - Notes for what follows: a second reply to an already closed request falls back to the sweep (as decided); `docs/usage.md` lines near 28 and 144 still describe the old rule.
 - [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
   - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
   - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
@@ -1084,7 +1089,6 @@ Raised 2026-11-10 with C153. After a run, what waits for the human is spread ove
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
 
 ### C156. Messages from the user during a run: stop, correct, ask
-Status: blocked(after C157)
 
 Decided 2026-11-10 by the user in the planning session, from the reviewer's notes on C153 ("stopping the leader was not thought through; handle it").
 C153 says that while a run goes on the leader sends the user no `request` or `reply`, so that the `RUN:` request stays awaiting a reply. Nothing says what the leader does when the user writes to it during the run: a stop, a correction, or a question. Two readings both fail today: a reply to the `RUN:` request closes it after the first answer (protocol.md §2), and no answer leaves the user with none. There is also no way to call a run off.
@@ -1105,18 +1109,4 @@ C153 says that while a run goes on the leader sends the user no `request` or `re
 - [x] docs/conventions-log.md has a `practice` line for messages during a run.
 - [x] `npm test` and `npm run docs:check` pass.
 - [ ] After C157, the known-gap sentences in `leader.md` "Runs", usage.md and design.md §3.15 are removed or replaced by a pointer to C157, and a message sent to the leader during a real run is answered with a reply to it while `GET /mailboxes` still shows the `RUN:` request awaiting a reply; design.md §6 records the seqs seen.
-
-### C157. A reply with `reply_to` closes only the request it names
-
-Decided 2026-11-10 by the user in the planning session (C156's review). Today a conversation Message (`request` or `reply`) from the receiver of a request to its sender closes every request from that sender still awaiting a reply, whatever its `replyTo` (protocol.md §2 "Awaiting reply"; `src/hub/store.ts` `answeredBy()`). In a run (C153) the leader then cannot answer a mid-run message without closing the `RUN:` request too (C156).
-- **The rule.** A conversation Message whose `replyTo` names a request that its sender received from the Message's receiver, and that is still awaiting a reply, closes that request only. A conversation Message with no `replyTo`, or whose `replyTo` names anything else, closes as today (every open request from that party). The sweep stays as the safety net for agents that forget `reply_to`, which is why it was there (C28, C39).
-- Confirmed receipt (protocol.md §2 point 2, §4) is unchanged.
-- **Logs written before the change.** Closing is derived from the order of the log on every start (protocol.md §2). Replaying an older log under the new rule would reopen requests that the sweep had closed, so a restart would show old requests as awaiting a reply again. The new rule applies only to Messages written after the change; how the Hub tells them apart (for example a marker written once in the log, or a field on new Messages) is the implementer's choice, written in protocol.md.
-- Rejected: answering mid-run messages by `notice` (the user's message stays awaiting a reply), and in the last report (late). C156 records the three options.
-
-#### Done when
-- [ ] The Hub closes awaiting replies by the rule above: a conversation Message whose `replyTo` names an open request from its receiver closes that request only; one without such a `replyTo` closes every open request from that party, as today. Unit tests cover both, and two open requests from the same sender where a reply to one leaves the other awaiting a reply.
-- [ ] A log written before the change replays to the same awaiting-reply state as before it (a test with such a log), and so does a log compacted before the change.
-- [ ] protocol.md §2 "Awaiting reply" states the new rule, drops the sentence that parallel requests are all closed by a reply to one of them, and says how Messages written before the change are told apart.
-- [ ] docs/conventions-log.md has a line for the change, saying how a log or a closing from before it reads.
-- [ ] `npm test`, `npm run docs:check` and `npm run ui:check` pass (the card states read awaiting replies).
+- [ ] `leader.md` "Runs" says a mid-run message is replied to once: a second reply to it, once it is closed, closes every open request from the user, the `RUN:` request included (C157's fallback). docs/usage.md's two sentences on what closes awaiting reply (the Mailbox list near the top, and retention) state C157's rule.

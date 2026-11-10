@@ -31,6 +31,9 @@ type LogRecord =
   // 返信が消えた後も、その request が返信済みだったことを残す (詰め直しで返信の Message がなくなるため)。
   // 相手からの後の Message で閉じた request (C28) も同じ行で残す
   | { op: 'replied'; id: string }
+  // 閉じ方の規則が変わった印 (C157)。この行より後の Message は、replyTo が指す返信待ちの request だけを閉じる (protocol.md §2)。
+  // 印のない前の形式の Message は、相手の返信待ちの request をすべて閉じる規則のまま。起動のたびに、今の規則の印を 1 度だけ書く
+  | { op: 'closing'; rule: 'reply-to' }
 
 interface MailboxState {
   name: string
@@ -146,6 +149,8 @@ export class Store {
   private readonly handedCache = new Map<string, { cursor: number; last: Message | null }>()
   // この seq までの Message からは閉じる request を導かない (詰め直しが replied の行に書いた分。LogRecord の seq)
   private answeredUpTo = 0
+  // 閉じ方の規則 (C157)。true なら、この時点より後の Message は replyTo が指す request だけを閉じる。印 (closing) を読むと true になる
+  private replyToRule = false
   // 返信のある Message の id (返信の replyTo) と、相手からの後の Message で閉じた request の id (C28、answeredBy)。
   // 返信待ちの request を自動で消さないため (design.md §3.14)
   private readonly repliedTo = new Set<string>()
@@ -168,6 +173,8 @@ export class Store {
         if (text.length > 0 && !text.endsWith('\n')) appendFileSync(this.file, '\n')
       }
     }
+    // 前の形式の log には閉じ方の印がない。ここまでの Message は前の規則のまま、これから書く Message は今の規則 (C157)
+    if (!this.replyToRule) this.write({ op: 'closing', rule: 'reply-to' })
     // 前の形式の Mailbox は、復元した cursor までを確認済みとして記録し、以後は received を cursor に追従させない
     for (const mb of this.mailboxes.values()) {
       if (mb.legacy) this.write({ op: 'received', name: mb.name, received: mb.cursor })
@@ -221,7 +228,7 @@ export class Store {
         if (rec.recipients) this.sentTo.set(rec.message.id, new Set(rec.recipients))
         // 閉じる request はログの順から導く (記録しない)。追記したときと再生したときで、前にある行が同じなので結果も同じ。
         // 詰め直したファイルの分は replied の行が残しているので、導き直さない
-        if (rec.message.seq > this.answeredUpTo) for (const r of this.answeredBy(rec.message)) this.markReplied(r.id)
+        if (rec.message.seq > this.answeredUpTo) for (const r of this.closedBy(rec.message)) this.markReplied(r.id)
         this.messages.push(rec.message)
         this.byId.set(rec.message.id, rec.message)
         this.seq = Math.max(this.seq, rec.message.seq)
@@ -238,6 +245,9 @@ export class Store {
         break
       case 'replied':
         this.markReplied(rec.id)
+        break
+      case 'closing':
+        this.replyToRule = true
         break
       case 'mailbox.create':
         this.handedCache.delete(rec.name)
@@ -340,16 +350,26 @@ export class Store {
   // openRequests には m より前の行しかない (再生でも追記でも、その行を適用する前に呼ぶ)
   private answeredBy(m: Message): Message[] {
     if (!isExchange(m)) return []
-    const out: Message[] = []
-    for (const r of this.openRequests.values()) {
-      if (m.from.type === r.from.type && (m.from.type === 'user' || m.from.id === r.from.id)) continue
-      const fromRecipient = r.to.type === 'user' ? m.from.type === 'user' : m.from.type === 'mailbox' && this.hasReceived(m.from.id, r)
-      if (!fromRecipient) continue
-      const toSender =
-        r.from.type === 'user' ? m.to.type === 'user' : (m.to.type === 'mailbox' || m.to.type === 'role') && this.hasReceived(r.from.id, m)
-      if (toSender) out.push(r)
+    return [...this.openRequests.values()].filter((r) => this.answers(m, r))
+  }
+
+  // m が返信待ちの request r を閉じるか (answeredBy の 1 件分)。r の受け手から r の送り手へ、r の送り手の側が受け取る Message
+  private answers(m: Message, r: Message): boolean {
+    if (m.from.type === r.from.type && (m.from.type === 'user' || m.from.id === r.from.id)) return false
+    const fromRecipient = r.to.type === 'user' ? m.from.type === 'user' : m.from.type === 'mailbox' && this.hasReceived(m.from.id, r)
+    if (!fromRecipient) return false
+    return r.from.type === 'user' ? m.to.type === 'user' : (m.to.type === 'mailbox' || m.to.type === 'role') && this.hasReceived(r.from.id, m)
+  }
+
+  // m が閉じる request の一覧 (C157)。replyTo が返信待ちの request r を指し、m が r の受け手からの Message なら、r だけ。
+  // それ以外 (replyTo がない、指すものが違う、印より前の Message) は、これまでどおり answeredBy
+  private closedBy(m: Message): Message[] {
+    if (!isExchange(m)) return []
+    if (this.replyToRule && m.replyTo) {
+      const r = this.openRequests.get(m.replyTo)
+      if (r && this.answers(m, r)) return [r]
     }
-    return out
+    return this.answeredBy(m)
   }
 
   getMessage(id: string): Message | undefined {
@@ -715,6 +735,8 @@ export class Store {
     if (!this.file || this.deletesSinceCompact === 0) return false
     // 閉じた request は下で replied の行に書くので、再生では導き直さない (answered)
     const recs: LogRecord[] = [{ op: 'seq', seq: this.seq, answered: true }]
+    // 閉じ方の印は詰め直しの後も残す。印のない詰め直しの後の Message を、前の規則で再生しないため (C157)
+    recs.push({ op: 'closing', rule: 'reply-to' })
     // 削除した Mailbox の削除時点の seq (作り直したときに古い直接宛てを再送しないため)。作り直した Mailbox の create より前に置く
     for (const [name, seq] of this.deletedAt) recs.push({ op: 'mailbox.delete', name, seq })
     for (const mb of this.mailboxes.values()) {
