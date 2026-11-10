@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
 import { createApp } from './app.js'
 import { FileStore } from './files.js'
-import { HubLogFile, installExitHandlers, teeConsole } from './log.js'
+import { HubLogFile, installExitHandlers, resolveHubLogFile, teeConsole } from './log.js'
 import { Hub } from './hub.js'
 import { IndexStore } from './indexes.js'
 import { loadConfig } from './config.js'
@@ -18,10 +18,10 @@ import { envOverrides, overrideWarning } from '../shared/env-override.js'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
-// Outside Docker, the console output is also kept in logs/hub.log (C143). Docker keeps its output in `docker logs` and is left as it is.
+// Outside Docker, the console output is also kept in logs/hub.log (C143), or in HUB_LOG_FILE when it is set (C158). Docker keeps its output in `docker logs` and is left as it is.
 // The file is installed before anything else prints, so the start's warnings are in it too
 if (!existsSync('/.dockerenv')) {
-  const log = new HubLogFile(join(ROOT, 'logs', 'hub.log'), [process.env.HUB_TOKEN ?? ''])
+  const log = new HubLogFile(resolveHubLogFile(ROOT, process.env.HUB_LOG_FILE), [process.env.HUB_TOKEN ?? ''])
   teeConsole(log)
   installExitHandlers(log)
   log.write(`[hub] start: pid ${process.pid}, node ${process.version}`)

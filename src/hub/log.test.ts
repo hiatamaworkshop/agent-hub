@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { formatLogLines, HubLogFile, maskSecrets, needsRotation } from './log.js'
+import { formatLogLines, HubLogFile, maskSecrets, needsRotation, resolveHubLogFile } from './log.js'
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'agent-hub-hublog-'))
 const SECRET = 'a'.repeat(16) + '.b*c-d'
@@ -111,6 +111,37 @@ test('HubLogFile: a file that already has content counts its size, so the first 
   log.write('next line that does not fit', NOW)
   assert.equal(readFileSync(`${file}.1`, 'utf8'), 'x'.repeat(190))
   assert.equal(existsSync(file), true)
+})
+
+test('resolveHubLogFile: unset or blank is logs/hub.log under the agent-hub folder; HUB_LOG_FILE names the file, a relative one from that folder', () => {
+  const root = tmp()
+  assert.equal(resolveHubLogFile(root, undefined), join(root, 'logs', 'hub.log'))
+  assert.equal(resolveHubLogFile(root, '   '), join(root, 'logs', 'hub.log'))
+  assert.equal(resolveHubLogFile(root, 'custom/a.log'), join(root, 'custom', 'a.log'))
+  const abs = join(tmp(), 'check.log')
+  assert.equal(resolveHubLogFile(root, abs), abs)
+})
+
+test('HubLogFile: the log goes to HUB_LOG_FILE when it is set, and to logs/hub.log under the folder when it is not', () => {
+  const root = tmp()
+  const custom = join(tmp(), 'work', 'hub.log')
+  new HubLogFile(resolveHubLogFile(root, custom), []).write('to the custom file', NOW)
+  assert.equal(readFileSync(custom, 'utf8'), formatLogLines(NOW, 'to the custom file'))
+  assert.equal(existsSync(join(root, 'logs', 'hub.log')), false, 'the default is not written when HUB_LOG_FILE is set')
+  new HubLogFile(resolveHubLogFile(root, undefined), []).write('to the default file', NOW)
+  assert.equal(readFileSync(join(root, 'logs', 'hub.log'), 'utf8'), formatLogLines(NOW, 'to the default file'))
+  assert.equal(readFileSync(custom, 'utf8'), formatLogLines(NOW, 'to the custom file'), 'the custom file is not touched by the default')
+})
+
+test('HubLogFile: the rotation goes to <HUB_LOG_FILE>.1 and not to the default path', () => {
+  const root = tmp()
+  const custom = join(tmp(), 'work', 'hub.log')
+  const log = new HubLogFile(resolveHubLogFile(root, custom), [], 200)
+  log.write('a'.repeat(150), NOW)
+  log.write('b', NOW)
+  assert.equal(readFileSync(`${custom}.1`, 'utf8'), formatLogLines(NOW, 'a'.repeat(150)))
+  assert.equal(readFileSync(custom, 'utf8'), formatLogLines(NOW, 'b'))
+  assert.equal(existsSync(join(root, 'logs', 'hub.log.1')), false)
 })
 
 test('HubLogFile: a failed write is reported once and does not throw', () => {

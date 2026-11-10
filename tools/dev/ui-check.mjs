@@ -35,7 +35,8 @@ const hubs = [] // この場面で起動した Hub すべて。終わりに止�
 const startHub = () => {
   const child = spawn(process.execPath, ['--import', 'tsx', 'src/hub/main.ts'], {
     cwd: ROOT,
-    env: { ...process.env, HUB_DATA_DIR: join(work, 'hub'), HUB_PORT: String(PORT), HUB_TOKEN: TOKEN, HUB_READ_RETENTION_HOURS: '0' },
+    // HUB_LOG_FILE (C158): the check's Hub writes its log beside its data in the work folder, not into the real Hub's logs/hub.log
+    env: { ...process.env, HUB_DATA_DIR: join(work, 'hub'), HUB_LOG_FILE: join(work, 'hub.log'), HUB_PORT: String(PORT), HUB_TOKEN: TOKEN, HUB_READ_RETENTION_HOURS: '0' },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   hubs.push(child)
@@ -2004,6 +2005,8 @@ try {
     hub.kill()
   }
   await sleep(500)
-  rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+  // A failed run keeps the work folder (the check Hub's data and hub.log, C158) and says where it is. A passing run removes it
+  if (failed) console.error(`the work folder is kept for the failed check: ${work} (its Hub's log is hub.log there)`)
+  else rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   process.exitCode = failed ? 1 : 0
 }

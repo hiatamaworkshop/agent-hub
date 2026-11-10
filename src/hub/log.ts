@@ -3,11 +3,18 @@
 // An uncaught error, an unhandled rejection and SIGINT / SIGTERM / SIGHUP are written to the file before the process exits.
 // Docker is left alone: its output already goes to `docker logs`. The file keeps one rotation: logs/hub.log.1 holds the previous part.
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { format } from 'node:util'
 
 export const HUB_LOG_MAX_BYTES = 1024 * 1024
 const MASK = '***'
+
+// The path of the log file. HUB_LOG_FILE (unset or blank: the default) names it; a relative path is resolved from the agent-hub
+// folder `root`, as the default logs/hub.log is. The rotation goes to the same path with `.1` added
+export function resolveHubLogFile(root: string, value: string | undefined): string {
+  const trimmed = value?.trim() ?? ''
+  return trimmed === '' ? join(root, 'logs', 'hub.log') : resolve(root, trimmed)
+}
 
 // Replaces every occurrence of each secret, the value after `token=` in a URL, and the value after `HUB_TOKEN=` with `***`.
 // Secrets are matched as plain text, not as patterns.

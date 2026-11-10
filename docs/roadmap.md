@@ -25,7 +25,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C156
-- [ ] C158
 - [ ] C146
 - [ ] C151
 - [ ] C149
@@ -557,6 +556,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: `npm test` 594 pass, 0 fail; `npx tsc --noEmit` clean; `npm run ui:check` 202 ok, 0 NG; `npm run docs:check` 0 errors. The review found no finding. Done-when wording not changed.
   - Not checked: a live Hub across the change (the compose Hub on 7777 runs the old code until it is restarted; it then writes the closing line once); an older Hub reading a log with a `closing` line.
   - Notes for what follows: a second reply to an already closed request falls back to the sweep (as decided); `docs/usage.md` lines near 28 and 144 still describe the old rule.
+- [x] C158 The Hub started by `ui:check` writes to its own log, not the real Hub's (2026-11-10, closed after the review)
+  - Decided 2026-11-10 by the user in the planning session; found the same day after a team ran `npm run ui:check`, when the last lines of `logs/hub.log` were from the check's own Hub (port 7793), not from the Hub on 7777.
+  - Changed: `src/hub/log.ts` (`resolveHubLogFile`: unset or blank gives `logs/hub.log` under the agent-hub folder; a relative `HUB_LOG_FILE` is resolved from that folder), `src/hub/main.ts` (the file log uses it; the rotation goes to `<HUB_LOG_FILE>.1`), `src/hub/log.test.ts` (3 new tests), `tools/dev/ui-check.mjs` (sets `HUB_LOG_FILE` to `<work>/hub.log`; a failed run keeps its work folder and prints the path, a passing run removes it as before), `.env.example`, `docs/design.md` §3.14, `docs/usage.md` ("Hub log outside Docker").
+  - Checked: `npm test` 597 pass, 0 fail; `npm run ui:check` 202 ok, 0 NG; `logs/hub.log` 85798 bytes with the same last line (`2026-11-10T09:30:59.519Z [hub] UI: http://127.0.0.1:7777/?token=***`) before and after a run; a real start of `src/hub/main.ts` on port 7798 with `HUB_LOG_FILE` in a scratch folder wrote its lines to that file; `npm run docs:check` 0 errors. The review found no finding. Done-when wording not changed.
+  - Not checked: a failed `ui:check` keeping its work folder; a real Hub start with `HUB_LOG_FILE` unset (the default is covered by the unit test only).
+  - Notes: a failed run keeps its work folder, a deviation from the spec's "keeps its log" that the work folder's deletion on every run would otherwise undo. A relative `HUB_LOG_FILE` is resolved from the agent-hub folder, while a relative `HUB_DATA_DIR` is resolved from the process's cwd (documented; harmless for `npm run hub`). `logs/hub.log` is written by the host Hub on 7777, started outside Docker; the compose Hub writes no file.
 - [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
   - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
   - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
@@ -1111,16 +1116,3 @@ C153 says that while a run goes on the leader sends the user no `request` or `re
 - [x] `npm test` and `npm run docs:check` pass.
 - [ ] After C157, the known-gap sentences in `leader.md` "Runs", usage.md and design.md §3.15 are removed or replaced by a pointer to C157, and a message sent to the leader during a real run is answered with a reply to it while `GET /mailboxes` still shows the `RUN:` request awaiting a reply; design.md §6 records the seqs seen.
 - [ ] `leader.md` "Runs" says a mid-run message is replied to once: a second reply to it, once it is closed, closes every open request from the user, the `RUN:` request included (C157's fallback). docs/usage.md's two sentences on what closes awaiting reply (the Mailbox list near the top, and retention) state C157's rule.
-
-### C158. The Hub started by `ui:check` writes to the real Hub's log
-
-Decided 2026-11-10 by the user in the planning session. Found the same day: after a team ran `npm run ui:check`, the last lines of `logs/hub.log` were from the check's own Hub (port 7793, data in a temp folder), not from the Hub on 7777.
-- Why: the Hub writes its console output to `logs/hub.log` under the repository, a fixed path (`src/hub/main.ts`, C143). `tools/dev/ui-check.mjs` gives its Hub its own `HUB_DATA_DIR`, `HUB_PORT` and `HUB_TOKEN`, but nothing moves the log. So a check's lines mix into the record that design.md §3.14 keeps for the real Hub. Both processes may also rotate the same file (`logs/hub.log.1`) while both are running.
-- The fix: a `HUB_LOG_FILE` setting. It holds the path of the log file and defaults to `logs/hub.log`. `ui:check` sets it to a file in its own work folder, next to the check Hub's data, so a failed check keeps its log with the rest of its files. Rejected: deriving the log path from `HUB_DATA_DIR`. The log and the data are kept apart on purpose (`logs/` and `data/`, CLAUDE.md), and the default Hub would change where it logs. Also rejected: turning the file off for `ui:check`, because the check's log helps when a scene fails.
-- Related: C151 (free ports for `ui:check`, two runs at once). Each run then has its own work folder, so each also gets its own log.
-
-#### Done when
-- [ ] The Hub writes its log to `HUB_LOG_FILE` when it is set, and to `logs/hub.log` when it is not; the rotation (`.1`) follows the same path. A unit test covers both.
-- [ ] `tools/dev/ui-check.mjs` sets `HUB_LOG_FILE` to a file in its work folder. After a run, `logs/hub.log` has no new line from the check's Hub (checked by its size or last line before and after a run).
-- [ ] `.env.example`, design.md §3.14 (the Hub's own log) and docs/usage.md, wherever they name `logs/hub.log`, say how `HUB_LOG_FILE` changes the path.
-- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
