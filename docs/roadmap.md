@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C149
 - [ ] C147
 - [ ] C148
 - [ ] C150
@@ -577,6 +576,13 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: `npm test` 599 pass, 0 fail; `npm run docs:check` 0 errors. The reviews found: a false premise about the Hub (closed by C157); a user `reply` or `notice` sweeping the `RUN:` request; a STOP sent as a reply; unconditional "every shim" wording. The last review found no finding. The first real mid-run message is in design.md §6.1ab: seq 421 answered by reply seq 422, `awaitingReply` 2 → 1, with the `RUN:` request still awaiting. Done-when wording not changed; the last box was re-checked after C157.
   - Not observed: a user `reply` or `notice` mid-run, a STOP, a correction, an unclear message, several awaiting requests answered before the last report.
   - Reviewer notes on §6.1ab: the before/after counts are the leader's own readings and cannot be repeated (the log agrees: 421 had no reply until 422); the old-rule point is derived from protocol.md §2 and `store.ts`, not observed; "no notice and no second reply" means none in answer to 421; message 421 was a staged probe of the rule.
+- [x] C149 Check design.md §6.2-4 and §6.2-7 on a real machine, and settle §6.2-1 (2026-11-10, closed after the review)
+  - Decided 2026-11-10 in the planning session. The `/clear` check needed a session the user types into; the closing request came on the user's word "close C149".
+  - Changed: `docs/design.md` (§6.1ac: `/clear` changes the hook's `session_id`; §6.1ad: Claude Code escapes `"` `<` `>` `&` in Channels' `meta` attribute values itself; §6.2-1 rewritten; §6.2-4 and §6.2-7 point at those results; §3.15's C41 bullet cites §6.1ac), `docs/protocol.md` (two paragraphs), CLAUDE.md (the §6 map label). Commits `bc7bba7` and `3ab7909`. No code changed.
+  - Checked: `npm run docs:check` 0 errors. The reviewer read `logs/probe.jsonl` and `GET /events` against §6.1ac and §6.1ad and found no finding. Done-when wording not changed.
+  - Results: `/clear` changes the hook's `session_id`, and Events still resolve to the Mailbox through `X-Hub-Mailbox` (the Attachment keeps the old `sessionId`). Claude Code escapes `"` `<` `>` `&` in `meta` values itself, so the provisional restriction is no longer needed for escaping.
+  - Follow-ups for the planning session: lifting the `channelMeta` restriction and its comment (`src/shared/format.ts`); the forward covering note; sessions without `HUB_MAILBOX` after `/clear`.
+  - Reviewer notes: §6.1ac's "Claude Code 2.1.321" names no source (the probe session's 2.1.322 is read from initialize `clientInfo`); `tools/probe` (`probe.mjs:104,106`, `README:56,64`) still calls the escaping case unverified and labels the AskUserQuestion case §6.2-7; `src/shared/format.ts:43` still says unverified. Versions: 2.1.321 (reviewer tab), 2.1.322 (probe session).
 - [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
   - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
   - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
@@ -1037,26 +1043,6 @@ Raised 2026-11-10 in the planning session. The repository has no CI: `npm run ty
 - [ ] A run on GitHub Actions passed on both systems (after the user's push), and its URL is in the body.
 - [ ] The README's Status says what CI runs, and design.md §6.2-8 says the unit tests are covered by CI while a real `claude` session on Linux or a Mac stays unchecked.
 - [ ] `npm test` and `npm run docs:check` pass.
-
-### C149. Check design.md §6.2-4 and §6.2-7 on a real machine, and settle §6.2-1
-
-Raised 2026-11-10 in the planning session. Three entries of design.md §6.2 have no item, and two of them can be checked on this machine now.
-- §6.2-4, escaping of Channels' `meta` attribute values: the provisional restriction (only the known keys of `files` go on Channels; `channelMeta` in `src/shared/format.ts`) has stood since 2026-10-16. The entry already says how to check (`tools/probe/`, `GET /case/attr` with `probe_quote: 'a"b<c>&d'`). The result decides between using `escapeAttr` for `meta` and leaving values as they are, and whether the restriction is lifted.
-- §6.2-7, whether `/clear` changes the hook's `session_id`: C41's rule for whose questions count depends on it (the closed record of C41 says the behaviour is unverified). Check the hook input before and after `/clear`, and whether the Event still resolves to the Mailbox (the first means of design.md §3.4).
-- §6.2-1, "Windows-specific: path notation, line endings": it names no behaviour to check. Either write what is unverified, or remove the entry and say where the confirmed parts are recorded.
-- Results go to design.md §6 with the Claude Code version. A code change that follows from a result (lifting the restriction, a change to C41's rule) is a separate item.
-- Decided 2026-11-10 in the planning session, as written above. The `/clear` check needs a session the user types into; it waits for the user's hands like other such checks.
-- Done (2026-11-10, deployer): §6.2-1 is rewritten in design.md §6.2 (numbering kept). It names two unverified Windows cases, which the repository shows are not run: paths with a space in the hook commands and the post-commit line, and CRLF ledger or `.env` files read by the checker, `docs:index` and the team start (the parsers have unit tests, no real run). It also names the Windows parts that are confirmed (§6.1i, §6.1l, §6.1x, §6.1y, C52). No code changed. Fix (2026-11-10, deployer, review of §6.2-1): the CRLF citations now name the files that hold the tests and the parsers (the `.env` readers and their tests, the ledger's CRLF test, `.agent-hub.json` read with `JSON.parse`); `src/hub/store.ts` is dropped, since it reads the Hub's own `hub.jsonl`.
-- Open, waiting for the user's hands (not started here, no Claude Code session was started): §6.2-4 (the `tools/probe/` check of `meta` escaping) and §6.2-7 (`/clear` and the hook's `session_id`). Their boxes stay `[ ]`.
-- Done (2026-11-10, planning session, the user typed `/clear` twice in the reviewer's tab): §6.2-7 is recorded in design.md §6.1ac. `session_id` changes on every `/clear`; the Events still resolve to `agent-hub.reviewer` through `X-Hub-Mailbox` (the second means); the Attachment keeps the old `sessionId`. C41's rule needs no change. A possible follow-up for the planning session: a session without `HUB_MAILBOX` would lose its Events after `/clear` (derived, not observed).
-- Done (2026-11-10, planning session, the user ran the probe): §6.2-4 is recorded in design.md §6.1ad (Claude Code 2.1.322). The probe pushed `a"b<c>&d` unconverted, and the session saw `a&quot;b&lt;c&gt;&amp;d`: Claude Code escapes attribute values itself, so `escapeAttr` is not added to the Channels path. §6.2-4 and protocol.md §6 now point at the result. No code changed. Follow-ups for the planning session (code changes, separate items): lifting the restriction in `channelMeta` (`src/shared/format.ts`, with its comment) so the sender's `meta` reaches Channels; a covering note could then go with a forward (protocol.md, the forward's paragraph).
-
-#### Done when
-- [x] §6.2-4 was checked with `tools/probe/` as the entry says, and design.md §6 records how a quote, `<`, `>` and `&` in a `meta` value arrive, with the Claude Code version; §6.2-4 is removed or points at the result.
-- [x] §6.2-7 was checked: design.md §6 records the hook input's `session_id` before and after `/clear` in one session and whether the Event still resolves to the Mailbox, with the Claude Code version; §6.2-7 is removed or points at the result.
-- [x] §6.2-1 names what is unverified, or is removed with a pointer to where the confirmed parts are recorded.
-- [x] No code changes from the results are made here; the body names any that follow, for the planning session.
-- [x] `npm run docs:check` passes.
 
 ### C150. Make the card state derivation testable and usable outside the page
 
