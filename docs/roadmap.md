@@ -25,6 +25,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C153
+- [ ] C156
 - [ ] C152
 - [ ] C146
 - [ ] C151
@@ -1115,3 +1116,22 @@ Status: held(after C153; decide once a real run shows what is hard to find)
 Raised 2026-11-10 with C153. After a run, what waits for the human is spread over the last report (a Message, deleted after the retention period), the items' sections (the defaults taken, the items left open) and `git log` (unpushed commits). The ledger is the place that lasts (design.md §3.16).
 - Idea: the Items list gets a tier, or a mark, for items whose done-when lines are all checked while the section is still there ("worked, waiting for the close"); the index already has the counts (`conditions.done` / `total`). `team status` (C139) could list the same.
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
+
+### C156. Messages from the user during a run: stop, correct, ask
+
+Decided 2026-11-10 by the user in the planning session, from the reviewer's notes on C153 ("stopping the leader was not thought through; handle it").
+C153 says that while a run goes on the leader sends the user no `request` or `reply`, so that the `RUN:` request stays awaiting a reply. Nothing says what the leader does when the user writes to it during the run: a stop, a correction, or a question. Two readings both fail today: a reply to the `RUN:` request closes it after the first answer (protocol.md §2), and no answer leaves the user with none. There is also no way to call a run off.
+- **Answer the message itself.** "Awaiting a reply" is kept per Message (`replyTo`), so a `reply` whose `reply_to` is the user's mid-run message closes only that message, not the `RUN:` request. That is the one exception to "no other `reply`" in a run. Rejected: answering by `notice` (the user's message would stay awaiting a reply until the retention period); answering in the next item's notice (late, and mixes two things).
+- **Stop.** A message that asks to stop the run (one starting `STOP`, or one that says so in words) makes the leader start no further item. The item in progress ends as items end: the deployer's report already asked for is awaited (no new request to the deployer), the leader does its check, and the item is committed if the tests pass, or left uncommitted and named. Then the last report goes as the reply to the `RUN:` request, naming the later items as not started (stopped by the user). The stop takes effect when the leader next reads its messages; stopping at once is Esc in the leader's terminal, outside the Hub (C14). Rejected: a cancel state or a `kind` in the Hub. The Hub holds addresses and delivery, not the state of work (design.md §3.14), and the run's state is in the ledger and `git log` (C153).
+- **Correct.** A correction about the item in progress applies from the leader's next request to the deployer. One about a later item applies when that item starts. Either way it is recorded in that item's section body as `changed by the user during the run: …`. A correction that would change a done-when line's meaning leaves that item open, as C153's rule does, because the wording is the planning session's. A request to add an item to the run is not followed (C153, membership); the reply says so.
+- **Unclear.** The run goes on, and the leader asks in a reply to that message.
+- **Before sending.** The leader stops a run when the working tree is not clean before the first item (C153). So an item filed in the planning session and left uncommitted stops the run before anything starts (the reviewer's note on C153). usage.md asks the human to commit before sending `RUN:`.
+
+#### Done when
+- [ ] `tools/dev/roles/leader.md` "Runs" says that a message from the user during a run is answered with a `reply` whose `reply_to` is that message, never the `RUN:` request; the line "no other `request` or `reply`" names this exception.
+- [ ] `leader.md` says what a stop does: a message that asks to stop the run (starting `STOP`, or saying so in words) starts no further item; the item in progress ends with the awaited deployer report, the leader's check, and a commit if the tests pass (otherwise uncommitted and named); the last report is the reply to the `RUN:` request and names the later items as not started (stopped by the user).
+- [ ] `leader.md` says how a correction is applied: from the next request to the deployer for the item in progress, or when a later item starts; recorded in that item's section body as `changed by the user during the run: …`; one that would change a done-when line's meaning leaves the item open; a request to add an item to the run is not followed and the reply says so; an unclear message is asked about in a reply to it while the run goes on.
+- [ ] docs/usage.md "Several items in one request (a run)" says to commit the project's changes, the ledger included, before sending `RUN:`; how to stop a run (`STOP`), and that it takes effect when the leader next reads its messages, while Esc in the leader's terminal stops at once; and that a mid-run message gets its own reply while the `RUN:` request stays awaiting one.
+- [ ] design.md §3.15's paragraph on runs says that mid-run messages are answered on their own and that a stop is a message to the leader, not a state in the Hub, with the reason.
+- [ ] docs/conventions-log.md has a `practice` line for messages during a run.
+- [ ] `npm test` and `npm run docs:check` pass.
