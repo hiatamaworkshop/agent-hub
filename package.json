@@ -2,7 +2,7 @@
   "name": "agent-hub",
   "version": "0.0.1",
   "private": true,
-  "description": "複数の AI エージェントセッションと人間をローカルの Hub 経由でつなぐメッセージ基盤",
+  "description": "Message infrastructure that connects multiple AI agent sessions and humans through a local Hub",
   "type": "module",
   "engines": {
     "node": ">=24"

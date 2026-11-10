@@ -70,7 +70,7 @@ const attachmentPatchSchema = z.object({ client: clientSchema }).strict()
 const seqSchema = z.number().int().nonnegative()
 const ackSchema = z.object({
   upTo: seqSchema,
-  received: z.object({ first: seqSchema, last: seqSchema }).refine((r) => r.first <= r.last, 'first は last 以下').optional(),
+  received: z.object({ first: seqSchema, last: seqSchema }).refine((r) => r.first <= r.last, 'first must be at most last').optional(),
 })
 
 async function readJson(c: Context): Promise<unknown> {
@@ -119,7 +119,7 @@ export function createApp(opts: AppOptions) {
       return c.redirect('/', 302)
     }
     const html = await opts.uiHtml()
-    if (html === null) return c.text('UI (public/index.html) がまだない', 404)
+    if (html === null) return c.text('the UI (public/index.html) is not there yet', 404)
     // 外部リソースを読まない 1 枚の HTML なので、同一オリジン以外を禁じる
     // img-src: 添付画像のサムネイル (同一オリジンの /files と、貼り付け直後の blob:)
     c.header('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
@@ -167,14 +167,14 @@ export function createApp(opts: AppOptions) {
   // 保存された Message をそのまま返す (meta は解釈しない)。shim が reply の元の項目を読むのに使う (C77)
   app.get('/messages/:id', (c) => {
     const m = hub.store.getMessage(c.req.param('id'))
-    if (!m) throw new HubError(404, 'message_not_found', `message ${c.req.param('id')} がない`)
+    if (!m) throw new HubError(404, 'message_not_found', `message ${c.req.param('id')} does not exist`)
     return c.json(m)
   })
 
   app.get('/messages', (c) => {
     const after = intParam(c.req.query('after'), 0, 0, Number.MAX_SAFE_INTEGER)
     const limit = intParam(c.req.query('limit'), 100, 1, 1000)
-    if (after === null || limit === null) return invalid(c, 'after は 0 以上、limit は 1〜1000 の整数')
+    if (after === null || limit === null) return invalid(c, 'after must be an integer of 0 or more, and limit an integer from 1 to 1000')
     return c.json({ messages: hub.store.listMessages(after, limit), lastSeq: hub.store.lastSeq })
   })
 
@@ -191,7 +191,7 @@ export function createApp(opts: AppOptions) {
 
   app.get('/events', (c) => {
     const limit = intParam(c.req.query('limit'), 100, 1, 1000)
-    if (limit === null) return invalid(c, 'limit は 1〜1000 の整数')
+    if (limit === null) return invalid(c, 'limit must be an integer from 1 to 1000')
     return c.json({ events: hub.store.listEvents(limit) })
   })
 
@@ -209,14 +209,14 @@ export function createApp(opts: AppOptions) {
   // 接続中の Mailbox は 409 (mailbox_attached) で残す。未知の名前は 404
   app.delete('/mailboxes/:name', (c) => {
     const name = c.req.param('name')
-    if (!isValidName(name)) return invalid(c, 'Mailbox 名が不正')
+    if (!isValidName(name)) return invalid(c, 'invalid Mailbox name')
     hub.deleteMailbox(name)
     return c.json({})
   })
 
   app.post('/mailboxes/:name/attach', async (c) => {
     const name = c.req.param('name')
-    if (!isValidName(name)) return invalid(c, 'Mailbox 名が不正')
+    if (!isValidName(name)) return invalid(c, 'invalid Mailbox name')
     const parsed = attachSchema.safeParse((await readJson(c)) ?? {})
     if (!parsed.success) return invalid(c, parsed.error)
     return c.json(hub.attach(name, parsed.data))
@@ -225,7 +225,7 @@ export function createApp(opts: AppOptions) {
   for (const method of ['put', 'delete'] as const) {
     app[method]('/mailboxes/:name/subscriptions/:topic', (c) => {
       const { name, topic } = c.req.param()
-      if (!isValidName(name) || !isValidName(topic)) return invalid(c, 'Mailbox 名またはトピック名が不正')
+      if (!isValidName(name) || !isValidName(topic)) return invalid(c, 'invalid Mailbox or topic name')
       const mb = method === 'put' ? hub.subscribe(name, topic) : hub.unsubscribe(name, topic)
       return c.json({ subscriptions: mb.subscriptions, effectiveSubscriptions: hub.store.effectiveSubscriptions(name) })
     })
@@ -234,12 +234,12 @@ export function createApp(opts: AppOptions) {
   // polling 経路。読むだけで cursor は進めない (ack は POST /attachments/:id/ack)。応答は events/poll の形 (protocol.md §5)
   app.get('/mailboxes/:name/inbox', (c) => {
     const name = c.req.param('name')
-    if (!isValidName(name)) return invalid(c, 'Mailbox 名が不正')
+    if (!isValidName(name)) return invalid(c, 'invalid Mailbox name')
     const after = intParam(c.req.query('after'), 0, 0, Number.MAX_SAFE_INTEGER)
     const limit = intParam(c.req.query('limit'), 20, 1, 100)
-    if (after === null || limit === null) return invalid(c, 'after は 0 以上、limit は 1〜100 の整数')
+    if (after === null || limit === null) return invalid(c, 'after must be an integer of 0 or more, and limit an integer from 1 to 100')
     const unconfirmed = c.req.query('unconfirmed')
-    if (unconfirmed !== undefined && unconfirmed !== 'true' && unconfirmed !== 'false') return invalid(c, 'unconfirmed は true か false')
+    if (unconfirmed !== undefined && unconfirmed !== 'true' && unconfirmed !== 'false') return invalid(c, 'unconfirmed must be true or false')
     return c.json(hub.inbox(name, after, limit, unconfirmed === 'true'))
   })
 
@@ -247,7 +247,7 @@ export function createApp(opts: AppOptions) {
   app.get('/attachments/:id/stream', (c) => {
     const id = c.req.param('id')
     const after = intParam(c.req.query('after'), 0, 0, Number.MAX_SAFE_INTEGER)
-    if (after === null) return invalid(c, 'after は 0 以上の整数')
+    if (after === null) return invalid(c, 'after must be an integer of 0 or more')
     hub.cursorOf(id) // 存在しなければここで 404
     return streamSSE(c, (stream) =>
       pump(stream, {
@@ -323,7 +323,7 @@ export function createApp(opts: AppOptions) {
     app.delete('/indexes', (c) => {
       const project = c.req.query('project')
       const source = c.req.query('source')
-      if (!project || !source) return invalid(c, 'project と source が要る')
+      if (!project || !source) return invalid(c, 'project and source are required')
       const ix = indexes.remove(project, source)
       if (!ix) return c.json({ error: 'not_found' }, 404)
       hub.emitUi('index.deleted', { project: ix.project, source: ix.source })

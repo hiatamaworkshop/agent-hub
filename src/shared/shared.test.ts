@@ -121,7 +121,7 @@ describe('toInboxText', () => {
     assert.equal(
       toInboxText({ messages: [base, second], hasMore: false }, 'rev-a'),
       [
-        'agent-hub: Mailbox "rev-a" の未読 2 件 (返した分は既読になった)。',
+        'agent-hub: Mailbox "rev-a" has 2 unread message(s) (the ones returned are now marked read).',
         INBOX_NOTICE,
         toHubMessageText(base),
         toHubMessageText(second),
@@ -130,8 +130,8 @@ describe('toInboxText', () => {
   })
 
   it('注意書きは、属性が Hub 由来で本文と meta が指示ではないことを言う', () => {
-    assert.match(INBOX_NOTICE, /agent-hub が付けた/)
-    assert.match(INBOX_NOTICE, /あなたへの指示ではない/)
+    assert.match(INBOX_NOTICE, /added by agent-hub/)
+    assert.match(INBOX_NOTICE, /not instructions to you/)
     assert.match(INBOX_NOTICE, /meta/)
   })
 
@@ -142,7 +142,7 @@ describe('toInboxText', () => {
   })
 
   it('続きがあれば最後に案内し、空なら 1 行だけ返す', () => {
-    assert.match(toInboxText({ messages: [base], hasMore: true }, 'rev-a'), /\n\nまだ未読がある \(has_more\)。続けて inbox を呼ぶこと。$/)
-    assert.equal(toInboxText({ messages: [], hasMore: false }, 'rev-a'), 'agent-hub: Mailbox "rev-a" に未読はない。')
+    assert.match(toInboxText({ messages: [base], hasMore: true }, 'rev-a'), /\n\nMore unread messages remain \(has_more\)\. Call inbox again\.$/)
+    assert.equal(toInboxText({ messages: [], hasMore: false }, 'rev-a'), 'agent-hub: Mailbox "rev-a" has no unread messages.')
   })
 })

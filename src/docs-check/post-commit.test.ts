@@ -60,7 +60,7 @@ test('the hook sends after a commit that changed a ledger with a non-ASCII path 
   commit(dir, { '.agent-hub.json': '{ "ledger": "docs/台帳.md" }', 'docs/台帳.md': ITEM })
   const r = runHook(dir)
   assert.equal(r.status, 0)
-  assert.match(r.stderr, /docs\/台帳\.md を送れない: Hub not reachable/)
+  assert.match(r.stderr, /docs\/台帳\.md could not be sent: Hub not reachable/)
 })
 
 test('the hook sends for a non-canonical spelling of the ledger (docs//items.md is docs/items.md) (C126)', () => {
@@ -68,7 +68,7 @@ test('the hook sends for a non-canonical spelling of the ledger (docs//items.md 
   commit(dir, { '.agent-hub.json': '{ "ledger": "docs//items.md" }', 'docs/items.md': ITEM })
   const r = runHook(dir)
   assert.equal(r.status, 0)
-  assert.match(r.stderr, /docs\/items\.md を送れない: Hub not reachable/)
+  assert.match(r.stderr, /docs\/items\.md could not be sent: Hub not reachable/)
 })
 
 test('the hook is silent after a commit that does not change the ledger (C126)', () => {
@@ -97,7 +97,7 @@ test('a failed send says the real reason, not "Hub stopped or no token" (C126)',
   const r = runHook(dir)
   assert.equal(r.status, 0)
   assert.match(r.stderr, /agent-hub: roadmap の索引を送れなかった/)
-  assert.match(r.stderr, /docs\/roadmap\.md を送れない: docs\/roadmap\.md has no `### C<n>\.` items/)
+  assert.match(r.stderr, /docs\/roadmap\.md could not be sent: docs\/roadmap\.md has no `### C<n>\.` items/)
   assert.doesNotMatch(r.stderr, /Hub stopped or no token/)
 })
 
@@ -110,7 +110,7 @@ test('docs:index --file in another spelling names the same source (./docs/items.
     encoding: 'utf8',
   })
   assert.equal(r.status, 1)
-  assert.match(r.stderr, /docs\/items\.md を送れない: Hub not reachable/)
+  assert.match(r.stderr, /docs\/items\.md could not be sent: Hub not reachable/)
 })
 
 // docs:index with --file, run for real in a project; the Hub is unreachable, so the result shows which file was sent
@@ -128,7 +128,7 @@ test('docs:index --file that cannot be put in the form warns and uses the projec
   const r = indexFile(dir, '../items.md')
   assert.equal(r.status, 1) // the send to the unreachable Hub fails, as with any file
   assert.match(r.stderr, /--file \.\.\/items\.md is not a path inside the project .* so docs\/roadmap\.md \(the project's ledger\) is used/)
-  assert.match(r.stderr, /docs\/roadmap\.md を送れない: Hub not reachable/)
+  assert.match(r.stderr, /docs\/roadmap\.md could not be sent: Hub not reachable/)
   assert.doesNotMatch(r.stderr, /docs\/items\.md/)
 })
 
@@ -138,7 +138,7 @@ test('docs:index --file that is empty warns and uses the project\'s ledger setti
   const r = indexFile(dir, '')
   assert.equal(r.status, 1)
   assert.match(r.stderr, /--file  is not a path inside the project .* so docs\/items\.md \(the project's ledger\) is used/)
-  assert.match(r.stderr, /docs\/items\.md を送れない: Hub not reachable/)
+  assert.match(r.stderr, /docs\/items\.md could not be sent: Hub not reachable/)
 })
 
 test('docs:index --file that is absolute warns and uses the default ledger when there is no setting (C126)', () => {
@@ -146,5 +146,5 @@ test('docs:index --file that is absolute warns and uses the default ledger when 
   commit(dir, { 'docs/roadmap.md': ITEM })
   const r = indexFile(dir, '/etc/x.md')
   assert.match(r.stderr, /--file \/etc\/x\.md is not a path inside the project/)
-  assert.match(r.stderr, /docs\/roadmap\.md を送れない: Hub not reachable/)
+  assert.match(r.stderr, /docs\/roadmap\.md could not be sent: Hub not reachable/)
 })

@@ -106,7 +106,7 @@ export class HubClient {
       await this.request('PATCH', `/attachments/${at.attachmentId}`, { client: this.client })
     } catch (e) {
       // 表示だけの情報なので、失敗しても attach や配送は続ける (古い Hub はこの口を持たない)
-      this.log(`client の更新に失敗: ${e instanceof Error ? e.message : String(e)}`)
+      this.log(`failed to update the client: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
 
@@ -130,14 +130,14 @@ export class HubClient {
   async primeAttach(timeoutMs: number): Promise<AttachInfo | undefined> {
     let timer: NodeJS.Timeout | undefined
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`attach が ${timeoutMs}ms 以内に終わらなかった`)), timeoutMs)
+      timer = setTimeout(() => reject(new Error(`attach did not finish within ${timeoutMs}ms`)), timeoutMs)
     })
     try {
       await Promise.race([this.attach(), timeout])
       return this.attachment
     } catch (e) {
       this.lastError = e instanceof Error ? e.message : String(e)
-      this.log(`hub: ${this.lastError}${this.cfg.role ? ' (role の説明なしで起動する)' : ''}`)
+      this.log(`hub: ${this.lastError}${this.cfg.role ? ' (starting without the role description)' : ''}`)
       return undefined
     } finally {
       clearTimeout(timer)
@@ -251,7 +251,7 @@ export class HubClient {
         }
       }
     } catch (e) {
-      if (abort.signal.aborted && !this.stopped) throw new Error(`stream が ${HEARTBEAT_TIMEOUT_MS / 1000} 秒途絶えたので再接続する`)
+      if (abort.signal.aborted && !this.stopped) throw new Error(`the stream was silent for ${HEARTBEAT_TIMEOUT_MS / 1000} seconds, so it reconnects`)
       throw e
     } finally {
       clearTimeout(watchdog)

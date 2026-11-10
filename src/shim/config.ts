@@ -34,8 +34,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ShimConfig {
   const role = envValue(env, 'HUB_ROLE') ?? null
   // 優先順: HUB_MAILBOX → HUB_ROLE なら <フォルダ名>.<role> → フォルダ名 (design.md §3.3)
   const mailbox = envValue(env, 'HUB_MAILBOX') ?? defaultMailboxName(cwd, role)
-  if (!isValidName(mailbox)) throw new Error(`Mailbox 名 "${mailbox}" は ^[a-z0-9][a-z0-9_.-]{0,63}$ に合わない`)
-  if (role !== null && !isValidName(role)) throw new Error(`role 名 "${role}" は ^[a-z0-9][a-z0-9_.-]{0,63}$ に合わない`)
+  if (!isValidName(mailbox)) throw new Error(`Mailbox name "${mailbox}" does not match ^[a-z0-9][a-z0-9_.-]{0,63}$`)
+  if (role !== null && !isValidName(role)) throw new Error(`role name "${role}" does not match ^[a-z0-9][a-z0-9_.-]{0,63}$`)
   const port = envValue(env, 'HUB_PORT') ?? '7777'
   return {
     hubUrl: (envValue(env, 'HUB_URL') ?? `http://127.0.0.1:${port}`).replace(/\/+$/, ''),

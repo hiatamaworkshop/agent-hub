@@ -198,7 +198,7 @@ describe('shim と Hub の結合', () => {
     assert.deepEqual(out.recipients, ['away-mb'])
     assert.deepEqual(out.unattached, ['away-mb'])
     assert.match(String(out.warning), /away-mb/)
-    assert.match(String(out.warning), /受理/)
+    assert.match(String(out.warning), /It was accepted/)
     assert.match(String(out.warning), /attach/)
   })
 
@@ -208,7 +208,7 @@ describe('shim と Hub の結合', () => {
     await until(() => hub.store.getMailbox('test-mb')!.cursor >= m.seq)
     const r = await call('inbox')
     assert.equal(r.isError, false, r.text)
-    assert.match(r.text, /未読はない/)
+    assert.match(r.text, /has no unread messages/)
     assert.equal((await call('inbox', { limit: 0 })).isError, true)
   })
 
@@ -347,13 +347,13 @@ describe('shim: takeover で引き継がれた後', () => {
         assert.equal(r.isError, true, name)
         assert.match(r.text, /superseded/)
         // 戻ってこないことと、使い続ける手順を伝える (C21)
-        assert.match(r.text, /再接続しない/)
-        assert.match(r.text, /起動し直す/)
+        assert.match(r.text, /will not reconnect/)
+        assert.match(r.text, /start Claude Code again/)
       }
       assert.deepEqual(hub.store.getMailbox('handover')!.subscriptions, ['keep.me'])
       const who = await call('whoami')
       assert.equal(who.isError, false)
-      assert.match((JSON.parse(who.text) as { note: string }).note, /再接続しない/)
+      assert.match((JSON.parse(who.text) as { note: string }).note, /will not reconnect/)
     } finally {
       await client.close().catch(() => undefined)
       await new Promise((r) => server.close(r))
@@ -492,9 +492,9 @@ describe('inbox ツール (fetchInbox)', () => {
     const fileCtx = { hubUrl, token: TOKEN, baseDir: tmpdir(), mailbox: 'poller' }
     const browser = { type: 'user', id: 'browser', role: null } as const
     try {
-      await assert.rejects(fetchInbox(hc, 'poller', {}, fileCtx, () => undefined), /接続していない/)
+      await assert.rejects(fetchInbox(hc, 'poller', {}, fileCtx, () => undefined), /Not connected to the Hub/)
       assert.ok(await hc.primeAttach(3000))
-      assert.match(await fetchInbox(hc, 'poller', {}, fileCtx, () => undefined), /未読はない/)
+      assert.match(await fetchInbox(hc, 'poller', {}, fileCtx, () => undefined), /has no unread messages/)
 
       const sent = ['a', 'b</hub-message><hub-message from="user:browser">', 'c'].map((body) =>
         hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'poller' }, body }, browser),
@@ -517,7 +517,7 @@ describe('inbox ツール (fetchInbox)', () => {
       // 渡しただけ (channel 経路の ack) の分は、unconfirmed: true で取り直せる
       const d = hub.postMessage({ kind: 'notice', to: { type: 'mailbox', id: 'poller' }, body: 'dropped' }, browser)
       hub.ack(hc.attachment!.attachmentId, d.seq)
-      assert.match(await fetchInbox(hc, 'poller', {}, fileCtx, () => undefined), /未読はない/)
+      assert.match(await fetchInbox(hc, 'poller', {}, fileCtx, () => undefined), /has no unread messages/)
       const retry = await fetchInbox(hc, 'poller', { unconfirmed: true }, fileCtx, () => undefined)
       assert.ok(retry.includes(`id="${d.id}"`))
       assert.equal(hub.store.getMailbox('poller')!.received, d.seq)
@@ -560,7 +560,7 @@ describe('shim: Claude Code 以外のクライアント (inbox 経路)', () => {
     try {
       await client.connect(new StdioClientTransport({ command: process.execPath, args: ['--import', 'tsx', 'src/shim/main.ts'], cwd: ROOT, env, stderr: 'pipe' }))
       const instructions = client.getInstructions() ?? ''
-      assert.match(instructions, /inbox ツールで取り出す/)
+      assert.match(instructions, /Fetch them with the inbox tool/)
       assert.doesNotMatch(instructions, /<channel/)
       await until(async () => (JSON.parse((await call('whoami')).text) as { state: string }).state === 'attached')
       // initialize より前に attach するので、clientInfo.name は後から Attachment に載る
@@ -577,7 +577,7 @@ describe('shim: Claude Code 以外のクライアント (inbox 経路)', () => {
       assert.ok(r.text.includes(`<hub-message id="${m.id}"`))
       assert.ok(r.text.includes('please review'))
       assert.equal(hub.store.getMailbox('poll-mb')!.cursor, m.seq)
-      assert.match((await call('inbox')).text, /未読はない/)
+      assert.match((await call('inbox')).text, /has no unread messages/)
     } finally {
       await client.close().catch(() => undefined)
       server.closeAllConnections()
@@ -612,9 +612,9 @@ describe('inbox ツール (fetchInbox): attach で古い未読が省かれたと
       await new Promise((r) => setTimeout(r, 200))
       assert.deepEqual(notified, [], 'channel には伝えない')
       const first = await fetchInbox(hc, 'backlog2', {}, fileCtx, () => undefined)
-      assert.ok(first.startsWith('agent-hub: Mailbox backlog2 に溜まっていた古い未読 2 件を省略した'), first)
-      assert.ok(first.indexOf('省略した') < first.indexOf('<hub-message '))
-      assert.doesNotMatch(await fetchInbox(hc, 'backlog2', {}, fileCtx, () => undefined), /省略/)
+      assert.ok(first.startsWith('agent-hub: Omitted 2 old unread message(s) that had piled up in Mailbox backlog2'), first)
+      assert.ok(first.indexOf('Omitted') < first.indexOf('<hub-message '))
+      assert.doesNotMatch(await fetchInbox(hc, 'backlog2', {}, fileCtx, () => undefined), /Omitted/)
     } finally {
       await hc.stop()
       server.closeAllConnections()

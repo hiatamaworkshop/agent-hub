@@ -1,4 +1,4 @@
-# Hub だけを載せる。shim と hooks はホストで動く (design.md §3.8)
+# Only the Hub goes into the image. The shim and hooks run on the host (design.md §3.8)
 FROM node:24-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -19,7 +19,7 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
 COPY public ./public
-# 名前付き volume は初回作成時にこのディレクトリの所有者を引き継ぐ
+# A named volume takes over the owner of this directory when it is first created
 RUN mkdir /data && chown node:node /data
 USER node
 VOLUME /data

@@ -49,7 +49,7 @@ describe('返信の replyTo は、受け取った Message か自分の Message �
     const err = (await res.json()) as { error: string; message: string }
     assert.equal(res.status, 400)
     assert.equal(err.error, 'reply_not_received')
-    assert.ok(err.message.includes('未返信の依頼はない'), err.message)
+    assert.ok(err.message.includes('has no unanswered request received'), err.message)
   })
 
   it('人 (user) の返信は制限しない: 受け取っていない Mailbox 宛てでも通る', () => {

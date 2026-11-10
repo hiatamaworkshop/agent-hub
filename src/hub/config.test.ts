@@ -26,7 +26,7 @@ describe('loadConfig: ファイルの有無', () => {
     const r = loadConfig(file)
     assert.deepEqual(r.config, DEFAULT_CONFIG)
     assert.equal(r.warnings.length, 1)
-    assert.match(r.warnings[0]!, /broken\.json.*JSON として読めない/)
+    assert.match(r.warnings[0]!, /broken\.json.*is not valid JSON/)
   })
 
   it('ファイルとして読めないもの (ディレクトリ) は、すべて既定で警告', () => {

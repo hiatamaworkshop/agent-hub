@@ -15,7 +15,7 @@ export interface InboxArgs {
 // ack はツールの結果を返す直前に、受領の確認 (received) として送る。エージェント自身がツールを呼び、結果として受け取るため (protocol.md §4)
 export async function fetchInbox(hub: HubClient, mailbox: string, args: InboxArgs, files: FileContext, log: (msg: string) => void): Promise<string> {
   const at = hub.attachment
-  if (!at) throw new Error(`Hub に接続していない (${hub.state}${hub.lastError ? `: ${hub.lastError}` : ''})`)
+  if (!at) throw new Error(`Not connected to the Hub (${hub.state}${hub.lastError ? `: ${hub.lastError}` : ''})`)
   const q = new URLSearchParams()
   if (args.after !== undefined) q.set('after', String(args.after))
   if (args.limit !== undefined) q.set('limit', String(args.limit))

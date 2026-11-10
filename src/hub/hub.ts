@@ -175,13 +175,13 @@ export class Hub {
 
   private mustAttachment(id: string): Attachment {
     const at = this.attachments.get(id)
-    if (!at) throw new HubError(404, 'attachment_not_found', `attachment ${id} がない`)
+    if (!at) throw new HubError(404, 'attachment_not_found', `attachment ${id} does not exist`)
     return at
   }
 
   private mustMailbox(name: string): Mailbox {
     const mb = this.store.getMailbox(name)
-    if (!mb) throw new HubError(404, 'mailbox_not_found', `mailbox ${name} がない`)
+    if (!mb) throw new HubError(404, 'mailbox_not_found', `mailbox ${name} does not exist`)
     return mb
   }
 
@@ -195,7 +195,7 @@ export class Hub {
     const original = input.replyTo === undefined ? undefined : this.store.getMessage(input.replyTo)
     if (input.replyTo !== undefined && !original) {
       // 保存期間で消えた Message もここに来る (design.md §3.14)。to を付ければ送れる
-      throw new HubError(400, 'reply_to_not_found', `replyTo ${input.replyTo} がない (消えた Message なら to を指定して送る)`)
+      throw new HubError(400, 'reply_to_not_found', `replyTo ${input.replyTo} does not exist (if the Message was deleted, send it with to)`)
     }
     // Mailbox からの返信は、その Mailbox が受け取った Message か、自分が送った Message への分だけ (C86)。人の返信は制限しない
     if (original && from.type === 'mailbox') this.checkReplyTarget(from.id, original)
@@ -212,16 +212,16 @@ export class Hub {
     if ((original.from.type === 'mailbox' && original.from.id === name) || this.store.hasReceived(name, original)) return
     const open = this.store.oldestOpenRequestTo(name)
     const hint = open
-      ? `${name} が受け取っている未返信の依頼で最も古いのは #${open.seq} (id ${open.id}、送り手 ${open.from.type}:${open.from.id})。replyTo にそれを指定して送り直す`
-      : `${name} が受け取っている未返信の依頼はない (返信でなく to を指定して送る)`
-    throw new HubError(400, 'reply_not_received', `replyTo ${original.id} (#${original.seq}) は ${name} が受け取った Message でも、送った Message でもない。${hint}`)
+      ? `the oldest unanswered request ${name} has received is #${open.seq} (id ${open.id}, from ${open.from.type}:${open.from.id}). Send again with replyTo set to it`
+      : `${name} has no unanswered request received. Send with to, not as a reply`
+    throw new HubError(400, 'reply_not_received', `replyTo ${original.id} (#${original.seq}) is neither a Message ${name} received nor one it sent. ${hint}`)
   }
 
   // 無編集転送 (protocol.md §3)。本文・kind・replyTo・meta を元のまま写し、送り手は転送した人にする。
   // 元の送り手は forwardedSender に分けて持つ。転送の転送は大元を指す (本文の出どころを 1 段で示すため)
   forwardMessage(id: string, to: Address, from: Sender): Message {
     const src = this.store.getMessage(id)
-    if (!src) throw new HubError(404, 'message_not_found', `message ${id} がない`)
+    if (!src) throw new HubError(404, 'message_not_found', `message ${id} does not exist`)
     return this.deliver(
       this.store.appendMessage({
         kind: src.kind,
@@ -320,7 +320,7 @@ export class Hub {
   // 同名で作り直したときの cursor は削除時点の seq から始まる (store.ts deletedAt)
   deleteMailbox(name: string): void {
     const mb = this.mustMailbox(name)
-    if (mb.attachment) throw new HubError(409, 'mailbox_attached', `mailbox ${name} は attach 中のため削除できない。先に detach する`)
+    if (mb.attachment) throw new HubError(409, 'mailbox_attached', `mailbox ${name} cannot be deleted while it is attached. Detach it first`)
     this.store.deleteMailbox(name)
     this.lastDetached.delete(name)
     this.projectChanges.delete(name)
@@ -329,7 +329,7 @@ export class Hub {
 
   // 人の操作で 1 件消す。未読でも返信待ちでも消す (design.md §3.14)。詰め直しは次の掃除で行う
   deleteMessage(id: string): void {
-    if (!this.store.deleteMessage(id)) throw new HubError(404, 'message_not_found', `message ${id} がない`)
+    if (!this.store.deleteMessage(id)) throw new HubError(404, 'message_not_found', `message ${id} does not exist`)
     this.emitUi('message.deleted', { ids: [id] })
   }
 
@@ -357,13 +357,13 @@ export class Hub {
   attach(name: string, input: AttachInput): AttachResult {
     // 定義にない role は拒む (typo で黙って何も届かない事故を防ぐ)。role を省いた (undefined) と null は通す
     if (this.roles && typeof input.role === 'string' && !this.roles.has(input.role)) {
-      throw new HubError(400, 'unknown_role', `role ${input.role} は roles.json にない`)
+      throw new HubError(400, 'unknown_role', `role ${input.role} is not in roles.json`)
     }
     // 切れている間に別の Attachment が attach していたら、戻ってきた旧 shim は取り返さない (新しい方が勝つ、を守る)。
     // 前の Attachment ID を示さない attach (新しいセッション) は今どおり takeover する
     const current = this.store.getMailbox(name)?.attachment
     if (input.previous && current && current !== input.previous) {
-      throw new HubError(409, 'successor_attached', `mailbox ${name} には切断中に別のセッションが attach した。attach し直さない`)
+      throw new HubError(409, 'successor_attached', `another session attached to mailbox ${name} while it was disconnected. Do not attach it again`)
     }
     // 接続中の Mailbox に、別のフォルダ (project) からは attach させない (C103)。同じフォルダの takeover、接続のない Mailbox への attach
     // (移動したフォルダ。projectChanged の警告つき)、cwd のない attach は今のとおり
@@ -372,7 +372,7 @@ export class Hub {
       throw new HubError(
         409,
         'project_mismatch',
-        `mailbox ${name} は接続中で、${owner.project} のセッションが使っている。${input.cwd} からは attach できない。別の Mailbox 名で起動する (team なら --mailbox <名前> を付ける)`,
+        `mailbox ${name} is connected, and a session in ${owner.project} is using it. It cannot be attached from ${input.cwd}. Start under another Mailbox name (for team, pass --mailbox <name>)`,
       )
     }
     const { mailbox, created } = this.store.ensureMailbox(name, input.role)

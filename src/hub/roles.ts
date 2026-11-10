@@ -26,7 +26,7 @@ export function loadRoles(file: string): Roles | null {
     text = readFileSync(file, 'utf8')
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw new RolesError(`${file} を読めない: ${(e as Error).message}`)
+    throw new RolesError(`${file} cannot be read: ${(e as Error).message}`)
   }
   return parseRoles(text, file)
 }
@@ -36,20 +36,20 @@ export function parseRoles(text: string, file = 'roles.json'): Roles {
   try {
     raw = JSON.parse(text)
   } catch (e) {
-    throw new RolesError(`${file} が JSON として読めない: ${(e as Error).message}`)
+    throw new RolesError(`${file} is not valid JSON: ${(e as Error).message}`)
   }
-  if (!isPlainObject(raw)) throw new RolesError(`${file} は role 名をキーにしたオブジェクトであること`)
+  if (!isPlainObject(raw)) throw new RolesError(`${file} must be an object keyed by role name`)
 
   const roles = new Map<string, RoleDef>()
   for (const [name, def] of Object.entries(raw)) {
-    const where = `${file} の role "${name}"`
-    if (!isValidName(name)) throw new RolesError(`${where}: role 名は ^[a-z0-9][a-z0-9_.-]{0,63}$ に合うこと`)
-    if (!isPlainObject(def)) throw new RolesError(`${where}: オブジェクトであること`)
-    if (typeof def.description !== 'string') throw new RolesError(`${where}: description は文字列であること`)
-    if (!Array.isArray(def.subscribe)) throw new RolesError(`${where}: subscribe はトピック名の配列であること`)
+    const where = `${file} role "${name}"`
+    if (!isValidName(name)) throw new RolesError(`${where}: the role name must match ^[a-z0-9][a-z0-9_.-]{0,63}$`)
+    if (!isPlainObject(def)) throw new RolesError(`${where}: must be an object`)
+    if (typeof def.description !== 'string') throw new RolesError(`${where}: description must be a string`)
+    if (!Array.isArray(def.subscribe)) throw new RolesError(`${where}: subscribe must be an array of topic names`)
     for (const topic of def.subscribe) {
       if (typeof topic !== 'string' || !isValidName(topic)) {
-        throw new RolesError(`${where}: subscribe の ${JSON.stringify(topic)} はトピック名 (^[a-z0-9][a-z0-9_.-]{0,63}$) に合わない`)
+        throw new RolesError(`${where}: subscribe entry ${JSON.stringify(topic)} does not match the topic name pattern (^[a-z0-9][a-z0-9_.-]{0,63}$)`)
       }
     }
     roles.set(name, { ...def, description: def.description, subscribe: def.subscribe as string[] })

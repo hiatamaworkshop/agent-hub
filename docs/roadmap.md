@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C147
 - [ ] C148
 - [ ] C150
 
@@ -583,6 +582,15 @@ In the order they will be taken up. Only items without a status line and blocked
   - Results: `/clear` changes the hook's `session_id`, and Events still resolve to the Mailbox through `X-Hub-Mailbox` (the Attachment keeps the old `sessionId`). Claude Code escapes `"` `<` `>` `&` in `meta` values itself, so the provisional restriction is no longer needed for escaping.
   - Follow-ups for the planning session: lifting the `channelMeta` restriction and its comment (`src/shared/format.ts`); the forward covering note; sessions without `HUB_MAILBOX` after `/clear`.
   - Reviewer notes: §6.1ac's "Claude Code 2.1.321" names no source (the probe session's 2.1.322 is read from initialize `clientInfo`); `tools/probe` (`probe.mjs:104,106`, `README:56,64`) still calls the escaping case unverified and labels the AskUserQuestion case §6.2-7; `src/shared/format.ts:43` still says unverified. Versions: 2.1.321 (reviewer tab), 2.1.322 (probe session).
+- [x] C147 The files and messages an adopter meets first are in English (2026-11-10, closed after the review)
+  - took the default without an answer (2026-11-10): (1) the Japanese line in tools/hooks/post-commit-index.sh:23 is not filed; (2) comments, test names, public/index.html and tools/dev/ui-check.mjs stay Japanese, not filed.
+  - Decided 2026-11-10 in the planning session: the setup files and the text a running Hub, shim or `npm run team` prints, returns or gives an agent. The vocabulary the code reads, the checker (C152), comments, test names, `public/index.html` and `tools/dev/ui-check.mjs` stay as they are.
+  - Changed: `.env.example` (14 comment lines), `compose.yaml` (7), `Dockerfile` (2), the `package.json` description (1). About 120 string literals in `src/hub`, `src/shim`, `src/shared` and `src/docs-check` (121 literals in 16 files): Hub error and start messages, the shim's instructions and tool descriptions, inbox texts, docs:index messages. Assertions that quoted them in 8 test files (37, names unchanged). `docs/protocol.md` §6 (the four inbox texts) and `docs/usage.md` (the docs:index quote). Text only: no code behaviour changed.
+  - Command for the Japanese in string literals of `src/` outside tests (comment-only lines dropped): `LC_ALL=C.UTF-8 grep -rnP '[\p{Han}\p{Hiragana}\p{Katakana}]' src --include=*.ts --include=*.mjs --exclude=*.test.ts | grep -v -E ':[0-9]+:\s*(//|\*|/\*)'`. Before: 168 lines. After: 46, all kept: `src/shared/roadmap.ts` 44 (C152), `src/hub/app.ts:251` and `src/hub/settings.ts:128` (trailing comments).
+  - Japanese the UI shows (`public/index.html`, not changed): 456 lines contain Japanese: 382 full comment lines, 67 code lines with a trailing `//` comment, 3 lines in CSS `/* */` comments, reply-format vocabulary at lines 408, 409 and 413 (the words the UI reads, kept), and the Plan tier head `· no ## Plan (## 予定) in this file` on screen at line 2503. Labels, buttons, states and tooltips contain no Japanese.
+  - Checked: `npm test` 599 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 0 errors; `npm run ui:check` 202 ok, 0 NG (free ports 54939 and 54940); `logs/hub.log` 87329 bytes before and after the run. The review found two defects, both fixed: a docs quote left in `docs/usage.md` (the old docs:index line), and the `reply` kind wording narrowed to requests (now `reply` answers a message, `request` asks for work or a reply, as in design.md §3.6; `instructions.ts` and `tools.ts`). Done-when wording not changed.
+  - Not checked: a live session showing the new instructions; the translated Hub messages as shown in the browser.
+  - Reviewer notes: the per-file counts in this record are string literals, not lines. Out of scope, for the planning session: `tools/hooks/post-commit-index.sh:23` prints a Japanese line on every failed ledger send (`agent-hub: roadmap の索引を送れなかった。コミットは止めない。`); it is outside `src/` and pinned by `src/docs-check/post-commit.test.ts:99`.
 - [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
   - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
   - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
@@ -1016,20 +1024,6 @@ Status: proposed
 Raised 2026-11-09 by the reviewer of C142 (#322). The C106 jump highlights a card, and a redraw driven by SSE within the highlight's 3 seconds replaces the card nodes, so the highlight is gone and the press seems to do nothing (measured in `ui:check` run 14: `replaced: 2`). `ui:check`'s `press` / `press2` now wait for the redraw to settle before clicking, so the check no longer covers this case.
 - The C106 failures during C142 were most likely the port clash (two `ui:check` runs on 7793 and a leftover Hub), not C142's code: the planning session ran the strict check without the wait on HEAD's page and on C142's page, 2 of 2 passing each.
 - Ideas, not decided: (a) the jump re-applies the highlight to the rebuilt card (keyed by Mailbox name) until its time ends; (b) the card rebuild keeps nodes whose content did not change; (c) a `ui:check` scene that redraws right after the press.
-
-### C147. Put the files and messages an adopter meets first into English
-
-Raised 2026-11-10 in the planning session, from a pass over what is still immature against the direction of adoption (design.md §1.1, 2026-11-06). C65 put the documents into English; the rest of the repository was left. Counted the same day (lines containing Japanese): `.env.example` 13, `compose.yaml` 7, `Dockerfile` 2, the `description` in `package.json`, 154 lines with Japanese inside string literals in `src/` outside tests (for example the 404 text in `src/hub/app.ts`, the start messages in `src/hub/main.ts` and `src/shim/main.ts`, `src/shim/instructions.ts`, `src/shim/tools.ts`, `src/shared/roadmap.ts`), 682 comment lines in `src/` outside tests, 884 lines in tests (mostly test names), 456 in `public/index.html`, 460 in `tools/dev/ui-check.mjs`.
-- Some of the Japanese is vocabulary the code must keep reading (`## 予定`, `状態:`, the reply-format headings `結果` and so on; design.md §3.15). That stays.
-- Idea: first the files an adopter edits or reads at setup (`.env.example`, `compose.yaml`, `Dockerfile`, `package.json`) and the text a running Hub, shim or command prints or returns. The checker's messages are C152.
-- Decided 2026-11-10 in the planning session (the user left the choice to it): this item covers the setup files and the text a running Hub, shim or `npm run team` prints, returns over HTTP or gives an agent (the shim's instructions and tool descriptions). That text is English only; `HUB_LANGUAGE` stays for what agents write to the human (design.md §3.5). Comments, test names, `public/index.html` and `tools/dev/ui-check.mjs` are left as they are; a later item if wanted. The checker's messages are C152.
-
-#### Done when
-- [ ] `.env.example`, `compose.yaml`, `Dockerfile` and the `description` in `package.json` have no Japanese.
-- [ ] String literals in `src/` outside tests that a running Hub, shim or `npm run team` prints, returns over HTTP or gives an agent are English, except the vocabulary the code reads (design.md §3.15) and `src/shared/roadmap.ts` (C152).
-- [ ] The body records the command used to list the Japanese left in string literals in `src/` outside tests, and that its output after the change is only that vocabulary and `src/shared/roadmap.ts`.
-- [ ] The body lists the Japanese the UI shows on screen (found, not changed here).
-- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C148. Run the checks in CI on Windows and Linux
 

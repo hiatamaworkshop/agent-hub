@@ -20,7 +20,7 @@ function option(name: string): string | undefined {
   if (i < 0) return undefined
   const v = process.argv[i + 1]
   if (v === undefined || v.startsWith('--')) {
-    console.error(`${name} には値が要る`)
+    console.error(`${name} needs a value`)
     process.exit(2)
   }
   return v
@@ -57,7 +57,7 @@ const token = envValue(process.env, 'HUB_TOKEN') ?? ''
 
 const r = await sendLedgerIndex({ project, source, hubUrl, token, tokenFromEnv: tokenFromEnvironment() })
 if (!r.sent) {
-  console.error(`${source} を送れない: ${r.reason}`)
+  console.error(`${source} could not be sent: ${r.reason}`)
   process.exit(1)
 }
 for (const w of r.warnings) console.warn(w)

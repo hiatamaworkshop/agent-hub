@@ -202,7 +202,7 @@ export class Store {
         rec = JSON.parse(line) as LogRecord
       } catch {
         // 追記中に落ちた最終行は捨てる。途中の行が壊れているのは異常なので知らせる
-        if (i < lines.length - 2) console.warn(`[store] ${this.file}:${i + 1} を読めないため飛ばした`)
+        if (i < lines.length - 2) console.warn(`[store] ${this.file}:${i + 1} cannot be read, so it was skipped`)
         return
       }
       if (rec.op === 'message.delete' || rec.op === 'event.delete') {
@@ -756,7 +756,7 @@ export class Store {
       writeFileSync(tmp, recs.map((r) => JSON.stringify(r) + '\n').join(''))
       renameSync(tmp, this.file)
     } catch (e) {
-      console.warn(`[store] ${this.file} を詰め直せなかった: ${(e as Error).message}`)
+      console.warn(`[store] could not rewrite ${this.file}: ${(e as Error).message}`)
       return false
     }
     this.deletesSinceCompact = 0

@@ -40,18 +40,18 @@ describe('loadRoles: ファイルの有無', () => {
 
 describe('parseRoles: 形の検証', () => {
   const bad: [string, string, RegExp][] = [
-    ['JSON として壊れている', '{"reviewer": {', /JSON として読めない/],
-    ['空のファイル', '', /JSON として読めない/],
-    ['配列 (オブジェクトでない)', '[]', /role 名をキーにしたオブジェクト/],
-    ['null', 'null', /role 名をキーにしたオブジェクト/],
-    ['role 名が規則に合わない', '{"Bad Name": {"description": "x", "subscribe": []}}', /role 名は/],
-    ['role の値がオブジェクトでない', '{"reviewer": "レビュー"}', /オブジェクトであること/],
-    ['description がない', '{"reviewer": {"subscribe": []}}', /description は文字列/],
-    ['description が文字列でない', '{"reviewer": {"description": 3, "subscribe": []}}', /description は文字列/],
-    ['subscribe がない', '{"reviewer": {"description": "x"}}', /subscribe はトピック名の配列/],
-    ['subscribe が配列でない', '{"reviewer": {"description": "x", "subscribe": "review.request"}}', /subscribe はトピック名の配列/],
-    ['subscribe のトピック名が規則に合わない', '{"reviewer": {"description": "x", "subscribe": ["Review Request"]}}', /"Review Request" はトピック名/],
-    ['subscribe の要素が文字列でない', '{"reviewer": {"description": "x", "subscribe": [1]}}', /1 はトピック名/],
+    ['JSON として壊れている', '{"reviewer": {', /is not valid JSON/],
+    ['空のファイル', '', /is not valid JSON/],
+    ['配列 (オブジェクトでない)', '[]', /must be an object keyed by role name/],
+    ['null', 'null', /must be an object keyed by role name/],
+    ['role 名が規則に合わない', '{"Bad Name": {"description": "x", "subscribe": []}}', /the role name must match/],
+    ['role の値がオブジェクトでない', '{"reviewer": "レビュー"}', /must be an object/],
+    ['description がない', '{"reviewer": {"subscribe": []}}', /description must be a string/],
+    ['description が文字列でない', '{"reviewer": {"description": 3, "subscribe": []}}', /description must be a string/],
+    ['subscribe がない', '{"reviewer": {"description": "x"}}', /subscribe must be an array of topic names/],
+    ['subscribe が配列でない', '{"reviewer": {"description": "x", "subscribe": "review.request"}}', /subscribe must be an array of topic names/],
+    ['subscribe のトピック名が規則に合わない', '{"reviewer": {"description": "x", "subscribe": ["Review Request"]}}', /"Review Request" does not match the topic name pattern/],
+    ['subscribe の要素が文字列でない', '{"reviewer": {"description": "x", "subscribe": [1]}}', /subscribe entry 1 does not match/],
   ]
   for (const [label, text, message] of bad) {
     it(`${label} は RolesError で、ファイル名と場所を示す`, () => {

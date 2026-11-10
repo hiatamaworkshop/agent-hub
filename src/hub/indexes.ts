@@ -87,7 +87,7 @@ export class IndexStore {
       const list = z.array(indexInputSchema.extend({ updatedAt: z.string() })).parse(JSON.parse(raw))
       for (const ix of list) this.indexes.set(keyOf(ix.project, ix.source), toProjectIndex(ix, ix.updatedAt))
     } catch (e) {
-      console.warn(`[hub] ${file} を読めないので索引を空から始める: ${(e as Error).message}`)
+      console.warn(`[hub] ${file} cannot be read, so the index starts empty: ${(e as Error).message}`)
     }
   }
 

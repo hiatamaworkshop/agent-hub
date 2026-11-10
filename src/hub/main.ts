@@ -36,23 +36,23 @@ const token = process.env.HUB_TOKEN ?? ''
 const dataDir = resolve(process.env.HUB_DATA_DIR ?? join(ROOT, 'data'))
 
 if (token.length < 16) {
-  console.error('HUB_TOKEN (16 文字以上) を .env か環境変数で設定してください。.env.example を参照')
+  console.error('Set HUB_TOKEN (16 characters or more) in .env or in the environment. See .env.example')
   process.exit(1)
 }
 if (!['127.0.0.1', '::1', 'localhost'].includes(host)) {
   // Docker 内の 0.0.0.0 は想定どおり。その場合は公開側を 127.0.0.1:<port> に限定すること
-  console.warn(`[hub] HUB_HOST=${host} はループバック以外にも bind する。外部から到達できないことを確認すること`)
+  console.warn(`[hub] HUB_HOST=${host} also binds to a non-loopback address. Make sure it cannot be reached from outside`)
 }
 
 // 画像の長辺の上限 (px) と、揮発ファイルの保存期間 (日、0 なら掃除しない)
 const maxEdge = Number(process.env.HUB_FILE_MAX_EDGE ?? 1568)
 const ttlDays = Number(process.env.HUB_FILE_TTL_DAYS ?? 1)
 if (!Number.isInteger(maxEdge) || maxEdge < 16 || maxEdge > 8192) {
-  console.error('HUB_FILE_MAX_EDGE は 16〜8192 の整数で設定してください')
+  console.error('Set HUB_FILE_MAX_EDGE to an integer from 16 to 8192')
   process.exit(1)
 }
 if (!Number.isFinite(ttlDays) || ttlDays < 0) {
-  console.error('HUB_FILE_TTL_DAYS は 0 以上の数で設定してください (0 で掃除しない)')
+  console.error('Set HUB_FILE_TTL_DAYS to a number of 0 or more (0 means no cleanup)')
   process.exit(1)
 }
 
@@ -60,18 +60,18 @@ if (!Number.isFinite(ttlDays) || ttlDays < 0) {
 const unreadMaxAgeDays = Number(process.env.HUB_UNREAD_MAX_AGE_DAYS ?? 7)
 const unreadMax = Number(process.env.HUB_UNREAD_MAX ?? 50)
 if (!Number.isFinite(unreadMaxAgeDays) || unreadMaxAgeDays < 0) {
-  console.error('HUB_UNREAD_MAX_AGE_DAYS は 0 以上の数で設定してください (0 で制限なし)')
+  console.error('Set HUB_UNREAD_MAX_AGE_DAYS to a number of 0 or more (0 means no limit)')
   process.exit(1)
 }
 if (!Number.isInteger(unreadMax) || unreadMax < 0) {
-  console.error('HUB_UNREAD_MAX は 0 以上の整数で設定してください (0 で制限なし)')
+  console.error('Set HUB_UNREAD_MAX to an integer of 0 or more (0 means no limit)')
   process.exit(1)
 }
 
 // 渡し終えた Message と Event の保存期間 (時間、小数可)。0 なら自動では消さない (design.md §3.14)
 const readRetentionHours = Number(process.env.HUB_READ_RETENTION_HOURS ?? 24)
 if (!Number.isFinite(readRetentionHours) || readRetentionHours < 0) {
-  console.error('HUB_READ_RETENTION_HOURS は 0 以上の数で設定してください (0 で自動では消さない)')
+  console.error('Set HUB_READ_RETENTION_HOURS to a number of 0 or more (0 means no automatic deletion)')
   process.exit(1)
 }
 
@@ -79,7 +79,7 @@ if (!Number.isFinite(readRetentionHours) || readRetentionHours < 0) {
 const languageRaw = process.env.HUB_LANGUAGE?.trim() || null
 const language = languageRaw === null ? null : normalizeLanguage(languageRaw)
 if (languageRaw !== null && language === null) {
-  console.error(`HUB_LANGUAGE=${languageRaw} は言語タグとして読めない。ja・en・pt-BR のような BCP 47 のタグで設定してください (未設定なら言語の指定なし)`)
+  console.error(`HUB_LANGUAGE=${languageRaw} is not a readable language tag. Set a BCP 47 tag such as ja, en or pt-BR (unset means no language is specified)`)
   process.exit(1)
 }
 if (language) console.log(`[hub] language: ${language}`)
@@ -94,13 +94,13 @@ try {
   console.error(`[hub] ${e.message}`)
   process.exit(1)
 }
-if (roles) console.log(`[hub] roles: ${rolesFile} (${roles.size} 件)`)
+if (roles) console.log(`[hub] roles: ${rolesFile} (${roles.size} roles)`)
 
 // hub.config.json (C74)。なくても壊れていても止まらない。値ごとに既定へ戻し、理由を起動ログに出す (UI にも警告で出る)
 const configFile = resolve(process.env.HUB_CONFIG_FILE ?? join(ROOT, 'hub.config.json'))
 const configResult = loadConfig(configFile)
 if (configResult.file) console.log(`[hub] config: ${configFile}`)
-else if (!configResult.warnings.length) console.log(`[hub] config: ${configFile} がないので、すべて既定`)
+else if (!configResult.warnings.length) console.log(`[hub] config: ${configFile} does not exist, so everything uses the defaults`)
 for (const w of configResult.warnings) console.warn(`[hub] config: ${w}`)
 
 const store = new Store({

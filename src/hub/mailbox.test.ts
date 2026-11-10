@@ -457,7 +457,7 @@ describe('Mailbox の削除', () => {
     assert.equal(res.status, 409)
     const body = (await res.json()) as { error: string; message: string }
     assert.equal(body.error, 'mailbox_attached')
-    assert.match(body.message, /detach/)
+    assert.match(body.message, /[Dd]etach/)
     const list = (await (await call('GET', '/mailboxes')).json()) as { mailboxes: { name: string; attachment: unknown }[] }
     const mb = list.mailboxes.find((x) => x.name === 'x')
     assert.ok(mb && mb.attachment !== null, 'still attached and present')

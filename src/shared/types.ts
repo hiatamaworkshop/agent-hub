@@ -113,11 +113,11 @@ export const addressSchema = z
     project: z.string().min(1).max(1024).optional(),
   })
   .refine((a) => a.type !== 'user' || (USER_IDS as readonly string[]).includes(a.id), {
-    message: `user 宛ては ${USER_IDS.map((u) => `user:${u}`).join(' / ')} のみ`,
+    message: `for a user address, only ${USER_IDS.map((u) => `user:${u}`).join(' / ')}`,
     path: ['id'],
   })
   .refine((a) => a.project === undefined || a.type === 'role', {
-    message: 'project を付けられるのは role 宛てだけ',
+    message: 'project can only be set on a role address',
     path: ['project'],
   })
 export type Address = z.infer<typeof addressSchema>
@@ -179,11 +179,11 @@ export const postMessageSchema = z
     path: ['meta'],
   })
   .refine((m) => m.kind !== 'reply' || m.replyTo !== undefined, {
-    message: 'kind=reply では replyTo が必須',
+    message: 'replyTo is required for kind=reply',
     path: ['replyTo'],
   })
   .refine((m) => m.to !== undefined || m.replyTo !== undefined, {
-    message: 'to か replyTo のどちらかが必須',
+    message: 'either to or replyTo is required',
     path: ['to'],
   })
 export type PostMessageInput = z.infer<typeof postMessageSchema>
