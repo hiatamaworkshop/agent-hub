@@ -971,7 +971,7 @@ Raised 2026-11-06 in the planning session, after the comparison with mcp_agent_m
 - [ ] Each practice the table lacks was either added as a row or listed with a one-line reason for leaving it out.
 - [ ] The table says, for each enforcement, whether it runs in a project other than this repository.
 - [ ] Each row that is not fully enforced either points to a `C<n>` item (proposed) or says it is not planned, with the reason.
-- [ ] `npm run docs:check` passes.
+- [x] `npm run docs:check` passes.
 
 ### C137. Give a project's planning session a thin block that points at the ledger rules
 Status: proposed
@@ -1048,13 +1048,15 @@ Raised 2026-11-10 in the planning session. Three entries of design.md §6.2 have
 - Decided 2026-11-10 in the planning session, as written above. The `/clear` check needs a session the user types into; it waits for the user's hands like other such checks.
 - Done (2026-11-10, deployer): §6.2-1 is rewritten in design.md §6.2 (numbering kept). It names two unverified Windows cases, which the repository shows are not run: paths with a space in the hook commands and the post-commit line, and CRLF ledger or `.env` files read by the checker, `docs:index` and the team start (the parsers have unit tests, no real run). It also names the Windows parts that are confirmed (§6.1i, §6.1l, §6.1x, §6.1y, C52). No code changed. Fix (2026-11-10, deployer, review of §6.2-1): the CRLF citations now name the files that hold the tests and the parsers (the `.env` readers and their tests, the ledger's CRLF test, `.agent-hub.json` read with `JSON.parse`); `src/hub/store.ts` is dropped, since it reads the Hub's own `hub.jsonl`.
 - Open, waiting for the user's hands (not started here, no Claude Code session was started): §6.2-4 (the `tools/probe/` check of `meta` escaping) and §6.2-7 (`/clear` and the hook's `session_id`). Their boxes stay `[ ]`.
+- Done (2026-11-10, planning session, the user typed `/clear` twice in the reviewer's tab): §6.2-7 is recorded in design.md §6.1ac. `session_id` changes on every `/clear`; the Events still resolve to `agent-hub.reviewer` through `X-Hub-Mailbox` (the second means); the Attachment keeps the old `sessionId`. C41's rule needs no change. A possible follow-up for the planning session: a session without `HUB_MAILBOX` would lose its Events after `/clear` (derived, not observed).
+- Done (2026-11-10, planning session, the user ran the probe): §6.2-4 is recorded in design.md §6.1ad (Claude Code 2.1.322). The probe pushed `a"b<c>&d` unconverted, and the session saw `a&quot;b&lt;c&gt;&amp;d`: Claude Code escapes attribute values itself, so `escapeAttr` is not added to the Channels path. §6.2-4 and protocol.md §6 now point at the result. No code changed. Follow-ups for the planning session (code changes, separate items): lifting the restriction in `channelMeta` (`src/shared/format.ts`, with its comment) so the sender's `meta` reaches Channels; a covering note could then go with a forward (protocol.md, the forward's paragraph).
 
 #### Done when
-- [ ] §6.2-4 was checked with `tools/probe/` as the entry says, and design.md §6 records how a quote, `<`, `>` and `&` in a `meta` value arrive, with the Claude Code version; §6.2-4 is removed or points at the result.
-- [ ] §6.2-7 was checked: design.md §6 records the hook input's `session_id` before and after `/clear` in one session and whether the Event still resolves to the Mailbox, with the Claude Code version; §6.2-7 is removed or points at the result.
+- [x] §6.2-4 was checked with `tools/probe/` as the entry says, and design.md §6 records how a quote, `<`, `>` and `&` in a `meta` value arrive, with the Claude Code version; §6.2-4 is removed or points at the result.
+- [x] §6.2-7 was checked: design.md §6 records the hook input's `session_id` before and after `/clear` in one session and whether the Event still resolves to the Mailbox, with the Claude Code version; §6.2-7 is removed or points at the result.
 - [x] §6.2-1 names what is unverified, or is removed with a pointer to where the confirmed parts are recorded.
-- [ ] No code changes from the results are made here; the body names any that follow, for the planning session.
-- [ ] `npm run docs:check` passes.
+- [x] No code changes from the results are made here; the body names any that follow, for the planning session.
+- [x] `npm run docs:check` passes.
 
 ### C150. Make the card state derivation testable and usable outside the page
 
