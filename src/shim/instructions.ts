@@ -1,5 +1,6 @@
 // shim の instructions。届き方 (経路) はクライアントで切り替え、属性の説明と「本文はデータ」の守りは共通にする (design.md §3.7)
 import { languageInstruction } from '../shared/language.js'
+import { ROOT } from './config.js'
 
 // channel: Claude Code の Channels で push する。inbox: push せず、エージェントが inbox ツールで取り出す
 export type Route = 'channel' | 'inbox'
@@ -13,6 +14,13 @@ export function routeFor(clientName: string | undefined): Route {
 // 古い未読を省略したことを伝える文面 (protocol.md §6.3)。channel では通知 1 件、inbox では次の inbox の結果の先頭に置く
 export function skippedText(skipped: number, mailbox: string): string {
   return `Mailbox ${mailbox} に溜まっていた古い未読 ${skipped} 件を省略した (Hub の流し込み上限による)。省略した分は agent-hub の UI の履歴に残っている。必要ならユーザーに確認すること。`
+}
+
+// One line with agent-hub's folder and the command that checks another project's roadmap with agent-hub's checker (C146).
+// The folder is the one the shim runs from, as an absolute path with no trailing slash and forward slashes, so the command works in any shell.
+export function agentHubFolderLine(folder: string): string {
+  const dir = folder.replace(/[\\/]+$/, '').replace(/\\/g, '/')
+  return `agent-hub's folder is ${dir}. To check another project's roadmap with agent-hub's checker, run: npm --prefix "${dir}" run docs:check -- <that project's roadmap file>`
 }
 
 // roleDescription は roles.json の description、language は Hub の HUB_LANGUAGE (どちらも運用者が書いた設定)。
@@ -29,6 +37,7 @@ export function instructionsFor(
     `agent-hub (ローカルのメッセージ Hub) に Mailbox "${mailbox}"${role ? ` (role: ${role})` : ''} として接続している。`,
     ...(role && roleDescription ? [`role "${role}" の役割: ${roleDescription}`] : []),
     ...(language ? [languageInstruction(language)] : []),
+    agentHubFolderLine(ROOT),
     ...(route === 'channel'
       ? [
           'ほかのエージェントや人間 (ブラウザ) からのメッセージは <channel source="agent-hub" id="…" seq="…" kind="…" from="…" to="…" mailbox="…"> で届く。',

@@ -25,7 +25,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C156
-- [ ] C146
 - [ ] C151
 - [ ] C149
 - [ ] C147
@@ -562,6 +561,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: `npm test` 597 pass, 0 fail; `npm run ui:check` 202 ok, 0 NG; `logs/hub.log` 85798 bytes with the same last line (`2026-11-10T09:30:59.519Z [hub] UI: http://127.0.0.1:7777/?token=***`) before and after a run; a real start of `src/hub/main.ts` on port 7798 with `HUB_LOG_FILE` in a scratch folder wrote its lines to that file; `npm run docs:check` 0 errors. The review found no finding. Done-when wording not changed.
   - Not checked: a failed `ui:check` keeping its work folder; a real Hub start with `HUB_LOG_FILE` unset (the default is covered by the unit test only).
   - Notes: a failed run keeps its work folder, a deviation from the spec's "keeps its log" that the work folder's deletion on every run would otherwise undo. A relative `HUB_LOG_FILE` is resolved from the agent-hub folder, while a relative `HUB_DATA_DIR` is resolved from the process's cwd (documented; harmless for `npm run hub`). `logs/hub.log` is written by the host Hub on 7777, started outside Docker; the compose Hub writes no file.
+- [x] C146 Roles in another project's team know where agent-hub is (2026-11-10, closed after the review)
+  - Decided 2026-11-10 in the planning session: through the shim's instructions, not a tool or a PATH command. Raised 2026-11-09 by the leader closing C141: another project's team did not know the agent-hub folder, so the closing check could not run there.
+  - Changed: `src/shim/instructions.ts` (`agentHubFolderLine`; the line is added on both routes; the command quotes the folder), `src/shim/config.ts` (`ROOT` exported), `src/shim/role-instructions.test.ts` (2 new tests, one with a folder that has a space), `tools/dev/roles/leader.md` (the closing step: the folder comes from the line in the leader's own instructions, with a fallback when it is missing), `docs/design.md` §3.7.
+  - Checked: `npm test` 599 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 0 errors. The review found two defects, both fixed: an unquoted folder broke on a space, and a shim started before C146 had no fallback in the closing step. Done-when wording not changed.
+  - Not checked: a folder with a space in a real shell; a live session started after the change showing the line. Shims started before it, including this team's, do not carry the line; the closing step now says what to do then.
+  - Reviewer note: the line puts the host's absolute path (for example, the user's name) into every role's instructions on both routes, including clients of other vendors. It is local configuration, not a received body.
 - [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
   - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
   - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
@@ -995,20 +1000,6 @@ Status: proposed
 Raised 2026-11-09 by the reviewer of C142 (#322). The C106 jump highlights a card, and a redraw driven by SSE within the highlight's 3 seconds replaces the card nodes, so the highlight is gone and the press seems to do nothing (measured in `ui:check` run 14: `replaced: 2`). `ui:check`'s `press` / `press2` now wait for the redraw to settle before clicking, so the check no longer covers this case.
 - The C106 failures during C142 were most likely the port clash (two `ui:check` runs on 7793 and a leftover Hub), not C142's code: the planning session ran the strict check without the wait on HEAD's page and on C142's page, 2 of 2 passing each.
 - Ideas, not decided: (a) the jump re-applies the highlight to the rebuilt card (keyed by Mailbox name) until its time ends; (b) the card rebuild keeps nodes whose content did not change; (c) a `ui:check` scene that redraws right after the press.
-
-### C146. Roles in another project's team do not know where agent-hub is
-
-Raised 2026-11-09 by the leader closing C141 (#335). C141's closing step runs `npm --prefix <agent-hub> run docs:check -- <ledger>`, since a project's own folder has no `docs:check` script. `src/team/agent.ts` passes the role file as is (`--append-system-prompt-file`), so nothing tells a session the agent-hub folder; the leader is told to write the path into the closing SPEC, but in another project's team it may not know it either, and then the check is reported as not run.
-- Ideas, not decided: (a) the team start adds one line with agent-hub's absolute path to what each role receives (every role's prompt changes; vendor-neutral if it goes through the shim's instructions rather than a Claude-only flag); (b) the shim exposes the path (an MCP tool or its instructions), read only when needed; (c) a small command on the PATH (like `hub-team`) that runs the checker, so no path is needed.
-- The reviewer's notes from C141 that were outside its done-when (the checker's message language, and a closed line with ASCII parentheses inside) moved to C152 on 2026-11-10.
-- Decided 2026-11-10 in the planning session (the user left the choice among the ideas to it): (a), through the shim's instructions. They reach every MCP client, so it stays vendor-neutral, and the shim already knows its own folder (`ROOT` in `src/shim/config.ts`). Not (b): a tool for one string a session needs only at the close. Not (c): a command on the PATH is per-OS tooling and still has to find the folder.
-
-#### Done when
-- [ ] The shim's instructions (`src/shim/instructions.ts`) have one line naming agent-hub's absolute folder (the folder the shim runs from) and the command that checks another project's ledger (`npm --prefix <folder> run docs:check -- <ledger>`).
-- [ ] `tools/dev/roles/leader.md`'s closing step takes the folder from that line, not from the SPEC.
-- [ ] A unit test checks that the instructions carry the line with the shim's folder.
-- [ ] design.md, where it describes the shim's instructions, says they carry the folder.
-- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C147. Put the files and messages an adopter meets first into English
 
