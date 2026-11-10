@@ -60,7 +60,7 @@ The measure is not "less human attention per accepted change": that would count 
 
 | Convention | Enforced by | Status |
 |---|---|---|
-| Decisions split by reversibility: a local commit proceeds; push, publishing, deleting data and changing a promise wait for the human | Push: CLAUDE.md "Git", `deployer.md` and `leader.md` "Commitments". Changing a promise: §3.15 table; the roadmap header's rule on done-when wording | Partly. Publishing and deleting data have no rule in this repository yet |
+| Decisions split by reversibility: a local commit proceeds on the user's word (in a run, on the `RUN:` request's word, C153; only the leader commits); push, publishing, deleting data and changing a promise wait for the human | Push: CLAUDE.md "Git", `deployer.md` and `leader.md` "Commitments". Local commit: `leader.md` "Commitments" and "Runs". Changing a promise: §3.15 table; the roadmap header's rule on done-when wording | Partly. Publishing and deleting data have no rule in this repository yet |
 | Affected tests while working; the full set before reporting done | CLAUDE.md "Notes on the development environment" (`npm test`, and `npm run ui:check` for the UI); `leader.md` step 2 runs the tests once itself; `deployer.md` VERIFIED asks for the command and its result | Partly. Running the affected tests while working is not enforced yet |
 | Incidents in §6 become new verification angles | CLAUDE.md "Before implementing" 1 (check §6 first) and "Updating the docs" (what is learned goes to §6) | Partly. Nothing turns an incident into a new angle; the incident entries (§6.1n, §6.1p, §6.1q) are the records |
 | A "direction first" reply at the start of work | Not written as a rule. §6.1n records a correction that arrived during work and how it was passed on | Not enforced yet |
@@ -82,11 +82,14 @@ The measure is not "less human attention per accepted change": that would count 
 | R7 | Agents have a **role** (`reviewer`, `deployer` and so on), and the role decides which messages they should read |
 | R8 | Messages have a **machine-distinguishable kind** (`kind`), so the receiver and the UI can decide how to handle them |
 
+**Runs (C153, 2026-11-10).** A run is one Send by a human that names its items, `RUN: C<a>, C<b>, …` (§3.15). The leader takes the listed items one at a time, in the order given; the list is the only membership. Taking the next item with no Send stays a non-goal: each run starts with a Send, and the opt-in for more than that is C12.
+
 ### Non-goals
 
 - Running agents automatically, or distributing tasks autonomously
 - Summarizing conversations or extracting key points (the content is carried as is, unprocessed)
 - Forwarding to other agents automatically without human confirmation (by default a human's Send always comes in between)
+- Taking the next roadmap item with no Send. A run names its items in one Send (C153); more than that is C12's opt-in
 - Exposure to remote hosts, or multiple users (127.0.0.1 only)
 
 ## 3. Architecture
@@ -648,6 +651,8 @@ Since C106 every badge that jumps does: the sidebar's `You`, `Agent` and `Stuck?
 - Choosing an item's card in the UI and pressing Send makes a **draft** request (e.g. `GOAL: C95`, with the item's done-when conditions in `DONE WHEN`). A human reads and fixes it, then presses Send. It is not sent automatically (§2).
 - The request carries the item's ID. Per item it can show "requested / reported / awaiting acceptance", which is the same thing as the minimum version of the ledger in §3.11 and the part that makes the leader disposable in §3.13.
 - What goes in the body is not a copy of the item but **a pointer**. The agent reads the latest from the repository.
+
+**A run: the queue lives in the ledger (C153, 2026-11-10).** A `RUN:` request names several items, and the leader takes them one at a time in the order given (`tools/dev/roles/leader.md`, "Runs"). The queue is that list together with the ledger, not a queue in the Hub. Why not in the Hub: Channels hand over everything that is queued at once, so a queue in the Hub would have to sequence the work, and the order and the state of the work already live in the ledger (`## Plan`, each item's status line, its checked lines); a queued request would copy the done-when lines, which go stale (C138); and moving or dropping an item would mean editing Messages that were already handed over. A run therefore sends one request, the per-item notices and one reply. The item cards still show `requested` / `reported` for each item, because the leader's requests to the deployer carry `meta.item`. The `RUN:` request itself carries no item; drafting it from the cards is C154, and what a run leaves for the human is C155.
 
 **The roadmap is updated during implementation.** Since it is a pointer there is no drift in content, but after sending, **the request's promise can move**. Changes are split in two.
 

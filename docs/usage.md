@@ -251,6 +251,24 @@ npm run team -- git-hook --project <repository> --write    # writes .git/hooks/p
 
 The hook runs `npm --prefix <agent-hub> run docs:index -- --if-touched` at the root of the repository you committed in. It gives the paths the commit changed to `docs:index` (NUL-separated, from `git diff-tree -z`), which sends only when that list contains the project's ledger (`touchesLedger` in `src/shared/ledger.ts`). To remove the hook, delete `.git/hooks/post-commit`. Without the command, the same hook is copying `tools/hooks/post-commit-index.sh` to `.git/hooks/post-commit` and setting its `AGENT_HUB_DIR=` line by hand (a copy does not follow later changes).
 
+### Several items in one request (a run)
+
+To have the team take several items one after another, send one request to the leader whose text starts with `RUN:` and lists the items in the order to take them:
+
+```
+RUN: C12, C14, C15
+```
+
+- Type it by hand, and send it to the leader (role `leader`, or the leader's Mailbox). **Draft request** makes a request for one item only; drafting a run from the cards is C154, which is held.
+- Suggest up to five items. Nothing in the code stops a longer list, but the leader holds the whole run in one context.
+- A listed item with a status line (`Status: proposed / held / blocked`) is not started, even though it is listed; the report names it. Items after a stop are not started either.
+- While the run goes on, **do not edit the project's files**, the roadmap included, in the folder the team works in. The team and the planning session share that folder. A change that is still uncommitted when the next item is about to start stops the run with a report.
+- What comes back: one notice per item as it finishes (`C<n>: committed`, `left open` or `not started`, with its five headings). Only the last report is a reply to your `RUN:` request. It lists each item's outcome, the decisions taken by default (numbered, each with its item ID), and under `NEEDS ACTION` the push, the closes that wait for your word (items with no reviewer), and the checks that need your hands. Until that reply, the `RUN:` request has no reply yet, which is expected during a run.
+- Each item is committed locally with its ID in the subject. A run never pushes: check the commits (`git log`) and push them yourself.
+- If a default taken is not what you want, send the change as a new request for that item after the run.
+
+The rules are in `tools/dev/roles/leader.md` ("Runs") and the reasons in design.md §3.15 (C153).
+
 ## Role definitions (roles.json)
 
 Write each role's default subscriptions and description in the Hub's configuration file. The sample is [roles.example.json](../roles.example.json).

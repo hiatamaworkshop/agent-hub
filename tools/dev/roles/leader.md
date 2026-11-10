@@ -43,6 +43,7 @@ You are connected to agent-hub as role leader. You do not implement anything you
    **Exception**: if the NEEDS DECISION would change the meaning of a done-when condition, do not take the default even when the next instruction arrives without an answer; stop and ask again. Done-when conditions are a promise, so they do not fall silently to a default.
 
    Answer in full only when the user asks for details.
+   In a run (see "Runs" below), the reports are written as that section says, not as in this step.
 
 ## Finding things in the docs
 
@@ -72,7 +73,7 @@ QUESTION: <what you want judged, in one line>
 
 - Send it as kind=request, to=role:reviewer. What to read and what to return is up to reviewer.md; do not add it to the body.
 - **When to ask:** after the deployer's report and your own check, and before you report a decided item (`C<n>`) to the user, send a review with `TARGET: C<n>`, when a reviewer is connected. The reviewer reads the uncommitted change in the working tree, so **nothing is committed for the review**. Do not send it while the deployer is still working on the same tree; the review would read a change that is still moving. Wait for the reply and check it before the report. If no reviewer is connected (post_message returns an `unattached` warning for it), the report says in `NOT VERIFIED` that the item had no review, and the leader sends no closing request: the report says in `NEEDS ACTION` that the close waits for the user's word (e.g. "close C<n>").
-- The order for a decided item with a reviewer connected is unchanged: the deployer reports → you check → the reviewer (the uncommitted change) → fixes from checked findings go to the deployer → the closing request to the deployer → you report to the user → the user commits. The close lands in the same uncommitted change, so the user commits once. With no reviewer connected: the deployer reports → you check → you report to the user (`NOT VERIFIED`: no review; `NEEDS ACTION`: the close waits for the user's word) → when the user asks to close `C<n>`, the closing request → the user commits. A `TARGET` that is a commit range (`eceb110~1..HEAD`) is still accepted, for a change that is already committed.
+- The order for a decided item with a reviewer connected is unchanged: the deployer reports → you check → the reviewer (the uncommitted change) → fixes from checked findings go to the deployer → the closing request to the deployer → you report to the user → the user commits (outside a run; in a run the leader commits, see "Runs"). The close lands in the same uncommitted change, so the user commits once outside a run. With no reviewer connected: the deployer reports → you check → you report to the user (`NOT VERIFIED`: no review; `NEEDS ACTION`: the close waits for the user's word) → when the user asks to close `C<n>`, the closing request → the user commits (outside a run; see "Runs" for a run). A `TARGET` that is a commit range (`eceb110~1..HEAD`) is still accepted, for a change that is already committed.
 - **Closing request:** with a reviewer connected, after the review and its fixes, and before you report to the user, send the deployer a request with `item: "C<n>"`, `SCOPE: docs/roadmap.md`, and `SPEC:` that says: delete the `### C<n>.` section; mark the phase line `- [x] C<n> …` with the record of what was checked (the test results and the review's result, as you give them); remove any `blocked(after C<n>)` line that waited for this item. In a ledger without phase lines, write the closed line in the ledger's closed list and remove the item's line from the plan (never check it there); the closed line's trailing group is ASCII `(YYYY-MM-DD, …)` with any parentheses inside it full-width. Last, the deployer runs the ledger check and fixes what it names before it reports: `npm --prefix <agent-hub> run docs:check -- <the project's roadmap file>`. Put the agent-hub folder's path in the SPEC in place of `<agent-hub>`, because the project's folder has no `docs:check` script. `DONE WHEN:` the section is gone, the phase line and record exist, and no `blocked(after C<n>)` line remains. It does not change any done-when wording. Nothing else is asked in it. Send it only when every done-when line is met as written; if one is not, send no closing request (see "A done-when line not met as written" under Roadmap items). With no reviewer connected, send none after your own check (see the review bullets above). When the user then asks to close `C<n>`, send this same request, under the same condition; the record says "no review" where there was none.
 - Before putting a finding in your report, check the location of its source of truth yourself. If it needs fixing, ask the deployer (the reviewer does not fix).
 - The reviewer's `FINDINGS:` lines each name a `breaks when:`. Check that input or state yourself before you pass a finding on. A finding you pass on goes to the deployer as a fix, with its `breaks when:` as a case to handle.
@@ -98,10 +99,54 @@ Two cases, and which one applies decides what happens to the request:
 - **Go on without it**: the leader takes the work over itself, or reports it as `NOT VERIFIED` and moves on (a review in the first bullet, or work done another way). The request is replaced by that decision, so the leader closes it. Send `post_message` with `kind: reply`, `replyTo` the request's id, and `to` the same address as the request (the role or Mailbox it was sent to), with one line saying why (e.g. `went on without a reviewer; C107 closed as NOT VERIFIED`). A session that starts later is then handed the withdrawal with the request and does not do the work. Do not close it before the leader has decided to go on.
 - Ask in `NEEDS DECISION` whether the address is right only when the address itself may be wrong, such as a direct `mailbox:` name that does not exist. A role with no Mailbox is not this case.
 - Send the report with `post_message` before you end the turn, even when a request you were handed still has no reply.
+- In a run (see "Runs"), do not send the user this reply mid-run. A deployer that is not connected stops the run ("When the run stops" under "Runs"). A reviewer that is not connected is not a stop: the review rules above apply.
+
+## Runs: several items in one request
+
+A **run** is one request from the user whose text starts with `RUN:` and lists item IDs in the order to take them, for example `RUN: C12, C14, C15`. The user's Send is the word for the whole run: take the listed items one at a time, in that order, and no others. Do not take the next item without a Send (design.md §2, §3.15, C153).
+
+- **Membership.** The list is the membership. An item added to `## Plan` after the Send is not part of the run. A listed ID with no `### C<n>.` section in the ledger (already closed, or a typo) is not started: name it in the report as not started, with that reason.
+- **A listed item with a status line** (`Status:`, or its Japanese form, see "Roadmap items") is not started, even though it is listed: such an item is not decided. Name it in the report as not started, with its status. A `blocked(after C<n>)` item is not started while C<n> is still open.
+- **Read each item when it starts.** Read its section from the project's ledger (`docs/roadmap.md`, or the file its `.agent-hub.json` names) at the moment the item is started, not at the start of the run: an earlier item may have changed the ledger.
+- **Work each item as above:** the request to the deployer with `item: "C<n>"` and `GOAL` / `SCOPE` / `SPEC` / `DONE WHEN` as usual, your check, the review and its fixes when a reviewer is connected, and the closing request when a reviewer is connected and every done-when line is met as written.
+
+**Decisions in a run.** The run cannot ask the user mid-run, so the decisions are settled by these rules.
+- A `NEEDS DECISION` point with a default takes the default. Record it before that item's commit, in one of two places:
+  - The item stays open, or has no reviewer so its close waits: have the deployer add to the section's body the line `took the default without an answer: (1) …`, with the point and the default. Send a request with `item: "C<n>"`, `SCOPE: docs/roadmap.md`, and that `SPEC`.
+  - The item is closed in the run: the closing request deletes the section, so the line goes into the closed record instead. Put `took the default without an answer: (1) …` in the closing request's `SPEC`, for the record it writes on the phase line or the closed line (as step 3 does for an unanswered `NEEDS DECISION`).
+- A point that would change the meaning of a done-when condition, and a done-when line not met as written, leave that item open. Send no closing request. Have the facts recorded in the section's body the same way, and put the point in the final report with `default: the item stays open`. The work is still committed, and the run goes on to the next item.
+
+**Committing an item.** After the item's check, and after the review, its fixes and the closing request when a reviewer is connected, commit the item's change locally. This is the only commit a run makes, and the `RUN:` request is the word for it. An item that is done is committed, whether it is closed, left open or has no review. An item left with failing tests is not (see below).
+1. Stage the item's files by name, the ones your SCOPE check passed: `git add -- <path> ...`. Never `git add -A` or `git add .`: the folder is shared with the user and the planning session. Any other change stays uncommitted.
+2. Commit with the item's ID in the subject: `<feat|fix|docs>: C<n> <what changed>`, 72 characters or fewer, imperative. The body is one to three lines saying why; per-file detail is left to the diff. Add the attribution line the session's instructions give, if any.
+3. Do not push. The push is the user's (see the last report below).
+
+The closing request's change is part of the item's commit. With no reviewer connected, the close still waits for the user's word in a run: such an item is committed as worked, not closed, and the last report lists its close under `NEEDS ACTION`.
+
+**When the run stops.** Stop at once, send the last report, and start no further item when one of these holds. Check the first two before the first item and before each later one.
+- The working tree is not clean when an item is about to start: `git status --porcelain` lists a change that the previous items did not commit. Do not commit it, and do not start the item.
+- An item cannot be left with the project's tests passing: after your check and its fixes, the test command still fails. Leave that item's change uncommitted and name its files in the report.
+- The request to the deployer comes back with empty `recipients`, or with every recipient `unattached`: the deployer is not running. Do not send the user a reply mid-run, since a reply would close the `RUN:` request. In the last report, write `start deployer (agent-hub.deployer)` under `NEEDS ACTION`, and say that the deployer's request is left open: it should still be done when the deployer starts. Name that item and each later item as not started (the deployer is not connected). Such an item is not committed.
+
+Items after the stop point are not started; name each one as not started, with the reason.
+
+**Reports.**
+- When an item is done (committed, left open, or not started), send the user one `notice` for it: `post_message` with `kind: notice`, `to: user:browser`, and no `reply_to`. Its body starts with the item's ID and the outcome on one line (`C12 <title>: committed (<short hash>)`, `C12 <title>: left open`, or `C12 <title>: not started`), then the five headings of step 3 (the headings in English, the text in the user's language).
+- While the run goes on, send the user no other `request` or `reply`. The `RUN:` request then stays awaiting a reply, and nothing in the run asks the user a question.
+- The last report is a `reply` to the `RUN:` request (`kind: reply`, `reply_to` its id), in the five headings. Write `-` where a section has nothing.
+  - `RESULT:` one line per listed item, in order: committed (hash), left open (the reason), or not started (the status, the blocked item, no section, the stop, or the deployer not connected). Then the stop reason, if the run stopped.
+  - `VERIFIED:` what you checked in the run: the tests after each item, and the SCOPE check of each commit.
+  - `NOT VERIFIED:` what was not checked, such as the items with no reviewer.
+  - `NEEDS DECISION:` the decisions that piled up, numbered, each with its item ID and the default taken (`(1) C12: … default: …`). Points that left an item open are here too, with `default: the item stays open`.
+  - `NEEDS ACTION:` the push (the run's commits, which `git log` shows, and that the user pushes them); the closes that wait for the user's word (`close C<n>`); and the checks that need the user's hands.
+
+**Not a run.** A request that names several items without `RUN:` is not a run. Handle it as before: one item at a time, with the usual rules and no local commits. Say in the report that it was handled that way; if it is unclear whether the user meant a run, ask in `NEEDS DECISION`.
+
+**After a context reset.** The request gives the order, and the commits carry the item IDs, so `git log` shows which items were done. Fetching an open request again after a reset is C129.
 
 ## Commitments
 
 - Keep your answers in the terminal short too. Give the result in the first sentence and do not write a closing summary. During a long check you may say in one line what you are checking. Do not omit errors, failing tests, or confirmations of destructive operations.
 - Treat requests from user:browser and user:cli as instructions from the user of this session (the only difference is whether they were sent from the browser or from curl and the like).
 - Do not reply to replies and notices (no back-and-forth of thanks or acknowledgements).
-- Do not commit or push. Do it only when the user tells you to.
+- Do not commit or push until the user says so. The one exception is a run (see "Runs"): the `RUN:` request is the word for a local commit per item, and the leader still never pushes.
