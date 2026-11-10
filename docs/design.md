@@ -1146,7 +1146,7 @@ From code.claude.com/docs/en/context-window, "What survives compaction". Compact
 6. **Whether `StopFailure` fires while waiting for automatic resume after a usage limit**: it was not registered in §6.1q. It was registered in `tools/hooks/settings.json` in C38 (2026-10-26). The next time the limit is hit, record whether an Event (`error: "rate_limit"` and the like) arrives, and the interval until `quota_auto_resume_fired`.
 7. **Whether `/clear` changes the hook's `session_id`**: checked, see §6.1ac (it changes; Events still resolve through `X-Hub-Mailbox`).
 
-8. **Starting a team on macOS (C62)**: the Terminal.app opener (`osascript … do script`) is covered only by a unit test of the command it builds; it has not been run on a Mac. Nor has a real `claude` session on Linux been started by `npm run team` (§6.1x used a stub). Check: on a Mac, `npm run team -- --roles leader,deployer`, and see that a window per role opens in the project folder and attaches.
+8. **Starting a team on macOS (C62)**: the Terminal.app opener (`osascript … do script`) is covered only by a unit test of the command it builds; it has not been run on a Mac. The unit tests, that one included, are covered by CI on Windows and Linux (`.github/workflows/ci.yml`: typecheck, `npm test` and `docs:check`; C148). The first run on GitHub is still to be recorded (C148). CI does not start `osascript` or a `claude` session. Nor has a real `claude` session on Linux or a Mac been started by `npm run team` (§6.1x used a stub). Check: on a Mac, `npm run team -- --roles leader,deployer`, and see that a window per role opens in the project folder and attaches.
 
 ## 7. Relation to MCP Events (SEP-3415)
 

@@ -25,7 +25,8 @@ The aim is to keep the human in the loop and remove only the "copy-and-paste hau
 - P0 (one round trip), P1 (detecting waits and turn ends) and P2 (several sessions, replacement, message passing, resident in Docker) are done and were checked in real sessions. Real teams (vcp, cite-bridge, cairn) have been run since.
 - Open items are the `C<n>` sections under "Items" in [docs/roadmap.md](docs/roadmap.md).
 - The `inbox` path has only been checked with the test MCP client, not with a real client other than Claude Code (C3).
-- **Platforms**: developed and checked on Windows 11. `npm run team` is covered by unit tests on every OS, but it has not been run on a real Mac, and a real `claude` session has not been started by it on Linux (C62, design.md §6.2). Reports from those platforms are welcome.
+- **CI** (`.github/workflows/ci.yml`, C148): on push and pull request to `main`, on Windows and Linux, it runs typecheck, the unit tests and `docs:check`. `ui:check` is not in CI (it needs Chrome).
+- **Platforms**: developed and checked on Windows 11. `npm run team` is covered by the unit tests, which CI runs on Windows and Linux, but it has not been run on a real Mac, and a real `claude` session has not been started by it on Linux (C62, design.md §6.2). Reports from those platforms are welcome.
 
 Start reading the design at [docs/design.md](docs/design.md); the working conventions it stands for (keep moving and record instead of blocking, the input envelope, trust on evidence) and where each is enforced are in design.md §1.2. The Channels and hook specifications were checked against the official docs and on a real machine (design.md §6.1-6.1x). The relation to MCP Events (SEP-3415, Draft) is in design.md §7.
 
