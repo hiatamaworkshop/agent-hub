@@ -25,6 +25,13 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C153
+- [ ] C152
+- [ ] C146
+- [ ] C151
+- [ ] C149
+- [ ] C147
+- [ ] C148
+- [ ] C150
 
 (Items with a status line are listed under "Items".)
 
@@ -969,58 +976,104 @@ Raised 2026-11-09 by the reviewer of C142 (#322). The C106 jump highlights a car
 - Ideas, not decided: (a) the jump re-applies the highlight to the rebuilt card (keyed by Mailbox name) until its time ends; (b) the card rebuild keeps nodes whose content did not change; (c) a `ui:check` scene that redraws right after the press.
 
 ### C146. Roles in another project's team do not know where agent-hub is
-Status: proposed
 
 Raised 2026-11-09 by the leader closing C141 (#335). C141's closing step runs `npm --prefix <agent-hub> run docs:check -- <ledger>`, since a project's own folder has no `docs:check` script. `src/team/agent.ts` passes the role file as is (`--append-system-prompt-file`), so nothing tells a session the agent-hub folder; the leader is told to write the path into the closing SPEC, but in another project's team it may not know it either, and then the check is reported as not run.
 - Ideas, not decided: (a) the team start adds one line with agent-hub's absolute path to what each role receives (every role's prompt changes; vendor-neutral if it goes through the shim's instructions rather than a Claude-only flag); (b) the shim exposes the path (an MCP tool or its instructions), read only when needed; (c) a small command on the PATH (like `hub-team`) that runs the checker, so no path is needed.
 - The reviewer's notes from C141 that were outside its done-when (the checker's message language, and a closed line with ASCII parentheses inside) moved to C152 on 2026-11-10.
+- Decided 2026-11-10 in the planning session (the user left the choice among the ideas to it): (a), through the shim's instructions. They reach every MCP client, so it stays vendor-neutral, and the shim already knows its own folder (`ROOT` in `src/shim/config.ts`). Not (b): a tool for one string a session needs only at the close. Not (c): a command on the PATH is per-OS tooling and still has to find the folder.
+
+#### Done when
+- [ ] The shim's instructions (`src/shim/instructions.ts`) have one line naming agent-hub's absolute folder (the folder the shim runs from) and the command that checks another project's ledger (`npm --prefix <folder> run docs:check -- <ledger>`).
+- [ ] `tools/dev/roles/leader.md`'s closing step takes the folder from that line, not from the SPEC.
+- [ ] A unit test checks that the instructions carry the line with the shim's folder.
+- [ ] design.md, where it describes the shim's instructions, says they carry the folder.
+- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C147. Put the files and messages an adopter meets first into English
-Status: proposed
 
 Raised 2026-11-10 in the planning session, from a pass over what is still immature against the direction of adoption (design.md §1.1, 2026-11-06). C65 put the documents into English; the rest of the repository was left. Counted the same day (lines containing Japanese): `.env.example` 13, `compose.yaml` 7, `Dockerfile` 2, the `description` in `package.json`, 154 lines with Japanese inside string literals in `src/` outside tests (for example the 404 text in `src/hub/app.ts`, the start messages in `src/hub/main.ts` and `src/shim/main.ts`, `src/shim/instructions.ts`, `src/shim/tools.ts`, `src/shared/roadmap.ts`), 682 comment lines in `src/` outside tests, 884 lines in tests (mostly test names), 456 in `public/index.html`, 460 in `tools/dev/ui-check.mjs`.
 - Some of the Japanese is vocabulary the code must keep reading (`## 予定`, `状態:`, the reply-format headings `結果` and so on; design.md §3.15). That stays.
 - Idea: first the files an adopter edits or reads at setup (`.env.example`, `compose.yaml`, `Dockerfile`, `package.json`) and the text a running Hub, shim or command prints or returns. The checker's messages are C152.
-- To decide: whether comments, test names and the `ui:check` scene names are in scope, as a second item, or left as they are; whether text addressed to the human follows `HUB_LANGUAGE` (design.md §3.5) or is English only.
+- Decided 2026-11-10 in the planning session (the user left the choice to it): this item covers the setup files and the text a running Hub, shim or `npm run team` prints, returns over HTTP or gives an agent (the shim's instructions and tool descriptions). That text is English only; `HUB_LANGUAGE` stays for what agents write to the human (design.md §3.5). Comments, test names, `public/index.html` and `tools/dev/ui-check.mjs` are left as they are; a later item if wanted. The checker's messages are C152.
+
+#### Done when
+- [ ] `.env.example`, `compose.yaml`, `Dockerfile` and the `description` in `package.json` have no Japanese.
+- [ ] String literals in `src/` outside tests that a running Hub, shim or `npm run team` prints, returns over HTTP or gives an agent are English, except the vocabulary the code reads (design.md §3.15) and `src/shared/roadmap.ts` (C152).
+- [ ] The body records the command used to list the Japanese left in string literals in `src/` outside tests, and that its output after the change is only that vocabulary and `src/shared/roadmap.ts`.
+- [ ] The body lists the Japanese the UI shows on screen (found, not changed here).
+- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C148. Run the checks in CI on Windows and Linux
-Status: proposed
 
 Raised 2026-11-10 in the planning session. The repository has no CI: `npm run typecheck`, `npm test` (584 tests on 2026-11-10) and `npm run docs:check` have only been run on the development machine (Windows 11). The README's Status says `npm run team` "is covered by unit tests on every OS", but nothing runs the tests on another OS. Whether they pass on Linux or macOS is not known.
 - Idea: one GitHub Actions workflow on push and pull request, with a matrix of `windows-latest` and `ubuntu-latest`, running the three commands. It backs the README's sentence with a run, and covers the unit-test half of design.md §6.2-8 (a real `claude` session on Linux or a Mac stays unchecked).
-- To decide: whether macOS joins the matrix; whether `npm run ui:check` runs there too (it needs Chrome and a free port; C151); what to do with tests that turn out to be Windows-only (fix, or skip with the reason written in the test).
+- Decided 2026-11-10 in the planning session (the user left the choice to it): `windows-latest` and `ubuntu-latest`; macOS joins when someone uses agent-hub on a Mac. `ui:check` stays off CI (it needs Chrome and free ports; C151). A test that cannot pass on Linux is fixed, or skipped on that OS with the reason written in the test. The tests can be tried on Linux before the push in a Node container (Docker is on the development machine).
+
+#### Done when
+- [ ] A workflow under `.github/workflows/` runs on push and pull request to `main`, with a matrix of `windows-latest` and `ubuntu-latest` on Node LTS, running `npm ci`, `npm run typecheck`, `npm test` and `npm run docs:check`.
+- [ ] Tests that failed on Linux are fixed, or skipped on that OS with the reason in the test; the body lists them.
+- [ ] A run on GitHub Actions passed on both systems (after the user's push), and its URL is in the body.
+- [ ] The README's Status says what CI runs, and design.md §6.2-8 says the unit tests are covered by CI while a real `claude` session on Linux or a Mac stays unchecked.
+- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C149. Check design.md §6.2-4 and §6.2-7 on a real machine, and settle §6.2-1
-Status: proposed
 
 Raised 2026-11-10 in the planning session. Three entries of design.md §6.2 have no item, and two of them can be checked on this machine now.
 - §6.2-4, escaping of Channels' `meta` attribute values: the provisional restriction (only the known keys of `files` go on Channels; `channelMeta` in `src/shared/format.ts`) has stood since 2026-10-16. The entry already says how to check (`tools/probe/`, `GET /case/attr` with `probe_quote: 'a"b<c>&d'`). The result decides between using `escapeAttr` for `meta` and leaving values as they are, and whether the restriction is lifted.
 - §6.2-7, whether `/clear` changes the hook's `session_id`: C41's rule for whose questions count depends on it (the closed record of C41 says the behaviour is unverified). Check the hook input before and after `/clear`, and whether the Event still resolves to the Mailbox (the first means of design.md §3.4).
 - §6.2-1, "Windows-specific: path notation, line endings": it names no behaviour to check. Either write what is unverified, or remove the entry and say where the confirmed parts are recorded.
 - Results go to design.md §6 with the Claude Code version. A code change that follows from a result (lifting the restriction, a change to C41's rule) is a separate item.
+- Decided 2026-11-10 in the planning session, as written above. The `/clear` check needs a session the user types into; it waits for the user's hands like other such checks.
+
+#### Done when
+- [ ] §6.2-4 was checked with `tools/probe/` as the entry says, and design.md §6 records how a quote, `<`, `>` and `&` in a `meta` value arrive, with the Claude Code version; §6.2-4 is removed or points at the result.
+- [ ] §6.2-7 was checked: design.md §6 records the hook input's `session_id` before and after `/clear` in one session and whether the Event still resolves to the Mailbox, with the Claude Code version; §6.2-7 is removed or points at the result.
+- [ ] §6.2-1 names what is unverified, or is removed with a pointer to where the confirmed parts are recorded.
+- [ ] No code changes from the results are made here; the body names any that follow, for the planning session.
+- [ ] `npm run docs:check` passes.
 
 ### C150. Make the card state derivation testable and usable outside the page
-Status: proposed
 
 Raised 2026-11-10 in the planning session. The card state (Needs you / Working / Waiting on others / Stopped / Paused; design.md §3.15) is derived by `stateOf` in `public/index.html`, which has no unit tests; `ui:check` covers it scene by scene and needs Chrome. `src/team/status.ts` (C108) does not derive states. Two open items need "the same derivation as the cards" outside the browser: C79 (the watcher) and C139 (`status` per item). Built as they stand, each would copy the rules, and the copies would drift.
 - Ideas, not decided: (a) move the derivation into a module without Node APIs under `src/shared/`, which the Hub serves to the page and the commands import, with unit tests beside it; (b) the Hub derives the state and returns it with `GET /mailboxes`, and the page only draws it; (c) leave it in the page, and a test pins a second copy against the same cases.
 - (a) and (b) touch "the UI is a single framework-less HTML file" (CLAUDE.md "Technology stack"; design.md §3.2, §5): the reason goes into design.md first. (b) also needs a look at what the page uses that the Hub does not have (the browser's clock for elapsed times, the filters in `localStorage`).
 - Before C79 or C139 is built, or together with the first of them.
+- Decided 2026-11-10 in the planning session (the user left the choice to it): (a). One copy serves the page and the commands, with no framework added. Not (b): the state depends on the browser's clock and filters, which the Hub does not have. Not (c): two copies kept equal by a test are still two copies. The module takes the current time as an argument, so the page passes the browser's clock and the commands their own.
+
+#### Done when
+- [ ] design.md §5 records the reason for serving a shared module to the page before the change, and CLAUDE.md's "Technology stack" line on the UI says what the page loads besides the HTML file.
+- [ ] The card state derivation (`stateOf` and what it needs) is a module under `src/shared/` without Node APIs; the Hub serves it to the page, started directly and in Docker, and `public/index.html` uses it instead of its own copy.
+- [ ] Unit tests beside the module cover Needs you, Working, Waiting on others, Stopped and Paused, with cases taken from the `ui:check` scenes.
+- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
 
 ### C151. `ui:check` has no guard on Chrome's debugging port
-Status: proposed
 
 Raised 2026-11-10 in the planning session. C142 made `ui:check` stop when its Hub port (7793, `UI_CHECK_PORT`) is already answered by another Hub. The Chrome it starts still uses a fixed debugging port (9333, `UI_CHECK_CDP_PORT`) with no such check, and the page is found by asking that port for its list of targets. A second run on the same machine (a team's deployer and the planning session, or a leftover Chrome) could read the other run's page. Not reproduced; the failures during C142 were put down to the Hub port (C145's body).
 - The Hub-port check also has a gap when two runs start at the same moment: both see the port free.
 - Ideas, not decided: (a) check the debugging port the same way before starting Chrome; (b) pick free ports for both when the environment variables are not set, so two runs do not meet; (c) a lock file in the temporary folder that names the run holding the ports.
+- Decided 2026-11-10 in the planning session (the user left the choice to it): (b) by default and (a) when a port is set by hand. Free ports from the system also close the gap of two runs starting at once. Not (c): a run that crashes leaves its lock behind.
+
+#### Done when
+- [ ] With `UI_CHECK_PORT` and `UI_CHECK_CDP_PORT` unset, `ui:check` takes free ports from the system for its Hub and for Chrome's debugging port, and prints them.
+- [ ] With either set, `ui:check` stops before starting Chrome when that port already answers, and names the port, as it does today for the Hub port.
+- [ ] Two `ui:check` runs started at the same time on one machine both pass; the body records the run.
+- [ ] The docs that name the fixed ports (7793, 9333) say what happens now.
+- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
 
 ### C152. `docs:check` answers an English ledger in Japanese, and misreads a closed line with ASCII parentheses inside
-Status: proposed
 
 Raised 2026-11-09 by the reviewer of C141 (#335), outside that item's done-when; moved here from C146's body on 2026-11-10 so the notes survive C146's close.
 - Language: `checkRoadmap` in `src/shared/roadmap.ts` picks English only when the ledger has `## Plan` and no `## 予定`, so an English ledger without a plan heading gets Japanese, and a Japanese ledger that uses `## Plan` gets English. Read 2026-11-10: only the messages C141 added go through that choice (`pick`); the others are Japanese for every ledger, for example the error for a decided item missing from the plan. An adopter with an English ledger reads most findings in Japanese (C147).
 - Closed lines: a line whose trailing group has the date first but ASCII parentheses inside is reported as "no date" (the reviewer's report; not re-checked on 2026-11-10). The rule at the top of this file asks for full-width parentheses inside the group, so the line does break the rule; the message names the wrong fault.
 - To decide: where the language comes from (the ledger's own vocabulary, `HUB_LANGUAGE`, or always English with the Japanese vocabulary still read); whether every message gets both languages. Changing only the wording of messages does not change what the checker accepts; if the choice changes what other projects see, add a line to conventions-log.md.
+- Decided 2026-11-10 in the planning session (the user left the choice to it): the ledger's own vocabulary picks the language, and every message has both. Not `HUB_LANGUAGE`: the checker runs on the host without the Hub's settings, and the ledger's writer already chose a language.
+
+#### Done when
+- [ ] Every message of `checkRoadmap` has an English and a Japanese text: Japanese when the ledger has `## 予定`, a `状態:` line or `#### 完了条件`, English otherwise.
+- [ ] A closed line whose trailing group starts with the date but has ASCII parentheses inside gets a message that names that fault and the fix (full-width parentheses inside), not "no date".
+- [ ] Unit tests: an English ledger without `## Plan` gets English, a Japanese ledger with `## Plan` gets Japanese, and the closed-line case above.
+- [ ] docs/conventions-log.md has a line saying the checker's messages follow the ledger's vocabulary and that what it accepts is unchanged.
+- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C153. A run: one request that takes several items from the ledger, one at a time
 
