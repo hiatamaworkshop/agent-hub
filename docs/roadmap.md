@@ -1046,11 +1046,13 @@ Raised 2026-11-10 in the planning session. Three entries of design.md §6.2 have
 - §6.2-1, "Windows-specific: path notation, line endings": it names no behaviour to check. Either write what is unverified, or remove the entry and say where the confirmed parts are recorded.
 - Results go to design.md §6 with the Claude Code version. A code change that follows from a result (lifting the restriction, a change to C41's rule) is a separate item.
 - Decided 2026-11-10 in the planning session, as written above. The `/clear` check needs a session the user types into; it waits for the user's hands like other such checks.
+- Done (2026-11-10, deployer): §6.2-1 is rewritten in design.md §6.2 (numbering kept). It names two unverified Windows cases, which the repository shows are not run: paths with a space in the hook commands and the post-commit line, and CRLF ledger or `.env` files read by the checker, `docs:index` and the team start (the parsers have unit tests, no real run). It also names the Windows parts that are confirmed (§6.1i, §6.1l, §6.1x, §6.1y, C52). No code changed. Fix (2026-11-10, deployer, review of §6.2-1): the CRLF citations now name the files that hold the tests and the parsers (the `.env` readers and their tests, the ledger's CRLF test, `.agent-hub.json` read with `JSON.parse`); `src/hub/store.ts` is dropped, since it reads the Hub's own `hub.jsonl`.
+- Open, waiting for the user's hands (not started here, no Claude Code session was started): §6.2-4 (the `tools/probe/` check of `meta` escaping) and §6.2-7 (`/clear` and the hook's `session_id`). Their boxes stay `[ ]`.
 
 #### Done when
 - [ ] §6.2-4 was checked with `tools/probe/` as the entry says, and design.md §6 records how a quote, `<`, `>` and `&` in a `meta` value arrive, with the Claude Code version; §6.2-4 is removed or points at the result.
 - [ ] §6.2-7 was checked: design.md §6 records the hook input's `session_id` before and after `/clear` in one session and whether the Event still resolves to the Mailbox, with the Claude Code version; §6.2-7 is removed or points at the result.
-- [ ] §6.2-1 names what is unverified, or is removed with a pointer to where the confirmed parts are recorded.
+- [x] §6.2-1 names what is unverified, or is removed with a pointer to where the confirmed parts are recorded.
 - [ ] No code changes from the results are made here; the body names any that follow, for the planning session.
 - [ ] `npm run docs:check` passes.
 
