@@ -25,6 +25,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C156
+- [ ] C158
 - [ ] C146
 - [ ] C151
 - [ ] C149
@@ -1110,3 +1111,16 @@ C153 says that while a run goes on the leader sends the user no `request` or `re
 - [x] `npm test` and `npm run docs:check` pass.
 - [ ] After C157, the known-gap sentences in `leader.md` "Runs", usage.md and design.md §3.15 are removed or replaced by a pointer to C157, and a message sent to the leader during a real run is answered with a reply to it while `GET /mailboxes` still shows the `RUN:` request awaiting a reply; design.md §6 records the seqs seen.
 - [ ] `leader.md` "Runs" says a mid-run message is replied to once: a second reply to it, once it is closed, closes every open request from the user, the `RUN:` request included (C157's fallback). docs/usage.md's two sentences on what closes awaiting reply (the Mailbox list near the top, and retention) state C157's rule.
+
+### C158. The Hub started by `ui:check` writes to the real Hub's log
+
+Decided 2026-11-10 by the user in the planning session. Found the same day: after a team ran `npm run ui:check`, the last lines of `logs/hub.log` were from the check's own Hub (port 7793, data in a temp folder), not from the Hub on 7777.
+- Why: the Hub writes its console output to `logs/hub.log` under the repository, a fixed path (`src/hub/main.ts`, C143). `tools/dev/ui-check.mjs` gives its Hub its own `HUB_DATA_DIR`, `HUB_PORT` and `HUB_TOKEN`, but nothing moves the log. So a check's lines mix into the record that design.md §3.14 keeps for the real Hub. Both processes may also rotate the same file (`logs/hub.log.1`) while both are running.
+- The fix: a `HUB_LOG_FILE` setting. It holds the path of the log file and defaults to `logs/hub.log`. `ui:check` sets it to a file in its own work folder, next to the check Hub's data, so a failed check keeps its log with the rest of its files. Rejected: deriving the log path from `HUB_DATA_DIR`. The log and the data are kept apart on purpose (`logs/` and `data/`, CLAUDE.md), and the default Hub would change where it logs. Also rejected: turning the file off for `ui:check`, because the check's log helps when a scene fails.
+- Related: C151 (free ports for `ui:check`, two runs at once). Each run then has its own work folder, so each also gets its own log.
+
+#### Done when
+- [ ] The Hub writes its log to `HUB_LOG_FILE` when it is set, and to `logs/hub.log` when it is not; the rotation (`.1`) follows the same path. A unit test covers both.
+- [ ] `tools/dev/ui-check.mjs` sets `HUB_LOG_FILE` to a file in its work folder. After a run, `logs/hub.log` has no new line from the check's Hub (checked by its size or last line before and after a run).
+- [ ] `.env.example`, design.md §3.14 (the Hub's own log) and docs/usage.md, wherever they name `logs/hub.log`, say how `HUB_LOG_FILE` changes the path.
+- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
