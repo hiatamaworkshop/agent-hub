@@ -76,6 +76,25 @@ const TRAILING_PAREN = /\(([^()]*)\)\s*$/
 const CLOSED_DATE = /^(?:(?:却下|rejected)\s+)?(\d{4}-\d{2}-\d{2})(?!\d)/
 // 却下の行の括弧: `却下 YYYY-MM-DD、理由` か `rejected YYYY-MM-DD, reason` (C24)
 const REJECTED_PAREN = /^(?:却下|rejected)\s+\d{4}-\d{2}-\d{2}\s*[,、]\s*(\S.*)$/
+// 行末の括弧が日付で始まる括弧なら、その中身を返す (C152)。最後の `)` に対応する `(` を深さで探し、その直後が日付 (却下 / rejected の後も可) のときだけ。
+// 行の途中の `(` (題の後ろの `(see note)` など) は行末の括弧ではないので見ない。TRAILING_PAREN は中の括弧を読まないので、closedDateMessage がその崩れを名指す
+function trailingDatedGroup(line: string): string | null {
+  const s = line.trimEnd()
+  if (!s.endsWith(')')) return null
+  let depth = 0
+  for (let i = s.length - 1; i >= 0; i--) {
+    if (s[i] === ')') depth++
+    else if (s[i] === '(') {
+      depth--
+      if (depth === 0) {
+        const inner = s.slice(i + 1, -1)
+        return CLOSED_DATE.test(inner) ? inner : null
+      }
+    }
+  }
+  return null
+}
+
 const PLAN_HEADING = /^##\s+(?:予定|Plan)\s*$/
 const PLAN_LIST = /^\s*[-*]\s/
 const PLAN_ITEM = /^[-*] \[ \] C(\d+)\b/
@@ -269,7 +288,7 @@ export function parseRoadmap(text: string): RoadmapIndex {
   return { items, refs, plan, closed }
 }
 
-// 案内の言葉 (C141)。台帳の予定の見出しが `## Plan` だけなら英語、それ以外 (`## 予定` があるか、見出しがない) は日本語。語彙の読み方は行ごとだが、案内の言葉は台帳ごとに 1 つ
+// 案内の言葉 (C141)。台帳の語彙 (`## 予定`、`状態:`、`#### 完了条件` のどれか) が日本語なら日本語、なければ英語 (C152。以前は `## Plan` の有無だけで決めた)。語彙の読み方は行ごとだが、案内の言葉は台帳ごとに 1 つ
 const pick = (english: boolean, ja: string, en: string): string => (english ? en : ja)
 
 // 閉じた行の日付がないときの案内 (C141)。行末が全角の `）` なら、末尾の括弧は半角で囲むと言う。どちらも形の例を出す
@@ -282,6 +301,14 @@ function closedDateMessage(line: string, mark: string, id: string, english: bool
       english,
       `${head} の行末は全角の \`）\` で閉じている。末尾の括弧は半角の \`(\` \`)\` で囲み、日付 (YYYY-MM-DD) を先頭にする。例: ${example}。括弧の中の括弧は全角でよい`,
       `${head} ends with a full-width \`）\`. The trailing group must use ASCII parentheses \`(\` \`)\`, with the date (YYYY-MM-DD) first, for example ${exampleEn}. Parentheses inside it may be full-width`,
+    )
+  }
+  const inner = trailingDatedGroup(line)
+  if (inner !== null && /[()]/.test(inner)) {
+    return pick(
+      english,
+      `${head} の行末の括弧の中に半角の括弧 \`(\` \`)\` がある。括弧の中の括弧は全角 \`（\` \`）\` にする。末尾の括弧は半角のまま、日付 (YYYY-MM-DD) を先頭にする。例: ${example}`,
+      `${head} has ASCII parentheses inside its trailing group. Write the parentheses inside it full-width \`（\` \`）\`; the outer group stays ASCII, with the date (YYYY-MM-DD) first, for example ${exampleEn}`,
     )
   }
   return pick(
@@ -300,54 +327,56 @@ export function checkRoadmap(text: string): RoadmapProblem[] {
   const { sections } = split(contentLines(text))
   const { items, refs, plan, closed } = parseRoadmap(text)
   const lineText = new Map(contentLines(text).map((l) => [l.no, l.text]))
-  const english = /^##\s+Plan\s*$/m.test(text) && !/^##\s+予定\s*$/m.test(text)
+  // 言葉は台帳の語彙で決まる (C152): 予定の見出し・状態の行・完了条件の見出しのどれかが日本語なら日本語、なければ英語 (HUB_LANGUAGE は見ない)。読み手と同じく fence の中は見ない
+  const outsideFences = contentLines(text)
+  const english = !outsideFences.some((l) => /^##\s+予定\s*$/.test(l.text) || /^\s*状態\s*[:：]/.test(l.text) || /^#### 完了条件\s*$/.test(l.text))
   // 状態の行が崩れた項目は、決定とみなした検査を重ねない
   const badStatus = new Set<number>()
 
   for (const sec of sections) {
-    if (!ITEM_HEADING.test(sec.head.text)) err(sec.head.no, `項目の見出しは \`### C<n>. 題\` の形にする: ${sec.head.text}`)
+    if (!ITEM_HEADING.test(sec.head.text)) err(sec.head.no, pick(english, `項目の見出しは \`### C<n>. 題\` の形にする: ${sec.head.text}`, `An item heading must be \`### C<n>. Title\`: ${sec.head.text}`))
     const st = readStatus(sec)
     if (st.present && !st.valid) {
       badStatus.add(sec.head.no)
-      err(sec.body[0]!.no, `状態の語彙は \`状態: 提案 | 保留(再開の条件) | ブロック(C<n> の後)\` か \`Status: proposed | held(…) | blocked(after C<n>)\`: ${sec.body[0]!.text.trim()}`)
+      err(sec.body[0]!.no, pick(english, `状態の語彙は \`状態: 提案 | 保留(再開の条件) | ブロック(C<n> の後)\` か \`Status: proposed | held(…) | blocked(after C<n>)\`: ${sec.body[0]!.text.trim()}`, `The status words are \`Status: proposed | held(…) | blocked(after C<n>)\` or \`状態: 提案 | 保留(再開の条件) | ブロック(C<n> の後)\`: ${sec.body[0]!.text.trim()}`))
     }
-    if (st.present && /^\s/.test(sec.body[0]!.text)) err(sec.body[0]!.no, '状態の行は字下げしない')
+    if (st.present && /^\s/.test(sec.body[0]!.text)) err(sec.body[0]!.no, pick(english, '状態の行は字下げしない', 'A status line is not indented'))
     for (const l of sec.body.slice(st.present ? 1 : 0)) {
-      if (STRAY_STATUS_LINE.test(l.text)) err(l.no, '状態の行は見出しの直後に 1 行だけ書く')
+      if (STRAY_STATUS_LINE.test(l.text)) err(l.no, pick(english, '状態の行は見出しの直後に 1 行だけ書く', 'Write one status line only, right after the heading'))
     }
   }
 
   const seen = new Map<string, number>()
   for (const it of items) {
     const prev = seen.get(it.id)
-    if (prev !== undefined) err(it.line, `${it.id} が重複している (先の定義は ${prev} 行目)`)
+    if (prev !== undefined) err(it.line, pick(english, `${it.id} が重複している (先の定義は ${prev} 行目)`, `${it.id} is defined twice (the first is at line ${prev})`))
     else seen.set(it.id, it.line)
 
-    if (it.status === 'blocked' && !it.statusReason) err(it.line + 1, `${it.id}: ブロックには理由を書く`)
+    if (it.status === 'blocked' && !it.statusReason) err(it.line + 1, pick(english, `${it.id}: ブロックには理由を書く`, `${it.id}: a blocked item needs a reason`))
     // ブロックはほかの項目を待つときだけ。外の出来事を待つものは保留 (design.md §3.15)
     else if (it.status === 'blocked' && !/C\d+/.test(it.statusReason ?? '')) {
-      err(it.line + 1, `${it.id}: ブロックは他の項目を待つときだけ。理由に C<n> を書く (外の出来事を待つなら保留)`)
+      err(it.line + 1, pick(english, `${it.id}: ブロックは他の項目を待つときだけ。理由に C<n> を書く (外の出来事を待つなら保留)`, `${it.id}: blocked is only for waiting on another item. Write C<n> in the reason (for an outside event, use held)`))
     }
     // ブロックは決定の項目だけ。決まっていない項目がほかを待つなら保留(C<n> の後)
-    if (it.status === 'blocked' && !it.conditions) err(it.line, `${it.id}: ブロックは決定の項目 (完了条件を持つ) だけ。決まっていない項目は保留(C<n> の後)`)
-    if (it.status === 'held' && !it.statusReason) err(it.line + 1, `${it.id}: 保留には再開の条件を書く`)
+    if (it.status === 'blocked' && !it.conditions) err(it.line, pick(english, `${it.id}: ブロックは決定の項目 (完了条件を持つ) だけ。決まっていない項目は保留(C<n> の後)`, `${it.id}: blocked is only for a decided item (one with done-when conditions). An item not decided yet that waits on another is held(after C<n>)`))
+    if (it.status === 'held' && !it.statusReason) err(it.line + 1, pick(english, `${it.id}: 保留には再開の条件を書く`, `${it.id}: held needs the condition to resume`))
     if (it.status === 'decided' && !badStatus.has(it.line)) {
-      if (!it.conditions) err(it.line, `${it.id}: 決定の項目には \`#### 完了条件\` が要る (未決なら \`状態: 提案\` か \`Status: proposed\` を書く。英語の台帳では \`#### Done when\`)`)
-      else if (it.conditions.total === 0) err(it.line, `${it.id}: \`#### 完了条件\` にチェックボックスがない`)
+      if (!it.conditions) err(it.line, pick(english, `${it.id}: 決定の項目には \`#### 完了条件\` が要る (未決なら \`状態: 提案\` か \`Status: proposed\` を書く。英語の台帳では \`#### Done when\`)`, `${it.id}: a decided item needs a \`#### Done when\` section (if it is not decided, write \`Status: proposed\`; in a Japanese ledger, \`#### 完了条件\`)`))
+      else if (it.conditions.total === 0) err(it.line, pick(english, `${it.id}: \`#### 完了条件\` にチェックボックスがない`, `${it.id}: the \`#### Done when\` section has no checkbox`))
       else if (it.conditions.done === it.conditions.total) {
-        warn(it.line, `${it.id}: 完了条件が全部埋まっている。節を消し、フェーズの行を \`[x] ${it.id}\` にして記録を書く`)
+        warn(it.line, pick(english, `${it.id}: 完了条件が全部埋まっている。節を消し、フェーズの行を \`[x] ${it.id}\` にして記録を書く`, `${it.id}: all done-when conditions are checked. Remove the section, set the phase line to \`[x] ${it.id}\` and write the record`))
       }
     }
     // 決定の項目 (状態の行がないものと、ブロック) は予定に載る (design.md §3.15)。見出しがなければ下で 1 度だけ言う
     const decided = it.status === 'decided' || it.status === 'blocked'
     if (plan && decided && !badStatus.has(it.line) && !plan.some((p) => p.id === it.id)) {
-      err(it.line, `${it.id}: 決定の項目が \`## 予定\` (英語の台帳では \`## Plan\`) にない`)
+      err(it.line, pick(english, `${it.id}: 決定の項目が \`## 予定\` (英語の台帳では \`## Plan\`) にない`, `${it.id}: a decided item is not in \`## Plan\``))
     }
   }
 
   const planRead = readPlan(contentLines(text))
-  if (items.length > 0 && !plan) err(1, '項目があるのに `## 予定` (英語の台帳では `## Plan`) がない (決定の項目を取りかかる順に `- [ ] C<n>` で並べる。決定の項目がなければ見出しだけでよい)')
-  if (planRead.headings.length > 1) err(planRead.headings[1]!.no, '`## 予定` が 2 つ以上ある。1 つにまとめる')
+  if (items.length > 0 && !plan) err(1, pick(english, '項目があるのに `## 予定` (英語の台帳では `## Plan`) がない (決定の項目を取りかかる順に `- [ ] C<n>` で並べる。決定の項目がなければ見出しだけでよい)', 'There are items but no `## Plan` heading. List the decided items as `- [ ] C<n>` in the order to take them; if there are no decided items, the heading alone is enough'))
+  if (planRead.headings.length > 1) err(planRead.headings[1]!.no, pick(english, '`## 予定` が 2 つ以上ある。1 つにまとめる', '`## Plan` appears more than once. Merge it into one'))
   for (const s of planRead.stray) {
     // 閉じた行 (`[x]` / `[-]`) は予定から外す。記録は閉じた項目の一覧に残す (C141)
     const closedLine = CLOSED.exec(s.text)
@@ -356,19 +385,19 @@ export function checkRoadmap(text: string): RoadmapProblem[] {
       err(s.no, pick(english, `\`${id}\` は \`## 予定\` に残さない。予定の行から外し、記録は閉じた項目の一覧に書く`, `\`${id}\` stays under \`## Plan\`. Remove the line from the plan and keep the record in the closed list`))
     } else err(s.no, pick(english, '予定の行は `- [ ] C<n>` の形にする (完了や却下は並べない)', 'A plan line must be `- [ ] C<n>` (do not list finished or rejected items)'))
   }
-  for (const t of planRead.titled) warn(t.no, `${t.id}: 予定の行に題を書かない (\`- [ ] C<n>\` だけにする。題は項目の節にある)`)
+  for (const t of planRead.titled) warn(t.no, pick(english, `${t.id}: 予定の行に題を書かない (\`- [ ] C<n>\` だけにする。題は項目の節にある)`, `${t.id}: do not write a title on a plan line (only \`- [ ] C<n>\`; the title is in the item's section)`))
   const planAt = new Map<string, PlanEntry>()
   for (const p of plan ?? []) {
     const prev = planAt.get(p.id)
     if (prev) {
-      err(p.line, `${p.id}: \`## 予定\` に 2 度載っている (先は ${prev.line} 行目)`)
+      err(p.line, pick(english, `${p.id}: \`## 予定\` に 2 度載っている (先は ${prev.line} 行目)`, `${p.id}: listed twice in \`## Plan\` (the first is at line ${prev.line})`))
       continue
     }
     planAt.set(p.id, p)
     const it = items.find((x) => x.id === p.id)
-    if (!it) err(p.line, `${p.id}: \`## 予定\` に載せたが、項目の節がない`)
+    if (!it) err(p.line, pick(english, `${p.id}: \`## 予定\` に載せたが、項目の節がない`, `${p.id}: listed in \`## Plan\`, but it has no item section`))
     else if (it.status === 'proposed' || it.status === 'held') {
-      err(p.line, `${p.id}: 決定でない項目 (${it.status === 'proposed' ? '提案' : '保留'}) は \`## 予定\` に載せない`)
+      err(p.line, pick(english, `${p.id}: 決定でない項目 (${it.status === 'proposed' ? '提案' : '保留'}) は \`## 予定\` に載せない`, `${p.id}: an item that is not decided (${it.status === 'proposed' ? 'proposed' : 'held'}) is not listed in \`## Plan\``))
     }
   }
   // ブロックは待つ項目の後に並ぶ。待つ項目がもう閉じていれば (節がない)、ブロックを外す
@@ -377,28 +406,28 @@ export function checkRoadmap(text: string): RoadmapProblem[] {
     const waits = /C\d+/.exec(it.statusReason)?.[0]
     if (!waits) continue
     const at = planAt.get(it.id)?.line ?? it.line
-    if (!seen.has(waits)) err(at, `${it.id}: 待つ項目 ${waits} は閉じている (節がない)。ブロックを外す`)
+    if (!seen.has(waits)) err(at, pick(english, `${it.id}: 待つ項目 ${waits} は閉じている (節がない)。ブロックを外す`, `${it.id}: the item it waits for, ${waits}, is closed (no section). Remove the block`))
     else if (planAt.has(it.id) && planAt.has(waits) && planAt.get(waits)!.line > at) {
-      err(at, `${it.id}: 待つ項目 ${waits} より前に並んでいる。${waits} の後に置く`)
+      err(at, pick(english, `${it.id}: 待つ項目 ${waits} より前に並んでいる。${waits} の後に置く`, `${it.id}: listed before ${waits}, the item it waits for. Place it after ${waits}`))
     }
   }
 
   for (const r of refs) {
     const exists = seen.has(r.id)
-    if (!r.checked && !exists) err(r.line, `\`[ ] ${r.id}\` が指す項目の節がない`)
-    if (r.checked && exists) err(r.line, `\`[x] ${r.id}\` は終わった印だが、項目の節が残っている`)
+    if (!r.checked && !exists) err(r.line, pick(english, `\`[ ] ${r.id}\` が指す項目の節がない`, `\`[ ] ${r.id}\` points to an item with no section`))
+    if (r.checked && exists) err(r.line, pick(english, `\`[x] ${r.id}\` は終わった印だが、項目の節が残っている`, `\`[x] ${r.id}\` is marked done, but its item section is still there`))
   }
 
   const closedAt = new Map<string, number>()
   for (const c of closed) {
     if (!c.date) err(c.line, closedDateMessage(lineText.get(c.line) ?? '', c.mark, c.id, english))
     else if (c.mark === '-' && !c.reason) {
-      err(c.line, `\`[-] ${c.id}\` の行末の括弧は \`(却下 YYYY-MM-DD、理由)\` か \`(rejected YYYY-MM-DD, reason)\` の形にする`)
+      err(c.line, pick(english, `\`[-] ${c.id}\` の行末の括弧は \`(却下 YYYY-MM-DD、理由)\` か \`(rejected YYYY-MM-DD, reason)\` の形にする`, `The trailing parentheses of \`[-] ${c.id}\` must be \`(rejected YYYY-MM-DD, reason)\` or \`(却下 YYYY-MM-DD、理由)\``))
     }
     // 節が残っている却下 ([x] は refs の検査が言う) と、閉じた番号の使い回し (C24)
-    if (c.mark === '-' && seen.has(c.id)) err(c.line, `\`[-] ${c.id}\` は却下の印だが、項目の節が残っている (番号は使い回さない)`)
+    if (c.mark === '-' && seen.has(c.id)) err(c.line, pick(english, `\`[-] ${c.id}\` は却下の印だが、項目の節が残っている (番号は使い回さない)`, `\`[-] ${c.id}\` marks a rejection, but its item section is still there (numbers are not reused)`))
     const prev = closedAt.get(c.id)
-    if (prev !== undefined) err(c.line, `${c.id} は ${prev} 行目でも閉じている。番号は使い回さない`)
+    if (prev !== undefined) err(c.line, pick(english, `${c.id} は ${prev} 行目でも閉じている。番号は使い回さない`, `${c.id} is also closed at line ${prev}. Numbers are not reused`))
     else closedAt.set(c.id, c.line)
   }
 

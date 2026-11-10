@@ -26,7 +26,6 @@ In the order they will be taken up. Only items without a status line and blocked
 
 - [ ] C153
 - [ ] C156
-- [ ] C152
 - [ ] C146
 - [ ] C151
 - [ ] C149
@@ -542,6 +541,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: `npm test` 581/581 pass; `npm run docs:check` 0 errors (the close reminder is gone after this close). `npm run hub` on a spare port wrote each console line to `logs/hub.log` with an ISO time, the UI line with `?token=***`. Exit paths (SIGINT 130, SIGHUP 129, an unhandled rejection and an uncaught exception 1) were checked by emitting the events in-process, each line in the file.
   - Review (uncommitted change): one finding, a failed rotation rename dropped lines; fixed (the append runs anyway, the size is re-read) and tested with a directory at `hub.log.1`.
   - Not checked: real OS signals (Ctrl+C, closing the tab, `taskkill`); a live Windows file lock during rotation (`Get-Content -Wait`); the logger inside a Docker container. Done-when wording not changed.
+- [x] C152 `docs:check` follows the ledger's language, and names a closed line's inner parentheses (2026-11-10, closed after the review)
+  - Raised 2026-11-09 by the reviewer of C141, outside its done-when; moved from C146's body on 2026-11-10. Decided 2026-11-10 in the planning session: the ledger's own vocabulary picks the language, and every message has both texts (not `HUB_LANGUAGE`).
+  - Changed: `src/shared/roadmap.ts` (every `checkRoadmap` message through `pick`; the language from the ledger's vocabulary, read outside fences; the closed-line message names inner ASCII parentheses through `trailingDatedGroup`), `src/shared/roadmap.test.ts` (5 new cases; 4 existing expectations or inputs updated), `docs/conventions-log.md` (one `practice` line, 2026-11-10), `docs/design.md` §3.15 (one sentence on the checker's language).
+  - Checked: `npm test` 588 pass, 0 fail; `npm run docs:check` 0 errors. Before the change, the closed-line cases were reported as "no date" (probed with `checkRoadmap`). The accepted and rejected lines are unchanged.
+  - Review (uncommitted change): two defects, both reproduced with `checkRoadmap` and fixed with a test that failed before: (a) a date in the title, followed by `(see note)`, was taken for the trailing group (fixed: the group is the one that closes the line's last `)`); (b) the language test read fenced blocks (fixed: lines outside fences). Done-when wording not changed.
+  - Not checked: how the messages read to an adopter with a real English ledger.
 - [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
   - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
   - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
@@ -1060,21 +1065,6 @@ Raised 2026-11-10 in the planning session. C142 made `ui:check` stop when its Hu
 - [ ] Two `ui:check` runs started at the same time on one machine both pass; the body records the run.
 - [ ] The docs that name the fixed ports (7793, 9333) say what happens now.
 - [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
-
-### C152. `docs:check` answers an English ledger in Japanese, and misreads a closed line with ASCII parentheses inside
-
-Raised 2026-11-09 by the reviewer of C141 (#335), outside that item's done-when; moved here from C146's body on 2026-11-10 so the notes survive C146's close.
-- Language: `checkRoadmap` in `src/shared/roadmap.ts` picks English only when the ledger has `## Plan` and no `## 予定`, so an English ledger without a plan heading gets Japanese, and a Japanese ledger that uses `## Plan` gets English. Read 2026-11-10: only the messages C141 added go through that choice (`pick`); the others are Japanese for every ledger, for example the error for a decided item missing from the plan. An adopter with an English ledger reads most findings in Japanese (C147).
-- Closed lines: a line whose trailing group has the date first but ASCII parentheses inside is reported as "no date" (the reviewer's report; not re-checked on 2026-11-10). The rule at the top of this file asks for full-width parentheses inside the group, so the line does break the rule; the message names the wrong fault.
-- To decide: where the language comes from (the ledger's own vocabulary, `HUB_LANGUAGE`, or always English with the Japanese vocabulary still read); whether every message gets both languages. Changing only the wording of messages does not change what the checker accepts; if the choice changes what other projects see, add a line to conventions-log.md.
-- Decided 2026-11-10 in the planning session (the user left the choice to it): the ledger's own vocabulary picks the language, and every message has both. Not `HUB_LANGUAGE`: the checker runs on the host without the Hub's settings, and the ledger's writer already chose a language.
-
-#### Done when
-- [ ] Every message of `checkRoadmap` has an English and a Japanese text: Japanese when the ledger has `## 予定`, a `状態:` line or `#### 完了条件`, English otherwise.
-- [ ] A closed line whose trailing group starts with the date but has ASCII parentheses inside gets a message that names that fault and the fix (full-width parentheses inside), not "no date".
-- [ ] Unit tests: an English ledger without `## Plan` gets English, a Japanese ledger with `## Plan` gets Japanese, and the closed-line case above.
-- [ ] docs/conventions-log.md has a line saying the checker's messages follow the ledger's vocabulary and that what it accepts is unchanged.
-- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C153. A run: one request that takes several items from the ledger, one at a time
 
