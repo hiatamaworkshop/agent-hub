@@ -25,6 +25,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C129
+- [ ] C159
 
 (Items with a status line are listed under "Items".)
 
@@ -996,11 +997,13 @@ Covers the list half of C10.
   - Finding 4 (installer): each template group is judged by its kind. A restore group (`session-restore.mjs`) is present only if the event has a restore group; a capture group (`post-event.mjs`, or an http `/events` hook) only if the event has a capture group. So the Stop of `settings.command.json` still counts for the HTTP Stop, and no second Stop is added. Test: `team.test.ts` "a SessionStart with only the session-restore group reports the post-event group missing, and --write adds it (C129)" (failed before, passes after); the reverse, "a project set before the session-restore group existed gets only that group", passes both before and after.
   - Finding 3 (the box "A SessionStart command hook ... resolves the Mailbox as the Event hooks do"): un-checked, wording unchanged; the hook was not changed. The hook resolves by the Attachment's `session_id`, then `HUB_MAILBOX`. The Event hooks (`resolveMailbox` in `src/hub/hub.ts`, design.md §3.4) resolve by the session map the Hub has learned, then the `X-Hub-Mailbox` header, then the cwd folder name when a Mailbox of that name exists. The case that differs: a session started by hand without `HUB_MAILBOX`, attached under its folder-name Mailbox; after `/clear` the session_id changes (the Attachment keeps the old one, design §6.1ac), so the hook matches nothing and prints nothing, while the Event hooks resolve it by cwd. Two ways to close it, for the planning session: (a) add the cwd means to the hook, used only when no session or header matches and the folder-name Mailbox exists, as the Hub does; (b) reword the box to say what the hook uses.
   - Box 1 stays open. Boxes 2, 4 and 5 stay checked: `npm test` 681 pass, 0 fail (664 before; the new tests are the ones above); `npx tsc --noEmit` clean; `npm run docs:check` 37 items, 0 errors, 0 warnings.
+- Decided again 2026-11-11 in the planning session (the user accepted the recommendations after the run's report #523): (1) `seqs` is added to `backlog.awaitingReply`, a Hub change, because a new leader needs every request it was asked for, not only the oldest; the done-when box 1 grew a case and a new box 2 was added for the Hub change (so the boxes after it moved down by one); (2) the hook's Mailbox resolution stays `session_id`, then `HUB_MAILBOX`, and the done-when wording now says that, with the by-hand limit already written in design.md §3.13; the box is checked, since the wording now matches what was built and tested. design.md §3.13's two older bullets (tool or `inbox()`, no `startup`) were rewritten by the planning session. Needs a Hub restart after the change, and the sessions to reload the shim.
 
 #### Done when
-- [ ] One function under `src/shared/` turns a Mailbox's `backlog.awaitingReply` and `outgoing` into the text of pointers only (`id`, `seq`, the other side, `meta.item`; no bodies), one line per request, saying owed or awaiting; it returns an empty text with nothing open. Unit tests cover owed only, awaiting only, both, and none.
+- [ ] One function under `src/shared/` turns a Mailbox's `backlog.awaitingReply` and `outgoing` into the text of pointers only (`id`, `seq`, the other side, `meta.item`; no bodies), one line per request, saying owed or awaiting; it returns an empty text with nothing open. Unit tests cover owed only, awaiting only, both, none, and several owed requests (each named by number).
+- [ ] `backlog.awaitingReply` in `GET /mailboxes` carries `seqs` (the seqs of the requests owed a reply, as `outgoing` does), so that every owed request is named by number and not only the oldest. protocol.md documents it, and a Hub without `seqs` (an older one) still works: the text falls back to the oldest request and a count. Hub tests cover it.
 - [x] A read-only shim tool returns that text for the shim's own Mailbox and does not move the cursor or unread. Its description and the shim's instructions say when to call it (at start, and whenever the session does not know what it is waiting on). protocol.md §5 lists it.
-- [ ] A `SessionStart` command hook for the sources `startup`, `compact`, `clear` and `resume` fetches `GET /mailboxes` and prints the same text into the new context. It resolves the Mailbox as the Event hooks do, prints nothing and exits 0 with no token, no Mailbox, an unreachable Hub or nothing open, and is installed the way the existing hooks are. Tests cover those cases.
+- [x] A `SessionStart` command hook for the sources `startup`, `compact`, `clear` and `resume` fetches `GET /mailboxes` and prints the same text into the new context. It resolves the Mailbox by the Attachment's `session_id`, then `HUB_MAILBOX` (a session started by hand without `HUB_MAILBOX` gets nothing after `/clear`; recorded in design.md §3.13), prints nothing and exits 0 with no token, no Mailbox, an unreachable Hub or nothing open, and is installed the way the existing hooks are. Tests cover those cases.
 - [x] design.md §3.13 records the four decisions above. §6 records what was checked and what was not (for example, a real `compact` in a running session).
 - [x] `npm test` and `npm run docs:check` pass.
 
@@ -1066,3 +1069,13 @@ Status: held(after C153; decide once a real run shows what is hard to find)
 Raised 2026-11-10 with C153. After a run, what waits for the human is spread over the last report (a Message, deleted after the retention period), the items' sections (the defaults taken, the items left open) and `git log` (unpushed commits). The ledger is the place that lasts (design.md §3.16).
 - Idea: the Items list gets a tier, or a mark, for items whose done-when lines are all checked while the section is still there ("worked, waiting for the close"); the index already has the counts (`conditions.done` / `total`). `team status` (C139) could list the same.
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
+
+### C159. Keep the index time out of the drafted request's DONE WHEN
+Raised 2026-11-11 from the run's report (#523, C138 NEEDS DECISION 4). C138 made the item card and the draft show when the index was sent. In the page's display the last line of the draft, the index time, falls inside the DONE WHEN section, so a leader may read it as part of the done-when wording, and on the same day it shows no date.
+- Decided 2026-11-11 in the planning session (the user accepted the recommendation): the time is not part of DONE WHEN. The request's DONE WHEN holds only the item's done-when lines (design.md §3.15: it is copied, not retyped).
+
+#### Done when
+- [ ] The index time is outside the drafted request's DONE WHEN section (a line of its own before or after the sections, or beside the card's header), so DONE WHEN holds only the item's done-when lines.
+- [ ] The time shows the date when it is not today's, and only the time when it is.
+- [ ] A `ui:check` scene covers both (a draft with a today's index, and with an older one).
+- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
