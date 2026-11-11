@@ -113,6 +113,82 @@ describe('openRequestsText: details', () => {
   })
 })
 
+// C129 (second step): the Hub gives every owed seq in awaitingReply.seqs, so each owed request is named by number
+describe('openRequestsText: every owed request named by number (seqs)', () => {
+  const owedWith = (seqs: unknown, count: number, oldestSeq: number | null = null) => ({ awaitingReply: { count, oldestAt: null, oldestSeq, seqs } })
+
+  it('several owed requests: each one is named by number, oldest first, with its sender, id and item', async () => {
+    const m = mailbox(owedWith([2, 5, 9], 3, 2))
+    const lines = (await openRequestsText(m, lookupFrom({ 2: request(2, 'user:browser', 'C129'), 5: request(5, 'mailbox:deployer'), 9: request(9, 'user:cli') }))).split('\n')
+    assert.deepEqual(lines, [
+      HEADER,
+      `- owes a reply: #2 from user:browser, id ${mid(2)}, item C129`,
+      `- owes a reply: #5 from mailbox:deployer, id ${mid(5)}`,
+      `- owes a reply: #9 from user:cli, id ${mid(9)}`,
+    ])
+  })
+
+  it('owed and awaiting with seqs: the owed requests come first, each by number, then the awaited ones', async () => {
+    const m = mailbox({
+      ...owedWith([3, 4], 2, 3),
+      outgoing: { count: 1, oldestAt: null, oldestSeq: 8, to: [{ type: 'role', id: 'reviewer', count: 1, oldestAt: null, oldestSeq: 8, seqs: [8], recipients: ['demo.reviewer'] }] },
+    })
+    const lines = (await openRequestsText(m, lookupFrom({ 3: request(3, 'mailbox:deployer'), 4: request(4, 'user:browser'), 8: request(8, 'mailbox:leader', 'C129') }))).split('\n')
+    assert.deepEqual(lines.slice(1), [
+      `- owes a reply: #3 from mailbox:deployer, id ${mid(3)}`,
+      `- owes a reply: #4 from user:browser, id ${mid(4)}`,
+      `- awaits a reply: #8 to role:reviewer, id ${mid(8)}, item C129`,
+    ])
+  })
+
+  it('seqs with count 0, or an empty seqs list: nothing is open, the text is empty', async () => {
+    assert.equal(await openRequestsText(mailbox(owedWith([], 0)), lookupFrom({})), '')
+    assert.deepEqual(openRequestsOf(mailbox(owedWith([], 0))), { owed: null, awaiting: [] })
+  })
+
+  it('the owed numbers come from seqs, sorted; a seqs that is not a list is ignored (the oldest only)', () => {
+    assert.deepEqual(openRequestsOf(mailbox(owedWith([9, 2, 5], 3, 2))).owed, { count: 3, oldestSeq: 2, seqs: [2, 5, 9] })
+    assert.deepEqual(openRequestsOf(mailbox(owedWith([], 2, 4))).owed, { count: 2, oldestSeq: 4, seqs: null }, 'an empty list is treated as a Hub without seqs')
+    assert.deepEqual(openRequestsOf(mailbox(owedWith('2,5', 2, 2))).owed, { count: 2, oldestSeq: 2, seqs: null })
+  })
+
+  it('more owed requests than the line limit: the first MAX_LISTED are named, the rest are counted', async () => {
+    const seqs = Array.from({ length: MAX_LISTED + 3 }, (_, i) => i + 1)
+    const lines = (await openRequestsText(mailbox(owedWith(seqs, seqs.length, 1)), lookupFrom({}))).split('\n')
+    assert.equal(lines.filter((l) => l.startsWith('- owes a reply: #')).length, MAX_LISTED)
+    assert.equal(lines[lines.length - 1], '- owes a reply to 3 more request(s), not listed by number')
+  })
+
+  it('owed requests fill the line limit: the awaited ones are counted, not listed', async () => {
+    const seqs = Array.from({ length: MAX_LISTED }, (_, i) => i + 1)
+    const m = mailbox({
+      ...owedWith(seqs, seqs.length, 1),
+      outgoing: { count: 2, oldestAt: null, oldestSeq: 50, to: [{ type: 'role', id: 'deployer', count: 2, oldestAt: null, oldestSeq: 50, seqs: [50, 51], recipients: ['demo.deployer'] }] },
+    })
+    const lines = (await openRequestsText(m, lookupFrom({}))).split('\n')
+    assert.equal(lines.filter((l) => l.startsWith('- owes a reply: #')).length, MAX_LISTED)
+    assert.equal(lines.filter((l) => l.startsWith('- awaits a reply: #')).length, 0, 'no awaited request is named')
+    assert.match(lines[lines.length - 1]!, /- awaits a reply to 2 more request\(s\), not listed/)
+  })
+
+  it('the Hub gives the numbers of fewer requests than count: the text says so', async () => {
+    const m = mailbox(owedWith([4, 6], 5, 4))
+    const lines = (await openRequestsText(m, lookupFrom({ 4: request(4, 'mailbox:deployer'), 6: request(6, 'mailbox:deployer') }))).split('\n')
+    assert.equal(lines.length, 4)
+    assert.equal(lines[3], '- owes a reply to 3 more request(s), not listed by number (the Hub gives the numbers of 2 only)')
+  })
+
+  it('a numbered owed request whose read failed says it could not be read, and is still named', async () => {
+    const lines = (await openRequestsText(mailbox(owedWith([2, 5], 2, 2)), failing)).split('\n')
+    assert.deepEqual(lines.slice(1), [`- owes a reply: #2 (its message could not be read)`, `- owes a reply: #5 (its message could not be read)`])
+  })
+
+  it('a Hub without seqs still gets the oldest and a count (the older wording)', async () => {
+    const lines = (await openRequestsText(mailbox({ awaitingReply: { count: 3, oldestAt: null, oldestSeq: 2 } }), lookupFrom({ 2: request(2, 'mailbox:deployer') }))).split('\n')
+    assert.deepEqual(lines.slice(1), [`- owes a reply: #2 from mailbox:deployer, id ${mid(2)}`, '- owes a reply to 2 more request(s), not listed by number (the Hub gives only the oldest)'])
+  })
+})
+
 // Finding 2: a lookup that failed is not a deleted message. The two outcomes have their own wording
 describe('messageLookup and the wording of a failed read (finding 2)', () => {
   it('a 2xx answer with the message: found', async () => {

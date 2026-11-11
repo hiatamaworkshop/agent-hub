@@ -341,6 +341,26 @@ describe('GET /stream', () => {
   })
 })
 
+describe('GET /mailboxes: awaitingReply.seqs (C129)', () => {
+  it('lists the seqs of the requests a Mailbox owes a reply to, oldest first, and drops one once it is answered', async () => {
+    const hub = new Hub(new Store())
+    const x = hub.attach('x', { client: 'claude-code' })
+    const app = createApp({ hub, token: TOKEN, uiHtml: async () => '<html>ui</html>' })
+    const user = { type: 'user', id: 'browser', role: null } as const
+    const toX = { type: 'mailbox', id: 'x' } as const
+    const a = hub.postMessage({ kind: 'request', to: toX, body: 'first' }, user)
+    const b = hub.postMessage({ kind: 'request', to: toX, body: 'second' }, user)
+    hub.ack(x.attachmentId, b.seq)
+    const owed = async () => {
+      const body = (await (await app.request('/mailboxes', { headers: bearer })).json()) as { mailboxes: { name: string; backlog: { awaitingReply: unknown } }[] }
+      return body.mailboxes.find((m) => m.name === 'x')!.backlog.awaitingReply
+    }
+    assert.deepEqual(await owed(), { count: 2, oldestAt: a.ts, oldestSeq: a.seq, seqs: [a.seq, b.seq] })
+    hub.postMessage({ kind: 'reply', replyTo: a.id, body: 'done' }, hub.senderOf(x.attachmentId))
+    assert.deepEqual(await owed(), { count: 1, oldestAt: b.ts, oldestSeq: b.seq, seqs: [b.seq] })
+  })
+})
+
 describe('GET /mailboxes: the Hub start time (C142)', () => {
   it('returns startedAt, the time this Hub process started, next to the Mailboxes', async () => {
     const hub = new Hub(new Store(), { now: () => new Date('2026-11-09T11:02:00.000Z') })

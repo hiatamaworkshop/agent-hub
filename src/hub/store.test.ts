@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
 import type { Address, HubEvent } from '../shared/types.js'
-import { Store, type NewMessage } from './store.js'
+import { AWAITING_SEQS_MAX, Store, type NewMessage } from './store.js'
 
 const dir = mkdtempSync(join(tmpdir(), 'agent-hub-store-'))
 after(() => rmSync(dir, { recursive: true, force: true }))
@@ -193,7 +193,7 @@ describe('Store: 溜まりの材料 (summary)', () => {
     const outgoing = { ...tally(), to: [] as Array<{ type: Address['type']; id: string; recipients: string[]; seqs: number[] } & ReturnType<typeof tally>> }
     const backlog = {
       unread: tally(),
-      awaitingReply: tally(),
+      awaitingReply: { ...tally(), seqs: [] as number[] },
       unconfirmed: tally(),
       outgoing,
       lastHanded: null as { seq: number; ts: string; open: boolean } | null,
@@ -231,6 +231,7 @@ describe('Store: 溜まりの材料 (summary)', () => {
       t.count++
       t.oldestAt ??= m.ts
       t.oldestSeq ??= m.seq
+      if (t === backlog.awaitingReply && backlog.awaitingReply.seqs.length < AWAITING_SEQS_MAX) backlog.awaitingReply.seqs.push(m.seq)
     }
     return { unread: s.unread(name).length, unconfirmed: s.unconfirmed(name).length, backlog }
   }
@@ -265,6 +266,38 @@ describe('Store: 溜まりの材料 (summary)', () => {
     check(s, '消した request は数えない')
     assert.equal(s.summary('x').backlog.awaitingReply.count, 1, '返信のない最初の request だけが残る')
     check(new Store({ file }), '再起動後')
+  })
+
+  it('awaitingReply.seqs は返信を負っている request の seq を古い順に並べ、返信で外れ、上限で止まる (C129)', () => {
+    const s = new Store()
+    s.ensureMailbox('x')
+    const toX = { type: 'mailbox', id: 'x' } as const
+    const a = s.appendMessage(msg(toX))
+    const b = s.appendMessage(msg(toX))
+    const c = s.appendMessage(msg(toX))
+    assert.deepEqual(s.summary('x').backlog.awaitingReply.seqs, [], '未読のうちは数えない')
+    s.advanceCursor('x', c.seq)
+    assert.deepEqual(s.summary('x').backlog.awaitingReply.seqs, [a.seq, b.seq, c.seq], '渡すと全部が古い順に並ぶ')
+    s.appendMessage(reply(toX, b.id))
+    assert.deepEqual(s.summary('x').backlog.awaitingReply.seqs, [a.seq, c.seq], '返信した分は外れる')
+    assert.equal(s.summary('x').backlog.awaitingReply.count, 2)
+    s.deleteMessages([a.id])
+    assert.deepEqual(s.summary('x').backlog.awaitingReply.seqs, [c.seq], '消した分も外れる')
+  })
+
+  it('awaitingReply.seqs は上限 (AWAITING_SEQS_MAX) で止まり、count は真の数のまま', () => {
+    const s = new Store()
+    s.ensureMailbox('x')
+    const toX = { type: 'mailbox', id: 'x' } as const
+    const total = AWAITING_SEQS_MAX + 5
+    const sent = Array.from({ length: total }, () => s.appendMessage(msg(toX)))
+    s.advanceCursor('x', sent[total - 1]!.seq)
+    const ar = s.summary('x').backlog.awaitingReply
+    assert.equal(ar.count, total)
+    assert.equal(ar.seqs.length, AWAITING_SEQS_MAX)
+    assert.deepEqual(ar.seqs, sent.slice(0, AWAITING_SEQS_MAX).map((m) => m.seq), '上限までは古い順の先頭')
+    assert.equal(ar.oldestSeq, sent[0]!.seq)
+    assert.deepEqual(s.summary('x'), naive(s, 'x'), '全件を走査した値と一致する')
   })
 
   it('oldestSeq は溜まりの最も古い Message の seq で、消した後は次に古いもの', () => {

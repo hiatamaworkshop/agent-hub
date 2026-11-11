@@ -93,6 +93,14 @@ export interface Tally {
   oldestSeq: number | null
 }
 
+// awaitingReply の seqs は、この Mailbox が返信を負っている request の seq (古い順。count と同じ数え方)。
+// 上限は AWAITING_SEQS_MAX 個 (GET /mailboxes は UI が何度も読むので、溜まりが大きくても応答を抑える)。count は上限に関係なく真の数
+export const AWAITING_SEQS_MAX = 100
+
+export interface AwaitingReply extends Tally {
+  seqs: number[]
+}
+
 export interface Outgoing extends Tally {
   // 宛先 (種類と id) ごとの件数と最も古い ts。古い順。UI は Waiting on others の宛先と、人宛ての Needs you (C40) に使う。
   // recipients はその宛先の開いた request を受け取る Mailbox 名 (未接続も含む)。UI が全部未接続なら Needs you にする (C49)
@@ -102,7 +110,7 @@ export interface Outgoing extends Tally {
 
 export interface Backlog {
   unread: Tally
-  awaitingReply: Tally
+  awaitingReply: AwaitingReply
   unconfirmed: Tally
   // この Mailbox が出して、まだ返信のない request (ほかの層と重ならない。宛先の側の数ではない)
   outgoing: Outgoing
@@ -578,7 +586,7 @@ export class Store {
     const mb = this.must(name)
     const backlog: Backlog = {
       unread: { count: 0, oldestAt: null, oldestSeq: null },
-      awaitingReply: { count: 0, oldestAt: null, oldestSeq: null },
+      awaitingReply: { count: 0, oldestAt: null, oldestSeq: null, seqs: [] },
       unconfirmed: { count: 0, oldestAt: null, oldestSeq: null },
       outgoing: { count: 0, oldestAt: null, oldestSeq: null, to: [] },
       lastHanded: null,
@@ -602,7 +610,10 @@ export class Store {
         to.seqs.push(m.seq)
         for (const r of this.recipientsOf(m)) if (!to.recipients.includes(r)) to.recipients.push(r)
       }
-      if (m.seq <= mb.cursor && this.isRecipient(name, m)) add(backlog.awaitingReply, m)
+      if (m.seq <= mb.cursor && this.isRecipient(name, m)) {
+        add(backlog.awaitingReply, m)
+        if (backlog.awaitingReply.seqs.length < AWAITING_SEQS_MAX) backlog.awaitingReply.seqs.push(m.seq)
+      }
     }
     const handed = this.lastHandedOf(mb)
     if (handed) backlog.lastHanded = { seq: handed.seq, ts: handed.ts, open: this.openRequests.has(handed.id) }

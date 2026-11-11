@@ -23,17 +23,22 @@ const SENDER_TYPES = ['mailbox', 'user']
 const isSeq = (v) => Number.isSafeInteger(v) && /** @type {number} */ (v) >= 1
 
 /**
- * Which requests are open for a Mailbox, from its backlog. `owed` is the requests this Mailbox owes a reply to (only the
- * count and the oldest seq: the Hub does not list the others by number). `awaiting` is the requests it sent and awaits a
- * reply to, one entry per seq, with the addresses they went to (from `outgoing.to[].seqs`, sorted by seq).
+ * Which requests are open for a Mailbox, from its backlog. `owed` is the requests this Mailbox owes a reply to: the count,
+ * the oldest seq, and `seqs` (every owed seq, sorted, from `awaitingReply.seqs`; `null` for a Hub without it, which gives
+ * only the oldest). `awaiting` is the requests it sent and awaits a reply to, one entry per seq, with the addresses they
+ * went to (from `outgoing.to[].seqs`, sorted by seq).
  * @param {any} mailbox
- * @returns {{ owed: { count: number, oldestSeq: number } | null, awaiting: { seq: number, to: { type: string, id: string }[] }[] }}
+ * @returns {{ owed: { count: number, oldestSeq: number, seqs: number[] | null } | null, awaiting: { seq: number, to: { type: string, id: string }[] }[] }}
  */
 export function openRequestsOf(mailbox) {
   const backlog = mailbox && mailbox.backlog ? mailbox.backlog : {}
   const ar = backlog.awaitingReply
-  /** @type {{ count: number, oldestSeq: number } | null} */
-  const owed = ar && Number.isSafeInteger(ar.count) && ar.count > 0 && isSeq(ar.oldestSeq) ? { count: ar.count, oldestSeq: ar.oldestSeq } : null
+  // The Hub's awaitingReply.seqs (C129). Ignored when it is not a list of seqs, or has none while count > 0 (an older Hub)
+  const named = ar && Array.isArray(ar.seqs) ? ar.seqs.filter(isSeq).sort((/** @type {number} */ x, /** @type {number} */ y) => x - y) : []
+  /** @type {{ count: number, oldestSeq: number, seqs: number[] | null } | null} */
+  const owed = ar && Number.isSafeInteger(ar.count) && ar.count > 0 && isSeq(ar.oldestSeq)
+    ? { count: ar.count, oldestSeq: ar.oldestSeq, seqs: named.length ? named : null }
+    : null
 
   /** @type {Map<number, { type: string, id: string }[]>} */
   const bySeq = new Map()
@@ -110,8 +115,9 @@ function pointerParts(m, kind, who) {
 /**
  * The text of the open requests of a Mailbox: a header, then one line per request. Empty when nothing is open.
  * `lookup(seq)` is a messageLookup result (found / missing / failed).
- * Lines: `- owes a reply: #<seq> from <sender>, id <id>, item <C…>` (the oldest owed request; the rest are counted),
- * and `- awaits a reply: #<seq> to <address>[, <address>], id <id>, item <C…>` for each request sent and still open.
+ * Lines: `- owes a reply: #<seq> from <sender>, id <id>, item <C…>` for each owed seq (up to MAX_LISTED; a Hub without
+ * `seqs` gives only the oldest, and the rest is counted), and `- awaits a reply: #<seq> to <address>[, <address>], id <id>,
+ * item <C…>` for each request sent and still open. Requests past the limit are counted in a line of their own.
  * @param {any} mailbox a Mailbox from GET /mailboxes
  * @param {(seq: number) => Promise<{ kind: 'found', message: any } | { kind: 'missing' } | { kind: 'failed' }>} lookup
  * @returns {Promise<string>}
@@ -121,14 +127,24 @@ export async function openRequestsText(mailbox, lookup) {
   if (!owed && awaiting.length === 0) return ''
   /** @type {string[]} */
   const lines = []
+  let owedListed = 0
   if (owed) {
-    const r = await lookup(owed.oldestSeq)
-    const m = r.kind === 'found' ? r.message : undefined
-    const sender = safeSender(m)
-    lines.push(`- owes a reply: #${owed.oldestSeq} ${pointerParts(m, r.kind, sender ? `from ${sender}` : '')}`)
-    if (owed.count > 1) lines.push(`- owes a reply to ${owed.count - 1} more request(s), not listed by number (the Hub gives only the oldest)`)
+    // A Hub without seqs names only the oldest; with seqs, every owed request is named, up to the line limit
+    const named = owed.seqs ?? [owed.oldestSeq]
+    for (const seq of named.slice(0, MAX_LISTED)) {
+      const r = await lookup(seq)
+      const m = r.kind === 'found' ? r.message : undefined
+      const sender = safeSender(m)
+      lines.push(`- owes a reply: #${seq} ${pointerParts(m, r.kind, sender ? `from ${sender}` : '')}`)
+      owedListed++
+    }
+    const rest = owed.count - owedListed
+    if (rest > 0) {
+      if (owed.seqs === null) lines.push(`- owes a reply to ${rest} more request(s), not listed by number (the Hub gives only the oldest)`)
+      else lines.push(`- owes a reply to ${rest} more request(s), not listed by number${owed.seqs.length < owed.count ? ` (the Hub gives the numbers of ${owed.seqs.length} only)` : ''}`)
+    }
   }
-  const room = Math.max(0, MAX_LISTED - lines.length)
+  const room = Math.max(0, MAX_LISTED - owedListed)
   for (const a of awaiting.slice(0, room)) {
     const r = await lookup(a.seq)
     const m = r.kind === 'found' ? r.message : undefined
