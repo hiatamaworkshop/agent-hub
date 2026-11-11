@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { sendStartIndex } from '../team/team.js'
-import { sendLedgerIndex } from './send-index.js'
+import { caseOnlyRealName, sendLedgerIndex } from './send-index.js'
 
 const TOKEN = 'test-token-0123456789'
 const ROADMAP = ['### C1. 一つ目', '', '#### Done when', '- [ ] a', ''].join('\n')
@@ -130,4 +130,52 @@ test('a ledger with no items is not sent unless the Hub already holds an index o
   assert.equal(again.sent, true)
   assert.equal(puts.length, before + 1)
   held = []
+})
+
+// C131: a file that differs from the configured name only by letter case is named in the reason. The real names are injected, so
+// these tests run the same on a case-sensitive disk (Linux CI): no file that differs only by case is made
+const CASE_ONLY = (p: string) => p.replace(/roadmap\.md$/, 'ROADMAP.md') // the disk gives docs\ROADMAP.md for docs\roadmap.md
+
+test('caseOnlyRealName: the real name when it differs only by case, and nothing otherwise (C131)', () => {
+  assert.equal(caseOnlyRealName({ project: '/work/x', source: 'docs/roadmap.md' }, CASE_ONLY), 'docs/ROADMAP.md')
+  // the same name: no difference
+  assert.equal(caseOnlyRealName({ project: '/work/x', source: 'docs/roadmap.md' }, (p) => p), undefined)
+  // a missing file does not resolve: no name to give
+  assert.equal(caseOnlyRealName({ project: '/work/x', source: 'docs/roadmap.md' }, () => { throw new Error('ENOENT') }), undefined)
+  // a different name, not only by case: not this case
+  assert.equal(caseOnlyRealName({ project: '/work/x', source: 'docs/roadmap.md' }, (p) => p.replace(/roadmap\.md$/, 'other.md')), undefined)
+})
+
+test('a case-only difference: the no-items reason names the file that was read (C131)', async () => {
+  const dir = project('docs/roadmap.md', '# Roadmap\n\nNothing here.\n')
+  held = []
+  const before = puts.length
+  const r = await sendLedgerIndex({ project: dir, source: 'docs/roadmap.md', hubUrl, token: TOKEN, realPath: CASE_ONLY })
+  assert.equal(r.sent, false)
+  assert.match(r.sent ? '' : r.reason, /^docs\/roadmap\.md opened docs\/ROADMAP\.md \(letter case differs\), which has no `### C<n>\.` items, so nothing was sent\./)
+  assert.equal(puts.length, before, 'nothing was PUT')
+})
+
+test('no difference: the no-items reason is unchanged (C131)', async () => {
+  const dir = project('docs/roadmap.md', '# Roadmap\n\nNothing here.\n')
+  held = []
+  const r = await sendLedgerIndex({ project: dir, source: 'docs/roadmap.md', hubUrl, token: TOKEN, realPath: (p) => p })
+  assert.equal(r.sent, false)
+  assert.equal(r.sent ? '' : r.reason.startsWith('docs/roadmap.md has no `### C<n>.` items, so nothing was sent.'), true)
+  assert.doesNotMatch(r.sent ? '' : r.reason, /opened/)
+})
+
+test('a missing file: the reason is unchanged, and no name is given (C131)', async () => {
+  const dir = project(null)
+  held = []
+  const r = await sendLedgerIndex({ project: dir, source: 'docs/roadmap.md', hubUrl, token: TOKEN, realPath: CASE_ONLY })
+  assert.equal(r.sent, false)
+  assert.match(r.sent ? '' : r.reason, /^docs\/roadmap\.md does not exist in /)
+})
+
+test('team start: the summary line passes the same reason on (C131)', async () => {
+  const dir = project('docs/roadmap.md', '# Roadmap\n\nNothing here.\n')
+  held = []
+  const summary = await sendStartIndex(dir, 'docs/roadmap.md', hubUrl, TOKEN, CASE_ONLY)
+  assert.match(summary, /^not sent: docs\/roadmap\.md opened docs\/ROADMAP\.md \(letter case differs\), which has no `### C<n>\.` items/)
 })

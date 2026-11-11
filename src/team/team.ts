@@ -49,9 +49,9 @@ export function hooksForStart(projectDir: string, root: string, noHooks: boolean
 
 // The start's index (C107): the project's ledger (.agent-hub.json, else docs/roadmap.md) sent to the Hub. Never throws, and returns
 // the one line for the summary: what was sent, or why not (no file, Hub not reachable, token refused, an old Hub)
-export async function sendStartIndex(projectDir: string, source: string, hubUrl: string, token: string): Promise<string> {
+export async function sendStartIndex(projectDir: string, source: string, hubUrl: string, token: string, realPath?: (p: string) => string): Promise<string> {
   try {
-    const r = await sendLedgerIndex({ project: projectDir, source, hubUrl, token, tokenFromEnv: tokenFromEnvironment() })
+    const r = await sendLedgerIndex({ project: projectDir, source, hubUrl, token, tokenFromEnv: tokenFromEnvironment(), realPath })
     if (!r.sent) return `not sent: ${r.reason}`
     for (const w of r.warnings) console.warn(`WARNING: ${w}`)
     return `sent ${r.source} (${r.items} items) to ${hubUrl}`

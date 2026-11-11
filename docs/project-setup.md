@@ -125,4 +125,4 @@ Answer with one table:
 | … | | |
 
 - The check covers the delivery layer only: whether the Hub can read the ledger, start the team and see the hooks. The result names what fails; fixing the project's ledger content (statuses, done-when lines, closed lines) is requested of that project's leader, not done or judged here (agent-hub's `CLAUDE.md`, "When running another project's team").
-- On Windows, paths are case-insensitive: with no `.agent-hub.json`, the default `docs/roadmap.md` opens a `docs/ROADMAP.md` if there is one. The summary then says `docs/roadmap.md has no ### C<n>. items` although another file was read (seen in vcp, 2026-11-05). If the project's ledger is a different file, it needs `.agent-hub.json` either way.
+- On Windows, paths are case-insensitive: with no `.agent-hub.json`, the default `docs/roadmap.md` opens a `docs/ROADMAP.md` if there is one. The summary now names the file that was read, for example `docs/roadmap.md opened docs/ROADMAP.md (letter case differs), which has no ### C<n>. items` (C131; seen in vcp, 2026-11-05). If the project's ledger is a different file, it needs `.agent-hub.json` either way.

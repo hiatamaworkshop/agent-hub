@@ -25,7 +25,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C129
-- [ ] C131
 - [ ] C145
 
 (Items with a status line are listed under "Items".)
@@ -614,6 +613,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - The index time is the Hub's receive time (`updatedAt`), not the ledger's mtime.
   - Reviewer notes, for what follows: the time is shown on each index's header and in the modal the card opens, not on the card itself; the draft's last line falls inside the DONE WHEN section as the page renders it, and has no date on the same day; the Items header title still says "Sent Invalid Date" for an old Hub (as before).
   - Incident, 2026-11-11: while checking a flag, the deployer ran `npm run docs:index -- --help` (no `--help` handling), which replaced the live Hub's agent-hub index with the working-tree ledger. The committed ledger returns with the next commit that touches it (the post-commit hook); no ledger data was lost.
+- [x] C131 The reason names the file actually read when the default ledger matches by letter case only (2026-11-11, closed after the review)
+  - Decided 2026-11-11 in the planning session (the user accepted the recommendation): name the real file in the reason and in the team start's summary. A warning for a case-differing file that does have items is not part of this item.
+  - Changed: `src/docs-check/send-index.ts` (`caseOnlyRealName`: the real name when the file differs from the configured one only by letter case; the no-items reason names it, e.g. "docs/roadmap.md opened docs/ROADMAP.md (letter case differs), which has no `### C<n>.` items"; `realPath` is injectable); `src/team/team.ts` (`sendStartIndex` passes `realPath` on, and its summary carries the same reason); `src/docs-check/send-index.test.ts` (5 new tests, the case difference injected, no file that differs only by case is made); `docs/project-setup.md` §7 (the pitfall line shows the new message).
+  - Checked: `npm test` 686 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 0 errors; `send-index.test.ts` 11 pass, 0 fail in a `node:lts` Linux container (a scratch copy of the tree, `npm ci`). The review found no finding, and probed a real folder on this machine: a case difference in a parent folder is named, the project path in upper case still works, and a name that differs by more than case keeps the old wording. Done-when wording not changed.
+  - Not checked: the helper on macOS; a real case-differing file on a case-insensitive disk through the team start; the tests on Linux in the review.
+  - Reviewer note: the helper relies on `realpathSync.native` returning the on-disk letter case, which holds on Windows. On macOS a Mac would keep the old reason (no wrong name).
 - [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
   - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
   - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
@@ -995,19 +1000,6 @@ Covers the list half of C10.
 - [x] design.md §3.13 records the four decisions above. §6 records what was checked and what was not (for example, a real `compact` in a running session).
 - [x] `npm test` and `npm run docs:check` pass.
 
-
-### C131. Name the file actually read when the default ledger matches by letter case only
-
-Raised 2026-11-05 from the vcp check (C130). Paths on Windows (and macOS by default) are case-insensitive, so with no `.agent-hub.json` the default `docs/roadmap.md` opens a `docs/ROADMAP.md`: in vcp `existsSync('docs/roadmap.md')` is true and `realpathSync.native` gives `docs\ROADMAP.md`. `src/docs-check/send-index.ts` then says "docs/roadmap.md has no `### C<n>.` items", naming a file that was not the one read.
-- Idea: when the real name differs from the configured one only by case, name the real file in the reason (and in the team start's summary, which passes the same reason on), e.g. "docs/roadmap.md opened docs/ROADMAP.md (letter case differs), which has no items". Whether to also warn when such a file does have items is open.
-- docs/project-setup.md §7 already describes the pitfall; that line would point at the new message once built.
-- Decided 2026-11-11 in the planning session (the user accepted the recommendation): name the real file in the reason, and in the team start's summary. A warning when the case-differing file does have items is not part of this item. The tests run on Linux CI (C148), where paths are case-sensitive, so the case-only difference is injected (a fake file system or resolver), not made on disk.
-
-#### Done when
-- [ ] When the file opened differs from the configured or default ledger path only by letter case, the reason `send-index.ts` gives names the real file (for example "docs/roadmap.md opened docs/ROADMAP.md (letter case differs), which has no items"), and the team start's summary passes the same reason on.
-- [ ] Unit tests cover the case-only difference, with no difference (the reason is unchanged), and a missing file; they pass on Windows and on Linux.
-- [ ] docs/project-setup.md §7 points at the new message.
-- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C135. Let the planning session receive the leader's reports
 Status: proposed
