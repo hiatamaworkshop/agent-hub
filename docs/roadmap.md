@@ -24,6 +24,11 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C129
+- [ ] C138
+- [ ] C131
+- [ ] C145
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -957,20 +962,33 @@ The other half: a deployer's reply whose `CHANGED` lists `src/` but no `docs/`. 
 
 
 ### C129. After a context reset, let the session fetch which requests are still open
-Status: proposed
 
 Raised 2026-11-03 from the official page on what survives compaction (design.md §6.1z). Hub Messages arrive as conversation, so a context reset (compaction, `/clear`, or the like in other clients) loses who asked what and which replies are awaited: a leader can lose the deployer's open request, a deployer the request it is working on. The design is in design.md §3.13 ("Restoring delivery state after a reset"), split like §3.9 into common content and a per-client trigger.
 - Content (any MCP client): one shape for this Mailbox's requests owed a reply (`backlog.awaitingReply`) and awaiting one (`outgoing`), as pointers only (`id`, `seq`, the other side, `meta.item`; no bodies), the text made in one place in the shim. Through a shim tool or the head of `inbox()`. The shim's instructions say when to fetch it (at start, and whenever the session does not know what it is waiting on), which is the whole trigger for a client without hooks.
 - Trigger for Claude Code: a `SessionStart` command hook for the `compact` / `clear` / `resume` sources prints the same content into the new context. It prints nothing with no token, no Mailbox or nothing open, and never fails the start.
-Open before deciding: a new tool or the head of `inbox()`; whether the hook asks the Hub directly (like the Event hooks) or reuses the shim's text through a Hub endpoint; whether `startup` prints too; the exact text. Covers the list half of C10.
+Covers the list half of C10.
+- Decided 2026-11-11 in the planning session (the user accepted the planning session's recommendations): (1) a new read-only shim tool, not the head of `inbox()`, because `inbox()` moves the cursor and unread; (2) the hook asks the Hub's `GET /mailboxes` directly, since a hook cannot call an MCP tool, and no new endpoint is added; the text is made by one function under `src/shared/` that the shim tool and the hook both call; (3) `startup` prints too, for a new session that takes over a Mailbox with open requests (replacement, design.md §3.3); with nothing open it prints nothing; (4) the text is one line per request (`#seq`, the other side, `meta.item`, and whether this Mailbox owes the reply or awaits it); the exact wording is the deployer's, and the record shows it.
+
+#### Done when
+- [ ] One function under `src/shared/` turns a Mailbox's `backlog.awaitingReply` and `outgoing` into the text of pointers only (`id`, `seq`, the other side, `meta.item`; no bodies), one line per request, saying owed or awaiting; it returns an empty text with nothing open. Unit tests cover owed only, awaiting only, both, and none.
+- [ ] A read-only shim tool returns that text for the shim's own Mailbox and does not move the cursor or unread. Its description and the shim's instructions say when to call it (at start, and whenever the session does not know what it is waiting on). protocol.md §5 lists it.
+- [ ] A `SessionStart` command hook for the sources `startup`, `compact`, `clear` and `resume` fetches `GET /mailboxes` and prints the same text into the new context. It resolves the Mailbox as the Event hooks do, prints nothing and exits 0 with no token, no Mailbox, an unreachable Hub or nothing open, and is installed the way the existing hooks are. Tests cover those cases.
+- [ ] design.md §3.13 records the four decisions above. §6 records what was checked and what was not (for example, a real `compact` in a running session).
+- [ ] `npm test` and `npm run docs:check` pass.
 
 
 ### C131. Name the file actually read when the default ledger matches by letter case only
-Status: proposed
 
 Raised 2026-11-05 from the vcp check (C130). Paths on Windows (and macOS by default) are case-insensitive, so with no `.agent-hub.json` the default `docs/roadmap.md` opens a `docs/ROADMAP.md`: in vcp `existsSync('docs/roadmap.md')` is true and `realpathSync.native` gives `docs\ROADMAP.md`. `src/docs-check/send-index.ts` then says "docs/roadmap.md has no `### C<n>.` items", naming a file that was not the one read.
 - Idea: when the real name differs from the configured one only by case, name the real file in the reason (and in the team start's summary, which passes the same reason on), e.g. "docs/roadmap.md opened docs/ROADMAP.md (letter case differs), which has no items". Whether to also warn when such a file does have items is open.
 - docs/project-setup.md §7 already describes the pitfall; that line would point at the new message once built.
+- Decided 2026-11-11 in the planning session (the user accepted the recommendation): name the real file in the reason, and in the team start's summary. A warning when the case-differing file does have items is not part of this item. The tests run on Linux CI (C148), where paths are case-sensitive, so the case-only difference is injected (a fake file system or resolver), not made on disk.
+
+#### Done when
+- [ ] When the file opened differs from the configured or default ledger path only by letter case, the reason `send-index.ts` gives names the real file (for example "docs/roadmap.md opened docs/ROADMAP.md (letter case differs), which has no items"), and the team start's summary passes the same reason on.
+- [ ] Unit tests cover the case-only difference, with no difference (the reason is unchanged), and a missing file; they pass on Windows and on Linux.
+- [ ] docs/project-setup.md §7 points at the new message.
+- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C135. Let the planning session receive the leader's reports
 Status: proposed
@@ -1008,12 +1026,18 @@ Raised 2026-11-06 in the planning session, from mcp_agent_mail's paste-in block 
 - After C136: the conventions its table finds not reaching other projects are the candidates for what the block points at.
 
 ### C138. Do not let an item card draft a request from an index older than the ledger
-Status: proposed
 
 Raised 2026-11-06 (cite-bridge C22). The planning session fixed C22's done-when wording in the working tree without committing. The index reaches the Hub only at the team start and after a commit that touches the ledger (post-commit hook), so the item card still showed the old wording, and the user sent it again. The leader read the request against the code, not against the ledger file, and stopped with the same question as before (#1010, #1013). The fix was a manual `npm run docs:index` from the project.
 - Ideas, not decided: (a) the card or the draft says when the ledger file changed after the index was sent (file mtime or hash beside the index); (b) the Hub or the team re-sends the index when the ledger file changes (a file watch while the team runs); (c) the planning-session guidance (C137's block) says to run `docs:index` after editing the ledger without a commit; (d) the leader compares a request's DONE WHEN with the ledger's current text and, when they differ, says the request came from an old index instead of re-asking the decision.
 - (a) or (b) removes the cause; (c) and (d) only soften it. (d) also matters on its own: the ledger is the source, and a request is a copy of it.
 - Recurred 2026-11-09 (arb-sentinel C12). The planning session reworded and unchecked done-when lines in the working tree (an addendum after 429s in production); the card still showed the team-start index (`0/4 done`, the old line number) until a manual `docs:index`. That project had no post-commit hook, but the hook would not have helped: the edit was not committed. The `roadmap-items` skill now says to run `docs:index` after editing a ledger ((c), on this machine only).
+- Decided 2026-11-11 in the planning session (the user accepted the recommendation, with one change made here): (c) goes into this repository's docs, so an adopter reads it too. (a) cannot compare with the ledger file, because the Hub does not read the working tree (design.md §3.8); it is done as far as the Hub's own facts go: the item card and the draft show when the index was sent (`updatedAt` in `GET /indexes`), so a human who just edited the ledger can see that the card is older. (b), a file watch while the team runs, is not part of this item. (d), the leader comparing a request's DONE WHEN with the ledger, stays a separate idea (it would be a change to the leader's instructions).
+
+#### Done when
+- [ ] The item card and the draft request show when the index was sent (the index's `updatedAt`), in a form a human reads at a glance (for example "index sent 12:34"). The Hub reads no file.
+- [ ] docs/project-setup.md and docs/usage.md say to run `npm run docs:index` after editing the ledger without a commit, with the command, and why (the index reaches the Hub only at team start and at a commit that touches the ledger).
+- [ ] A `ui:check` scene covers the shown time.
+- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
 
 ### C139. Let `status` show what is happening per item, for the planning session
 Status: proposed
@@ -1030,11 +1054,16 @@ Raised 2026-11-09 by the reviewer of C142 (#322). Every Hub that `ui:check` star
 - Ideas, not decided: (a) the Hub takes the log path from an environment variable, and `ui:check` (and other test starts) points it into its own work folder; (b) the Hub writes no file when `HUB_DATA_DIR` is not the default; (c) each line names the port, so test lines can be told apart (softens only).
 
 ### C145. Pressing a state chip during a redraw loses the highlight
-Status: proposed
 
 Raised 2026-11-09 by the reviewer of C142 (#322). The C106 jump highlights a card, and a redraw driven by SSE within the highlight's 3 seconds replaces the card nodes, so the highlight is gone and the press seems to do nothing (measured in `ui:check` run 14: `replaced: 2`). `ui:check`'s `press` / `press2` now wait for the redraw to settle before clicking, so the check no longer covers this case.
 - The C106 failures during C142 were most likely the port clash (two `ui:check` runs on 7793 and a leftover Hub), not C142's code: the planning session ran the strict check without the wait on HEAD's page and on C142's page, 2 of 2 passing each.
 - Ideas, not decided: (a) the jump re-applies the highlight to the rebuilt card (keyed by Mailbox name) until its time ends; (b) the card rebuild keeps nodes whose content did not change; (c) a `ui:check` scene that redraws right after the press.
+- Decided 2026-11-11 in the planning session (the user accepted the recommendation): (a), with (c) as its check. The `ui:check` waits that were added only to avoid this case go away for that scene.
+
+#### Done when
+- [ ] A redraw within the highlight's time leaves the rebuilt card for the same Mailbox name highlighted until the original end time; the time is not restarted.
+- [ ] A `ui:check` scene redraws right after the press and checks that the highlight survives; the `press` / `press2` wait for the redraw to settle is not used in that scene, and the other scenes still pass.
+- [ ] `npm test`, `npm run ui:check` (on free ports, C151) and `npm run docs:check` pass.
 
 ### C154. Draft a run from the plan in the UI
 Status: held(after C153; decide once runs written by hand show what the draft needs)
