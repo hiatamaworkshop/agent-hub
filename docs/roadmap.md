@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C159
 
 (Items with a status line are listed under "Items".)
 
@@ -615,6 +614,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Not checked: a real `compact`, `clear` or `resume` in a running Claude Code session (whether the model sees the printed plain stdout, and what it does with it); a `startup` that takes over a Mailbox with open requests; a client other than Claude Code; the live Hub on 7777 with the new `seqs` (it needs a restart; until then the text falls back to the oldest owed request and a count; sessions must reload the shim and the hook); an older Hub against the new page.
   - Known limit: a session started by hand without `HUB_MAILBOX` gets nothing after `/clear` (design.md §3.13).
   - Incident: one `npm test` run in the run of 2026-11-11 had 1 failure that did not recur in 8 reruns; the test was not identified.
+- [x] C159 The index time is kept out of the drafted request's DONE WHEN (2026-11-11, closed after the review)
+  - Changed: `public/index.html` (the time is no longer a line of the draft text; `updateReplyInfo` shows it beside the `Request for C<n>` label, with `sentNode`, refreshed by the 30 s interval; `draftIndexUpdatedAt` is kept apart from `draftItem`, which is sent in meta); `tools/dev/ui-check.mjs` (the C138 check reads the label; two C159 scenes: a draft from today's index shows the time only, and one from an index of 2001-02-03 shows the date and the time; both check that `bodyOf`'s DONE WHEN lines are exactly the item's conditions); `docs/design.md` §3.15; `docs/usage.md` (the sentence about the draft's label).
+  - Checked: `npm test` 698 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 0 errors; `npm run ui:check` 212 ok, 0 NG. The review found one stale sentence in usage.md, fixed. Done-when wording not changed.
+  - Not checked: a real send of the draft; the label in a narrow composer; a draft open across midnight.
+  - Reviewer note, for the planning session: the request that goes to the leader no longer carries the index's age at all (C138's reason for the line was "so the leader can see its age"); the age is shown to the human composing the draft only. Reading of box 1: the label beside the draft is one more place outside the text, which the wording allows.
 - [x] C138 The item card and the draft show when the index was sent (2026-11-11, closed after the review)
   - Decided 2026-11-11 in the planning session: (c) goes into this repository's docs, so an adopter reads it too. (a) is done as far as the Hub's own facts go, since the Hub does not read the working tree (design.md §3.8): the time the index was sent is shown. (b) and (d) are not part of this item.
   - Changed: `public/index.html` (`indexSentText`: "index sent 12:34", with the date on another day, and empty without a time; shown in each index's Items header, in the item modal, and as the draft's last line; the open modal refilled from the index as it is now, and an item or index that vanished is said so, with no draft; the header time refreshed by the 30 s interval); `tools/dev/ui-check.mjs` (5 new checks); `docs/usage.md` and `docs/project-setup.md` (after editing the ledger without a commit, run `npm run docs:index`: `npm run docs:index` in agent-hub's folder, `npm --prefix <agent-hub> run docs:index` from a project's root, `-- --project <folder>` from anywhere else; the reason: the index reaches the Hub only at a team start and at a commit that changes the ledger); `docs/design.md` §3.15.
@@ -1044,13 +1048,3 @@ Status: held(after C153; decide once a real run shows what is hard to find)
 Raised 2026-11-10 with C153. After a run, what waits for the human is spread over the last report (a Message, deleted after the retention period), the items' sections (the defaults taken, the items left open) and `git log` (unpushed commits). The ledger is the place that lasts (design.md §3.16).
 - Idea: the Items list gets a tier, or a mark, for items whose done-when lines are all checked while the section is still there ("worked, waiting for the close"); the index already has the counts (`conditions.done` / `total`). `team status` (C139) could list the same.
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
-
-### C159. Keep the index time out of the drafted request's DONE WHEN
-Raised 2026-11-11 from the run's report (#523, C138 NEEDS DECISION 4). C138 made the item card and the draft show when the index was sent. In the page's display the last line of the draft, the index time, falls inside the DONE WHEN section, so a leader may read it as part of the done-when wording, and on the same day it shows no date.
-- Decided 2026-11-11 in the planning session (the user accepted the recommendation): the time is not part of DONE WHEN. The request's DONE WHEN holds only the item's done-when lines (design.md §3.15: it is copied, not retyped).
-
-#### Done when
-- [ ] The index time is outside the drafted request's DONE WHEN section (a line of its own before or after the sections, or beside the card's header), so DONE WHEN holds only the item's done-when lines.
-- [ ] The time shows the date when it is not today's, and only the time when it is.
-- [ ] A `ui:check` scene covers both (a draft with a today's index, and with an older one).
-- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.

@@ -803,11 +803,39 @@ try {
   const sentDraft = await evaluate("$('body').value")
   const oldDate = await evaluate("indexSentText('2001-02-03T04:05:00.000Z')")
   const noTime = await evaluate("[indexSentText(undefined), indexSentText(null), indexSentText('not a date')].join('|')")
-  verify('Index sent time (C138): the Items header, the item modal and the draft end show the Hub\'s updatedAt as a time',
-    sentWant.startsWith('index sent ') && sentHeaders.includes(sentWant) && sentModal === sentWant && sentDraft.endsWith(`\n\n${sentWant}`) && sentDraft.startsWith('GOAL: C1 一つ目'),
-    { sentWant, sentHeaders, sentModal, sentDraftTail: sentDraft.slice(-60) })
+  // The draft's time sits beside its label, not in the text (C159): the text has no time, so it cannot read as part of DONE WHEN
+  const sentDraftLabel = await evaluate("($('replyInfo').querySelector('.sent') || {}).textContent || null")
+  verify('Index sent time (C138): the Items header, the item modal and the draft\'s request label show the Hub\'s updatedAt as a time (C159: the label, not the text)',
+    sentWant.startsWith('index sent ') && sentHeaders.includes(sentWant) && sentModal === sentWant && sentDraftLabel === sentWant && sentDraft.startsWith('GOAL: C1 一つ目') && !sentDraft.includes('index sent'),
+    { sentWant, sentHeaders, sentModal, sentDraftLabel, sentDraftTail: sentDraft.slice(-60) })
   verify('Index sent time (C138): another day adds the date; a missing or invalid updatedAt shows nothing and does not throw',
     oldDate.startsWith('index sent ') && oldDate.length > sentWant.length && noTime === '||', { oldDate, noTime })
+  await evaluate("$('body').value = ''")
+
+  // C159: the index time is outside the drafted request's text. The page's own display (bodyOf) of the text must show DONE WHEN with
+  // only the item's done-when lines, and the time beside the request label: only the time for an index sent today, the date too for another day
+  const draftC1 = (updatedAt) => evaluate(`(() => {
+    $('body').value = ''
+    const ix0 = currentIndex({ project: ${JSON.stringify(cwd)}, source: 'docs/roadmap.md' })
+    const ix = ${updatedAt ? `{ ...ix0, updatedAt: ${JSON.stringify(updatedAt)} }` : 'ix0'}
+    const item = ix.items.find((x) => x.id === 'C1')
+    draftFromItem(ix, item)
+    const lines = [...bodyOf($('body').value).querySelectorAll('.ln')].map((s) => s.textContent)
+    const at = lines.findIndex((l) => l.startsWith('DONE WHEN'))
+    return { text: $('body').value, label: $('replyInfo').textContent, doneLines: lines.slice(at + 1), conds: item.conditionTexts }
+  })()`)
+  const today = await draftC1(null)
+  const todayTime = await evaluate(`(() => { const u = ${JSON.stringify(sentIndex.updatedAt)}; return indexSentText(u) === 'index sent ' + new Date(u).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })()`)
+  verify('C159: a draft from an index sent today keeps the time out of DONE WHEN; the label shows only the time',
+    !today.text.includes('index sent') && today.doneLines.length === today.conds.length && today.doneLines.every((l, i) => l === `- ${today.conds[i]}`) &&
+      today.label.includes(sentWant) && todayTime === true,
+    { doneLines: today.doneLines, conds: today.conds, label: today.label, todayTime })
+  const older = await draftC1('2001-02-03T04:05:00.000Z')
+  const olderWant = await evaluate("indexSentText('2001-02-03T04:05:00.000Z')")
+  verify('C159: a draft from an index sent on another day keeps the time out of DONE WHEN; the label shows the date and the time',
+    !older.text.includes('index sent') && older.doneLines.length === older.conds.length && older.doneLines.every((l, i) => l === `- ${older.conds[i]}`) &&
+      olderWant.length > sentWant.length && older.label.includes(olderWant),
+    { doneLines: older.doneLines, label: older.label, olderWant })
   await evaluate("$('body').value = ''")
 
   // The item modal follows its index (C138): on an index change it shows the new content and time together; a vanished item is said so, with no draft.

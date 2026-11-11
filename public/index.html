@@ -1108,6 +1108,9 @@ function updateReplyInfo() {
   }
   if (getKind() === 'request' && draftItem) {
     info.append(`Request for ${draftItem.id} `)
+    // When the index was sent (C138), with the date when it is not today. Beside the label, outside the text (C159); the 30 s refresh keeps it current
+    const sent = sentNode('span', 'sent', draftIndexUpdatedAt)
+    if (sent) info.append(sent, ' ')
     const unlink = el('button', 'linkbtn', 'Unlink')
     unlink.type = 'button'
     unlink.title = 'Send without linking the request to the roadmap item'
@@ -2666,6 +2669,8 @@ initSideResize()
 // 下書き: GOAL に ID と題、DONE WHEN に完了条件。人が直して Send する (自動では送らない。design.md §2)。
 // 送る request の meta.item に、項目の指し示しと送った時点の約束 (指紋と文言) を付ける
 let draftItem = null
+// The updatedAt of the index the draft came from. Kept apart from draftItem, which is sent in meta
+let draftIndexUpdatedAt = null
 function draftFromItem(ix, item) {
   const body = $('body')
   if (body.value.trim() && !window.confirm(`Replace the message box with a request draft for ${item.id}?`)) return
@@ -2674,10 +2679,10 @@ function draftFromItem(ix, item) {
   setKind('request')
   const done = (item.conditionTexts || []).map((t) => `- ${t}`)
   body.value = [`GOAL: ${item.id} ${item.title} (${ix.source})`, 'DONE WHEN:', ...(done.length ? done : ['-'])].join('\n')
-  // One line after the copied text: which index the copy came from, so the leader can see its age (C138). Nothing if the index has no time
-  const sent = indexSentText(ix.updatedAt)
-  if (sent) body.value += `\n\n${sent}`
-  draftItem = { id: item.id, project: ix.project, source: ix.source, promise: item.promise, conditions: item.conditionTexts || [] }
+  // The index time (C138) is not in the text: the request goes out as it is, and a line after DONE WHEN would read as part of it (C159).
+  // It shows beside the request label instead (updateReplyInfo), which is never sent
+  draftIndexUpdatedAt = ix.updatedAt ?? null
+  draftItem ={ id: item.id, project: ix.project, source: ix.source, promise: item.promise, conditions: item.conditionTexts || [] }
   // meta の上限 (8 KB) に収める。文言を外すと差分は出せないが、変わったことは指紋で分かる
   if (new TextEncoder().encode(JSON.stringify(draftItem)).length > 6000) delete draftItem.conditions
   updateReplyInfo()

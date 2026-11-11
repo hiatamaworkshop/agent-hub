@@ -651,7 +651,7 @@ Since C106 every badge that jumps does: the sidebar's `You`, `Agent` and `Stuck?
 - NEEDS DECISION is not counted as the human's move (a means to clear it once answered would be needed).
 
 **Choosing a roadmap item and requesting it**
-- Choosing an item's card in the UI and pressing Send makes a **draft** request (e.g. `GOAL: C95`, with the item's done-when conditions in `DONE WHEN`). A human reads and fixes it, then presses Send. It is not sent automatically (§2). The draft ends with one line, `index sent <time>`, when the index was sent (C138).
+- Choosing an item's card in the UI and pressing Send makes a **draft** request (e.g. `GOAL: C95`, with the item's done-when conditions in `DONE WHEN`). A human reads and fixes it, then presses Send. It is not sent automatically (§2). The index time is not in the text: it shows beside the request label above the text (`index sent <time>`, with the date when the index was sent on another day; C138, moved by C159). The text ends with the item's done-when lines, so nothing after them in the sent request can read as part of `DONE WHEN`. It is not the first line either: `summaryOf` takes the first line of a request as the summary the cards and the thread show.
 - The request carries the item's ID. Per item it can show "requested / reported / awaiting acceptance", which is the same thing as the minimum version of the ledger in §3.11 and the part that makes the leader disposable in §3.13.
 - What goes in the body is not a copy of the item but **a pointer**. The agent reads the latest from the repository.
 
