@@ -24,8 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C150
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -596,6 +594,14 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: on Linux (`node:lts` container, Node v26.13.0) `npm test` 599 pass, 0 fail, 0 skipped, so no test was fixed or skipped. On GitHub: run 42824589941 (`6804953`) and run 42825334940 (`46f580c`), both jobs succeeded each time: https://github.com/hiatamaworkshop/agent-hub/actions/runs/42825334940. Done-when wording not changed.
   - The review found no defect. Its two notes: the checkout-time CRLF step (and its comment) was redundant because `.gitattributes` (`* text=auto eol=lf`) already fixes LF, so it was removed and the second run passed without it; the README's present-tense CI sentence was true once the first run passed.
   - Not checked: macOS; a real `claude` session on Linux or a Mac (design.md §6.2-8). Annotations only on the runs: Node.js 20 deprecation for `actions/checkout@v4` and `actions/setup-node@v4` (forced to Node 24), and the `ubuntu-latest` label migrating to Ubuntu 26 (not filed).
+- [x] C150 The card state derivation is a shared module the page and commands use (2026-11-11, closed after the review)
+  - took the default without an answer (2026-11-11): (1) the map edges' and eventView's inline copy of the waiting-Event rule is not filed; (2) the stale cardState comment in src/team/status.ts:3 is not filed (fixed the next time that file is touched); (3) "records the reason before the change" was read as "in the same change".
+  - Decided 2026-11-10 in the planning session: option (a) of the item. One copy in a module serves the page and the commands, with no framework. Not the Hub deriving the state (it depends on the browser's clock, the Events the page has seen and the filters), and not a second copy kept equal by a test. The module takes the clock as an argument.
+  - Changed: `src/shared/card-state.js` (new: `stateOf`, `humanTurnOf` and what they need; no Node or DOM APIs; `now` passed in); `src/shared/card-state.test.ts` (new: 40 cases, each naming its ui-check scene); `src/hub/app.ts` (`GET /shared/card-state.js` without a token, like `/`; the page's CSP is `script-src 'self' 'unsafe-inline'`); `src/hub/app.test.ts` (2 tests); `public/index.html` (loads the module with `import()`; its own 151-line copy removed; a degraded start when the module cannot load); `tsconfig.json` (`allowJs`, `checkJs`); `docs/design.md` (§3.2, §5); `docs/protocol.md` (§1, §3); `CLAUDE.md` (Technology stack line and the UI test note).
+  - Checked: `npm test` 641 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 0 errors; `npm run ui:check` 202 ok, 0 NG; the module served by a Hub started directly and by a Docker container; the review compared the moved rules with HEAD's `index.html` and found them the same. The review found one defect, the whole page stopping when the module cannot load (for example an old Hub), fixed with a degraded start and checked in headless Chrome against an old-Hub copy. Done-when wording not changed.
+  - Not checked: the page in a real browser beyond the `ui:check` scenes; degraded mode's layer counts and Needs-you badges (they read 0, since the placeholders are inert); the 404 variant of the missing module (the CSP-block variant was run).
+  - Reviewer notes, for the planning session: the map's edges repeat `humanTurnOf`'s waiting-Event rule inline (`public/index.html` around lines 1627 and 1992-1993), so a rule change in the module would not reach them; `src/team/status.ts:3` still says the state is made by `cardState` in `public/index.html`; whether "records the reason ... before the change" meant an earlier commit (the reason is written in the same change).
+  - Needs the user: the Hub on 7777 started before this change and must be restarted for the new route and CSP (until then the page runs degraded); a compose image needs a rebuild.
 - [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
   - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
   - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
@@ -1029,20 +1035,6 @@ Status: proposed
 Raised 2026-11-09 by the reviewer of C142 (#322). The C106 jump highlights a card, and a redraw driven by SSE within the highlight's 3 seconds replaces the card nodes, so the highlight is gone and the press seems to do nothing (measured in `ui:check` run 14: `replaced: 2`). `ui:check`'s `press` / `press2` now wait for the redraw to settle before clicking, so the check no longer covers this case.
 - The C106 failures during C142 were most likely the port clash (two `ui:check` runs on 7793 and a leftover Hub), not C142's code: the planning session ran the strict check without the wait on HEAD's page and on C142's page, 2 of 2 passing each.
 - Ideas, not decided: (a) the jump re-applies the highlight to the rebuilt card (keyed by Mailbox name) until its time ends; (b) the card rebuild keeps nodes whose content did not change; (c) a `ui:check` scene that redraws right after the press.
-
-### C150. Make the card state derivation testable and usable outside the page
-
-Raised 2026-11-10 in the planning session. The card state (Needs you / Working / Waiting on others / Stopped / Paused; design.md §3.15) is derived by `stateOf` in `public/index.html`, which has no unit tests; `ui:check` covers it scene by scene and needs Chrome. `src/team/status.ts` (C108) does not derive states. Two open items need "the same derivation as the cards" outside the browser: C79 (the watcher) and C139 (`status` per item). Built as they stand, each would copy the rules, and the copies would drift.
-- Ideas, not decided: (a) move the derivation into a module without Node APIs under `src/shared/`, which the Hub serves to the page and the commands import, with unit tests beside it; (b) the Hub derives the state and returns it with `GET /mailboxes`, and the page only draws it; (c) leave it in the page, and a test pins a second copy against the same cases.
-- (a) and (b) touch "the UI is a single framework-less HTML file" (CLAUDE.md "Technology stack"; design.md §3.2, §5): the reason goes into design.md first. (b) also needs a look at what the page uses that the Hub does not have (the browser's clock for elapsed times, the filters in `localStorage`).
-- Before C79 or C139 is built, or together with the first of them.
-- Decided 2026-11-10 in the planning session (the user left the choice to it): (a). One copy serves the page and the commands, with no framework added. Not (b): the state depends on the browser's clock and filters, which the Hub does not have. Not (c): two copies kept equal by a test are still two copies. The module takes the current time as an argument, so the page passes the browser's clock and the commands their own.
-
-#### Done when
-- [ ] design.md §5 records the reason for serving a shared module to the page before the change, and CLAUDE.md's "Technology stack" line on the UI says what the page loads besides the HTML file.
-- [ ] The card state derivation (`stateOf` and what it needs) is a module under `src/shared/` without Node APIs; the Hub serves it to the page, started directly and in Docker, and `public/index.html` uses it instead of its own copy.
-- [ ] Unit tests beside the module cover Needs you, Working, Waiting on others, Stopped and Paused, with cases taken from the `ui:check` scenes.
-- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
 
 ### C154. Draft a run from the plan in the UI
 Status: held(after C153; decide once runs written by hand show what the draft needs)

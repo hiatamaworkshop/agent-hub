@@ -121,10 +121,24 @@ export function createApp(opts: AppOptions) {
     const html = await opts.uiHtml()
     if (html === null) return c.text('the UI (public/index.html) is not there yet', 404)
     // 外部リソースを読まない 1 枚の HTML なので、同一オリジン以外を禁じる
+    // script-src: このページのインラインの script と、同じ Hub の /shared/card-state.js (C150) だけ
     // img-src: 添付画像のサムネイル (同一オリジンの /files と、貼り付け直後の blob:)
-    c.header('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+    c.header('Content-Security-Policy', "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
     c.header('X-Content-Type-Options', 'nosniff')
     return c.html(html)
+  })
+
+  // 画面が読むカードの状態の module (src/shared/card-state.js, C150)。ページと同じく認証なしで配る (protocol.md §1)。
+  // ページと同じく、リクエストのたびにファイルを読む。dist/ では tsc が同じ場所に出す
+  const CARD_STATE_JS = new URL('../shared/card-state.js', import.meta.url)
+  app.get('/shared/card-state.js', async (c) => {
+    c.header('Cache-Control', 'no-store')
+    c.header('X-Content-Type-Options', 'nosniff')
+    try {
+      return c.body(await readFile(CARD_STATE_JS, 'utf8'), 200, { 'Content-Type': 'text/javascript; charset=utf-8' })
+    } catch {
+      return c.text('the card state module (src/shared/card-state.js) is not there', 404)
+    }
   })
 
   app.use('*', async (c, next) => {

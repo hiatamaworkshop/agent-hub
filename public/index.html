@@ -377,6 +377,30 @@
 </dialog>
 <script>
 'use strict'
+// --- The card state derivation (C150): src/shared/card-state.js, one copy for the page and the commands ---
+// That file is an ES module and this script is a classic one, so it is loaded with import(). The names below are set when it
+// has loaded, and the startup block at the end waits for cardStateReady (which always resolves), so nothing is drawn before they are set.
+// The page's wrappers that gather its facts (cardFacts, stateOf, humanTurnOf, staleHandedHours) are further down, by their data.
+// If the module does not load (a Hub started before this file, a CSP that blocks it, a network error), the page is DEGRADED, not stopped:
+// the startup still runs (settings, filters, the SSE stream, Mailboxes, Send), an error line asks for a Hub restart, cards show no
+// derived state (stateOf gives null, as for a Hub without a backlog), and the layer counts read 0. The names below keep these inert
+// values until the module has loaded. They are placeholders, not a second copy of the rules: nothing here decides a state.
+let CS = null
+let EVENT_LABEL = {}
+let WAITING = new Set()
+let NONE = { count: 0, oldestAt: null, oldestSeq: null, eventId: null }
+let addTally = () => NONE
+let staleEvent = () => false
+let eventDetailOf = () => ''
+let QUOTA_NEEDS_YOU = new Map()
+const cardStateReady = import('/shared/card-state.js').then((m) => {
+  CS = m
+  ;({ EVENT_LABEL, WAITING, NONE, addTally, staleEvent, eventDetailOf, QUOTA_NEEDS_YOU } = m)
+}, (err) => {
+  // Degraded, see above: the startup goes on. The line tells the person what to do
+  console.error('The card state module could not be loaded', err)
+  $('err').textContent = 'The card state module could not be loaded, so cards show no state. The Hub is older than this page: restart the Hub, then reload.'
+})
 // タブのアイコン (C70)。何も待っていないときの絵はここだけで変える (SVG の本文。空文字ならブラウザの既定。CSP が data: を止めるので、blob: の URL にして <link> に付ける)。
 // 作業中・人の番の絵は描画コード (hubSvg・badgeIcon) が --st-working・--st-you から描く
 const TAB_ICON_IDLE = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="#6b7280" stroke="#6b7280" stroke-width="2" stroke-linecap="round"><line x1="16" y1="16" x2="16" y2="4"/><line x1="16" y1="16" x2="26.4" y2="10"/><line x1="16" y1="16" x2="26.4" y2="22"/><line x1="16" y1="16" x2="16" y2="28"/><line x1="16" y1="16" x2="5.6" y2="22"/><line x1="16" y1="16" x2="5.6" y2="10"/><circle cx="16" cy="4" r="3" stroke="none"/><circle cx="26.4" cy="10" r="3" stroke="none"/><circle cx="26.4" cy="22" r="3" stroke="none"/><circle cx="16" cy="28" r="3" stroke="none"/><circle cx="5.6" cy="22" r="3" stroke="none"/><circle cx="5.6" cy="10" r="3" stroke="none"/><circle cx="16" cy="16" r="5.5" stroke="none"/></svg>'
@@ -726,9 +750,7 @@ const evtData = new Map() // Event の id → Event (プロジェクトの絞り
 const lastEventByMailbox = new Map() // Mailbox 名 → 最新の Event (カードに出す)
 const lastTurnEndByMailbox = new Map() // Mailbox 名 → 最新のターン終了 (作業中かを導く)
 const DETACH_LABEL = { closed: 'session ended', disconnected: 'connection lost', lease_expired: 'lease expired' }
-const EVENT_LABEL = { 'turn.end': 'turn end', 'turn.failed': 'turn failed', question: 'question', 'question.answered': 'answered', permission: 'permission', 'permission.resolved': 'approved', notification: 'notification', 'session.boundary': 'boundary', 'session.start': 'session start', 'model.switch': 'model switch' }
 // 人の手を待っている Event。目立たせ、非表示のタブでは未読として数える
-const WAITING = new Set(['question', 'permission'])
 const str = (v) => (typeof v === 'string' ? v : '')
 
 function eventBody(ev) {
@@ -1849,18 +1871,6 @@ const LAYERS = [
   { key: 'agent', label: 'Agent', age: [30, 120], title: "The agent's move: unread messages in a connected session, and requests handed to it that have no reply yet." },
   { key: 'stuck', label: 'Stuck?', age: [10, 60], title: 'Delivery may be stuck: messages handed but not confirmed (not fetched with inbox, and the session has sent no request or reply since), and unread messages in a Mailbox with no session attached.' },
 ]
-// oldestSeq と eventId は、バッジを押したときに飛ぶ先 (C44)。古い Hub は持たないので null
-const NONE = { count: 0, oldestAt: null, oldestSeq: null, eventId: null }
-function addTally(a, b) {
-  // 最も古いほうの飛び先を取る (古い Hub の oldestSeq がなければ null のまま)
-  const first = [a, b].filter((t) => t.oldestAt).sort((x, y) => Date.parse(x.oldestAt) - Date.parse(y.oldestAt))[0]
-  return {
-    count: a.count + b.count,
-    oldestAt: first ? first.oldestAt : null,
-    oldestSeq: first ? first.oldestSeq ?? null : null,
-    eventId: first ? first.eventId ?? null : null,
-  }
-}
 // Mailbox の最新の Event と最新のターン終了。手元にあるのは最近の 200 件と SSE の新着だけなので、Hub が返すもの
 // (backlog.lastEvent / lastTurnEnd。静かな Mailbox の分も持つ) と比べて新しい方を使う。古い Hub は返さないので手元のものだけ
 function latestOf(a, b) {
@@ -1870,48 +1880,7 @@ function latestOf(a, b) {
 }
 function lastEventOf(mb) { return latestOf(lastEventByMailbox.get(mb.name), mb.backlog && mb.backlog.lastEvent) }
 function lastTurnEndOf(mb) { return latestOf(lastTurnEndByMailbox.get(mb.name), mb.backlog && mb.backlog.lastTurnEnd) }
-// 人が動く番。材料は 2 つ: hook の質問・許可待ち (最後の Event が回答前の question / permission) と、Hub で人に出した
-// 返信待ちの request (backlog.outgoing.to の人宛て。C40)。人が返信か次の依頼を送れば Hub が閉じる (C28)。
-// カードの状態 (Needs you)・溜まりのバッジ (You) は、これを使う。タブのタイトル・favicon と、ほかのプロジェクトの待ちの数は モデルの waiting (これに未接続の 1 件を足す)
-// 今の接続より前に、別のセッションが出した Event は今の状態に数えない (ターミナルを起動し直した・takeover の後は、そこで答えられないため)。
-// 今の接続の後に出たものは、session_id が違っても数える (/clear で変わりうる。design.md §6.2)。接続がないときは、ターミナルが残っているかもしれないので数える
-function staleEvent(mb, ev) {
-  const at = mb.attachment
-  return !!(at && at.sessionId && ev && ev.sessionId && ev.sessionId !== at.sessionId && Date.parse(ev.ts) < Date.parse(at.attachedAt))
-}
-// usage limit で止まった理由 (turn.failed の error)、通知の種類 (notification_type)、許可されたツール (tool_name)。
-// Hub は backlog.lastEvent.detail で渡し、SSE で届いた Event は payload から読む
-const DETAIL_FIELD = { 'turn.failed': 'error', notification: 'notification_type', 'permission.resolved': 'tool_name' }
-function eventDetailOf(ev) {
-  if (ev.detail) return ev.detail
-  const p = ev.payload && typeof ev.payload === 'object' ? ev.payload : {}
-  const v = DETAIL_FIELD[ev.kind] ? p[DETAIL_FIELD[ev.kind]] : ''
-  return typeof v === 'string' ? v : ''
-}
-// 自動の再開が続かない通知 → 人が動く番 (Needs you)。値は括弧に添える理由
-const QUOTA_NEEDS_YOU = new Map([
-  ['quota_auto_resume_stale', 'usage limit, press Enter'],
-  ['quota_auto_resume_disabled', 'usage limit, auto-resume off'],
-])
-function humanTurnOf(mb) {
-  let t = NONE
-  const why = []
-  const ev = lastEventOf(mb)
-  if (ev && WAITING.has(ev.kind) && !staleEvent(mb, ev)) {
-    t = addTally(t, { count: 1, oldestAt: ev.ts, eventId: ev.id })
-    why.push(EVENT_LABEL[ev.kind] || ev.kind)
-  } else if (ev && ev.kind === 'notification' && QUOTA_NEEDS_YOU.has(eventDetailOf(ev)) && !staleEvent(mb, ev)) {
-    // usage limit の自動の再開が続かない (stale) か、そもそも無効 (disabled)。人が Enter を押すか、設定を直す番 (C38)
-    t = addTally(t, { count: 1, oldestAt: ev.ts, eventId: ev.id })
-    why.push(QUOTA_NEEDS_YOU.get(eventDetailOf(ev)))
-  }
-  const out = mb.backlog && mb.backlog.outgoing
-  const asks = ((out && out.to) || []).filter((a) => a.type === 'user')
-  // 宛先ごとの件数がない Hub (C40 より前) では、人宛て 1 つを 1 件とみなす
-  for (const a of asks) t = addTally(t, { count: a.count ?? 1, oldestAt: a.oldestAt ?? out.oldestAt, oldestSeq: a.oldestSeq ?? null })
-  if (asks.length) why.push('request')
-  return { ...t, detail: why.join(', ') }
-}
+function humanTurnOf(mb) { return CS ? CS.humanTurnOf(mb, cardFacts(mb)) : { ...NONE, detail: '' } }
 // 古い Hub は backlog を返さない。未読と unconfirmed の件数だけで、経過時間は出さない
 // (古い Hub の unconfirmed は返信待ちの request も含むが、そのまま出す)
 function layersOf(mb) {
@@ -1965,105 +1934,17 @@ const STATES = [
   { key: 'idle', label: 'Idle', title: 'Connected and nothing pending.' },
   { key: 'offline', label: 'Offline', title: 'No session is attached.' },
 ]
-// hook の Event が保存期間で消えると、ターン終了が分からない。それより古い受け渡しは作業中とみなさない (時間)
-// ただし保存期間 (hubLimits.readRetentionHours) がそれより短ければ、保存期間まで。保存期間が分からない・0 (消さない) なら 12
-const STALE_HANDED_HOURS = 12
-const staleHandedHours = () => {
-  const r = hubLimits.readRetentionHours
-  return r !== null && r > 0 ? Math.min(STALE_HANDED_HOURS, r) : STALE_HANDED_HOURS
+// The facts the card state needs, gathered by the page: the Hub's backlog of the Mailbox, the Events it has seen over SSE,
+// the clock, the Hub's start and the read retention. The derivation itself is src/shared/card-state.js (C150).
+function cardFacts(mb) {
+  return { now: Date.now(), hubStartedAt, readRetentionHours: hubLimits.readRetentionHours, mailboxes: mailboxList, lastEvent: lastEventOf(mb), lastTurnEnd: lastTurnEndOf(mb), messageOf: bySeq }
 }
-// バックグラウンドの処理を待ってターンを終えたとき、Working とみなす上限 (分)。処理が終われば完了通知で次のターンが
-// 始まるので、それより長く何も来なければ、終わらない処理 (開発用のサーバーなど) か通知を受けない作りとみなし、Stopped に戻す (C43)
-const BACKGROUND_MAX_MINUTES = 60
-// ターンを終えた時点で走っていた処理 (Stop の background_tasks)。Hub は lastTurnEnd.running で渡し、SSE で届いた Event は payload から読む
-function runningOf(end) {
-  if (!end) return null
-  if (end.running) return end.running
-  const p = end.payload && typeof end.payload === 'object' ? end.payload : {}
-  const tasks = Array.isArray(p.background_tasks) ? p.background_tasks.filter((t) => t && t.status === 'running') : []
-  if (!tasks.length) return null
-  return { count: tasks.length, description: typeof tasks[0].description === 'string' ? tasks[0].description : '' }
-}
-function stateOf(mb) {
-  if (!mb.attachment) return { key: 'offline' }
-  const human = humanTurnOf(mb)
-  if (human.count) return { key: 'you', since: human.oldestAt, detail: human.detail }
-  const ev = lastEventOf(mb)
-  // usage limit で止まった間。Working より先に判定する (Hub には止まった瞬間の Event がなく、渡した Message だけが残って Working と読まれるため)。
-  // 次の Event (quota_auto_resume_fired の通知、turn.end など) で解ける。fired の後は下の判定に戻り、渡した Message があれば Working になる
-  if (ev && ev.kind === 'turn.failed' && eventDetailOf(ev) === 'rate_limit' && !staleEvent(mb, ev)) return { key: 'paused', since: ev.ts, detail: 'usage limit' }
-  const b = mb.backlog
-  if (!b || !('outgoing' in b)) return null // 古い Hub (材料がない)。状態を出さない
-  const end = lastTurnEndOf(mb)
-  const handed = b.lastHanded
-  const fresh = handed && Date.now() - Date.parse(handed.ts) < staleHandedHours() * 3600000
-  const handedWorking = handed && (end ? Date.parse(handed.ts) > Date.parse(end.ts) : fresh)
-  // Hub が起動し直したあとも、渡した request に返信がなく (open)、起動の前に渡し、起動の後にターン終了がない (C142)。
-  // ただし既存の判定がこの渡したものを Working と言う場合 (handedWorking) に限る。ターンを終えたあとの渡しは、
-  // 委任中 (Waiting on others) や Stopped の既存の判定に任せ、止まった Hub のせいにはしない。
-  // 起動の前に渡した作業中の分は、返事もターン終了も届かなかったとみなし、作業中とは書かず止まったと出す (Health check が数える)。
-  // ターン終了・返信・起動の後の渡し直しで、この状態は解ける (ほかの判定に戻る)
-  if (handedWorking && handed.open && hubStartedAt !== null && Date.parse(handed.ts) < hubStartedAt && !(end && Date.parse(end.ts) >= hubStartedAt)) {
-    return { key: 'stopped', since: handed.ts, detail: 'Hub restarted after the hand-over' }
-  }
-  // 接続中の未読は、渡す直前 (Channels) か、inbox で取りに来るのを待っている (ほかのクライアント)。どちらもエージェントの番。
-  // ただし信号は人の番だけ (C71、2026-10-30 の決定)。未読だけのときは Working と書くが、枠も脈打ちも光りもない (quiet)。渡した後の Working は信号
-  if (b.unread.count && !handedWorking) return { key: 'working', since: b.unread.oldestAt, quiet: true }
-  if (handedWorking) {
-    // Event が 1 つもないセッションは hook がない見込みで、ターン終了を知らない。推測であることを示す
-    return { key: 'working', since: handed.ts, guess: !ev, detail: summaryOf(bySeq(handed.seq)) }
-  }
-  // 待っている相手がどれも接続していなければ、誰も読まないまま止まる。起動するのは人なので Needs you にする (C49)。
-  // ただし渡した依頼に返信がないまま終わったターンなら Stopped を先に出し、未接続の相手は名前で添える (C109)。
-  // 試験などがバックグラウンドで走っている間は、その例外にしない (未接続の相手は C49 のまま Needs you)
-  const absent = b.outgoing.count ? absentTargets(b.outgoing) : null
-  // 試験などをバックグラウンドで流してターンを終えた。完了通知で次のターンが始まり、そこで返す見込み (C43、design.md §6.1t)
-  const bg = runningOf(end)
-  const until = end && Date.parse(end.ts) + BACKGROUND_MAX_MINUTES * 60000
-  const inBackground = bg && Date.now() < until
-  if (b.outgoing.count && !(absent && b.awaitingReply.count && !inBackground)) {
-    if (absent) return { key: 'you', since: b.outgoing.oldestAt, detail: `${absent} not connected` }
-    return { key: 'delegated', since: b.outgoing.oldestAt, detail: outgoingTargets(b.outgoing) }
-  }
-  if (b.awaitingReply.count) {
-    if (inBackground) {
-      const more = bg.count > 1 ? ` (+${bg.count - 1})` : ''
-      return { key: 'working', since: end.ts, until, detail: `background: ${bg.description || 'task'}${more}` }
-    }
-    return { key: 'stopped', since: end ? end.ts : b.awaitingReply.oldestAt, detail: absent ? `${absent} not connected` : undefined }
-  }
-  return { key: 'idle', since: end ? end.ts : null }
-}
+function staleHandedHours() { return CS ? CS.staleHandedHours(hubLimits.readRetentionHours) : null }
+// Without the module there is no state (null), the same as for a Hub without a backlog; the card and the badges handle null
+function stateOf(mb) { return CS ? CS.stateOf(mb, cardFacts(mb)) : null }
 function bySeq(seq) {
   for (const m of seen.values()) if (m.seq === seq) return m
   return null
-}
-// 渡した Message の 1 行目。request は依頼の要旨 (GOAL の行など)、ほかは種類と送り手
-function summaryOf(m) {
-  if (!m) return ''
-  if (m.kind !== 'request') return `${m.kind} from ${m.from.id}`
-  return (m.body || '').split('\n').find((l) => l.trim()) || ''
-}
-// この Mailbox が出して返信のない request の宛先。どれが開いているかは Hub が決める (相手からの後の Message でも閉じる。C28)。
-// 人宛ては Needs you に出すので除く (C40)。to のない Hub (C28 より前) では宛先を添えない
-function outgoingTargets(outgoing) {
-  return [...new Set((outgoing.to || []).filter((a) => a.type !== 'user').map((a) => a.id))].join(', ')
-}
-// 人宛てを除いた開いた request の配信先 (outgoing.to[].recipients) が全部未接続なら、その名前 (受け手のない宛先は宛先の id)。
-// 1 つでも接続していれば、または recipients のない古い Hub なら null。一覧にない名前は接続状態が分からないので、未接続とみなさない
-function absentTargets(outgoing) {
-  const targets = (outgoing.to || []).filter((a) => a.type !== 'user')
-  if (!targets.length || !targets.every((a) => Array.isArray(a.recipients))) return null
-  const names = []
-  for (const a of targets) {
-    if (!a.recipients.length) { names.push(a.id); continue }
-    for (const name of a.recipients) {
-      const mb = mailboxList.find((x) => x.name === name)
-      if (!mb || mb.attachment) return null
-      names.push(name)
-    }
-  }
-  return [...new Set(names)].join(', ')
 }
 // --- 地図の状態 (C78)。モデルが読むもの (mapMsgCache) を含め、teamModel() より前に置く ---
 const HUMAN_KEY = '#human' // 地図の人のノードと、人宛ての辺の受け手 (Mailbox 名にならない文字)
@@ -3420,6 +3301,7 @@ function connect() {
 
 ;(async () => {
   // 初期の宛先の判定 (buildTo) より前に設定を読む。Mailbox 一覧が失敗しても、履歴と新着は接続で動かす
+  await cardStateReady
   await loadSettings()
   loadFilters()
   connect()

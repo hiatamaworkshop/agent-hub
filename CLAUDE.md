@@ -46,7 +46,7 @@ After compaction this map is back but the sections you read are not (the large d
 - Node.js (LTS) + TypeScript. Same as the other projects under the same DockerFiles folder (cairn and others).
 - MCP is implemented with the official SDK (`@modelcontextprotocol/sdk`).
 - HTTP with Hono (`@hono/node-server`). The reasons are in design.md §5.
-- The UI is a single framework-less HTML file (`public/index.html`).
+- The UI is a framework-less HTML file (`public/index.html`), and it loads one more file from the Hub: an ES module with the card state derivation, `src/shared/card-state.js` (served at `/shared/card-state.js`, C150; design.md §5). Nothing else.
 - To change any of these, write the reason in design.md first.
 
 ## Design invariants
@@ -65,7 +65,7 @@ After compaction this map is back but the sections you read are not (the large d
 - The development machine is Windows 11. The shell is PowerShell (Git Bash also works). Watch path separators and line endings.
 - Do not commit real tokens or `.env` (already in `.gitignore`). Keep `.env.example`.
 - Do not commit runtime logs or data (`logs/`, `data/`) either.
-- The UI (`public/index.html`) has no unit tests. When you change it, run `npm run ui:check` in addition to `npm test` (it checks card states scene by scene with a Hub on another port and headless Chrome; Chrome is needed).
+- The UI (`public/index.html`) has no unit tests; the card state module (`src/shared/card-state.js`) has them, in `card-state.test.ts`. When you change it, run `npm run ui:check` in addition to `npm test` (it checks card states scene by scene with a Hub on another port and headless Chrome; Chrome is needed).
 
 ## When running another project's team
 

@@ -55,6 +55,22 @@ describe('認証', () => {
     assert.ok(!set.includes(TOKEN), 'cookie にトークンそのものを入れない')
   })
 
+  it('the page allows scripts from its own origin and inline ones only (C150)', async () => {
+    const { app } = setup()
+    const csp = (await app.request('/')).headers.get('content-security-policy') ?? ''
+    assert.match(csp, /script-src 'self' 'unsafe-inline'/)
+    assert.doesNotMatch(csp, /script-src [^;]*https?:/)
+  })
+
+  it('the card state module is served as JavaScript without a token (C150)', async () => {
+    const { app } = setup()
+    const res = await app.request('/shared/card-state.js')
+    assert.equal(res.status, 200)
+    assert.match(res.headers.get('content-type') ?? '', /^text\/javascript/)
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff')
+    assert.match(await res.text(), /export function stateOf\(/)
+  })
+
   it('UI の HTML は認証なしで返す', async () => {
     const { app } = setup()
     const res = await app.request('/')

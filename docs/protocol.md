@@ -6,7 +6,7 @@ For the background of the terms and the model, see design.md §3.3 (Mailbox and 
 ## 1. Common
 
 - Base URL: `http://127.0.0.1:<port>` (default `7777`, changed with `HUB_PORT`)
-- Authentication: required on every endpoint (except serving the UI's static file).
+- Authentication: required on every endpoint (except serving the UI's static files, `/` and `/shared/card-state.js`).
   - shim / hooks: `Authorization: Bearer <token>`.
   - Browser: a cookie. `GET /?token=<token>` checks the token, sets an `HttpOnly; SameSite=Strict` cookie and redirects to `/`.
     A state-changing request authenticated by cookie gets 403 unless its `Origin` is the Hub's own origin.
@@ -192,6 +192,7 @@ For the background of the terms and the model, see design.md §3.3 (Mailbox and 
 | Method | Path | Content |
 |---|---|---|
 | GET | `/` | The UI's HTML. With `?token=`, sets the cookie and redirects (§1) |
+| GET | `/shared/card-state.js` | The card state module the page imports (`src/shared/card-state.js`, design.md §5), as JavaScript. No token, like `/` (§1). Read from the Hub's files on each request |
 | GET | `/stream` | SSE. Streams Events, Messages, and changes in the state of Mailboxes and Attachments |
 | POST | `/messages/:id/forward` | Unedited forward. Body: `{ "to": {...} }` (other keys are ignored; a body or kind is not accepted). The response is the same as `POST /messages` (201, with `recipients` and `unattached`). An unknown id is 404 `message_not_found`. The sender is decided as for `POST /messages` (§2 Message) |
 | GET | `/settings` | The custom command settings. `{ "version": 1, "commands": [{ "name", "text" }] }`. Empty if there is no file. If there is a hand-edited `defaultTo` (a string `<type>:<id>`), it is returned too, otherwise omitted (a value in the wrong form is ignored). Read from the file every time. If the file is broken, 500 `settings_invalid` (its content is not returned) |
