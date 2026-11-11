@@ -1892,6 +1892,55 @@ try {
   const snapAfter = { msgs: await countMessages(), unread: await unreadOf('jb.leader') }
   verify('押しても何も送らず、既読にせず、状態も変えない (C106)', snapAfter.msgs === snapBefore.msgs && snapAfter.unread === snapBefore.unread, { snapBefore, snapAfter })
 
+  // C145: a redraw within the 3 seconds of a state-chip press rebuilds the cards; the card of the same Mailbox is marked again until
+  // the original end time (not restarted). This scene does NOT use press (no settle wait): it clicks the chip, waits 1.8 s, and then
+  // causes an SSE-driven redraw itself (a new Mailbox attaches, so the page rebuilds the cards)
+  const c145Name = await evaluate(`(() => {
+    const card = document.querySelector('#mailboxes .mb.st-working')
+    if (!card || !document.querySelector('#states .stc.st-working')) return null
+    window.__c145 = { name: (card.querySelector('.name') || {}).textContent, old: card }
+    document.querySelectorAll('.hit').forEach((e) => e.classList.remove('hit'))
+    return window.__c145.name
+  })()`)
+  if (c145Name) {
+    const pressAt = Date.now()
+    await evaluate("document.querySelector('#states .stc.st-working').click()")
+    await sleep(1800)
+    const bystander = 'c145.bystander'
+    await api('POST', `/mailboxes/${bystander}/attach`, { client: 'claude-code', role: 'leader', cwd, sessionId: 's-c145' })
+    // Poll in the page: the rebuilt card of that Mailbox, marked, and when the mark goes
+    const rebuilt = await evaluate(`(async () => {
+      const name = window.__c145.name
+      const cardNow = () => [...document.querySelectorAll('#mailboxes .mb')].find((n) => (n.querySelector('.name') || {}).textContent === name) || null
+      let card = null
+      for (let i = 0; i < 40 && !(card && card !== window.__c145.old && card.classList.contains('hit')); i++) {
+        await new Promise((r) => setTimeout(r, 50))
+        card = cardNow()
+      }
+      return { replaced: !window.__c145.old.isConnected, marked: !!(card && card.classList.contains('hit')), name }
+    })()`)
+    const removedAt = await evaluate(`(async () => {
+      const name = window.__c145.name
+      const cardNow = () => [...document.querySelectorAll('#mailboxes .mb')].find((n) => (n.querySelector('.name') || {}).textContent === name) || null
+      const t0 = Date.now()
+      while (Date.now() - t0 < 4000) {
+        const c = cardNow()
+        if (!c || !c.classList.contains('hit')) return Date.now()
+        await new Promise((r) => setTimeout(r, 25))
+      }
+      return null
+    })()`)
+    const elapsed = removedAt === null ? null : removedAt - pressAt
+    verify('C145: a redraw 1.8 s after a state-chip press rebuilds the card; the rebuilt card is still marked, and the mark ends at the original 3 s, not later (C145)',
+      rebuilt.replaced && rebuilt.marked && elapsed !== null && elapsed >= 2800 && elapsed <= 3700,
+      { c145Name, rebuilt, elapsedMs: elapsed })
+    await api('DELETE', `/attachments/${(await api('GET', '/mailboxes')).mailboxes.find((m) => m.name === bystander).attachment.attachmentId}`)
+    await api('DELETE', `/mailboxes/${bystander}`)
+    await sleep(800)
+  } else {
+    verify('C145: a working card is on the page for the redraw check', false, { c145Name })
+  }
+
   // 地図: Needs you のラベルは Messages に切り替えてから飛ぶ。Working は地図の上で強調する
   await evaluate("$('mapToggle').click()")
   await sleep(400)
@@ -1986,6 +2035,37 @@ try {
   await evaluate("$('mapToggle').click()")
   await sleep(400)
 
+  // C145 (2): a second press. Another card's chip leaves only the new card marked; the same chip pressed again marks its card until
+  // 3 s after the second press (the first press's timer must not end it early). Direct clicks, no settle wait, no redraw in between
+  const marksNow = () => evaluate("[...document.querySelectorAll('#mailboxes .mb.hit')].map((b) => (b.querySelector('.name') || {}).textContent)")
+  await evaluate("document.querySelectorAll('.mb.hit, .mapnode.hit').forEach((n) => n.classList.remove('hit'))")
+  await evaluate("document.querySelector('#states .stc.st-paused').click()")
+  await sleep(700)
+  const marksAfterPaused = await marksNow()
+  await evaluate("document.querySelector('#states .stc.st-delegated').click()")
+  await sleep(300)
+  const marksAfterOther = await marksNow()
+  verify('C145: a second press on another card leaves only the new card marked (C145)',
+    JSON.stringify(marksAfterPaused) === JSON.stringify(['jb.paused']) && JSON.stringify(marksAfterOther) === JSON.stringify(['jb.waiter']),
+    { marksAfterPaused, marksAfterOther })
+  await sleep(1700) // the first press was about 2 s ago; the same chip is pressed again
+  const secondAt = Date.now()
+  await evaluate("document.querySelector('#states .stc.st-delegated').click()")
+  await sleep(2300) // 2.3 s after the second press: still marked
+  const stillMarked = (await marksNow()).includes('jb.waiter')
+  const goneAt = await evaluate(`(async () => {
+    const cardNow = () => [...document.querySelectorAll('#mailboxes .mb')].find((n) => (n.querySelector('.name') || {}).textContent === 'jb.waiter') || null
+    const t0 = Date.now()
+    while (Date.now() - t0 < 4000) {
+      const c = cardNow()
+      if (!c || !c.classList.contains('hit')) return Date.now()
+      await new Promise((r) => setTimeout(r, 25))
+    }
+    return null
+  })()`)
+  const lifeMs = goneAt === null ? null : goneAt - secondAt
+  verify('C145: the same chip pressed twice: the mark lasts 3 s from the second press, not from the first (C145)',
+    stillMarked && lifeMs !== null && lifeMs >= 2600 && lifeMs <= 3700, { stillMarked, lifeMs })
   // #backlog の Stuck?: 接続のない jb.gone の未読 (JB-GONE) を数える。押すとそこへ飛ぶ
   const stuckP = await press2('#backlog .bl[data-layer="stuck"]')
   verify('#backlog の Stuck? バッジ: 押すと、接続のない Mailbox の最も古い未読 (JB-GONE) へ飛んで強調される (C106)',

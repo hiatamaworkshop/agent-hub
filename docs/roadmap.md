@@ -25,7 +25,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C129
-- [ ] C145
 
 (Items with a status line are listed under "Items".)
 
@@ -605,6 +604,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Not checked: the page in a real browser beyond the `ui:check` scenes; degraded mode's layer counts and Needs-you badges (they read 0, since the placeholders are inert); the 404 variant of the missing module (the CSP-block variant was run).
   - Reviewer notes, for the planning session: the map's edges repeat `humanTurnOf`'s waiting-Event rule inline (`public/index.html` around lines 1627 and 1992-1993), so a rule change in the module would not reach them; `src/team/status.ts:3` still says the state is made by `cardState` in `public/index.html`; whether "records the reason ... before the change" meant an earlier commit (the reason is written in the same change).
   - Needs the user: the Hub on 7777 started before this change and must be restarted for the new route and CSP (until then the page runs degraded); a compose image needs a rebuild.
+- [x] C145 A card highlight survives a redraw until its original end time (2026-11-11, closed after the review)
+  - Changed: `public/index.html` (the card jump keeps the press as `cardHit` (name, kind, end time); `markCardHit` / `reapplyCardHit` re-mark the rebuilt card of the same Mailbox name and kind after `renderMailboxes` and `renderMap`, until the original end time; one timer and one mark node; `clearCardMark` on every press; sidebar cards carry `data-name`); `tools/dev/ui-check.mjs` (the C145 redraw scene with no settle-wait, and the second-press checks); `docs/design.md` §3.15.
+  - Checked: `npm test` 686 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 0 errors; `npm run ui:check` on free ports 210 ok, 0 NG. The new redraw scene fails on the pre-fix page (`replaced: true`, `marked: false`), and the second-press checks fail on the previous highlight code. The review found two defects, both fixed with checks: the timers were not cancelled, so a later mark ended early; and a second press on another card did not unmark the first. Done-when wording not changed.
+  - Not checked: a redraw at t=1 s followed by a second press at t=2 s on the rebuilt card (read only); a live SSE event at a random moment in a real browser; the thread highlight (`.msg.hit`, `.evt.hit`) after a card redraw (read by the reviewer: not affected); a narrow sidebar.
+  - Reviewer note: the scene redraws 1.8 s after the click, inside the 3 s window; a redraw in the first few hundred ms is not exercised. A cross-view mark found while checking (a press on a map node marked the sidebar card) was fixed by keeping the press's kind; the C106 flake seen earlier was that, not a timing issue.
 - [x] C138 The item card and the draft show when the index was sent (2026-11-11, closed after the review)
   - Decided 2026-11-11 in the planning session: (c) goes into this repository's docs, so an adopter reads it too. (a) is done as far as the Hub's own facts go, since the Hub does not read the working tree (design.md §3.8): the time the index was sent is shown. (b) and (d) are not part of this item.
   - Changed: `public/index.html` (`indexSentText`: "index sent 12:34", with the date on another day, and empty without a time; shown in each index's Items header, in the item modal, and as the draft's last line; the open modal refilled from the index as it is now, and an item or index that vanished is said so, with no draft; the header time refreshed by the 30 s interval); `tools/dev/ui-check.mjs` (5 new checks); `docs/usage.md` and `docs/project-setup.md` (after editing the ledger without a commit, run `npm run docs:index`: `npm run docs:index` in agent-hub's folder, `npm --prefix <agent-hub> run docs:index` from a project's root, `-- --project <folder>` from anywhere else; the reason: the index reaches the Hub only at a team start and at a commit that changes the ledger); `docs/design.md` §3.15.
@@ -1049,18 +1053,6 @@ Status: proposed
 
 Raised 2026-11-09 by the reviewer of C142 (#322). Every Hub that `ui:check` starts runs from the agent-hub folder, outside Docker, so C143's log appends its start and stop lines (with the token masked) to the same `logs/hub.log` the human reads after an outage. C142 added two more starts per run (`restartHub`).
 - Ideas, not decided: (a) the Hub takes the log path from an environment variable, and `ui:check` (and other test starts) points it into its own work folder; (b) the Hub writes no file when `HUB_DATA_DIR` is not the default; (c) each line names the port, so test lines can be told apart (softens only).
-
-### C145. Pressing a state chip during a redraw loses the highlight
-
-Raised 2026-11-09 by the reviewer of C142 (#322). The C106 jump highlights a card, and a redraw driven by SSE within the highlight's 3 seconds replaces the card nodes, so the highlight is gone and the press seems to do nothing (measured in `ui:check` run 14: `replaced: 2`). `ui:check`'s `press` / `press2` now wait for the redraw to settle before clicking, so the check no longer covers this case.
-- The C106 failures during C142 were most likely the port clash (two `ui:check` runs on 7793 and a leftover Hub), not C142's code: the planning session ran the strict check without the wait on HEAD's page and on C142's page, 2 of 2 passing each.
-- Ideas, not decided: (a) the jump re-applies the highlight to the rebuilt card (keyed by Mailbox name) until its time ends; (b) the card rebuild keeps nodes whose content did not change; (c) a `ui:check` scene that redraws right after the press.
-- Decided 2026-11-11 in the planning session (the user accepted the recommendation): (a), with (c) as its check. The `ui:check` waits that were added only to avoid this case go away for that scene.
-
-#### Done when
-- [ ] A redraw within the highlight's time leaves the rebuilt card for the same Mailbox name highlighted until the original end time; the time is not restarted.
-- [ ] A `ui:check` scene redraws right after the press and checks that the highlight survives; the `press` / `press2` wait for the redraw to settle is not used in that scene, and the other scenes still pass.
-- [ ] `npm test`, `npm run ui:check` (on free ports, C151) and `npm run docs:check` pass.
 
 ### C154. Draft a run from the plan in the UI
 Status: held(after C153; decide once runs written by hand show what the draft needs)

@@ -385,6 +385,9 @@
 // the startup still runs (settings, filters, the SSE stream, Mailboxes, Send), an error line asks for a Hub restart, cards show no
 // derived state (stateOf gives null, as for a Hub without a backlog), and the layer counts read 0. The names below keep these inert
 // values until the module has loaded. They are placeholders, not a second copy of the rules: nothing here decides a state.
+let cardHit = null // { name, kind, until } of the latest state-chip press, while it is due (C145; see jumpToCard)
+let cardHitNode = null // the card (or map node) that carries the mark now
+let cardHitTimer = null // the one timer that ends that mark (C145)
 let CS = null
 let EVENT_LABEL = {}
 let WAITING = new Set()
@@ -2116,10 +2119,41 @@ function jumpToCard(key) {
   const card = $(onMap ? 'map' : 'mailboxes').querySelector(`${onMap ? '.mapnode' : '.mb'}.st-${key}`)
   if (!card) return setStatus(`No card is ${STATES.find((s) => s.key === key).label} now.`)
   card.scrollIntoView({ block: 'center' })
+  // A press replaces the previous mark: the earlier mark and its timer go first, then this card is marked until this press's end
+  // time. A redraw within the 3 seconds marks the rebuilt card again, with the same end time (C145)
+  clearCardMark()
+  cardHit = { name: card.dataset.name, kind: onMap ? 'mapnode' : 'mb', until: Date.now() + 3000 }
+  markCardHit(card)
+}
+// The card highlight of a state-chip press (C145). One mark at a time, and one timer: marking a card clears the timer of the mark
+// before it, so the mark ends at the end time of the latest press, never at an older one
+function markCardHit(card) {
+  clearTimeout(cardHitTimer)
+  if (cardHitNode && cardHitNode !== card) cardHitNode.classList.remove('hit')
+  cardHitNode = card
   card.classList.remove('hit')
   void card.offsetWidth
   card.classList.add('hit')
-  setTimeout(() => card.classList.remove('hit'), 3000)
+  cardHitTimer = setTimeout(() => {
+    card.classList.remove('hit')
+    if (cardHitNode === card) cardHitNode = null
+    cardHitTimer = null
+  }, Math.max(0, cardHit.until - Date.now()))
+}
+// Removes the card highlight and its timer: a press unmarks the cards that were marked before it (C145)
+function clearCardMark() {
+  clearTimeout(cardHitTimer)
+  cardHitTimer = null
+  document.querySelectorAll('.mb.hit, .mapnode.hit').forEach((n) => n.classList.remove('hit'))
+  cardHitNode = null
+}
+// After a redraw rebuilt the cards or the map of root, mark the card of the latest press again, while its time lasts.
+// If that Mailbox is gone, nothing is marked
+function reapplyCardHit(root) {
+  if (!cardHit || Date.now() >= cardHit.until) return
+  // Only the kind of node the press marked (a sidebar card or a map node): the other view is not marked by it
+  const card = [...root.querySelectorAll(`.${cardHit.kind}[data-name]`)].find((n) => n.dataset.name === cardHit.name)
+  if (card) markCardHit(card)
 }
 function formatAge(ms) {
   const m = Math.floor(ms / 60000)
@@ -2724,6 +2758,7 @@ function renderMailboxes() {
     // 送り手のキーと同じ規則 (role があれば role、なければ mailbox:名前) で色を決める
     const ci = colorIndex(mb.role ? `role:${mb.role}` : `mailbox:${mb.name}`)
     const box = el('div', `mb c${ci}`)
+    box.dataset.name = mb.name // the card of a Mailbox, found again after a redraw (C145)
     const title = el('div')
     title.append(el('span', `dot${mb.attachment ? ' on' : ''}`), el('span', 'name', mb.name), el('span', `chip c${ci}`, mb.role || mb.name))
     box.append(title)
@@ -2795,6 +2830,7 @@ function renderMailboxes() {
     box.onclick = () => { chooseTo(`mailbox:${mb.name}`); $('body').focus() }
     root.append(box)
   }
+  reapplyCardHit(root) // a redraw rebuilt the cards: the latest state-chip press is marked again on its card (C145)
   if (mapOn) requestMapRender(model) // 地図は同じモデルから描く (C78)。操作の途中なら描き直しを延ばす
 }
 
@@ -2860,6 +2896,7 @@ function renderMap(model) {
     const body = pane.querySelector('.mappanebody')
     if (body && keepTop) body.scrollTop = keepTop
   }
+  reapplyCardHit(root) // the map was rebuilt: its node of the latest press's Mailbox is marked again (C145)
   ensureRequests(model.edges)
 }
 // 地図の You ノードに「Your move」を出すか (C127)。Needs you が 1 件もなく、表示中のカードに接続しているものがあって、
