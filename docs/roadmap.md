@@ -799,6 +799,7 @@ In the order they will be taken up. Only items without a status line and blocked
 - [-] C81 Tie commits to items and requests with commit trailers (rejected 2026-10-30, item IDs are already in commit subjects, 53 of 193 this month; Hub-Request ids dangle once Messages are deleted, design.md §3.14; nothing reads trailers, as C22 derives "reflected" from the index)
 - [-] C83 Approval levels by reversibility (rejected 2026-10-30, accepting after a silent window is deciding by timeout, against design.md §2; the reversibility split already exists as commit freely / push on the user's word and is a point of C80; recording instead of gating is C80's thesis)
 - [-] C84 A checkpoint claim: a test set passed on a tree, within an envelope (rejected 2026-10-30, no need here as `npm test` takes about 12 s; a claim held by the Hub is knowledge, §3.14, and holding requests on it is orchestration, §2; hashing is solved per project by existing tools; "affected tests while working, the full set before reporting" is a point of C80)
+- [-] C144 `ui:check`'s test Hubs write into the real `logs/hub.log` (rejected 2026-11-11, already done by C158: `ui:check` points `HUB_LOG_FILE` at its own work folder, which was idea （a）)
 
 ## Items
 
@@ -1030,12 +1031,6 @@ Raised 2026-11-06 (cite-bridge C22), from the user's premise that the planning s
 - Read-only, like C108; the card states stay the page's job. Whether `status` should also show the newest `NEEDS DECISION` per item is open.
 
 
-### C144. `ui:check`'s test Hubs write into the real `logs/hub.log`
-Status: proposed
-
-Raised 2026-11-09 by the reviewer of C142 (#322). Every Hub that `ui:check` starts runs from the agent-hub folder, outside Docker, so C143's log appends its start and stop lines (with the token masked) to the same `logs/hub.log` the human reads after an outage. C142 added two more starts per run (`restartHub`).
-- Ideas, not decided: (a) the Hub takes the log path from an environment variable, and `ui:check` (and other test starts) points it into its own work folder; (b) the Hub writes no file when `HUB_DATA_DIR` is not the default; (c) each line names the port, so test lines can be told apart (softens only).
-
 ### C154. Draft a run from the plan in the UI
 Status: held(after C153; decide once runs written by hand show what the draft needs)
 
@@ -1048,3 +1043,22 @@ Status: held(after C153; decide once a real run shows what is hard to find)
 Raised 2026-11-10 with C153. After a run, what waits for the human is spread over the last report (a Message, deleted after the retention period), the items' sections (the defaults taken, the items left open) and `git log` (unpushed commits). The ledger is the place that lasts (design.md §3.16).
 - Idea: the Items list gets a tier, or a mark, for items whose done-when lines are all checked while the section is still there ("worked, waiting for the close"); the index already has the counts (`conditions.done` / `total`). `team status` (C139) could list the same.
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
+
+### C160. Lift the provisional restriction on `meta` in Channels notifications
+Status: proposed
+
+Raised 2026-11-11 from C149's follow-ups. `channelMeta` (`src/shared/format.ts`) puts only the known keys of `files` into a Channels notification's `meta`, because how Claude Code treats `"` `<` `>` `&` in attribute values was unverified (design.md §6.2-4). C149 recorded that Claude Code escapes them itself (§6.1ad), so the reason for the restriction is gone, and its comment still says unverified. Other senders' `meta` (`item`, `forwarded_sender` and so on) still reaches a Channels session only through `inbox()` (`<hub-message>`).
+- To decide: whether to pass every key of `meta` through Channels now, or a list of known keys (including `item`), and whether the values are converted (today: not). Passing more keys changes what a session sees as the sender's attributes (protocol.md §6; bodies and attributes are data, design.md §4), so the shape needs the planning session's word.
+- The comment in `src/shared/format.ts` and the notes in `tools/probe` (`probe.mjs`, `README`) that still call the escaping case unverified would be updated with it.
+
+### C161. Let the restore hook find a Mailbox the way the Event hooks do
+Status: proposed
+
+Raised 2026-11-11 from C129's report. The hook `tools/hooks/session-restore.mjs` finds the Mailbox by the Attachment's `session_id`, then `HUB_MAILBOX`. The Event hooks (`resolveMailbox`, design.md §3.4) also use the session map the Hub has learned and the cwd's folder name. So a session started by hand without `HUB_MAILBOX`, attached under its folder-name Mailbox, gets nothing printed after `/clear` (design.md §3.13 records it). Sessions started by `team` are not affected, and the `open_requests` tool and the instructions still cover the other case.
+- Idea: the Hub resolves it and the hook asks (a new endpoint or a field on `GET /mailboxes`), or the hook sends what the Event hooks send (`X-Hub-Mailbox`, cwd) and the Hub answers with the same text. Not decided; it matters only if sessions are often started by hand.
+
+### C162. Keep the CI actions current
+Status: proposed
+
+Raised 2026-11-11 from C148's runs. The annotations say `actions/checkout@v4` and `actions/setup-node@v4` target Node.js 20, which GitHub now forces onto Node 24, and the `ubuntu-latest` label moves to Ubuntu 26. The runs pass today.
+- To decide: whether to move the actions to their current major versions now, pin `ubuntu-24.04`, or wait for a failure. A change is checked by a run on both systems.
