@@ -9,30 +9,28 @@ import { envSetting } from './env.js'
 type Groups = unknown[]
 export interface Settings { hooks?: Record<string, Groups>; [k: string]: unknown }
 
-const SCRIPT_IN_TEMPLATE = '${CLAUDE_PROJECT_DIR}/tools/hooks/post-event.mjs'
+const PROJECT_HOOKS = '${CLAUDE_PROJECT_DIR}/tools/hooks/'
+
+// Groups added after the first install (C129). A project whose events are all set still lacks them, so the check is per group
+const RESTORE_SCRIPT = 'session-restore.mjs'
 
 // The template with agent-hub's script path and the Hub's port filled in
 export function hookTemplate(root: string, port: string): Settings {
-  const script = `${root.replace(/\\/g, '/')}/tools/hooks/post-event.mjs`
+  const dir = `${root.replace(/\\/g, '/')}/tools/hooks/`
   const text = readFileSync(join(root, 'tools', 'hooks', 'settings.json'), 'utf8')
-    .split(SCRIPT_IN_TEMPLATE).join(script)
+    .split(PROJECT_HOOKS).join(dir)
     .split('127.0.0.1:7777').join(`127.0.0.1:${port}`)
   return JSON.parse(text) as Settings
 }
 
-// A hook group is the Hub's if it posts to /events or /events/<source> (src/hub/app.ts), or runs post-event.mjs
-// (settings.command.json's Stop counts too)
-function isHubGroup(g: unknown): boolean {
+// The kind of a Hub group, judged by what it runs or posts to (the Hub's /events, src/hub/app.ts):
+// restore (session-restore.mjs, the SessionStart group of C129) or capture (post-event.mjs, or an http hook to /events).
+// Not a Hub group: null. settings.command.json's Stop is a capture group too
+export function kindOf(g: unknown): 'restore' | 'capture' | null {
   const s = JSON.stringify(g)
-  return /\/events(\/[^"/]+)?"/.test(s) || s.includes('post-event.mjs')
-}
-
-export function hubEvents(s: Settings): Set<string> {
-  const found = new Set<string>()
-  for (const [ev, groups] of Object.entries(s.hooks ?? {})) {
-    if (Array.isArray(groups) && groups.some(isHubGroup)) found.add(ev)
-  }
-  return found
+  if (s.includes(RESTORE_SCRIPT)) return 'restore'
+  if (s.includes('post-event.mjs') || /\/events(\/[^"/]+)?"/.test(s)) return 'capture'
+  return null
 }
 
 // The three settings files claude reads for a project, in the order it reads them
@@ -40,15 +38,21 @@ export function settingsFiles(projectDir: string, home = homedir()): string[] {
   return [join(projectDir, '.claude', 'settings.local.json'), join(projectDir, '.claude', 'settings.json'), join(home, '.claude', 'settings.json')]
 }
 
+// A template group that is not in the project's files yet
+export interface MissingGroup { event: string; group: unknown }
+
 export interface HookState {
-  events: string[]          // the template's events
-  missing: string[]         // in none of the files
-  unreadable: string[]      // files that exist but are not JSON
-  brokenScripts: string[]   // post-event.mjs paths that do not exist (e.g. a template copied with ${CLAUDE_PROJECT_DIR})
+  events: string[]                 // the template's events
+  missing: string[]                // the events with a group missing (in none of the files, or the added group is not)
+  missingGroups: MissingGroup[]    // the template groups to add (for the missing events; the other groups of a set event are not added)
+  unreadable: string[]             // files that exist but are not JSON
+  brokenScripts: string[]          // hook script paths that do not exist (e.g. a template copied with ${CLAUDE_PROJECT_DIR})
 }
 
 export function hookState(projectDir: string, template: Settings, home = homedir()): HookState {
-  const found = new Set<string>()
+  // Per event, which kinds of Hub group the files hold: a capture group (post-event.mjs, or an http /events hook) and a restore group
+  const capture = new Set<string>()
+  const restore = new Set<string>()
   const unreadable: string[] = []
   const broken = new Set<string>()
   for (const f of settingsFiles(projectDir, home)) {
@@ -60,20 +64,36 @@ export function hookState(projectDir: string, template: Settings, home = homedir
       unreadable.push(f)
       continue
     }
-    for (const ev of hubEvents(s)) found.add(ev)
-    for (const m of JSON.stringify(s.hooks ?? {}).matchAll(/"([^"]*post-event\.mjs)"/g)) {
+    for (const [ev, groups] of Object.entries(s.hooks ?? {})) {
+      if (!Array.isArray(groups)) continue
+      for (const g of groups) {
+        const kind = kindOf(g)
+        if (kind === 'capture') capture.add(ev)
+        if (kind === 'restore') restore.add(ev)
+      }
+    }
+    for (const m of JSON.stringify(s.hooks ?? {}).matchAll(/"([^"]*(?:post-event|session-restore)\.mjs)"/g)) {
       const p = m[1]!.replace(/\\\\/g, '\\').replace('${CLAUDE_PROJECT_DIR}', projectDir)
       if (!existsSync(p)) broken.add(m[1]!)
     }
   }
   const events = Object.keys(template.hooks ?? {})
-  return { events, missing: events.filter((e) => !found.has(e)), unreadable, brokenScripts: [...broken] }
+  const missingGroups: MissingGroup[] = []
+  for (const ev of events) {
+    for (const group of template.hooks?.[ev] ?? []) {
+      // Each template group is judged by its own kind: the restore group by a restore group, every other by a capture group
+      const present = kindOf(group) === 'restore' ? restore.has(ev) : capture.has(ev)
+      if (!present) missingGroups.push({ event: ev, group })
+    }
+  }
+  const lacking = new Set(missingGroups.map((m) => m.event))
+  return { events, missing: events.filter((e) => lacking.has(e)), missingGroups, unreadable, brokenScripts: [...broken] }
 }
 
-// Add the template's groups for the missing events; everything already there is kept as it is
-export function mergeHooks(existing: Settings, template: Settings, missing: string[]): Settings {
+// Add the given template groups; everything already there is kept as it is
+export function mergeHooks(existing: Settings, missing: MissingGroup[]): Settings {
   const hooks: Record<string, Groups> = { ...(existing.hooks ?? {}) }
-  for (const ev of missing) hooks[ev] = [...(hooks[ev] ?? []), ...(template.hooks?.[ev] ?? [])]
+  for (const { event, group } of missing) hooks[event] = [...(hooks[event] ?? []), group]
   return { ...existing, hooks }
 }
 
@@ -92,7 +112,7 @@ export function runHooks(projectDir: string, root: string, write: boolean, home 
   const local = settingsFiles(projectDir, home)[0]!
   if (!write) {
     console.log(`To add them to ${local}, run again with --write. The hooks to add:`)
-    console.log(JSON.stringify({ hooks: mergeHooks({}, template, st.missing).hooks }, null, 2))
+    console.log(JSON.stringify({ hooks: mergeHooks({}, st.missingGroups).hooks }, null, 2))
     return 1
   }
   const w = writeMissingHooks(projectDir, root, home)
@@ -123,7 +143,7 @@ export function writeMissingHooks(projectDir: string, root: string, home = homed
       copyFileSync(local, `${local}.bak`)
     }
     mkdirSync(join(projectDir, '.claude'), { recursive: true })
-    writeFileSync(local, `${JSON.stringify(mergeHooks(existing, template, st.missing), null, 2)}\n`)
+    writeFileSync(local, `${JSON.stringify(mergeHooks(existing, st.missingGroups), null, 2)}\n`)
     return { kind: 'added', local, backup: had ? `${local}.bak` : null, missing: st.missing }
   } catch (e) {
     return { kind: 'failed', local, reason: `could not write ${local}: ${e instanceof Error ? e.message : String(e)}` }

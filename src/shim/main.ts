@@ -19,6 +19,7 @@ import { SHIM_TOOLS } from './tools.js'
 import { resolveFiles, sweepFiles } from './files.js'
 import { HubClient } from './hub-client.js'
 import { fetchInbox } from './inbox.js'
+import { messageLookup, openRequestsText } from '../shared/open-requests.js'
 
 const log = (msg: string) => process.stderr.write(`[agent-hub shim] ${msg}\n`)
 
@@ -108,6 +109,9 @@ const inboxArgs = z.object({
 
 const text = (v: unknown): CallToolResult => ({ content: [{ type: 'text', text: typeof v === 'string' ? v : JSON.stringify(v, null, 2) }] })
 
+// The message of a listed request: found, missing (gone) or failed (the read did not work). The shared lookup over GET /messages?after (read-only)
+const lookupMessage = messageLookup((path) => hub.request<unknown>('GET', path))
+
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: SHIM_TOOLS }))
 
 // 切り離された shim は attach し直さない。「新しい方を閉じればこちらが戻る」とモデルが案内したので (2026-10-19、C21)、
@@ -167,6 +171,15 @@ server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolRes
       }
       case 'inbox':
         return text(await fetchInbox(hub, cfg.mailbox, inboxArgs.parse(args), fileCtx, log))
+      case 'open_requests': {
+        // Read-only (C129): GET /mailboxes for the backlog, and GET /messages?after for each listed request's item. The cursor and
+        // the unread messages are not touched (inbox does that; this does not)
+        const r = await hub.request<{ mailboxes: (Mailbox & { backlog?: unknown })[] }>('GET', '/mailboxes')
+        const mb = r.mailboxes.find((x) => x.name === cfg.mailbox)
+        if (!mb) return text(`Mailbox ${cfg.mailbox} is not on the Hub (it is not attached).`)
+        const out = await openRequestsText(mb, lookupMessage)
+        return text(out || 'Nothing is open: no request of yours owes a reply, and you await none.')
+      }
       case 'whoami': {
         let mailbox: (Mailbox & { effectiveSubscriptions: string[]; unread: number }) | undefined
         try {

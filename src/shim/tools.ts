@@ -49,6 +49,13 @@ export const SHIM_TOOLS = [
     },
   },
   {
+    name: 'open_requests',
+    description:
+      'List the requests still open in your Mailbox: the ones you owe a reply to, and the ones you sent and still await a reply to. One line per request, with its id, seq, the other side and meta.item; no bodies. ' +
+      'Read-only: it does not change what is unread or your cursor. Call it at the start of a session, and whenever you do not know what you are waiting on (for example after the context was compacted or cleared).',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
     name: 'whoami',
     description: 'Returns your Mailbox name, role, connection state and subscriptions in agent-hub',
     inputSchema: { type: 'object', properties: {} },

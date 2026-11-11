@@ -136,7 +136,7 @@ describe('shim と Hub の結合', () => {
     assert.deepEqual(client.getServerCapabilities()?.experimental, { 'claude/channel': {} })
     assert.match(client.getInstructions() ?? '', /test-mb/)
     const { tools } = await client.listTools()
-    assert.deepEqual(tools.map((t) => t.name).sort(), ['inbox', 'post_message', 'subscribe', 'unsubscribe', 'whoami'])
+    assert.deepEqual(tools.map((t) => t.name).sort(), ['inbox', 'open_requests', 'post_message', 'subscribe', 'unsubscribe', 'whoami'])
     for (const t of tools) assert.equal(t._meta?.['anthropic/alwaysLoad'], true)
   })
 
@@ -298,6 +298,31 @@ describe('shim と Hub の結合', () => {
     const request = await call('post_message', { kind: 'request', body: 'new', to: 'topic:nobody', item: 'C9' })
     assert.equal(request.isError, false, request.text)
     assert.deepEqual(hub.store.listMessages().at(-1)!.meta, { item: { id: 'C9', project, source: null, promise: null } })
+  })
+
+  it('open_requests lists the requests this Mailbox owes a reply to, and changes neither the cursor nor the unread messages (C129)', async () => {
+    const q = hub.postMessage(
+      { kind: 'request', to: { type: 'mailbox', id: 'test-mb' }, body: 'GOAL: check open_requests', meta: { item: { id: 'C129', project: ROOT, source: null, promise: null } } },
+      { type: 'user', id: 'browser', role: null },
+    )
+    await until(() => notifications.find((x) => x.meta.id === q.id))
+    await until(() => hub.store.getMailbox('test-mb')!.cursor === q.seq)
+    const mb = () => hub.describeMailboxes().find((m) => m.name === 'test-mb')!
+    const before = mb()
+    const cursorBefore = hub.store.getMailbox('test-mb')!.cursor
+    const first = await call('open_requests')
+    const second = await call('open_requests')
+    const after = mb()
+    assert.equal(first.isError, false, first.text)
+    assert.equal(first.text, second.text)
+    // The text reports the Hub's own count and oldest seq (the Hub lists only the oldest owed request by number)
+    const owed = before.backlog.awaitingReply
+    assert.ok(owed.count >= 1)
+    assert.match(first.text, new RegExp(`owes a reply: #${owed.oldestSeq} from `))
+    if (owed.count > 1) assert.match(first.text, new RegExp(`owes a reply to ${owed.count - 1} more request`))
+    assert.equal(hub.store.getMailbox('test-mb')!.cursor, cursorBefore)
+    assert.equal(after.unread, before.unread)
+    assert.deepEqual(after.backlog, before.backlog)
   })
 
   it('shim が終了すると (kill でも) detach し、Mailbox は残る', async () => {

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { claudeArgs } from './agent.js'
 import { claudeCommand, hookWarning, spawnArgs } from './checks.js'
-import { hookTemplate, runHooks } from './hooks.js'
+import { hookState, hookTemplate, runHooks, writeMissingHooks } from './hooks.js'
 import { envSetting, hubRolesFile, ROOT } from './env.js'
 import { parse } from './options.js'
 import { commandLine, quoteForPlatform } from './quote.js'
@@ -147,6 +147,46 @@ test('hooks: the template points at agent-hub by absolute path, and --write adds
   } finally {
     console.log = log
   }
+})
+
+test('hooks: a project set before the session-restore group existed gets only that group, not a second post-event group (C129)', () => {
+  const home = tmp()
+  const project = tmp()
+  mkdirSync(join(project, '.claude'))
+  const local = join(project, '.claude', 'settings.local.json')
+  // what an install from before C129 wrote: every event, with SessionStart holding the post-event group only
+  const old = hookTemplate(ROOT, '7777')
+  old.hooks!.SessionStart = [old.hooks!.SessionStart![0]!]
+  writeFileSync(local, JSON.stringify(old))
+  const st = hookState(project, hookTemplate(ROOT, '7777'), home)
+  assert.deepEqual(st.missing, ['SessionStart'])
+  assert.equal(st.missingGroups.length, 1)
+  assert.match(JSON.stringify(st.missingGroups[0]!.group), /session-restore\.mjs/)
+  assert.equal(writeMissingHooks(project, ROOT, home).kind, 'added')
+  const after = JSON.parse(readFileSync(local, 'utf8')) as { hooks: { SessionStart: unknown[] } }
+  assert.equal(after.hooks.SessionStart.length, 2)
+  assert.equal(hookState(project, hookTemplate(ROOT, '7777'), home).missing.length, 0)
+  assert.equal(writeMissingHooks(project, ROOT, home).kind, 'set')
+})
+
+// Finding 4: each template group is judged by its own script, so a restore-only SessionStart does not count as the post-event group
+test('hooks: a SessionStart with only the session-restore group reports the post-event group missing, and --write adds it (C129)', () => {
+  const home = tmp()
+  const project = tmp()
+  mkdirSync(join(project, '.claude'))
+  const local = join(project, '.claude', 'settings.local.json')
+  const only = hookTemplate(ROOT, '7777')
+  only.hooks!.SessionStart = [only.hooks!.SessionStart![1]!] // the session-restore group alone
+  writeFileSync(local, JSON.stringify(only))
+  const st = hookState(project, hookTemplate(ROOT, '7777'), home)
+  assert.deepEqual(st.missing, ['SessionStart'])
+  assert.equal(st.missingGroups.length, 1)
+  assert.match(JSON.stringify(st.missingGroups[0]!.group), /post-event\.mjs/)
+  assert.doesNotMatch(JSON.stringify(st.missingGroups[0]!.group), /session-restore/)
+  assert.equal(writeMissingHooks(project, ROOT, home).kind, 'added')
+  const after = JSON.parse(readFileSync(local, 'utf8')) as { hooks: { SessionStart: unknown[] } }
+  assert.equal(after.hooks.SessionStart.length, 2)
+  assert.equal(hookState(project, hookTemplate(ROOT, '7777'), home).missing.length, 0)
 })
 
 test('wt: an argument with ; is refused because wt would split the command there', () => {
