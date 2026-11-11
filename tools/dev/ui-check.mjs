@@ -790,6 +790,68 @@ try {
   await sleep(300)
   const draft = await evaluate("({ open: $('itemDialog').open, body: $('body').value })")
   verify('モーダル: 「依頼の下書き」はカードを押したときと同じ下書きを入れ、モーダルを閉じる (C54)', !draft.open && draft.body.startsWith('GOAL: C1 一つ目') && draft.body.includes('DONE WHEN:') && draft.body.includes('- 一つ目'), draft)
+  // When the index was sent (C138): the item header, the item dialog and the Draft request show the Hub's updatedAt (GET /indexes)
+  const sentIndex = (await api('GET', '/indexes')).indexes.find((x) => x.project === cwd && x.source === 'docs/roadmap.md')
+  const sentWant = await evaluate(`indexSentText(${JSON.stringify(sentIndex.updatedAt)})`)
+  const sentHeaders = await evaluate(`[...document.querySelectorAll('#items .itemhead')].filter((h) => h.textContent.includes('docs/roadmap.md')).map((h) => (h.querySelector('.sent') || {}).textContent || null)`)
+  await evaluate("$('body').value = ''")
+  await clickCard('C1')
+  await sleep(300)
+  const sentModal = await evaluate("($('itemMeta').querySelector('.sent') || {}).textContent || null")
+  await evaluate("$('itemDraft').click()")
+  await sleep(300)
+  const sentDraft = await evaluate("$('body').value")
+  const oldDate = await evaluate("indexSentText('2001-02-03T04:05:00.000Z')")
+  const noTime = await evaluate("[indexSentText(undefined), indexSentText(null), indexSentText('not a date')].join('|')")
+  verify('Index sent time (C138): the Items header, the item modal and the draft end show the Hub\'s updatedAt as a time',
+    sentWant.startsWith('index sent ') && sentHeaders.includes(sentWant) && sentModal === sentWant && sentDraft.endsWith(`\n\n${sentWant}`) && sentDraft.startsWith('GOAL: C1 一つ目'),
+    { sentWant, sentHeaders, sentModal, sentDraftTail: sentDraft.slice(-60) })
+  verify('Index sent time (C138): another day adds the date; a missing or invalid updatedAt shows nothing and does not throw',
+    oldDate.startsWith('index sent ') && oldDate.length > sentWant.length && noTime === '||', { oldDate, noTime })
+  await evaluate("$('body').value = ''")
+
+  // The item modal follows its index (C138): on an index change it shows the new content and time together; a vanished item is said so, with no draft.
+  // A separate project keeps the scenes above unchanged; the project filter is restored at the end
+  const liveFilterBefore = await evaluate('FILTER.project')
+  const liveWork = join(work, 'live')
+  const liveItems = (second) => [
+    itemOf('C901', second ? 'second wording' : 'first wording', 'decided', { conditionTexts: [second ? 'new line' : 'first line'], conditions: { done: 0, total: 1 }, line: 1 }),
+    itemOf('C902', 'second item', 'decided', { conditionTexts: ['other line'], conditions: { done: 0, total: 1 }, line: 2 }),
+  ]
+  await sendIndex(liveWork, 'docs/live.md', { items: liveItems(false) })
+  await sleep(1200)
+  await evaluate("chooseProject('')")
+  await sleep(300)
+  await clickCard('C901')
+  await sleep(300)
+  const modalBefore = await modalState()
+  await sendIndex(liveWork, 'docs/live.md', { items: liveItems(true) })
+  await sleep(1500)
+  const modalAfter = await modalState()
+  const liveIndex = (await api('GET', '/indexes')).indexes.find((x) => x.project === liveWork && x.source === 'docs/live.md')
+  const modalSent = await evaluate("($('itemMeta').querySelector('.sent') || {}).textContent || null")
+  const liveWant = await evaluate(`indexSentText(${JSON.stringify(liveIndex.updatedAt)})`)
+  verify('Index change while the item modal is open: the new content and the new time show together, with no old wording (C138)',
+    modalBefore.title === 'C901. first wording' && modalAfter.open && modalAfter.title === 'C901. second wording' &&
+      JSON.stringify(modalAfter.conds) === JSON.stringify(['new line']) && modalSent === liveWant,
+    { modalBefore, modalAfter, modalSent, liveWant })
+  // The item vanishes from the index: the modal says so, and the draft button is hidden
+  await sendIndex(liveWork, 'docs/live.md', { items: [liveItems(true)[1]] })
+  await sleep(1500)
+  const vanished = await evaluate("({ open: $('itemDialog').open, title: $('itemTitle').textContent, draftHidden: $('itemDraft').hidden, meta: $('itemMeta').textContent })")
+  verify('An item that vanished from the index while its modal is open: the modal says so and offers no draft (C138)',
+    vanished.open && vanished.title.includes('not in the index any more') && vanished.draftHidden === true && vanished.meta.includes('no longer in the index'), vanished)
+  await evaluate("$('itemClose').click()")
+  // Day change (C138): the "index sent" times are refreshed by the 30 s interval, so the date appears without a reload
+  const headerSent = await evaluate("(() => { const n = document.querySelector('#items .itemhead .sent'); return n ? { text: n.textContent, updated: n.dataset.updated } : null })()")
+  const yesterday = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+  const sameDayText = await evaluate(`indexSentText(${JSON.stringify(new Date().toISOString())})`)
+  const dayChanged = headerSent && await evaluate(`(() => { const n = document.querySelector('#items .itemhead .sent'); n.dataset.updated = ${JSON.stringify(yesterday)}; refreshSentTimes(); const t = n.textContent; n.dataset.updated = ${JSON.stringify(headerSent.updated)}; refreshSentTimes(); return t })()`)
+  verify('The header\'s index sent time gets the date when the day changes, without a reload (C138)',
+    !!headerSent && dayChanged === (await evaluate(`indexSentText(${JSON.stringify(yesterday)})`)) && dayChanged.length > sameDayText.length,
+    { headerSent, dayChanged, sameDayText })
+  await evaluate(`chooseProject(${JSON.stringify(liveFilterBefore)})`)
+
   // 組み込みコマンドで始まる本文は、実行されないと知らせる。似た名前や // の逃がしには出さない (C13)
   const hintOf = (text) => evaluate(`(() => { $('body').value = ${JSON.stringify(text)}; updateHint(); return $('hint').textContent })()`)
   const builtinHint = await hintOf('/clear')

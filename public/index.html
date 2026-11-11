@@ -2229,6 +2229,7 @@ function renderBacklog(model = teamModel()) {
   if (you !== tabWaiting || stopped !== tabStopped || working !== tabWorking) { tabWaiting = you; tabStopped = stopped; tabWorking = working; showTabUnread() }
 }
 setInterval(() => {
+  refreshSentTimes() // the "index sent" times follow the clock, so the date appears when the day changes (C138)
   document.querySelectorAll('.bl').forEach(paintChip)
   document.querySelectorAll('.mb .state').forEach(paintState)
   const expired = [...document.querySelectorAll('.mb .state[data-until]')].some((l) => Date.now() >= Number(l.dataset.until))
@@ -2279,6 +2280,7 @@ async function loadIndexes() {
   }
   indexesSettled = true
   refreshProjects()
+  refreshItemDialog()
 }
 // 索引のプロジェクトはプロジェクトの一覧に入る。選択が変わったら (前回の選択が戻った・外したプロジェクトだった) 絞り込みを掛け直す
 function refreshProjects() {
@@ -2359,6 +2361,21 @@ function noIndexHint(path) {
   box.append(el('code', '', `npm run docs:index -- --project ${arg}`))
   return box
 }
+// When the index was sent (its updatedAt from GET /indexes, set by the Hub when the index arrived), read at a glance:
+// the time, with the date when it is not today. Empty when there is no such time (an old Hub, a value that is not a date),
+// and then nothing is shown. The Hub reads no file; the ledger may have changed since (npm run docs:index sends it again)
+function indexSentText(updatedAt) {
+  const d = typeof updatedAt === 'string' || typeof updatedAt === 'number' ? new Date(updatedAt) : null
+  if (!d || Number.isNaN(d.getTime())) return ''
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const sameDay = d.toDateString() === new Date().toDateString()
+  return `index sent ${sameDay ? '' : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} `}${time}`
+}
+// The index of a project and source as it is now (an index that changed over SSE is read again), or null if it was removed
+function currentIndex(ix) {
+  return indexList.find((x) => x.project === ix.project && x.source === ix.source) || null
+}
+
 function renderItems() {
   const root = $('items')
   root.textContent = ''
@@ -2372,6 +2389,8 @@ function renderItems() {
   for (const ix of shown) {
     const h = el('div', 'itemhead', FILTER.project ? ix.source : `${folderName(ix.project)} · ${ix.source}`)
     h.title = `${ix.project}\nSent ${new Date(ix.updatedAt).toLocaleString()}. Run npm run docs:index again after editing the file.`
+    const sent = sentNode('span', 'sent', ix.updatedAt)
+    if (sent) h.append(' ', sent)
     const rm = el('button', 'linkbtn', 'Remove')
     rm.type = 'button'
     rm.title = 'Remove this file from Items (the file itself is not touched)'
@@ -2454,9 +2473,35 @@ function editorUrl(project, source, line) {
   return `vscode://file/${enc.join('/')}:${line}`
 }
 
+// An "index sent" time as an element. Its updatedAt is kept, so refreshSentTimes can read the clock again. Null when there is no time
+function sentNode(tag, cls, updatedAt) {
+  const text = indexSentText(updatedAt)
+  if (!text) return null
+  const n = el(tag, cls, text)
+  n.dataset.updated = String(updatedAt)
+  return n
+}
+// The times read the clock as well: the date appears when the day changes. The 30 s interval refreshes them
+function refreshSentTimes() {
+  for (const n of document.querySelectorAll('.sent[data-updated]')) n.textContent = indexSentText(n.dataset.updated)
+}
+
+// The item dialog (C54, C138). It shows one item of one index, filled from the index as it is now, so the content and the
+// "index sent" line come from the same index. When the index changes while it is open (index.updated, a reconnect), the dialog is
+// filled again from the new index. If the item or the index is gone, the dialog says so and offers no draft
+let itemDialogOpen = null // { project, source, id } of the item the dialog shows, while it is open
+$('itemDialog').addEventListener('close', () => { itemDialogOpen = null })
+
 // カードを押すと開く中身 (C54)。ID・題・状態と理由・完了条件の 1 行ずつ・依頼の状態・約束の差分を出す。本文は索引に無く、出さない。
 // 下書きは、今までカードを押したときの動き (draftFromItem) をそのまま使う
 function openItemDialog(ix, item) {
+  itemDialogOpen = { project: ix.project, source: ix.source, id: item.id }
+  fillItemDialog(ix, item)
+  if (!$('itemDialog').open) $('itemDialog').showModal()
+}
+
+// Fills the dialog with one item of one index, the time line included
+function fillItemDialog(ix, item) {
   const dlg = $('itemDialog')
   const { latest, replied } = itemRequests()
   const req = latest.get(itemKey(ix.project, item.id))
@@ -2466,6 +2511,8 @@ function openItemDialog(ix, item) {
   meta.append(el('div', null, `Status: ${ITEM_STATUS[item.status] || item.status}`))
   if (item.statusReason) meta.append(el('div', null, `Reason: ${item.statusReason}`))
   meta.append(el('div', null, `${folderName(ix.project)} · ${ix.source}:${item.line}`))
+  const sent = sentNode('div', 'sent', ix.updatedAt)
+  if (sent) meta.append(sent)
   const conds = $('itemConds')
   conds.textContent = ''
   if (item.conditions) conds.append(el('div', 'progress', `${item.conditions.done}/${item.conditions.total} done`))
@@ -2490,13 +2537,46 @@ function openItemDialog(ix, item) {
   if (url) a.setAttribute('href', url)
   else a.removeAttribute('href')
   a.hidden = !url
+  // The draft comes from the index and item shown here, with the time of that same index
+  $('itemDraft').hidden = false
   $('itemDraft').onclick = () => {
     dlg.close()
     draftFromItem(ix, item)
   }
   $('itemClose').onclick = () => dlg.close()
-  if (!dlg.open) dlg.showModal()
 }
+
+// The open dialog shows the index as it is now. The scroll position is kept
+function refreshItemDialog() {
+  if (!itemDialogOpen || !$('itemDialog').open) return
+  const { project, source, id } = itemDialogOpen
+  const ix = currentIndex({ project, source })
+  const item = ix ? ix.items.find((x) => x.id === id) : null
+  const dlg = $('itemDialog')
+  const top = dlg.scrollTop
+  if (ix && item) fillItemDialog(ix, item)
+  else showItemGone(ix, id)
+  dlg.scrollTop = top
+}
+
+// The item or its index is no longer there: say so, and offer no draft (there is nothing current to draft from)
+function showItemGone(ix, id) {
+  $('itemTitle').textContent = `${id} (not in the index any more)`
+  const meta = $('itemMeta')
+  meta.textContent = ''
+  meta.append(el('div', null, ix ? 'This item is no longer in the index. Close this dialog and open the item again from the list.' : 'The index was removed. Close this dialog.'))
+  const sent = ix ? sentNode('div', 'sent', ix.updatedAt) : null
+  if (sent) meta.append(sent)
+  $('itemConds').textContent = ''
+  $('itemReq').textContent = ''
+  $('itemDiff').hidden = true
+  $('itemEditor').removeAttribute('href')
+  $('itemEditor').hidden = true
+  $('itemDraft').hidden = true
+  $('itemDraft').onclick = null
+  $('itemClose').onclick = () => $('itemDialog').close()
+}
+
 
 // サイドバーの幅 (C54)。つまみで変え、幅はブラウザに覚える。読み書きが失敗したり、保存された値が範囲外・数でなければ既定の幅
 const SIDE_KEY = 'agent-hub.sidebar'
@@ -2560,6 +2640,9 @@ function draftFromItem(ix, item) {
   setKind('request')
   const done = (item.conditionTexts || []).map((t) => `- ${t}`)
   body.value = [`GOAL: ${item.id} ${item.title} (${ix.source})`, 'DONE WHEN:', ...(done.length ? done : ['-'])].join('\n')
+  // One line after the copied text: which index the copy came from, so the leader can see its age (C138). Nothing if the index has no time
+  const sent = indexSentText(ix.updatedAt)
+  if (sent) body.value += `\n\n${sent}`
   draftItem = { id: item.id, project: ix.project, source: ix.source, promise: item.promise, conditions: item.conditionTexts || [] }
   // meta の上限 (8 KB) に収める。文言を外すと差分は出せないが、変わったことは指紋で分かる
   if (new TextEncoder().encode(JSON.stringify(draftItem)).length > 6000) delete draftItem.conditions

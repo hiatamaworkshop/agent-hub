@@ -33,6 +33,8 @@ A document map, in the shape both roles read:
 
 Check the ledger from the project's root with `npm --prefix <agent-hub> run docs:check -- docs/items.md` (a relative path is read from the folder you are in, as `docs:index` reads `--file`).
 
+After editing the ledger without a commit, run `npm --prefix <agent-hub> run docs:index` from the project's root. The Hub gets the index only at a team start and at a commit that changes the ledger, so until you run it, Items and the item drafts show the old wording. Each index's header shows "index sent <time>" (the time the Hub received it) so you can see how old it is ([usage.md, Items](usage.md#request-work-from-roadmap-items-items)).
+
 A project whose ledger has its own format (states in headings, no done-when lists) is read as all "decided". There are two ways to deal with it, and the index needs the first:
 
 - **Convert it** to the format of section 3. The walk-through on ad_masker (2026-11-03) needed these changes, and `docs:check` reports each one as an error: a `## 予定` (or `## Plan`) heading listing the decided items; a status line only in the allowed words (`状態: 提案 | 保留(再開の条件) | ブロック(C<n> の後)`, or the English `Status:` form). `進行中` (in progress) is not one of them: progress is the checked boxes in the done-when list. Each closed line `- [x] C<n> … (YYYY-MM-DD, …)` needs its date, so undated history was moved to a separate file that is not the ledger. Name the ledger in `.agent-hub.json`.

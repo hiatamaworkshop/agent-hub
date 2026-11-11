@@ -25,7 +25,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C129
-- [ ] C138
 - [ ] C131
 - [ ] C145
 
@@ -607,6 +606,14 @@ In the order they will be taken up. Only items without a status line and blocked
   - Not checked: the page in a real browser beyond the `ui:check` scenes; degraded mode's layer counts and Needs-you badges (they read 0, since the placeholders are inert); the 404 variant of the missing module (the CSP-block variant was run).
   - Reviewer notes, for the planning session: the map's edges repeat `humanTurnOf`'s waiting-Event rule inline (`public/index.html` around lines 1627 and 1992-1993), so a rule change in the module would not reach them; `src/team/status.ts:3` still says the state is made by `cardState` in `public/index.html`; whether "records the reason ... before the change" meant an earlier commit (the reason is written in the same change).
   - Needs the user: the Hub on 7777 started before this change and must be restarted for the new route and CSP (until then the page runs degraded); a compose image needs a rebuild.
+- [x] C138 The item card and the draft show when the index was sent (2026-11-11, closed after the review)
+  - Decided 2026-11-11 in the planning session: (c) goes into this repository's docs, so an adopter reads it too. (a) is done as far as the Hub's own facts go, since the Hub does not read the working tree (design.md §3.8): the time the index was sent is shown. (b) and (d) are not part of this item.
+  - Changed: `public/index.html` (`indexSentText`: "index sent 12:34", with the date on another day, and empty without a time; shown in each index's Items header, in the item modal, and as the draft's last line; the open modal refilled from the index as it is now, and an item or index that vanished is said so, with no draft; the header time refreshed by the 30 s interval); `tools/dev/ui-check.mjs` (5 new checks); `docs/usage.md` and `docs/project-setup.md` (after editing the ledger without a commit, run `npm run docs:index`: `npm run docs:index` in agent-hub's folder, `npm --prefix <agent-hub> run docs:index` from a project's root, `-- --project <folder>` from anywhere else; the reason: the index reaches the Hub only at a team start and at a commit that changes the ledger); `docs/design.md` §3.15.
+  - Checked: `npm test` 681 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 0 errors; `npm run ui:check` 207 ok, 0 NG. The review found two defects, both fixed with checks: the open modal showed old content under the new time, and the header time did not gain its date overnight. Done-when wording not changed.
+  - Not checked: the live SSE re-render in a real browser; the new checks were not run against the pre-fix page; the look of the time line in a narrow sidebar.
+  - The index time is the Hub's receive time (`updatedAt`), not the ledger's mtime.
+  - Reviewer notes, for what follows: the time is shown on each index's header and in the modal the card opens, not on the card itself; the draft's last line falls inside the DONE WHEN section as the page renders it, and has no date on the same day; the Items header title still says "Sent Invalid Date" for an old Hub (as before).
+  - Incident, 2026-11-11: while checking a flag, the deployer ran `npm run docs:index -- --help` (no `--help` handling), which replaced the live Hub's agent-hub index with the working-tree ledger. The committed ledger returns with the next commit that touches it (the post-commit hook); no ledger data was lost.
 - [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
   - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
   - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
@@ -1036,20 +1043,6 @@ Raised 2026-11-06 in the planning session, from mcp_agent_mail's paste-in block 
 - Not tied to one vendor (design.md §3.7): the planning agent is not always Claude Code. The block is plain text with plain shell commands, without one vendor's tool names, skills or file conventions. Which file it goes in (`AGENTS.md`, `CLAUDE.md` and so on) is the adopter's choice; the guide names the common ones without preferring one.
 - To decide: whether the block goes in the project's file (committed and read by collaborators who may not use agent-hub, while agent-hub's path differs per machine), in the user's own instructions, or split between them; whether project-setup.md §7's readiness check looks for it.
 - After C136: the conventions its table finds not reaching other projects are the candidates for what the block points at.
-
-### C138. Do not let an item card draft a request from an index older than the ledger
-
-Raised 2026-11-06 (cite-bridge C22). The planning session fixed C22's done-when wording in the working tree without committing. The index reaches the Hub only at the team start and after a commit that touches the ledger (post-commit hook), so the item card still showed the old wording, and the user sent it again. The leader read the request against the code, not against the ledger file, and stopped with the same question as before (#1010, #1013). The fix was a manual `npm run docs:index` from the project.
-- Ideas, not decided: (a) the card or the draft says when the ledger file changed after the index was sent (file mtime or hash beside the index); (b) the Hub or the team re-sends the index when the ledger file changes (a file watch while the team runs); (c) the planning-session guidance (C137's block) says to run `docs:index` after editing the ledger without a commit; (d) the leader compares a request's DONE WHEN with the ledger's current text and, when they differ, says the request came from an old index instead of re-asking the decision.
-- (a) or (b) removes the cause; (c) and (d) only soften it. (d) also matters on its own: the ledger is the source, and a request is a copy of it.
-- Recurred 2026-11-09 (arb-sentinel C12). The planning session reworded and unchecked done-when lines in the working tree (an addendum after 429s in production); the card still showed the team-start index (`0/4 done`, the old line number) until a manual `docs:index`. That project had no post-commit hook, but the hook would not have helped: the edit was not committed. The `roadmap-items` skill now says to run `docs:index` after editing a ledger ((c), on this machine only).
-- Decided 2026-11-11 in the planning session (the user accepted the recommendation, with one change made here): (c) goes into this repository's docs, so an adopter reads it too. (a) cannot compare with the ledger file, because the Hub does not read the working tree (design.md §3.8); it is done as far as the Hub's own facts go: the item card and the draft show when the index was sent (`updatedAt` in `GET /indexes`), so a human who just edited the ledger can see that the card is older. (b), a file watch while the team runs, is not part of this item. (d), the leader comparing a request's DONE WHEN with the ledger, stays a separate idea (it would be a change to the leader's instructions).
-
-#### Done when
-- [ ] The item card and the draft request show when the index was sent (the index's `updatedAt`), in a form a human reads at a glance (for example "index sent 12:34"). The Hub reads no file.
-- [ ] docs/project-setup.md and docs/usage.md say to run `npm run docs:index` after editing the ledger without a commit, with the command, and why (the index reaches the Hub only at team start and at a commit that touches the ledger).
-- [ ] A `ui:check` scene covers the shown time.
-- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
 
 ### C139. Let `status` show what is happening per item, for the planning session
 Status: proposed
