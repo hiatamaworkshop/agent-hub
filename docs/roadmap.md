@@ -24,6 +24,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C164
 
 (Items with a status line are listed under "Items".)
 
@@ -1060,3 +1061,18 @@ Status: proposed
 
 Raised 2026-11-11 from C129's report. The hook `tools/hooks/session-restore.mjs` finds the Mailbox by the Attachment's `session_id`, then `HUB_MAILBOX`. The Event hooks (`resolveMailbox`, design.md §3.4) also use the session map the Hub has learned and the cwd's folder name. So a session started by hand without `HUB_MAILBOX`, attached under its folder-name Mailbox, gets nothing printed after `/clear` (design.md §3.13 records it). Sessions started by `team` are not affected, and the `open_requests` tool and the instructions still cover the other case.
 - Idea: the Hub resolves it and the hook asks (a new endpoint or a field on `GET /mailboxes`), or the hook sends what the Event hooks send (`X-Hub-Mailbox`, cwd) and the Hub answers with the same text. Not decided; it matters only if sessions are often started by hand.
+
+### C164. Check `reports --follow` live where C135 checked it only against a fake Hub
+
+Raised 2026-11-12 in the planning session, after C135's close (the user asked for a plan to check that the Monitor reader behaves well). Decided the same day (the user accepted the draft). C135 showed the push path to a planning session, `--since` and the framing on the Hub on 7777 (design.md §6.1ag). Its report left these unchecked live: a stream drop and the catch-up after it, a Hub restart, `--json`, and the control-character escapes in a real terminal.
+- A gap seen in the planning session's own run: Claude Code's Monitor stops a watch after at most 30 minutes, and without `--since` the reader prints the whole history first, which floods a session with notifications. usage.md says neither. A planning session that re-arms needs the last seq it saw.
+- The reader writes its "reconnecting after #<seq>" line to stderr; under Monitor it reaches the session only when stderr is merged (`2>&1`).
+- Runs use a scratch Hub on its own port, data dir and token, as §6.1ag did, so a restart does not disturb a running team on 7777.
+
+#### Done when
+- [ ] On a scratch Hub, with a reader following it under Monitor: the Hub is stopped and started again with the same data dir; the reader says it is reconnecting, and after the restart prints the next report once, with no earlier report printed again. A report posted while the reader is reconnecting is printed once.
+- [ ] `--json` on the scratch Hub: each report is one line that `JSON.parse` reads, equal to the Message `GET /messages` returns.
+- [ ] A report whose body holds ESC, a bare CR and a line shaped like a header shows in a Monitor notification and in Windows Terminal with the control characters escaped and no forged header.
+- [ ] Re-arming after Monitor's expiry: a report sent while no reader runs is printed once when the reader is started again with `--since <last seq seen>`. docs/usage.md says to re-arm this way and not to start a Monitor reader without `--since`, and that `2>&1` brings the reconnect lines into the session.
+- [ ] The results are recorded in design.md §6 (a new entry, or §6.1ag's "not checked" list updated). Something that does not behave as written is recorded and reported, not fixed in this item.
+- [ ] The Hub on 7777 is not stopped or written by the runs. `npm run docs:check` passes.
