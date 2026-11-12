@@ -2,7 +2,7 @@
 //   team   [--roles a,b] [--project <dir>] [--attach-timeout <sec>] [--force] [--no-build] [--no-hooks] [--permission-mode <m>] [--tabs <opener>]
 //   agent  --role <r> [--project <dir>] [--model <m>] [--mailbox <name>] [--permission-mode <m>]
 //   hooks  [--project <dir>] [--write]   (the Hub's hook settings for the project; C69)
-//   status [--project <dir>]   (the project's Mailboxes on the Hub and its latest report to the human; C108)
+//   status [--project <dir>] [--item C<n>]   (the project's Mailboxes on the Hub and its latest report to the human; C108. --item: that item's thread, C139)
 //   hub    (what the Hub's tab runs)
 import { spawn } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
@@ -51,7 +51,7 @@ async function main(argv: string[]): Promise<number> {
   if (p.command === 'hub') return runHub()
   if (p.command === 'hooks') return runHooks(projectDir(p.project), ROOT, p.write)
   if (p.command === 'git-hook') return runGitHook(projectDir(p.project), ROOT, p.write)
-  if (p.command === 'status') return runStatus(projectDir(p.project))
+  if (p.command === 'status') return runStatus(projectDir(p.project), ROOT, p.item)
   if (p.command === 'agent') {
     return runAgent({ role: p.role!, projectDir: projectDir(p.project), model: p.model, mailbox: p.mailbox, permissionMode: p.permissionMode, fromTeam: p.fromTeam, attachTimeoutSec: p.attachTimeoutSec })
   }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { inProject, mailboxLine, readStatus, statusCommand, type StatusMailbox, type StatusMessage } from './status.js'
+import { docsIndexCommand, inProject, itemsInFlightLines, itemThreadLines, ledgerIndexLines, mailboxLine, readItemThread, readStatus, statusCommand, type StatusIndex, type StatusMailbox, type StatusMessage } from './status.js'
 import { parse } from './options.js'
 
 const CAIRN = 'C:\\work\\cairn'
@@ -34,11 +34,12 @@ const messages: StatusMessage[] = [
   msg(6, { type: 'mailbox', id: 'other.leader' }, { type: 'user', id: 'browser' }, 'OTHER PROJECT, NEWER'),
 ]
 
-// A fake Hub: /mailboxes and /messages, with the token checked
-function fakeHub(opts: { token?: string; mailboxes?: StatusMailbox[]; messages?: StatusMessage[] } = {}): typeof fetch {
+// A fake Hub: /mailboxes, /messages and /indexes, with the token checked. Every call is recorded in `calls` (C139: read-only)
+function fakeHub(opts: { token?: string; mailboxes?: StatusMailbox[]; messages?: StatusMessage[]; indexes?: StatusIndex[]; calls?: string[] } = {}): typeof fetch {
   const token = opts.token ?? 'tok'
   return (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input))
+    opts.calls?.push(`${init?.method ?? 'GET'} ${url.pathname}`)
     const auth = (init?.headers as Record<string, string> | undefined)?.authorization
     if (auth !== `Bearer ${token}`) return new Response('{}', { status: 401 })
     if (url.pathname === '/mailboxes') return Response.json({ mailboxes: opts.mailboxes ?? mailboxes })
@@ -46,6 +47,7 @@ function fakeHub(opts: { token?: string; mailboxes?: StatusMailbox[]; messages?:
       const after = Number(url.searchParams.get('after') ?? '0')
       return Response.json({ messages: (opts.messages ?? messages).filter((m) => m.seq > after), lastSeq: 6 })
     }
+    if (url.pathname === '/indexes') return Response.json({ indexes: opts.indexes ?? [] })
     return new Response('{}', { status: 404 })
   }) as typeof fetch
 }
@@ -108,4 +110,120 @@ test('status: the team start names the command, quoted for the platform, and the
   assert.match(statusCommand(CAIRN), /^npm run team -- status --project /)
   assert.equal(parse(['status', '--project', CAIRN]).command, 'status')
   assert.equal(parse(['status']).command, 'status')
+})
+
+// --- C139: per item ---
+const at = (seq: number): string => `2026-11-12T10:00:${String(seq).padStart(2, '0')}.000Z`
+const ref = (id: string, project: string | null = CAIRN) => ({ item: { id, project, source: 'docs/roadmap.md', promise: null } })
+// A Message carrying meta.item (a request) or replying to one (replyTo)
+const im = (seq: number, from: StatusMessage['from'], to: StatusMessage['to'], body: string, opts: { kind?: string; item?: ReturnType<typeof ref>; replyTo?: string } = {}): StatusMessage => ({
+  id: `m${seq}`, seq, ts: at(seq), kind: opts.kind ?? 'request', from, to, body,
+  ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
+  ...(opts.item ? { meta: opts.item } : {}),
+})
+const browser = { type: 'user', id: 'browser' }
+const leaderBox = { type: 'mailbox', id: 'cairn.leader' }
+const deployerBox = { type: 'mailbox', id: 'cairn.deployer' }
+const itemMessages: StatusMessage[] = [
+  im(10, browser, leaderBox, 'GOAL: C139 line one\nsecond line', { item: ref('C139') }),
+  im(11, leaderBox, { type: 'role', id: 'deployer' }, 'DONE WHEN: x', { item: ref('C139') }),
+  im(12, deployerBox, leaderBox, 'RESULT: done\nmore', { kind: 'reply', replyTo: 'm11' }),
+  im(13, browser, leaderBox, 'other item', { item: ref('C140') }),
+  im(14, browser, leaderBox, 'C139 in another project', { item: ref('C139', 'C:\\work\\other') }),
+  im(15, leaderBox, browser, 'ack', { kind: 'reply', replyTo: 'm10' }),
+]
+const itemMailboxes: StatusMailbox[] = [
+  { name: 'cairn.leader', role: 'leader', project: CAIRN, backlog: { awaitingReply: { count: 1, oldestSeq: 10, seqs: [10, 14] }, outgoing: { count: 1, to: [{ type: 'role', id: 'deployer', count: 1, seqs: [11] }] } } },
+  { name: 'cairn.deployer', role: 'deployer', project: CAIRN, backlog: { awaitingReply: { count: 1, oldestSeq: 11, seqs: [11] }, outgoing: { count: 0, to: [] } } },
+]
+
+test('status --item: the item\'s requests and the replies under them, in seq order, each with seq, sender, addressee and the first line (C139)', () => {
+  assert.deepEqual(itemThreadLines(itemMessages, 'C139', CAIRN), [
+    'C139 in C:\\work\\cairn: 2 requests, 2 replies',
+    '#10 request user:browser → mailbox:cairn.leader: GOAL: C139 line one',
+    '#11 request mailbox:cairn.leader → role:deployer: DONE WHEN: x',
+    '  #12 reply mailbox:cairn.deployer → mailbox:cairn.leader: RESULT: done',
+    '  #15 reply mailbox:cairn.leader → user:browser: ack',
+  ])
+  assert.deepEqual(itemThreadLines(itemMessages, 'C999', CAIRN), ['No message carries meta.item C999 for this project (C:\\work\\cairn).'])
+})
+
+test('status --item: read from GET /messages through the Hub, with the token; another project\'s item is not shown (C139)', async () => {
+  const r = await readItemThread(CAIRN, 'C139', conn, fakeHub({ messages: itemMessages }))
+  assert.equal(r.code, 0)
+  assert.equal(r.lines.length, 5)
+  assert.ok(!r.lines.join('\n').includes('C139 in another project'), 'the other project\'s item is not shown')
+  const none = await readItemThread(CAIRN, 'C999', conn, fakeHub({ messages: itemMessages }))
+  assert.match(none.lines[0]!, /^No message carries meta\.item C999/)
+  const bad = await readItemThread(CAIRN, 'C139', { hubUrl: conn.hubUrl, token: 'wrong' }, fakeHub({ messages: itemMessages }))
+  assert.equal(bad.code, 1)
+})
+
+test('status: plain status adds one line per item with a request in flight: every holder of its in-flight requests, and the oldest waiting since (C139)', () => {
+  const requests = itemMessages.filter((m) => m.kind === 'request')
+  // The leader holds #10 and the deployer holds #11 (the human's request stays with the leader while the deployer works): both are named
+  assert.deepEqual(itemsInFlightLines(requests, itemMailboxes, CAIRN), [
+    `C139 · held by mailbox:cairn.leader (#10), mailbox:cairn.deployer (#11) · waiting since ${at(10)} (#10) · 2 requests in flight`,
+  ], 'C140 (not owed, not sent) and C139 of another project are not listed')
+})
+
+test('status: one Mailbox holding two requests of an item is named once, with both seqs (C139)', () => {
+  const second = im(16, browser, leaderBox, 'second request for C139', { item: ref('C139') })
+  const requests = [itemMessages[1]!, second]
+  const oneHolder: StatusMailbox[] = [
+    { name: 'cairn.leader', role: 'leader', project: CAIRN, backlog: { awaitingReply: { count: 0, oldestSeq: null, seqs: [] }, outgoing: { count: 0, to: [] } } },
+    { name: 'cairn.deployer', role: 'deployer', project: CAIRN, backlog: { awaitingReply: { count: 2, oldestSeq: 11, seqs: [11, 16] }, outgoing: { count: 0, to: [] } } },
+  ]
+  assert.deepEqual(itemsInFlightLines(requests, oneHolder, CAIRN), [
+    `C139 · held by mailbox:cairn.deployer (#11, #16) · waiting since ${at(11)} (#11) · 2 requests in flight`,
+  ])
+})
+
+test('status: an item request nobody owes is not in flight; a Hub without awaitingReply.seqs is said so, not shown as none (C139)', () => {
+  const requests = itemMessages.filter((m) => m.kind === 'request')
+  const idle = itemMailboxes.map((m) => ({ ...m, backlog: { ...m.backlog, awaitingReply: { count: 0, oldestSeq: null, seqs: [] }, outgoing: { count: 0, to: [] } } }))
+  assert.deepEqual(itemsInFlightLines(requests, idle, CAIRN), ['No item has a request in flight.'])
+  const old = itemMailboxes.map((m) => ({ ...m, backlog: { awaitingReply: { count: 1, oldestSeq: 10 } } }))
+  assert.deepEqual(itemsInFlightLines(requests, old, CAIRN), ['The items with a request in flight cannot be read: this Hub does not return awaitingReply.seqs (C129).'])
+})
+
+test('status: the ledger index says when the file changed after the index was sent, and names the command that sends it again (C139)', () => {
+  const idx: StatusIndex = { project: CAIRN, source: 'docs/roadmap.md', updatedAt: '2026-11-12T01:00:00.000Z' }
+  const changed = ledgerIndexLines([idx], CAIRN, () => new Date('2026-11-12T02:00:00.000Z'))
+  assert.equal(changed.length, 1)
+  assert.match(changed[0]!, /^docs\/roadmap\.md changed at 2026-11-12T02:00:00\.000Z, after the index the Hub holds was sent at 2026-11-12T01:00:00\.000Z\. Send it again: npm --prefix /)
+  // The quoting depends on the platform (CI runs on Linux too), so only the parts that do not depend on it are checked
+  assert.match(changed[0]!, /run docs:index -- --project .*--file docs\/roadmap\.md$/)
+  const same = ledgerIndexLines([idx], CAIRN, () => new Date('2026-11-12T00:30:00.000Z'))
+  assert.equal(same[0], 'docs/roadmap.md: not changed since the index was sent at 2026-11-12T01:00:00.000Z')
+  const missing = ledgerIndexLines([idx], CAIRN, () => null)
+  assert.match(missing[0]!, /^docs\/roadmap\.md: not in C:\\work\\cairn, so it is not compared/)
+  const none = ledgerIndexLines([{ ...idx, project: 'C:\\work\\other' }], CAIRN, () => null)
+  assert.match(none[0]!, /^No ledger index of this project is on the Hub\. Send it with: npm --prefix /)
+  assert.equal(docsIndexCommand(CAIRN, 'docs/roadmap.md').endsWith('--file docs/roadmap.md'), true)
+})
+
+test('status: the whole plain status reads the Hub with GET only, and adds the item and ledger lines after the report (C139)', async () => {
+  const calls: string[] = []
+  const idx: StatusIndex = { project: CAIRN, source: 'docs/roadmap.md', updatedAt: '2026-11-12T01:00:00.000Z' }
+  const r = await readStatus(CAIRN, conn, fakeHub({ messages: [...messages, ...itemMessages], mailboxes: itemMailboxes, indexes: [idx], calls }), () => new Date('2026-11-12T02:00:00.000Z'))
+  assert.equal(r.code, 0)
+  assert.ok(r.lines.some((l) => l.startsWith('C139 · held by mailbox:cairn.leader')))
+  assert.ok(r.lines.some((l) => l.startsWith('docs/roadmap.md changed at')))
+  assert.ok(r.lines.findIndex((l) => l.startsWith('Latest report')) < r.lines.findIndex((l) => l.startsWith('C139 ·')), 'items come after the report')
+  assert.ok(calls.length > 0 && calls.every((c) => c.startsWith('GET ')), `only GET: ${calls.join(', ')}`)
+  assert.deepEqual(calls.map((c) => c.split(' ')[1]!.split('?')[0]), ['/mailboxes', '/messages', '/indexes'])
+})
+
+test('status --item: the item reading posts nothing and moves no cursor (C139)', async () => {
+  const calls: string[] = []
+  await readItemThread(CAIRN, 'C139', conn, fakeHub({ messages: itemMessages, calls }))
+  assert.ok(calls.length > 0 && calls.every((c) => c.startsWith('GET /messages')), calls.join(', '))
+})
+
+test('status --item: the option is parsed; it needs a roadmap item ID and only the status command takes it (C139)', () => {
+  assert.equal(parse(['status', '--item', 'C139', '--project', CAIRN]).item, 'C139')
+  assert.equal(parse(['status']).item, undefined)
+  assert.throws(() => parse(['status', '--item', '139']), /roadmap item ID such as C139/)
+  assert.throws(() => parse(['team', '--item', 'C139']), /only for status/)
 })

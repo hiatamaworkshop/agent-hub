@@ -8,7 +8,7 @@ export const USAGE = `Usage:
   npm run team -- agent --role <role> [--project <dir>] [--model <model>] [--mailbox <name>] [--permission-mode <mode>]
   npm run team -- hooks [--project <dir>] [--write]   (list the Hub hooks the project lacks; --write adds them)
   npm run team -- git-hook [--project <dir>] [--write]   (the post-commit hook that sends the ledger index; --write adds it)
-  npm run team -- status [--project <dir>]   (the project's Mailboxes on the Hub, and its latest report to the human; C108)`
+  npm run team -- status [--project <dir>] [--item C<n>]   (the project's Mailboxes on the Hub, its latest report to the human, the items with a request in flight, and whether the ledger changed after its index was sent (C108, C139); --item prints that item's thread instead)`
 
 export interface Parsed {
   command: 'team' | 'agent' | 'hub' | 'hooks' | 'git-hook' | 'status' | 'help'
@@ -26,6 +26,8 @@ export interface Parsed {
   fromTeam: boolean
   write: boolean
   tabs?: Opener
+  // C139: status --item C<n> prints that item's thread
+  item?: string
 }
 
 export function parse(argv: string[]): Parsed {
@@ -46,6 +48,7 @@ export function parse(argv: string[]): Parsed {
       'from-team': { type: 'boolean' },
       write: { type: 'boolean' },
       tabs: { type: 'string' },
+      item: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   })
@@ -56,6 +59,8 @@ export function parse(argv: string[]): Parsed {
   const tabs = values.tabs
   if (tabs !== undefined && !(OPENERS as readonly string[]).includes(tabs)) throw new Error(`--tabs must be one of ${OPENERS.join(', ')}: ${tabs}`)
   if (sub === 'agent' && !values.role && !values.help) throw new Error('agent needs --role')
+  if (values.item !== undefined && sub !== 'status') throw new Error('--item is only for status')
+  if (values.item !== undefined && !/^C\d+$/.test(values.item)) throw new Error(`--item must be a roadmap item ID such as C139: ${values.item}`)
   return {
     command: values.help ? 'help' : (sub as Parsed['command']),
     roles: (values.roles ?? []).flatMap((r) => r.split(',')).map((r) => r.trim()).filter(Boolean),
@@ -71,5 +76,6 @@ export function parse(argv: string[]): Parsed {
     fromTeam: values['from-team'] ?? false,
     write: values.write ?? false,
     tabs: tabs as Opener | undefined,
+    item: values.item,
   }
 }

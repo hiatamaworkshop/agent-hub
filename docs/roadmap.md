@@ -25,7 +25,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C162
-- [ ] C139
 - [ ] C137
 - [ ] C122
 
@@ -643,6 +642,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: `src/shared/format.ts` (`channelMeta` passes `files`, with its element keys as before, and `item`, unconverted; the rest is dropped), `src/shared/meta.test.ts` (a known key, an unknown key, values with `"` `<` `>` `&`), `docs/protocol.md` §2 and §6, `docs/design.md` §6.1ad and §6.2-4, `tools/probe/probe.mjs` and `tools/probe/README.md` §3b (both point at design.md §6.1ad).
   - Checked: `npm run typecheck` passes; `npm test` 701 pass, 0 fail; `npm run docs:check` 0 errors, exit 0. The reviewer read the change and had no findings. Done-when wording not changed.
   - Not checked: a real Claude Code session receiving `item` in Channels `meta` (the probe was not run).
+- [x] C139 Let `status` show what is happening per item, for the planning session (2026-11-12, closed after the review)
+  - Decided 2026-11-12 in the planning session (the user accepted the recommendation): both forms of the idea, `status --item C<n>` (the item's thread) and, on plain `status`, one line per item in flight plus the ledger-vs-index line. The newest `NEEDS DECISION` per item is not part of this item.
+  - Changed: `src/team/status.ts` (`itemThreadLines`, `itemsInFlightLines`, `ledgerIndexLines`, `readItemThread`, `docsIndexCommand`; plain `readStatus` also reads `GET /messages` for the requests with an item and `GET /indexes`), `src/team/options.ts` and `src/team/main.ts` (`--item C<n>`, only for `status`), `src/team/status.test.ts` (15 tests), `docs/usage.md` (the in-flight and thread bullets). No Hub endpoint or field was added: `GET /mailboxes` (`backlog.awaitingReply.seqs`, C129; `outgoing.to[].seqs`), `GET /messages` (`replyTo`, `meta.item`) and `GET /indexes` (`updatedAt`) give the data (protocol.md §3).
+  - How "in flight" is read: the Hub's count of requests awaiting a reply, so the closing rules of C157 apply. The holders are every Mailbox that owes a reply to one of the item's in-flight requests, each named once with its seqs; a request no Mailbox owes is held by its addressee. The Hub caps `awaitingReply.seqs` at 100 numbers (protocol.md §3), so an in-flight request beyond the cap can be missed. Items are matched by `meta.item.project` being the project's folder.
+  - Checked: `npm test` 710 pass, 0 fail; `npm run typecheck` passes; `npm run docs:check` 0 errors, exit 0. The reviewer read the change and had one finding: the in-flight line named only the oldest request's holder. It was fixed, with a two-holder test and a one-holder-two-requests test; the leader checked the fix (not re-reviewed). On the running Hub (2026-11-12) the reviewer saw the "changed after the index" branch, and `status --item C160` printed the thread.
+  - Not checked: a Hub without `awaitingReply.seqs`, and an item with more than 100 owed seqs (unit and doc only); the fixed in-flight line against a live Hub with a request in flight.
 - [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
   - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
   - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
@@ -1043,21 +1048,6 @@ Raised 2026-11-06 in the planning session, from mcp_agent_mail's paste-in block 
 - [ ] The block names no vendor's tool, skill or file convention; the section names `AGENTS.md` and `CLAUDE.md` side by side as examples of where it may go, and says why the user's own instructions are the default.
 - [ ] README's "using it in other repositories" part points at the section.
 - [ ] `npm run docs:check` passes.
-
-### C139. Let `status` show what is happening per item, for the planning session
-
-Raised 2026-11-06 (cite-bridge C22), from the user's premise that the planning session must grasp the Hub's state quickly (C135). `team status` (C108) gives per-Mailbox counts and the newest report to the human only. In C22 the planning session could not tell from it which item the leader was waiting on (`awaiting reply 1 (oldest #1014)`), what the earlier exchange was (deployer's question #1008, leader's hold #1009, the two reports #1010 and #1013), or that the item card was drafting from an old index (C138). It read `/messages` with curl after searching the Hub's source.
-- Idea: `status --item C<n>` lists that item's thread in order (requests carrying `meta.item`, the replies under them: seq, sender, first line), and plain `status` adds one line per open item with a request in flight (item, who holds it, waiting since). It also says when the ledger file changed after the index was sent (C138's (a), shared code).
-- Read-only, like C108; the card states stay the page's job. Whether `status` should also show the newest `NEEDS DECISION` per item is open.
-- Decided 2026-11-12 in the planning session (the user accepted the recommendation): both forms of the idea. The ledger check runs on the host, where `status` runs, so it can compare the file with the index the Hub holds (which the Hub itself cannot, design.md §3.8). The newest `NEEDS DECISION` per item is not part of this item.
-
-#### Done when
-- [ ] `npm run team -- status --item C<n> --project <folder>` lists that item's thread in seq order: the requests carrying `meta.item` C<n> and the replies under them, each with seq, sender, addressee and the first line of the body. With no such message it says so.
-- [ ] Plain `status` adds one line per item with a request in flight (the item, who holds it, waiting since).
-- [ ] `status` says when the ledger file changed after the index the Hub holds was sent (the file's modification time against the index's `updatedAt`), and names the command that sends it again.
-- [ ] Read-only: it posts nothing and moves no cursor. Unit tests cover the three outputs, and docs/usage.md describes them.
-- [ ] `npm test` and `npm run docs:check` pass.
-
 
 ### C154. Draft a run from the plan in the UI
 Status: held(after C153; decide once runs written by hand show what the draft needs)
