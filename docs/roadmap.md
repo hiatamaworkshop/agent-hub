@@ -1092,8 +1092,9 @@ Raised 2026-11-11 from C129's report. The hook `tools/hooks/session-restore.mjs`
 Raised 2026-11-11 from C148's runs. The annotations say `actions/checkout@v4` and `actions/setup-node@v4` target Node.js 20, which GitHub now forces onto Node 24, and the `ubuntu-latest` label moves to Ubuntu 26. The runs pass today.
 - To decide: whether to move the actions to their current major versions now, pin `ubuntu-24.04`, or wait for a failure. A change is checked by a run on both systems.
 - Decided 2026-11-12 in the planning session (the user accepted the recommendation): move `actions/checkout` and `actions/setup-node` to their current major versions (read from their release pages at the time of the change); keep `ubuntu-latest` and `windows-latest`.
+- Versions read 2026-11-12: `actions/checkout` v7.0.1 (marked Latest at https://github.com/actions/checkout/releases/latest; tag page https://github.com/actions/checkout/releases/tag/v7.0.1) and `actions/setup-node` v7.1.0 (marked Latest at https://github.com/actions/setup-node/releases/latest; tag page https://github.com/actions/setup-node/releases/tag/v7.1.0). Both action.yml files (raw.githubusercontent.com/actions/<action>/<tag>/action.yml) run on `node24`. The v7.0.0 notes show no removed inputs; `node-version` and `cache` are still in setup-node's action.yml, so the workflow inputs are unchanged.
 
 #### Done when
-- [ ] `.github/workflows/ci.yml` uses the current major versions of `actions/checkout` and `actions/setup-node`; the body names the versions and where they were read.
+- [x] `.github/workflows/ci.yml` uses the current major versions of `actions/checkout` and `actions/setup-node`; the body names the versions and where they were read.
 - [ ] A run on GitHub Actions after the user's push passed on both systems without the Node.js 20 deprecation annotation, and its URL is in the body.
 - [ ] `npm run docs:check` passes.
