@@ -490,6 +490,7 @@ A row is added when a person or an agent (the leader's check, a review, an audit
 | Found | Kind | Pair | What drifted | Found by | Fixed in |
 |---|---|---|---|---|---|
 | 2026-11-05 | meaning | `src/shim/tools.ts` `post_message` description ↔ protocol.md §5 `post_message` | The description named no result fields (`recipients`, `unattached`, `warning`, `delivered`) or the `item` error, while leader.md acts on them; `docs:check` compares only the tool names with §5 | A prompt audit in the planning session | 3ed14c8 |
+| 2026-11-12 | name | docs/conventions-log.md, the C165 row ↔ the table's header row (column count) | An unescaped `\|` inside a code span split the row into more cells than the header, so GFM rendered the table broken; `docs:check` does not count cells per table row | The reviewer, C165 | 183811e |
 
 **When the conventions change** (concept, 2026-11-08; C140)
 
