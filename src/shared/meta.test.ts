@@ -24,7 +24,7 @@ describe('meta の配信属性', () => {
   const KNOWN = ['id', 'mime', 'size', 'width', 'height', 'path', 'error']
   const fileFull = { id: 'f_' + 'a'.repeat(32), mime: 'image/png', size: 27068, width: 1568, height: 784, path: 'C:/tmp/a.png', error: undefined }
 
-  it('Channels の meta は files の既知のキーだけ。ほかのキーと送り手の meta は載せない', () => {
+  it('Channels の meta は既知のキー (files の既知の要素キーと item) だけ。ほかのキーは載せない', () => {
     const m: Message = {
       ...base,
       meta: {
@@ -48,6 +48,30 @@ describe('meta の配信属性', () => {
     const f = { id: 'f_' + 'b'.repeat(32), mime: 'image/png', size: 5, width: 1, height: 2, error: 'fetch_failed' }
     const attr = toChannelParams({ ...base, meta: { files: [f] } }, 'deployer').meta.meta
     assert.deepEqual(JSON.parse(attr!), { files: [f] })
+  })
+
+  const item = { id: 'C160', project: 'C:\\work\\agent-hub', source: 'docs/roadmap.md', promise: 'p1', conditions: ['a "quoted" <tag> & more'] }
+
+  it('既知のキー item は通る。値は変換せず、JSON 文字列そのものが属性になる', () => {
+    const attr = toChannelParams({ ...base, meta: { item } }, 'deployer').meta.meta
+    assert.equal(attr, JSON.stringify({ item }))
+    assert.deepEqual(JSON.parse(attr!), { item })
+  })
+
+  it('既知のキーでないキーは落とす (item と一緒でも)', () => {
+    const attr = toChannelParams({ ...base, meta: { item, note: 'x', evil: { severity: 'high' } } }, 'deployer').meta.meta
+    assert.deepEqual(Object.keys(JSON.parse(attr!)), ['item'])
+    assert.equal(attr!.includes('note'), false)
+    assert.equal(attr!.includes('evil'), false)
+  })
+
+  it('値の " < > & は変換せず、そのまま属性値の JSON に入る', () => {
+    const m: Message = { ...base, meta: { files: [{ id: 'f_' + 'd'.repeat(32), mime: 'image/png', size: 1, width: 1, height: 1, error: 'a"b<c>&d' }], item } }
+    const attr = toChannelParams(m, 'deployer').meta.meta!
+    assert.equal(attr.includes('&quot;') || attr.includes('&lt;') || attr.includes('&gt;') || attr.includes('&amp;'), false, attr)
+    const parsed = JSON.parse(attr) as { files: { error: string }[]; item: typeof item }
+    assert.equal(parsed.files[0]!.error, 'a"b<c>&d')
+    assert.equal(parsed.item.conditions[0], 'a "quoted" <tag> & more')
   })
 
   it('画像の付いたメッセージは、Channels の meta に files の情報が入る', () => {

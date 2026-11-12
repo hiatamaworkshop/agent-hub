@@ -40,22 +40,29 @@ function attributes(m: Message, meta: Record<string, unknown> | undefined): Reco
 // Channels の meta 属性に載せる files の既知のキー。Hub は id/mime/size/width/height を書き、shim は path か error を足す
 const CHANNEL_FILE_KEYS = ['id', 'mime', 'size', 'width', 'height', 'path', 'error'] as const
 
-// Channels に渡す meta。属性値の " < > & を Claude Code がどう扱うか未確認 (design.md §6.2-4) のため、
-// 確認するまで files の既知のキーだけを載せる。値は変換しない (キーで選ぶだけ)。残るものがなければ undefined。
-// ほかの送り手の meta は inbox (<hub-message>) からだけ読める
+// Channels に載せる meta のキー。protocol.md §2 (Message の meta) が定義するもの: files (Hub が解釈) と item (UI / shim が付ける)。
+// 送り手が勝手に付けたキーは載せない (Hub が保証したように見えないため)。forwardedFrom / forwardedSender は meta ではなく
+// Message の項目で、channel 属性として既に載る。
+// 値は変換しない (キーで選ぶだけ)。Claude Code が属性値の " < > & を自分でエスケープする (design.md §6.1ad)。
+// 残るものがなければ undefined。ほかの送り手の meta は inbox (<hub-message>) からも読める
 export function channelMeta(meta: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
-  if (!meta || !Array.isArray(meta.files)) return undefined
-  const files: Record<string, unknown>[] = []
-  for (const f of meta.files as unknown[]) {
-    if (typeof f !== 'object' || f === null || Array.isArray(f)) continue
-    const kept: Record<string, unknown> = {}
-    for (const k of CHANNEL_FILE_KEYS) {
-      const v = (f as Record<string, unknown>)[k]
-      if (v !== undefined) kept[k] = v
+  if (!meta) return undefined
+  const out: Record<string, unknown> = {}
+  if (Array.isArray(meta.files)) {
+    const files: Record<string, unknown>[] = []
+    for (const f of meta.files as unknown[]) {
+      if (typeof f !== 'object' || f === null || Array.isArray(f)) continue
+      const kept: Record<string, unknown> = {}
+      for (const k of CHANNEL_FILE_KEYS) {
+        const v = (f as Record<string, unknown>)[k]
+        if (v !== undefined) kept[k] = v
+      }
+      files.push(kept)
     }
-    files.push(kept)
+    if (files.length > 0) out.files = files
   }
-  return files.length > 0 ? { files } : undefined
+  if (meta.item !== undefined) out.item = meta.item
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 export interface ChannelParams {

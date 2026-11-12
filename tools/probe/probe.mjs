@@ -103,7 +103,7 @@ const CASES = {
   hello: () => push('hello from agent-hub-probe。受け取ったら一言だけ返事をして。', { case: 'hello' }),
   // §6.2-7: AskUserQuestion の回答待ち中に送る
   during_question: () => push('PROBE: これは AskUserQuestion 待機中に送った通知です。', { case: 'during_question' }),
-  // §6.2-4: meta の属性値に入る " < > & がどう見えるか (エスケープするかは未確認)
+  // §6.1ad: meta の属性値に入る " < > & は Claude Code がエスケープする (確認済み。値は agent-hub 側で変換しない)
   attr: () => push('PROBE: meta の属性値 (probe_quote) の見え方を確かめる。', { case: 'attr', probe_quote: 'a"b<c>&d' }),
 }
 

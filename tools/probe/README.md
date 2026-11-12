@@ -53,13 +53,13 @@ curl.exe -H "x-probe-token: $t" http://127.0.0.1:7788/case/escape
 
 > 直前に届いた channel 通知を、タグも含めて見えたまま一字一句 probe_note に書き写して
 
-### 3b. meta の属性値のエスケープ (§6.2-4)
+### 3b. meta の属性値のエスケープ (§6.1ad、確認済み)
 
 ```powershell
 curl.exe -H "x-probe-token: $t" http://127.0.0.1:7788/case/attr
 ```
 
-セッション A で 3 と同じ頼み方をする。`probe_quote` の値が `a"b<c>&d` のまま見えるか、`&quot;` などに変換されたか、属性が途中で切れたかをメモする。
+セッション A で 3 と同じ頼み方をする。`probe_quote` の値が `a"b<c>&d` のまま見えるか、`&quot;` などに変換されたか、属性が途中で切れたかをメモする。2026-11-10 の確認では `&quot;` `&lt;` `&gt;` `&amp;` に変換され、属性は途中で切れなかった (§6.1ad)。
 
 ### 4. AskUserQuestion 待機中の通知 (§6.2-7)
 

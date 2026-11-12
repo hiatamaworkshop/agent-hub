@@ -25,7 +25,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C162
-- [ ] C160
 - [ ] C139
 - [ ] C137
 - [ ] C122
@@ -639,6 +638,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: `npm test` 686 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 0 errors; `send-index.test.ts` 11 pass, 0 fail in a `node:lts` Linux container (a scratch copy of the tree, `npm ci`). The review found no finding, and probed a real folder on this machine: a case difference in a parent folder is named, the project path in upper case still works, and a name that differs by more than case keeps the old wording. Done-when wording not changed.
   - Not checked: the helper on macOS; a real case-differing file on a case-insensitive disk through the team start; the tests on Linux in the review.
   - Reviewer note: the helper relies on `realpathSync.native` returning the on-disk letter case, which holds on Windows. On macOS a Mac would keep the old reason (no wrong name).
+- [x] C160 Lift the provisional restriction on `meta` in Channels notifications (2026-11-12, closed after the review)
+  - Decided 2026-11-12 in the planning session (the user accepted the recommendation): a list of known keys, not every key. The list is `files` and `item`, the `meta` keys protocol.md §2 defines; `forwardedFrom` / `forwardedSender` are Message fields, not `meta` keys, and already reach Channels as attributes.
+  - Changed: `src/shared/format.ts` (`channelMeta` passes `files`, with its element keys as before, and `item`, unconverted; the rest is dropped), `src/shared/meta.test.ts` (a known key, an unknown key, values with `"` `<` `>` `&`), `docs/protocol.md` §2 and §6, `docs/design.md` §6.1ad and §6.2-4, `tools/probe/probe.mjs` and `tools/probe/README.md` §3b (both point at design.md §6.1ad).
+  - Checked: `npm run typecheck` passes; `npm test` 701 pass, 0 fail; `npm run docs:check` 0 errors, exit 0. The reviewer read the change and had no findings. Done-when wording not changed.
+  - Not checked: a real Claude Code session receiving `item` in Channels `meta` (the probe was not run).
 - [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
   - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
   - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
@@ -1067,19 +1071,6 @@ Status: held(after C153; decide once a real run shows what is hard to find)
 Raised 2026-11-10 with C153. After a run, what waits for the human is spread over the last report (a Message, deleted after the retention period), the items' sections (the defaults taken, the items left open) and `git log` (unpushed commits). The ledger is the place that lasts (design.md §3.16).
 - Idea: the Items list gets a tier, or a mark, for items whose done-when lines are all checked while the section is still there ("worked, waiting for the close"); the index already has the counts (`conditions.done` / `total`). `team status` (C139) could list the same.
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
-
-### C160. Lift the provisional restriction on `meta` in Channels notifications
-
-Raised 2026-11-11 from C149's follow-ups. `channelMeta` (`src/shared/format.ts`) puts only the known keys of `files` into a Channels notification's `meta`, because how Claude Code treats `"` `<` `>` `&` in attribute values was unverified (design.md §6.2-4). C149 recorded that Claude Code escapes them itself (§6.1ad), so the reason for the restriction is gone, and its comment still says unverified. Other senders' `meta` (`item`, `forwarded_sender` and so on) still reaches a Channels session only through `inbox()` (`<hub-message>`).
-- To decide: whether to pass every key of `meta` through Channels now, or a list of known keys (including `item`), and whether the values are converted (today: not). Passing more keys changes what a session sees as the sender's attributes (protocol.md §6; bodies and attributes are data, design.md §4), so the shape needs the planning session's word.
-- The comment in `src/shared/format.ts` and the notes in `tools/probe` (`probe.mjs`, `README`) that still call the escaping case unverified would be updated with it.
-- Decided 2026-11-12 in the planning session (the user accepted the recommendation): a list of known keys, not every key, so attributes a sender invents do not reach a session as if the Hub vouched for them. The list is the `meta` keys protocol.md defines (`files` and `item` at least; the others it names, such as the forward's, if protocol.md defines them). Values are not converted.
-
-#### Done when
-- [ ] `channelMeta` passes the known `meta` keys protocol.md defines, unconverted, and drops the rest; unit tests cover a known key, an unknown key, and values with `"` `<` `>` `&`.
-- [ ] protocol.md §6 lists which `meta` keys a Channels notification carries.
-- [ ] The comment in `src/shared/format.ts` and the notes in `tools/probe` no longer call the escaping case unverified; they point at design.md §6.1ad.
-- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C161. Let the restore hook find a Mailbox the way the Event hooks do
 Status: proposed
