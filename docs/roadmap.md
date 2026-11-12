@@ -24,6 +24,8 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C166
+- [ ] C167
 
 (Items with a status line are listed under "Items".)
 
@@ -1073,10 +1075,28 @@ Status: proposed
 Raised 2026-11-11 from C129's report. The hook `tools/hooks/session-restore.mjs` finds the Mailbox by the Attachment's `session_id`, then `HUB_MAILBOX`. The Event hooks (`resolveMailbox`, design.md §3.4) also use the session map the Hub has learned and the cwd's folder name. So a session started by hand without `HUB_MAILBOX`, attached under its folder-name Mailbox, gets nothing printed after `/clear` (design.md §3.13 records it). Sessions started by `team` are not affected, and the `open_requests` tool and the instructions still cover the other case.
 - Idea: the Hub resolves it and the hook asks (a new endpoint or a field on `GET /mailboxes`), or the hook sends what the Event hooks send (`X-Hub-Mailbox`, cwd) and the Hub answers with the same text. Not decided; it matters only if sessions are often started by hand.
 
-### C166. Keep a `reports --follow` reader usable under Monitor: long reports in full, and a quiet Hub outage
-Status: proposed
+### C166. Print one report in full, for a notification that cut it
 
-Raised 2026-11-12 in the planning session, from its review of C135, C164 and C165 (design.md §6.1ah, "Seen from the planning session" (d) and item 3).
-- Long reports arrive cut. Claude Code's Monitor notification cuts a long line (`...(truncated)`, seen on report #637), and no command prints one report in full: `reports` needs `--follow`, and `status` prints only the newest report. The planning session read the rest from `GET /messages` by hand. Idea: a one-shot form that prints given reports and exits (for example `reports --seq <n>`, or `reports --since <n>` without `--follow`), and a line in usage.md saying to use it when a notification ends in `(truncated)`. Wrapping long body lines in the reader is another way, but it changes the body's lines.
-- A Hub outage prints one line per retry, every 2 seconds, with no backoff (§6.1ah item 3). usage.md recommends `2>&1` under Monitor, so each retry is a notification, and rebuilding the Hub (`up -d --build`) is routine. Monitor stops a watch that emits too many events, so the reader may be gone without a word; whether it really is stopped was not tried. Idea: say once that the stream dropped and once that it is back, and lengthen the wait between retries up to a limit.
+Raised 2026-11-12 in the planning session, from its review of C135, C164 and C165 (design.md §6.1ah, "Seen from the planning session" (d)). Decided the same day (the user accepted the recommendation; the outage half of the first draft became C167, since the two are independent).
+- Claude Code's Monitor notification cuts a long line (`...(truncated)`, seen on report #637), and no command prints one report in full: `reports` needs `--follow`, and `status` prints only the newest report. The planning session read the rest from `GET /messages` by hand.
+- Chosen: a one-shot `--seq <n>`. Rejected: `--since` without `--follow` (prints every later report, not the one that was cut) and wrapping long body lines in the reader (changes the body's lines).
+
+#### Done when
+- [ ] `npm run team -- reports --seq <n> --project <dir>` (also `hub-team reports --seq <n>`) prints report n in full, in the same format as `--follow` (text with the `  | ` mark, or one line with `--json`), then exits 0. It only reads.
+- [ ] When n is not a report of that project's Mailboxes to the human (no such Message, deleted, another project's, or not to the human), it says which in one line and exits 1. `--seq` with `--follow` or `--since` is a one-line usage error.
+- [ ] docs/usage.md says that a notification ending in `(truncated)` is read in full with `reports --seq <n>`, in the section on reading reports.
+- [ ] On the Hub on 7777 (read only), `reports --seq 637` prints all of report #637, including the lines the notification cut. The result is added to design.md §6.1ah.
+- [ ] Tests cover a report found, no such Message, another project's, a Message not to the human, `--json`, and the usage errors. `npm test`, `npm run typecheck` and `npm run docs:check` pass.
+
+### C167. Keep a Hub outage quiet in a `reports --follow` reader
+
+Raised 2026-11-12 in the planning session, from its review of C135, C164 and C165 (design.md §6.1ah item 3). Decided the same day with C166 (the user accepted the recommendation).
+- While the Hub is down the reader writes one line per retry, every 2 seconds, with no backoff. usage.md recommends `2>&1` under Monitor, so each retry is a notification, and rebuilding the Hub (`up -d --build`) is routine. Monitor stops a watch that emits too many events, so the reader may be gone without a word; whether it really is stopped was not tried.
 - Not part of this item: a reader that outlives its watch (§6.1ah item 1; cause not determined).
+
+#### Done when
+- [ ] While the Hub cannot be reached, the reader writes one line when the stream drops and one line when it is back (naming the last seq printed), not one line per retry.
+- [ ] The wait between retries grows from 2 seconds, doubling, up to 30 seconds, and starts again from 2 seconds after a reconnect succeeds. Catching up without duplicates is unchanged.
+- [ ] On a scratch Hub (not the Hub on 7777), with a reader under Monitor and `2>&1`: the Hub is stopped for at least 60 seconds and started again; the session gets the drop line, the back line and the next report once, and nothing else. The result is added to design.md §6.1ah.
+- [ ] docs/usage.md "Reconnect lines" describes the two lines and the backoff.
+- [ ] Tests with a fake Hub cover one drop line over several failed retries, the back line, the backoff sequence and its cap, and the reset after a reconnect. `npm test`, `npm run typecheck` and `npm run docs:check` pass.
