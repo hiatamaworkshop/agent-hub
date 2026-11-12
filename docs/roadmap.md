@@ -1072,3 +1072,11 @@ Status: proposed
 
 Raised 2026-11-11 from C129's report. The hook `tools/hooks/session-restore.mjs` finds the Mailbox by the Attachment's `session_id`, then `HUB_MAILBOX`. The Event hooks (`resolveMailbox`, design.md §3.4) also use the session map the Hub has learned and the cwd's folder name. So a session started by hand without `HUB_MAILBOX`, attached under its folder-name Mailbox, gets nothing printed after `/clear` (design.md §3.13 records it). Sessions started by `team` are not affected, and the `open_requests` tool and the instructions still cover the other case.
 - Idea: the Hub resolves it and the hook asks (a new endpoint or a field on `GET /mailboxes`), or the hook sends what the Event hooks send (`X-Hub-Mailbox`, cwd) and the Hub answers with the same text. Not decided; it matters only if sessions are often started by hand.
+
+### C166. Keep a `reports --follow` reader usable under Monitor: long reports in full, and a quiet Hub outage
+Status: proposed
+
+Raised 2026-11-12 in the planning session, from its review of C135, C164 and C165 (design.md §6.1ah, "Seen from the planning session" (d) and item 3).
+- Long reports arrive cut. Claude Code's Monitor notification cuts a long line (`...(truncated)`, seen on report #637), and no command prints one report in full: `reports` needs `--follow`, and `status` prints only the newest report. The planning session read the rest from `GET /messages` by hand. Idea: a one-shot form that prints given reports and exits (for example `reports --seq <n>`, or `reports --since <n>` without `--follow`), and a line in usage.md saying to use it when a notification ends in `(truncated)`. Wrapping long body lines in the reader is another way, but it changes the body's lines.
+- A Hub outage prints one line per retry, every 2 seconds, with no backoff (§6.1ah item 3). usage.md recommends `2>&1` under Monitor, so each retry is a notification, and rebuilding the Hub (`up -d --build`) is routine. Monitor stops a watch that emits too many events, so the reader may be gone without a word; whether it really is stopped was not tried. Idea: say once that the stream dropped and once that it is back, and lengthen the wait between retries up to a limit.
+- Not part of this item: a reader that outlives its watch (§6.1ah item 1; cause not determined).
