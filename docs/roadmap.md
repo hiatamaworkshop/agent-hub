@@ -25,7 +25,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C162
-- [ ] C122
 
 
 (Items with a status line are listed under "Items".)
@@ -653,6 +652,15 @@ In the order they will be taken up. Only items without a status line and blocked
   - The block is plain text with plain shell commands. It names no vendor's tool, skill or file convention; `AGENTS.md` and `CLAUDE.md` appear only outside it, as examples, and the section gives the reason for the user's own instructions as the default.
   - Checked: `npm run docs:check` 0 errors, exit 0. The block's check command was run as written from agent-hub. The reviewer read the change and had one finding: the CLAUDE.md map did not name §8. It was fixed, and the leader checked the fix.
   - Not checked: a planning agent actually using the block; a fresh session after compaction finding the block through the map.
+- [x] C122 Do channels now work with `claude -p`? (2026-11-12, closed after the review)
+  - Found 2026-11-03 while checking C121. The probe was decided 2026-11-12 in the planning session (the user accepted the recommendation): a check only, no code change, on a scratch Hub.
+  - Result (Claude Code 2.1.322, Windows 11, `claude-haiku-5-5`; design.md §6.1af): with plain `-p` the shim handed the messages queued before the first turn to the session on attach, and the Hub acknowledged them, but the model did not see them: both runs answered `NO-CHANNEL`, and no channel content appeared in the stream-json output. The process exited after its turn in both runs, and a message posted after the exit stayed unread. So the session does not stay alive for a second message.
+  - Changed (docs only): `docs/design.md` §6.1 (the `-p` sentence now says what was seen; interactive delivery stays with §6.1c and §6.1d) and §6.1af (the setup, the command with the token redacted, the three runs' timestamps, the official page quote, the side finding, what was not checked, the cleanup and the evidence).
+  - The official page (code.claude.com/docs/en/channels, read 2026-11-12) says that with `-p` the tools that need terminal input are disabled; it does not say the channel is ignored.
+  - Side finding (no item filed): with `-p` the shim acknowledges messages the model never sees, so the Hub counts them as handed.
+  - Checked: `npm run docs:check` 0 errors, exit 0. The reviewer read the change and had two findings: Run 3's timing claimed a message arrived mid-turn, and §6.1's "works only in interactive sessions" overclaimed. Both were fixed and checked by the leader (not re-reviewed).
+  - Not checked: a message arriving during a turn while a tool runs; the interactive control; `--input-format stream-json`; the Agent SDK; models other than `claude-haiku-5-5`. Roles on `-p` are a separate question and are not decided here.
+  - Cleanup: the scratch Hub was stopped. The Hub on 7777, its data and its token were not used or written; the scratch Hub read agent-hub's `.env` only to compare its environment with it.
 - [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
   - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
   - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
@@ -993,18 +1001,6 @@ To decide: where the seqs come from (`seqs` on the receiver's `awaitingReply` an
 Status: held(after the user has run teams in two projects side by side)
 
 Raised 2026-11-01 by the user: projects where a team was started could show as tab-like buttons, so switching is one press (today it is the project selector above the sidebar). The user wants to run two teams first and decide then. design.md §3.2 chose a selector over tabs so waits in other projects are not missed (`N waiting in other projects`); buttons have to keep that.
-
-### C122. Do channels now work with `claude -p`?
-
-Found 2026-11-03 while checking C121. design.md §6.1 (checked 2026-10-16) says a channel "works only in interactive sessions. It is ignored with `-p` and the Agent SDK." The official Channels page read on 2026-11-03 now says: "When you run channels in non-interactive mode with `-p`, tools that need terminal input, such as multiple-choice questions and plan mode approval, are disabled so the session never stalls waiting for input." That reads as if `-p` sessions now receive channel messages.
-If so, it matters: a role could run without a terminal tab (the tab openers, C62/C116), but a `-p` session ends after its turn, so how it would stay to receive the next message is unknown.
-To decide after checking: on a real machine, whether a `claude -p` session started with `--dangerously-load-development-channels server:agent-hub` receives a Hub message, and whether it stays alive to receive another; record the result with the Claude Code version in design.md §6 and correct §6.1. Whether to use it for roles is a separate item.
-- Decided 2026-11-12 in the planning session (the user accepted the recommendation): a check only, no code change. The probe uses a scratch Hub on a free port with its own data folder, not the Hub on 7777.
-
-#### Done when
-- [ ] On a real machine, a `claude -p` session started with the agent-hub channel was sent a Hub message; whether it received it, and whether it stayed alive to receive a second one, is written in design.md §6 with the Claude Code version and the command used.
-- [ ] design.md §6.1's sentence on `-p` agrees with the result (corrected, or kept with the date of the new check).
-- [ ] `npm run docs:check` passes.
 
 ### C123. Send `docs:check` results to the Hub, and check `CHANGED` for missing docs
 Status: proposed
