@@ -24,6 +24,8 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C135
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -1018,7 +1020,6 @@ The other half: a deployer's reply whose `CHANGED` lists `src/` but no `docs/`. 
 
 
 ### C135. Let the planning session receive the leader's reports
-Status: proposed
 
 Raised 2026-11-05 (cite-bridge). The planning session is not connected to the Hub (design.md §3.15: it is not a Hub role), so after each item the user typed "C10 done" into it before it could check. The friction is the relay, not the guidance.
 - Idea: a read-only connection for the planning session that receives reports addressed to the user (no requests, no role), or the Hub notifying it when a report arrives. This revisits "the planning session is not a Hub role", so it needs a decision on that first.
@@ -1026,6 +1027,16 @@ Raised 2026-11-05 (cite-bridge). The planning session is not connected to the Hu
 
 - Premise from the user (2026-11-06): the planning session must be able to grasp the Hub's state quickly. Reading it on demand (C139) comes first and does not need the planning session to be a Hub role; receiving reports here is the push side and can follow.
 - A second case, 2026-11-06 (cite-bridge C22): the leader's `NEEDS DECISION` on done-when wording went to the user, who pasted it into the planning session; the planning session fixed the ledger; the request then went out stale (C138) and the leader asked the same question again. One decision took two relays by hand and one wasted round trip.
+- Decided 2026-11-12 in the planning session (the user accepted the recommendation): the planning session stays not a Hub role. It receives reports by a read-only command on the host, like `status` (C139): it follows the Hub's `GET /stream` and prints the reports to the human. No Hub endpoint or field is added. The user asked for it to be general and opt-in: the command is a plain reader any agent or tool can run in the background (Claude Code's Monitor is one way, not the only one), and nothing starts it unless the user does (team start, hooks and the shim do not).
+
+#### Done when
+- [ ] `npm run team -- reports --follow --project <dir>` (also `hub-team reports --follow`) prints, in arrival order, each Message to the human from that project's Mailboxes: one header line (`#seq`, sender, `kind`, `meta.item` if any, time), then the body as is. Messages of other projects and Messages to Mailboxes or roles are not printed. It only reads: it posts nothing and moves no cursor.
+- [ ] With `--json`, each report is one JSON line (the Message as `GET /messages` returns it) instead of the header and body, so other tools can read it.
+- [ ] `--since <seq>` first prints the reports after that seq, then follows. When the stream drops, it reconnects and catches up from the last seq it printed, without duplicates. If the Hub cannot be reached or refuses the token at start, it says so in one line and exits 1.
+- [ ] Opt-in: no team start, hook or shim starts the command. docs/usage.md describes it as an optional reader, with Claude Code's Monitor as one example and a plain background command for other agents; the planning session's block (project-setup.md §8, C137) mentions it as optional in one line.
+- [ ] design.md §3.15 records the decision: the planning session is not a Hub role and receives reports through this read-only command.
+- [ ] design.md §6 records one live run: a leader's report reaches a planning session through the command without the user typing anything.
+- [ ] Tests cover the filter (other projects, Messages not to the human), `--json`, `--since` and catching up after a reconnect. `npm test`, `npm run typecheck` and `npm run docs:check` pass.
 
 ### C136. Give each working convention its lineage and function, and re-check its status
 Status: proposed
