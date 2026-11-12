@@ -1061,11 +1061,12 @@ Raised 2026-11-11 from C148's runs. The annotations say `actions/checkout@v4` an
 - To decide: whether to move the actions to their current major versions now, pin `ubuntu-24.04`, or wait for a failure. A change is checked by a run on both systems.
 - Decided 2026-11-12 in the planning session (the user accepted the recommendation): move `actions/checkout` and `actions/setup-node` to their current major versions (read from their release pages at the time of the change); keep `ubuntu-latest` and `windows-latest`.
 - Versions read 2026-11-12: `actions/checkout` v7.0.1 (marked Latest at https://github.com/actions/checkout/releases/latest; tag page https://github.com/actions/checkout/releases/tag/v7.0.1) and `actions/setup-node` v7.1.0 (marked Latest at https://github.com/actions/setup-node/releases/latest; tag page https://github.com/actions/setup-node/releases/tag/v7.1.0). Both action.yml files (raw.githubusercontent.com/actions/<action>/<tag>/action.yml) run on `node24`. The v7.0.0 notes show no removed inputs; `node-version` and `cache` are still in setup-node's action.yml, so the workflow inputs are unchanged.
+- GitHub run after the user's push of ab1ef4a (2026-11-12): https://github.com/hiatamaworkshop/agent-hub/actions/runs/43157897621 — `check (windows-latest)` and `check (ubuntu-latest)` both succeeded. The only annotation left is the `ubuntu-latest` label moving to Ubuntu 26; the Node.js 20 deprecation annotation is gone.
 
 #### Done when
 - [x] `.github/workflows/ci.yml` uses the current major versions of `actions/checkout` and `actions/setup-node`; the body names the versions and where they were read.
-- [ ] A run on GitHub Actions after the user's push passed on both systems without the Node.js 20 deprecation annotation, and its URL is in the body.
-- [ ] `npm run docs:check` passes.
+- [x] A run on GitHub Actions after the user's push passed on both systems without the Node.js 20 deprecation annotation, and its URL is in the body.
+- [x] `npm run docs:check` passes.
 
 ### C163. Pass `meta.item` to a Channels session only in the item ID's shape
 Raised 2026-11-12 from the run's report (#584, NEEDS DECISION 2 after C160). C160 passes the known `meta` keys (`files`, `item`) through Channels unconverted, so that attributes a sender invents do not reach a session as if the Hub vouched for them. But the Hub does not check the shape of a `meta.item` set by an HTTP sender (`resolveMeta` in `src/hub/app.ts`), so any value reaches the session as the `item` attribute. The shim's `post_message` and the C129 hook already accept only `^C[1-9][0-9]*$`.
