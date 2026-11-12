@@ -24,6 +24,12 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C162
+- [ ] C160
+- [ ] C139
+- [ ] C137
+- [ ] C122
+
 
 (Items with a status line are listed under "Items".)
 
@@ -975,11 +981,16 @@ Status: held(after the user has run teams in two projects side by side)
 Raised 2026-11-01 by the user: projects where a team was started could show as tab-like buttons, so switching is one press (today it is the project selector above the sidebar). The user wants to run two teams first and decide then. design.md §3.2 chose a selector over tabs so waits in other projects are not missed (`N waiting in other projects`); buttons have to keep that.
 
 ### C122. Do channels now work with `claude -p`?
-Status: proposed
 
 Found 2026-11-03 while checking C121. design.md §6.1 (checked 2026-10-16) says a channel "works only in interactive sessions. It is ignored with `-p` and the Agent SDK." The official Channels page read on 2026-11-03 now says: "When you run channels in non-interactive mode with `-p`, tools that need terminal input, such as multiple-choice questions and plan mode approval, are disabled so the session never stalls waiting for input." That reads as if `-p` sessions now receive channel messages.
 If so, it matters: a role could run without a terminal tab (the tab openers, C62/C116), but a `-p` session ends after its turn, so how it would stay to receive the next message is unknown.
 To decide after checking: on a real machine, whether a `claude -p` session started with `--dangerously-load-development-channels server:agent-hub` receives a Hub message, and whether it stays alive to receive another; record the result with the Claude Code version in design.md §6 and correct §6.1. Whether to use it for roles is a separate item.
+- Decided 2026-11-12 in the planning session (the user accepted the recommendation): a check only, no code change. The probe uses a scratch Hub on a free port with its own data folder, not the Hub on 7777.
+
+#### Done when
+- [ ] On a real machine, a `claude -p` session started with the agent-hub channel was sent a Hub message; whether it received it, and whether it stayed alive to receive a second one, is written in design.md §6 with the Claude Code version and the command used.
+- [ ] design.md §6.1's sentence on `-p` agrees with the result (corrected, or kept with the date of the new check).
+- [ ] `npm run docs:check` passes.
 
 ### C123. Send `docs:check` results to the Hub, and check `CHANGED` for missing docs
 Status: proposed
@@ -1015,20 +1026,33 @@ Raised 2026-11-06 in the planning session, after the comparison with mcp_agent_m
 - [x] `npm run docs:check` passes.
 
 ### C137. Give a project's planning session a thin block that points at the ledger rules
-Status: proposed
 
 Raised 2026-11-06 in the planning session, from mcp_agent_mail's paste-in block (design.md §8.6). The team roles get their instructions through the Hub. The planning session does not (it is outside the Hub, yet it files items, writes done-when wording and decides the close), and in another person's setup nothing tells it agent-hub's conventions. On this machine they come from the user's own global instructions and the `roadmap-items` skill, which an adopter does not have.
 - Idea: a short block an adopter pastes into the instruction file their planning agent reads. It points and does not copy: the ledger's path, where the rules live (the top of roadmap.md, usage.md's "Try a round trip between roles"), and the check command (`docs:check`). Copied rule text drifts: when C133 changed the close order, the user's global instructions had to be fixed by hand. The same idea as the thin post-commit hook that calls agent-hub's script (project-setup.md §2).
 - Not tied to one vendor (design.md §3.7): the planning agent is not always Claude Code. The block is plain text with plain shell commands, without one vendor's tool names, skills or file conventions. Which file it goes in (`AGENTS.md`, `CLAUDE.md` and so on) is the adopter's choice; the guide names the common ones without preferring one.
 - To decide: whether the block goes in the project's file (committed and read by collaborators who may not use agent-hub, while agent-hub's path differs per machine), in the user's own instructions, or split between them; whether project-setup.md §7's readiness check looks for it.
 - After C136: the conventions its table finds not reaching other projects are the candidates for what the block points at.
+- Decided 2026-11-12 in the planning session (the user accepted the recommendation): the block's text lives in docs/project-setup.md. It is meant for the planning agent's own instructions on that machine (where agent-hub's path is known), written with a `<agent-hub>` placeholder; the guide says the project's committed file is the adopter's choice, not the default. §7's readiness check does not look for it (it cannot see a user's own files). It does not wait for C136: what it points at today is the ledger, the rules at the top of roadmap.md, the round trip in usage.md and `docs:check`.
+
+#### Done when
+- [ ] docs/project-setup.md has a section with the block: a few lines of plain text that point at the project's ledger, the rules at the top of agent-hub's roadmap.md, usage.md's "Try a round trip between roles", and the check command (`npm run docs:check -- <ledger>` run in `<agent-hub>`), and copy no rule text.
+- [ ] The block names no vendor's tool, skill or file convention; the section names `AGENTS.md` and `CLAUDE.md` side by side as examples of where it may go, and says why the user's own instructions are the default.
+- [ ] README's "using it in other repositories" part points at the section.
+- [ ] `npm run docs:check` passes.
 
 ### C139. Let `status` show what is happening per item, for the planning session
-Status: proposed
 
 Raised 2026-11-06 (cite-bridge C22), from the user's premise that the planning session must grasp the Hub's state quickly (C135). `team status` (C108) gives per-Mailbox counts and the newest report to the human only. In C22 the planning session could not tell from it which item the leader was waiting on (`awaiting reply 1 (oldest #1014)`), what the earlier exchange was (deployer's question #1008, leader's hold #1009, the two reports #1010 and #1013), or that the item card was drafting from an old index (C138). It read `/messages` with curl after searching the Hub's source.
 - Idea: `status --item C<n>` lists that item's thread in order (requests carrying `meta.item`, the replies under them: seq, sender, first line), and plain `status` adds one line per open item with a request in flight (item, who holds it, waiting since). It also says when the ledger file changed after the index was sent (C138's (a), shared code).
 - Read-only, like C108; the card states stay the page's job. Whether `status` should also show the newest `NEEDS DECISION` per item is open.
+- Decided 2026-11-12 in the planning session (the user accepted the recommendation): both forms of the idea. The ledger check runs on the host, where `status` runs, so it can compare the file with the index the Hub holds (which the Hub itself cannot, design.md §3.8). The newest `NEEDS DECISION` per item is not part of this item.
+
+#### Done when
+- [ ] `npm run team -- status --item C<n> --project <folder>` lists that item's thread in seq order: the requests carrying `meta.item` C<n> and the replies under them, each with seq, sender, addressee and the first line of the body. With no such message it says so.
+- [ ] Plain `status` adds one line per item with a request in flight (the item, who holds it, waiting since).
+- [ ] `status` says when the ledger file changed after the index the Hub holds was sent (the file's modification time against the index's `updatedAt`), and names the command that sends it again.
+- [ ] Read-only: it posts nothing and moves no cursor. Unit tests cover the three outputs, and docs/usage.md describes them.
+- [ ] `npm test` and `npm run docs:check` pass.
 
 
 ### C154. Draft a run from the plan in the UI
@@ -1045,11 +1069,17 @@ Raised 2026-11-10 with C153. After a run, what waits for the human is spread ove
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
 
 ### C160. Lift the provisional restriction on `meta` in Channels notifications
-Status: proposed
 
 Raised 2026-11-11 from C149's follow-ups. `channelMeta` (`src/shared/format.ts`) puts only the known keys of `files` into a Channels notification's `meta`, because how Claude Code treats `"` `<` `>` `&` in attribute values was unverified (design.md §6.2-4). C149 recorded that Claude Code escapes them itself (§6.1ad), so the reason for the restriction is gone, and its comment still says unverified. Other senders' `meta` (`item`, `forwarded_sender` and so on) still reaches a Channels session only through `inbox()` (`<hub-message>`).
 - To decide: whether to pass every key of `meta` through Channels now, or a list of known keys (including `item`), and whether the values are converted (today: not). Passing more keys changes what a session sees as the sender's attributes (protocol.md §6; bodies and attributes are data, design.md §4), so the shape needs the planning session's word.
 - The comment in `src/shared/format.ts` and the notes in `tools/probe` (`probe.mjs`, `README`) that still call the escaping case unverified would be updated with it.
+- Decided 2026-11-12 in the planning session (the user accepted the recommendation): a list of known keys, not every key, so attributes a sender invents do not reach a session as if the Hub vouched for them. The list is the `meta` keys protocol.md defines (`files` and `item` at least; the others it names, such as the forward's, if protocol.md defines them). Values are not converted.
+
+#### Done when
+- [ ] `channelMeta` passes the known `meta` keys protocol.md defines, unconverted, and drops the rest; unit tests cover a known key, an unknown key, and values with `"` `<` `>` `&`.
+- [ ] protocol.md §6 lists which `meta` keys a Channels notification carries.
+- [ ] The comment in `src/shared/format.ts` and the notes in `tools/probe` no longer call the escaping case unverified; they point at design.md §6.1ad.
+- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C161. Let the restore hook find a Mailbox the way the Event hooks do
 Status: proposed
@@ -1058,7 +1088,12 @@ Raised 2026-11-11 from C129's report. The hook `tools/hooks/session-restore.mjs`
 - Idea: the Hub resolves it and the hook asks (a new endpoint or a field on `GET /mailboxes`), or the hook sends what the Event hooks send (`X-Hub-Mailbox`, cwd) and the Hub answers with the same text. Not decided; it matters only if sessions are often started by hand.
 
 ### C162. Keep the CI actions current
-Status: proposed
 
 Raised 2026-11-11 from C148's runs. The annotations say `actions/checkout@v4` and `actions/setup-node@v4` target Node.js 20, which GitHub now forces onto Node 24, and the `ubuntu-latest` label moves to Ubuntu 26. The runs pass today.
 - To decide: whether to move the actions to their current major versions now, pin `ubuntu-24.04`, or wait for a failure. A change is checked by a run on both systems.
+- Decided 2026-11-12 in the planning session (the user accepted the recommendation): move `actions/checkout` and `actions/setup-node` to their current major versions (read from their release pages at the time of the change); keep `ubuntu-latest` and `windows-latest`.
+
+#### Done when
+- [ ] `.github/workflows/ci.yml` uses the current major versions of `actions/checkout` and `actions/setup-node`; the body names the versions and where they were read.
+- [ ] A run on GitHub Actions after the user's push passed on both systems without the Node.js 20 deprecation annotation, and its URL is in the body.
+- [ ] `npm run docs:check` passes.
