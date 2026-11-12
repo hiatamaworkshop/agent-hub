@@ -10,6 +10,20 @@ import { envOverrides, overrideWarning, refusedTokenMessage, tokenFromEnvironmen
 import { envSetting, ROOT } from './env.js'
 import { hubGet, inProject, itemOf, type HubConn, type StatusMailbox, type StatusMessage } from './status.js'
 
+// Waits `ms`, or until the signal stops (C167): a stop during a wait ends it at once. Resolves in both cases
+export function sleepFor(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal?.aborted) return resolve()
+    const done = () => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', done)
+      resolve()
+    }
+    const timer = setTimeout(done, ms)
+    signal?.addEventListener('abort', done, { once: true })
+  })
+}
+
 export interface ReportsOptions {
   projectDir: string
   conn: HubConn
@@ -22,8 +36,13 @@ export interface ReportsOptions {
   err?: (line: string) => void
   // Stops the command (the caller's Ctrl-C or a test)
   signal?: AbortSignal
-  // Wait before reconnecting after the stream ends or fails (default 2 seconds)
+  // The first wait before a retry (default 2 seconds). Each failed retry doubles the next wait, up to maxRetryMs; a reconnect that
+  // works resets it to retryMs (C167)
   retryMs?: number
+  // The cap of the wait between retries (default 30 seconds, C167)
+  maxRetryMs?: number
+  // The wait itself (default: sleepFor). Tests inject one that records the wait instead of sleeping
+  wait?: (ms: number, signal?: AbortSignal) => Promise<void>
   // A stream with no bytes for this long is taken as lost. The Hub sends a comment every 30 seconds (app.ts), so 90 seconds is three of them
   idleMs?: number
 }
@@ -137,10 +156,16 @@ export async function followReports(o: ReportsOptions): Promise<number> {
   const out = o.out ?? ((l: string) => console.log(l))
   const err = o.err ?? ((l: string) => console.error(l))
   const retryMs = o.retryMs ?? 2000
+  const maxRetryMs = o.maxRetryMs ?? 30_000
+  const waitFn = o.wait ?? sleepFor
   const idleMs = o.idleMs ?? 90_000
   const get = hubGet(o.conn, fetchFn)
   let last = o.since ?? 0
   let started = false
+  // C167: attemptOk: the last attempt got through its catch-up; down: a drop line was printed and no back line yet; delay: the next wait
+  let attemptOk = false
+  let down = false
+  let delay = retryMs
   let names = new Set<string>()
 
   const stopped = () => o.signal?.aborted === true
@@ -199,6 +224,12 @@ export async function followReports(o: ReportsOptions): Promise<number> {
       const reason = await catchUp()
       if (reason) return reason
       started = true
+      attemptOk = true
+      delay = retryMs
+      if (down) {
+        err(`reports: back after #${last}`)
+        down = false
+      }
       return await readEvents(res.body, visit, idleMs)
     } finally {
       o.signal?.removeEventListener('abort', stop)
@@ -212,17 +243,21 @@ export async function followReports(o: ReportsOptions): Promise<number> {
     return 1
   }
   for (;;) {
+    attemptOk = false
     const reason = await connectOnce()
     if (stopped()) return 0
     if (!started) {
       err(reason)
       return 1
     }
-    err(`reports: ${reason}; reconnecting after #${last}`)
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, retryMs)
-      o.signal?.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
-    })
+    // One line when the stream drops (C167); the attempts that fail while the Hub is down print nothing
+    if (!down) {
+      err(`reports: ${reason}; reconnecting after #${last}`)
+      down = true
+    }
+    // A failed attempt doubles the next wait (2, 4, 8, 16, then 30 seconds); a connection that worked reset it in connectOnce
+    if (!attemptOk) delay = Math.min(delay * 2, maxRetryMs)
+    await waitFn(delay, o.signal)
     if (stopped()) return 0
   }
 }

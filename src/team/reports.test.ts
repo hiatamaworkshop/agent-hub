@@ -301,6 +301,79 @@ test('reports --json: control characters stay in the JSON line, which JSON.strin
   assert.equal((JSON.parse(reportLines(m, true)[0]!) as StatusMessage).body, m.body)
 })
 
+// C167: the Hub outage. plan[i] true makes the i-th /stream call throw (the Hub unreachable); the other calls go to `base`
+function flaky(base: typeof fetch, plan: boolean[]): typeof fetch {
+  let i = 0
+  return (async (input: string | URL | Request, init?: RequestInit) => {
+    if (String(input).endsWith('/stream') && plan[i++] === true) throw new TypeError('fetch failed')
+    return base(input, init)
+  }) as typeof fetch
+}
+
+test('reports: an outage gives one drop line and no line per retry; one back line after the reconnect; the catch-up prints no duplicate (C167)', async () => {
+  const store = [mk(1, leader, human, 'one')]
+  const waits: number[] = []
+  const base = fakeHub({ store, streams: [{ chunks: [], close: true }, { chunks: [], close: false }], onStream: (n) => { if (n === 1) store.push(mk(2, leader, human, 'two')) } })
+  // four failed retries, then the connection works
+  const r = start({ retryMs: 2000, wait: async (ms) => { waits.push(ms) }, fetchFn: flaky(base, [false, true, true, true, true]) })
+  await until(() => r.lines.includes('  | two'), 'the report after the outage')
+  r.stop()
+  assert.equal(await r.done, 0)
+  assert.deepEqual(waits, [2000, 4000, 8000, 16000, 30000])
+  assert.deepEqual(r.errs, ['reports: the stream ended; reconnecting after #1', 'reports: back after #2'])
+  assert.deepEqual(r.lines, [...reportLines(store[0]!, false), ...reportLines(store[1]!, false)])
+})
+
+test('reports: the wait doubles from 2 seconds and stays at the 30-second cap; one drop line for the whole outage (C167)', async () => {
+  const store = [mk(1, leader, human, 'one')]
+  const waits: number[] = []
+  const base = fakeHub({ store, streams: [{ chunks: [], close: true }, { chunks: [], close: false }], onStream: (n) => { if (n === 1) store.push(mk(2, leader, human, 'two')) } })
+  // five failed retries, then the connection works: the waits before the retries are 2, 4, 8, 16, 30 and 30 seconds
+  const r = start({ retryMs: 2000, wait: async (ms) => { waits.push(ms) }, fetchFn: flaky(base, [false, true, true, true, true, true, false]) })
+  await until(() => r.errs.length === 2, 'the back line')
+  r.stop()
+  assert.equal(await r.done, 0)
+  assert.deepEqual(waits, [2000, 4000, 8000, 16000, 30000, 30000])
+  assert.equal(r.errs.filter((l) => l.startsWith('reports: the stream ended')).length, 1)
+})
+
+test('reports: a reconnect resets the wait to 2 seconds; a second drop gives a second drop line and back line (C167)', async () => {
+  const store = [mk(1, leader, human, 'one')]
+  const waits: number[] = []
+  // base calls: 0 = the first connection (ends at once), 1 = a reconnect that ends at once, 2 = a reconnect that stays open
+  const base = fakeHub({
+    store,
+    streams: [{ chunks: [], close: true }, { chunks: [], close: true }, { chunks: [], close: false }],
+    onStream: (n) => {
+      if (n === 1) store.push(mk(2, leader, human, 'two'))
+      if (n === 2) store.push(mk(3, leader, human, 'three'))
+    },
+  })
+  // call 0: connects (drop 1); call 1 fails; call 2 connects (back, drop 2); call 3 connects (back)
+  const r = start({ retryMs: 2000, wait: async (ms) => { waits.push(ms) }, fetchFn: flaky(base, [false, true, false, false]) })
+  await until(() => r.errs.length === 4, 'four lines: drop, back, drop, back')
+  r.stop()
+  assert.equal(await r.done, 0)
+  assert.deepEqual(waits, [2000, 4000, 2000])
+  assert.deepEqual(r.errs, [
+    'reports: the stream ended; reconnecting after #1',
+    'reports: back after #2',
+    'reports: the stream ended; reconnecting after #2',
+    'reports: back after #3',
+  ])
+  assert.deepEqual(r.lines, [...reportLines(store[0]!, false), ...reportLines(store[1]!, false), ...reportLines(store[2]!, false)])
+})
+
+test('reports: a stop during the wait before a retry ends the command at once (C167)', async () => {
+  const base = fakeHub({ store: [], streams: [{ chunks: [], close: true }] })
+  const r = start({ retryMs: 60_000, fetchFn: flaky(base, [false, true, true, true, true, true]) })
+  await until(() => r.errs.length === 1, 'the drop line')
+  const t = Date.now()
+  r.stop()
+  assert.equal(await r.done, 0)
+  assert.ok(Date.now() - t < 2000, `the stop took ${Date.now() - t} ms`)
+})
+
 // `reports --seq <n>` (C166): one report by its seq, read once with GET only
 async function seqRun(store: StatusMessage[], seq: number, o: { json?: boolean; fetchFn?: typeof fetch; calls?: string[] } = {}) {
   const lines: string[] = []

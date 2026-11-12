@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C167
 
 (Items with a status line are listed under "Items".)
 
@@ -639,6 +638,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: `.github/workflows/ci.yml` (`actions/checkout@v7`, `actions/setup-node@v7`; versions read 2026-11-12 from the release pages: checkout v7.0.1, setup-node v7.1.0). Commit `08b8439`.
   - Checked: `npm test` 698 pass in the run; the reviewer read the item in the run. On GitHub, run 43157897621 (`ab1ef4a`): https://github.com/hiatamaworkshop/agent-hub/actions/runs/43157897621, both jobs succeeded, and the Node.js 20 deprecation annotation is gone. Done-when wording not changed.
   - Left: the `ubuntu-latest` label moving to Ubuntu 26 (an annotation only; not filed).
+- [x] C167 Keep a Hub outage quiet in a `reports --follow` reader (2026-11-12, closed after the review)
+  - Decided 2026-11-12 in the planning session (the user accepted the draft): one line when the stream drops and one when it is back, with a growing wait between retries, instead of one line per retry.
+  - Changed: `src/team/reports.ts` (`followReports`: one drop line, `reports: <reason>; reconnecting after #<last>`; nothing for the failed retries; one back line, `reports: back after #<last>`, written after the catch-up; the wait starts at 2 s, doubles after each failed attempt up to `maxRetryMs` (30 s), and resets to 2 s when a reconnect works; `sleepFor`, which a stop ends at once; an injectable `wait`), `src/team/reports.test.ts` (35 tests, the outage tests with injected waits), `docs/usage.md` ("Reconnect lines (C167)"), `docs/design.md` §6.1ah (the live run).
+  - Checked: `npm test` 749 pass, 0 fail; `npm run typecheck` passes; `npm run docs:check` 0 errors. Tests with an injected wait cover the drop line over four failed retries, the back line with no duplicate, the sequence 2, 4, 8, 16, 30 and 30 s with its cap, the reset after a reconnect, and a second drop. Live: a scratch Hub stopped for 71 seconds under Monitor with `2>&1`; the session got the drop line, then report B and the back line in one notification, and nothing else after the stop (design.md §6.1ah). The reviewer read the change and had no finding.
+  - Not checked: the real wait times (the live run did not time them; the tests inject the wait). Reviewer notes: after the drop line, a later failure of another kind (for example a token refused with 401 after a Hub restart) is not reported; the reader keeps retrying every 30 seconds. The catch-up GETs do not take the abort signal (from C135); this matters only for a caller that passes a signal and a Hub that accepts a connection but never answers.
 - [x] C166 Print one report in full, for a notification that cut it (2026-11-12, closed after the review)
   - Decided 2026-11-12 in the planning session (the user accepted the recommendation): a one-shot `reports --seq <n>`, chosen over `--since` without `--follow` (which prints every later report, not the one that was cut) and over wrapping long body lines in the reader (which changes the body's lines).
   - Changed: `src/team/reports.ts` (`reportBySeq`, `notReportReason`, `missingReason`, `runReportBySeq`, and `connection`, shared with `--follow`), `src/team/options.ts` (`--seq <n>`, its usage errors, the usage text), `src/team/main.ts` (dispatch), `src/team/reports.test.ts` (the `--seq` tests), `docs/usage.md` ("Reading one report in full (C166)"), `docs/design.md` §6.1ah (the check on 7777).
@@ -1081,16 +1085,3 @@ Status: proposed
 
 Raised 2026-11-11 from C129's report. The hook `tools/hooks/session-restore.mjs` finds the Mailbox by the Attachment's `session_id`, then `HUB_MAILBOX`. The Event hooks (`resolveMailbox`, design.md §3.4) also use the session map the Hub has learned and the cwd's folder name. So a session started by hand without `HUB_MAILBOX`, attached under its folder-name Mailbox, gets nothing printed after `/clear` (design.md §3.13 records it). Sessions started by `team` are not affected, and the `open_requests` tool and the instructions still cover the other case.
 - Idea: the Hub resolves it and the hook asks (a new endpoint or a field on `GET /mailboxes`), or the hook sends what the Event hooks send (`X-Hub-Mailbox`, cwd) and the Hub answers with the same text. Not decided; it matters only if sessions are often started by hand.
-
-### C167. Keep a Hub outage quiet in a `reports --follow` reader
-
-Raised 2026-11-12 in the planning session, from its review of C135, C164 and C165 (design.md §6.1ah item 3). Decided the same day with C166 (the user accepted the recommendation).
-- While the Hub is down the reader writes one line per retry, every 2 seconds, with no backoff. usage.md recommends `2>&1` under Monitor, so each retry is a notification, and rebuilding the Hub (`up -d --build`) is routine. Monitor stops a watch that emits too many events, so the reader may be gone without a word; whether it really is stopped was not tried.
-- Not part of this item: a reader that outlives its watch (§6.1ah item 1; cause not determined).
-
-#### Done when
-- [ ] While the Hub cannot be reached, the reader writes one line when the stream drops and one line when it is back (naming the last seq printed), not one line per retry.
-- [ ] The wait between retries grows from 2 seconds, doubling, up to 30 seconds, and starts again from 2 seconds after a reconnect succeeds. Catching up without duplicates is unchanged.
-- [ ] On a scratch Hub (not the Hub on 7777), with a reader under Monitor and `2>&1`: the Hub is stopped for at least 60 seconds and started again; the session gets the drop line, the back line and the next report once, and nothing else. The result is added to design.md §6.1ah.
-- [ ] docs/usage.md "Reconnect lines" describes the two lines and the backoff.
-- [ ] Tests with a fake Hub cover one drop line over several failed retries, the back line, the backoff sequence and its cap, and the reset after a reconnect. `npm test`, `npm run typecheck` and `npm run docs:check` pass.
