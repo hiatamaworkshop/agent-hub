@@ -193,10 +193,11 @@ const defaultMtimeOf: MtimeOf = (p) => {
   }
 }
 
-type Get = (path: string) => Promise<{ ok: true; json: unknown } | { ok: false; reason: string }>
+export type Get = (path: string) => Promise<{ ok: true; json: unknown } | { ok: false; reason: string }>
 
-// GET against the Hub with the token. Every reader of the status goes through it, so each one fails the same way (one line of reason)
-function hubGet(conn: HubConn, fetchFn: typeof fetch): Get {
+// GET against the Hub with the token. Every reader of the status goes through it, so each one fails the same way (one line of reason).
+// Exported for `reports` (C135), which reads the same way
+export function hubGet(conn: HubConn, fetchFn: typeof fetch): Get {
   return async (path) => {
     let res: Response
     try {

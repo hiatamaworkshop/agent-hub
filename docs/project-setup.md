@@ -141,6 +141,7 @@ Project ledger: <project>/<ledger path>, for example docs/roadmap.md
 
 Writing and closing items in the ledger follows the rules at the top of <agent-hub>/docs/roadmap.md.
 How requests and the round trip between roles work: <agent-hub>/docs/usage.md, the section "Try a round trip between roles with two agents".
+Optional: to receive the leader's reports as they arrive, run `npm run -s team -- reports --follow --project <project>` from <agent-hub> in the background (<agent-hub>/docs/usage.md, "Reading the leader's reports as they arrive").
 Before an item is called ready, run this from <agent-hub>:
   npm run docs:check -- <project>/<ledger path>
 Its exit code must be 0, and its output must show 0 errors.

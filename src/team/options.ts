@@ -8,10 +8,11 @@ export const USAGE = `Usage:
   npm run team -- agent --role <role> [--project <dir>] [--model <model>] [--mailbox <name>] [--permission-mode <mode>]
   npm run team -- hooks [--project <dir>] [--write]   (list the Hub hooks the project lacks; --write adds them)
   npm run team -- git-hook [--project <dir>] [--write]   (the post-commit hook that sends the ledger index; --write adds it)
-  npm run team -- status [--project <dir>] [--item C<n>]   (the project's Mailboxes on the Hub, its latest report to the human, the items with a request in flight, and whether the ledger changed after its index was sent (C108, C139); --item prints that item's thread instead)`
+  npm run team -- status [--project <dir>] [--item C<n>]   (the project's Mailboxes on the Hub, its latest report to the human, the items with a request in flight, and whether the ledger changed after its index was sent (C108, C139); --item prints that item's thread instead)
+  npm run team -- reports --follow [--project <dir>] [--json] [--since <seq>]   (C135: prints the reports the project's Mailboxes send to the human as they arrive; read-only, opt-in; --json prints one Message per line; --since first prints the reports after that seq)`
 
 export interface Parsed {
-  command: 'team' | 'agent' | 'hub' | 'hooks' | 'git-hook' | 'status' | 'help'
+  command: 'team' | 'agent' | 'hub' | 'hooks' | 'git-hook' | 'status' | 'reports' | 'help'
   roles: string[]
   role?: string
   project?: string
@@ -28,6 +29,10 @@ export interface Parsed {
   tabs?: Opener
   // C139: status --item C<n> prints that item's thread
   item?: string
+  // C135: reports --follow (the only mode), --json (one Message per line) and --since <seq>
+  follow: boolean
+  json: boolean
+  since?: number
 }
 
 export function parse(argv: string[]): Parsed {
@@ -49,11 +54,14 @@ export function parse(argv: string[]): Parsed {
       write: { type: 'boolean' },
       tabs: { type: 'string' },
       item: { type: 'string' },
+      follow: { type: 'boolean' },
+      json: { type: 'boolean' },
+      since: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   })
   const sub = positionals[0] ?? 'team'
-  if (positionals.length > 1 || !['team', 'agent', 'hub', 'hooks', 'git-hook', 'status'].includes(sub)) throw new Error(`Unknown command: ${positionals.join(' ')}`)
+  if (positionals.length > 1 || !['team', 'agent', 'hub', 'hooks', 'git-hook', 'status', 'reports'].includes(sub)) throw new Error(`Unknown command: ${positionals.join(' ')}`)
   const timeout = values['attach-timeout'] === undefined ? 60 : Number(values['attach-timeout'])
   if (!Number.isInteger(timeout) || timeout <= 0) throw new Error(`--attach-timeout must be a positive whole number of seconds: ${values['attach-timeout']}`)
   const tabs = values.tabs
@@ -61,6 +69,11 @@ export function parse(argv: string[]): Parsed {
   if (sub === 'agent' && !values.role && !values.help) throw new Error('agent needs --role')
   if (values.item !== undefined && sub !== 'status') throw new Error('--item is only for status')
   if (values.item !== undefined && !/^C\d+$/.test(values.item)) throw new Error(`--item must be a roadmap item ID such as C139: ${values.item}`)
+  const reportsOnly = values.follow || values.json || values.since !== undefined
+  if (reportsOnly && sub !== 'reports') throw new Error('--follow, --json and --since are only for reports')
+  if (sub === 'reports' && !values.follow && !values.help) throw new Error('reports needs --follow (it keeps reading the Hub; see usage.md)')
+  const since = values.since === undefined ? undefined : Number(values.since)
+  if (since !== undefined && (!Number.isInteger(since) || since < 0)) throw new Error(`--since must be a seq of 0 or more: ${values.since}`)
   return {
     command: values.help ? 'help' : (sub as Parsed['command']),
     roles: (values.roles ?? []).flatMap((r) => r.split(',')).map((r) => r.trim()).filter(Boolean),
@@ -77,5 +90,8 @@ export function parse(argv: string[]): Parsed {
     write: values.write ?? false,
     tabs: tabs as Opener | undefined,
     item: values.item,
+    follow: values.follow ?? false,
+    json: values.json ?? false,
+    since,
   }
 }

@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C135
 
 (Items with a status line are listed under "Items".)
 
@@ -639,6 +638,14 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: `.github/workflows/ci.yml` (`actions/checkout@v7`, `actions/setup-node@v7`; versions read 2026-11-12 from the release pages: checkout v7.0.1, setup-node v7.1.0). Commit `08b8439`.
   - Checked: `npm test` 698 pass in the run; the reviewer read the item in the run. On GitHub, run 43157897621 (`ab1ef4a`): https://github.com/hiatamaworkshop/agent-hub/actions/runs/43157897621, both jobs succeeded, and the Node.js 20 deprecation annotation is gone. Done-when wording not changed.
   - Left: the `ubuntu-latest` label moving to Ubuntu 26 (an annotation only; not filed).
+- [x] C135 Let the planning session receive the leader's reports (2026-11-12, closed after the review)
+  - Decided 2026-11-12 in the planning session (the user accepted the recommendation): the planning session stays not a Hub role. It receives reports through a read-only command on the host, `npm run team -- reports --follow --project <dir>` (also `hub-team reports --follow`), which follows the Hub's `GET /stream`. No Hub endpoint or field was added. Opt-in: team start, the hooks and the shim never start it.
+  - Changed: `src/team/reports.ts` (new), `src/team/reports.test.ts` (new, 18 tests), `src/team/status.ts` (`hubGet` and `Get` exported), `src/team/options.ts` and `src/team/main.ts` (the command), `docs/usage.md` (section "Reading the leader's reports as they arrive", with the framing rule), `docs/project-setup.md` §8 (one optional line), `docs/design.md` §3.15 (the decision) and §6.1ag (the live runs).
+  - Framing: text mode prints the header at column 0 and every body line indented by two spaces. Control characters other than tab are escaped as `\uXXXX` first, so no body line can be read as a header or move the terminal cursor. `--json` prints the Message as `GET /messages` returns it.
+  - Checked: `npm test` 732 pass, 0 fail; `npm run typecheck` passes; `npm run docs:check` 0 errors. The reviewer read the change twice. The first review found that text mode had no framing; the user then changed the first done-when line (2026-11-12) and the framing went in. The second found that control characters could move a terminal cursor to column 0; text mode now escapes them. The escaping itself was not re-reviewed.
+  - Live run: a plain reader on a scratch Hub (port 7790), then the planning session under Claude Code's Monitor on the Hub on 7777 (design.md §6.1ag). The leader's report #604 arrived in the planning session as a Monitor notification with nothing typed. The reader restarted with `--since 603` printed #604 again from the history, with the framing.
+  - Not checked: a stream drop and the catch-up after it, `--json`, and a Hub restart against a real Hub (unit tests with a fake Hub only); a real terminal rendering the escapes.
+  - Reviewer notes: a Mailbox that re-attaches to another project is judged by its project at read time; GET /mailboxes is re-read for each report from a Mailbox of another project (extra reads only).
 - [x] C163 Pass `meta.item` to a Channels session only in the item ID's shape (2026-11-12, closed after the review)
   - Decided 2026-11-12 in the planning session (the user accepted the recommendation): `channelMeta` passes `item` only when its ID matches `^C[1-9][0-9]*$`, and drops it otherwise. The Hub's storage and `GET /messages` stay as they are (no new 400 for senders).
   - Changed: `src/shared/format.ts` (`channelMeta`, `itemIdOf`, `ITEM_ID`), `src/shared/meta.test.ts` (five new tests: a valid ID and a string ID pass; malformed IDs, non-string values and an object without a string ID are dropped; a dropped item leaves `files` and no `meta` attribute), `docs/protocol.md` §6.
@@ -1018,25 +1025,6 @@ Status: proposed
 Split from C9 on 2026-11-03 (design.md §3.12, layer 1). The Hub does not read the working tree (§3.8), so the checks run on the host, in the leader's checking steps or a Stop hook, and their results would be sent to the Hub as a notice or Event and shown in the UI.
 The other half: a deployer's reply whose `CHANGED` lists `src/` but no `docs/`. Whether that is read by the Hub (the shape of `CHANGED` is not declared yet; C11) or by the leader's checking steps is open.
 
-
-### C135. Let the planning session receive the leader's reports
-
-Raised 2026-11-05 (cite-bridge). The planning session is not connected to the Hub (design.md §3.15: it is not a Hub role), so after each item the user typed "C10 done" into it before it could check. The friction is the relay, not the guidance.
-- Idea: a read-only connection for the planning session that receives reports addressed to the user (no requests, no role), or the Hub notifying it when a report arrives. This revisits "the planning session is not a Hub role", so it needs a decision on that first.
-- Background from the same session, on how long the planning session stays needed. Its work split into three: relaying reports (should move to the Hub), checking independently (re-running tests with pymupdf hidden, reading callers the team did not mention; shrinks as the reviewer and `docs:check` grow), and deciding promises with the human (filing, done-when wording, order). The third is a separate seat from a leader that may be disposable (§3.13), and is expected to stay, maybe inside the UI later. A measure for the second: the share of items where the planning session's check found something the team's report did not (2026-11-05: 1 of 3, C10's close).
-
-- Premise from the user (2026-11-06): the planning session must be able to grasp the Hub's state quickly. Reading it on demand (C139) comes first and does not need the planning session to be a Hub role; receiving reports here is the push side and can follow.
-- A second case, 2026-11-06 (cite-bridge C22): the leader's `NEEDS DECISION` on done-when wording went to the user, who pasted it into the planning session; the planning session fixed the ledger; the request then went out stale (C138) and the leader asked the same question again. One decision took two relays by hand and one wasted round trip.
-- Decided 2026-11-12 in the planning session (the user accepted the recommendation): the planning session stays not a Hub role. It receives reports by a read-only command on the host, like `status` (C139): it follows the Hub's `GET /stream` and prints the reports to the human. No Hub endpoint or field is added. The user asked for it to be general and opt-in: the command is a plain reader any agent or tool can run in the background (Claude Code's Monitor is one way, not the only one), and nothing starts it unless the user does (team start, hooks and the shim do not).
-
-#### Done when
-- [ ] `npm run team -- reports --follow --project <dir>` (also `hub-team reports --follow`) prints, in arrival order, each Message to the human from that project's Mailboxes: one header line (`#seq`, sender, `kind`, `meta.item` if any, time), then the body as is. Messages of other projects and Messages to Mailboxes or roles are not printed. It only reads: it posts nothing and moves no cursor.
-- [ ] With `--json`, each report is one JSON line (the Message as `GET /messages` returns it) instead of the header and body, so other tools can read it.
-- [ ] `--since <seq>` first prints the reports after that seq, then follows. When the stream drops, it reconnects and catches up from the last seq it printed, without duplicates. If the Hub cannot be reached or refuses the token at start, it says so in one line and exits 1.
-- [ ] Opt-in: no team start, hook or shim starts the command. docs/usage.md describes it as an optional reader, with Claude Code's Monitor as one example and a plain background command for other agents; the planning session's block (project-setup.md §8, C137) mentions it as optional in one line.
-- [ ] design.md §3.15 records the decision: the planning session is not a Hub role and receives reports through this read-only command.
-- [ ] design.md §6 records one live run: a leader's report reaches a planning session through the command without the user typing anything.
-- [ ] Tests cover the filter (other projects, Messages not to the human), `--json`, `--since` and catching up after a reconnect. `npm test`, `npm run typecheck` and `npm run docs:check` pass.
 
 ### C136. Give each working convention its lineage and function, and re-check its status
 Status: proposed

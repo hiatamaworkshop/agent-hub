@@ -215,6 +215,25 @@ On Windows, the PowerShell scripts keep working with the same parameters as befo
 - The permission mode is passed as `claude --permission-mode <value>` only when you add `--permission-mode <value>` (`-PermissionMode`). If omitted nothing is passed and Claude Code starts with its default. If your account makes auto the default, permission waits hardly appear.
   To try permission waits, add `--permission-mode default` (e.g. `npm run team -- agent --role deployer --permission-mode default`; adding it to a team start passes it to every role). To change it by hand after starting, switch that tab to `manual` with Shift+Tab (the 2.1.306 switcher has no `default`; `manual` corresponds to it; the hook's `permission_mode` says `default`; design.md §6.1o, roadmap C29).
 
+## Reading the leader's reports as they arrive (reports --follow, C135)
+
+`npm run team -- reports --follow --project <dir>` (also `hub-team reports --follow`, in the project's folder) prints each report the project's Mailboxes send to the human (`user:browser`), in arrival order. A report is a header line (`#seq`, the sender, `kind`, the roadmap item when the Message has one, and the time), then the body, with every line indented by two spaces (see Framing below). Messages of other projects, Messages to Mailboxes or roles, and Messages to the `cli` are not printed.
+
+The command only reads. It posts nothing and moves no cursor, so no Mailbox's unread state changes. It finds the Hub the same way `status` does (`HUB_URL`, else `HUB_PORT` on 127.0.0.1, and `HUB_TOKEN`).
+
+- `--json`: one line per report, the Message as `GET /messages` returns it, for tools that read it.
+
+**Framing.** In text mode the header is the only line at column 0. Every body line after it is indented by two spaces, blank lines included, Control characters other than tab are shown as visible escapes, in lower-case hex, such as `\u001b` for ESC and `\u0008` for backspace. That covers the C0 controls, DEL, the C1 controls (including U+0085), and U+2028 / U+2029. So a terminal cannot be made to draw a body line at column 0. Tab and all other text are unchanged, and nothing is trimmed. So no body line can be read as a header, even one that looks like `#999 mailbox:… `. A program that reads the output should use `--json`, which prints one Message per line and carries the body unchanged (its JSON string is valid JSON; the escapes above are for the terminal only).
+- `--since <seq>`: first prints the reports after that seq, then follows. Without it, the whole history is printed first.
+- When the stream drops, the command reconnects and catches up from the last seq it printed, so nothing is printed twice. If the Hub cannot be reached, or refuses the token, when the command starts, it prints one line and exits with 1. A reader that is still running when the Hub's data is erased (its seq starts again from 1) misses the reports until the seq passes its own last one, so restart it then.
+
+It is opt-in. Team start, the hooks and the shim never start it. Someone who wants the reports as they are sent starts it, and stops it when they do not. Two ways to run it:
+
+- In Claude Code, start it with Monitor, which turns each printed line into a notification in the session. This is one example; the command is the same.
+- For any other agent or tool, start it as a plain background process and read its output, for example by redirecting it to a file and reading that file.
+
+Run it with `npm run -s`, which leaves out npm's banner: `npm run -s team -- reports --follow --project <dir>`, from agent-hub's folder.
+
 ## Request work from roadmap items (Items)
 
 Send the roadmap's `### C<n>. Title` items (how to write them is at the top of [docs/roadmap.md](roadmap.md)) to the Hub and cards line up under **Items** in the sidebar. Pressing a card opens a modal with its content (ID, title, status and reason, the check of each done-when line, the state of the request, the diff of the promise). The modal's **Draft request** turns it into a draft of `GOAL` / `DONE WHEN`, and the request you send carries the item (`meta.item`). **Open in editor** opens that line of the ledger (a `vscode://` link; your editor must support it). The body is not put in the index and is not shown in the modal (design.md §3.15). The sidebar's width can be changed with its handle and is remembered by this Hub's browser.
