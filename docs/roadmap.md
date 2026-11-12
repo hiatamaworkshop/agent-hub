@@ -25,7 +25,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C162
-- [ ] C163
 
 
 (Items with a status line are listed under "Items".)
@@ -636,6 +635,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: `npm test` 686 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 0 errors; `send-index.test.ts` 11 pass, 0 fail in a `node:lts` Linux container (a scratch copy of the tree, `npm ci`). The review found no finding, and probed a real folder on this machine: a case difference in a parent folder is named, the project path in upper case still works, and a name that differs by more than case keeps the old wording. Done-when wording not changed.
   - Not checked: the helper on macOS; a real case-differing file on a case-insensitive disk through the team start; the tests on Linux in the review.
   - Reviewer note: the helper relies on `realpathSync.native` returning the on-disk letter case, which holds on Windows. On macOS a Mac would keep the old reason (no wrong name).
+- [x] C163 Pass `meta.item` to a Channels session only in the item ID's shape (2026-11-12, closed after the review)
+  - Decided 2026-11-12 in the planning session (the user accepted the recommendation): `channelMeta` passes `item` only when its ID matches `^C[1-9][0-9]*$`, and drops it otherwise. The Hub's storage and `GET /messages` stay as they are (no new 400 for senders).
+  - Changed: `src/shared/format.ts` (`channelMeta`, `itemIdOf`, `ITEM_ID`), `src/shared/meta.test.ts` (five new tests: a valid ID and a string ID pass; malformed IDs, non-string values and an object without a string ID are dropped; a dropped item leaves `files` and no `meta` attribute), `docs/protocol.md` §6.
+  - The check reads the ID: `item.id` in the object form the UI and the shim set (protocol.md §2), or the string itself. The value passes unchanged, so C160's object test still holds. The request's "string only" wording did not fit that shape; this is the reading taken.
+  - Checked: `npm test` 714 pass, 0 fail; `npm run docs:check` 0 errors, exit 0. The reviewer read the uncommitted change and returned no findings. Two notes: the check covers the ID only, so other fields inside an object `item` still pass; a bare string ID is accepted besides the object form. Done-when wording not changed.
+  - Not checked: a live Hub and a real Claude Code session receiving a dropped `item` (unit tests only).
 - [x] C160 Lift the provisional restriction on `meta` in Channels notifications (2026-11-12, closed after the review)
   - Decided 2026-11-12 in the planning session (the user accepted the recommendation): a list of known keys, not every key. The list is `files` and `item`, the `meta` keys protocol.md §2 defines; `forwardedFrom` / `forwardedSender` are Message fields, not `meta` keys, and already reach Channels as attributes.
   - Changed: `src/shared/format.ts` (`channelMeta` passes `files`, with its element keys as before, and `item`, unconverted; the rest is dropped), `src/shared/meta.test.ts` (a known key, an unknown key, values with `"` `<` `>` `&`), `docs/protocol.md` §2 and §6, `docs/design.md` §6.1ad and §6.2-4, `tools/probe/probe.mjs` and `tools/probe/README.md` §3b (both point at design.md §6.1ad).
@@ -1067,12 +1072,3 @@ Raised 2026-11-11 from C148's runs. The annotations say `actions/checkout@v4` an
 - [x] `.github/workflows/ci.yml` uses the current major versions of `actions/checkout` and `actions/setup-node`; the body names the versions and where they were read.
 - [x] A run on GitHub Actions after the user's push passed on both systems without the Node.js 20 deprecation annotation, and its URL is in the body.
 - [x] `npm run docs:check` passes.
-
-### C163. Pass `meta.item` to a Channels session only in the item ID's shape
-Raised 2026-11-12 from the run's report (#584, NEEDS DECISION 2 after C160). C160 passes the known `meta` keys (`files`, `item`) through Channels unconverted, so that attributes a sender invents do not reach a session as if the Hub vouched for them. But the Hub does not check the shape of a `meta.item` set by an HTTP sender (`resolveMeta` in `src/hub/app.ts`), so any value reaches the session as the `item` attribute. The shim's `post_message` and the C129 hook already accept only `^C[1-9][0-9]*$`.
-- Decided 2026-11-12 in the planning session (the user accepted the recommendation): `channelMeta` passes `item` only when its ID matches `^C[1-9][0-9]*$`, and drops it otherwise. The Hub's storage and `GET /messages` stay as they are (no new 400 for senders); the check sits where the value becomes a session-facing attribute.
-
-#### Done when
-- [ ] `channelMeta` passes `meta.item` only when its ID matches `^C[1-9][0-9]*$`, and drops it otherwise; unit tests cover a valid ID, a malformed one, and a non-string.
-- [ ] protocol.md §6 says that a Channels notification carries `item` only in that shape.
-- [ ] `npm test` and `npm run docs:check` pass.

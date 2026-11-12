@@ -65,6 +65,37 @@ describe('meta の配信属性', () => {
     assert.equal(attr!.includes('evil'), false)
   })
 
+  it('item は ID が ^C[1-9][0-9]*$ の形のときだけ通す (C163): 有効な ID は通る', () => {
+    const good = { id: 'C163', project: 'C:\\work\\agent-hub', source: null, promise: null }
+    const attr = toChannelParams({ ...base, meta: { item: good } }, 'deployer').meta.meta
+    assert.deepEqual(JSON.parse(attr!), { item: good })
+    assert.deepEqual(JSON.parse(toChannelParams({ ...base, meta: { item: 'C163' } }, 'deployer').meta.meta!), { item: 'C163' })
+  })
+
+  it('item は ID が形に合わないなら落とす (C163)', () => {
+    for (const id of ['c163', 'C0', 'C01', 'C1 ', 'X1', 'C1\nC2', 'C1\n', '', 'C']) {
+      const p = toChannelParams({ ...base, meta: { item: { id, project: 'p' } } }, 'deployer')
+      assert.equal('meta' in p.meta, false, JSON.stringify(id))
+      const s = toChannelParams({ ...base, meta: { item: id } }, 'deployer')
+      assert.equal('meta' in s.meta, false, JSON.stringify(id))
+    }
+  })
+
+  it('item が文字列でない・ID がない値は落とす (C163): 数・null・配列・ID のない object・ID が文字列でない object', () => {
+    const bad: unknown[] = [1, null, ['C1'], true, {}, { id: 5 }, { id: null }, { id: ['C1'] }]
+    for (const item of bad) {
+      const p = toChannelParams({ ...base, meta: { item } }, 'deployer')
+      assert.equal('meta' in p.meta, false, JSON.stringify(item))
+    }
+  })
+
+  it('item が落ちても files は残る。落ちた item は属性に入らない (C163)', () => {
+    const f = { id: 'f_' + 'e'.repeat(32), mime: 'image/png', size: 1, width: 1, height: 1 }
+    const attr = toChannelParams({ ...base, meta: { files: [f], item: { id: 'x1' } } }, 'deployer').meta.meta!
+    assert.deepEqual(Object.keys(JSON.parse(attr)), ['files'])
+    assert.equal(attr.includes('x1'), false)
+  })
+
   it('値の " < > & は変換せず、そのまま属性値の JSON に入る', () => {
     const m: Message = { ...base, meta: { files: [{ id: 'f_' + 'd'.repeat(32), mime: 'image/png', size: 1, width: 1, height: 1, error: 'a"b<c>&d' }], item } }
     const attr = toChannelParams(m, 'deployer').meta.meta!

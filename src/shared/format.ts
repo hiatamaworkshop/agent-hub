@@ -40,9 +40,24 @@ function attributes(m: Message, meta: Record<string, unknown> | undefined): Reco
 // Channels の meta 属性に載せる files の既知のキー。Hub は id/mime/size/width/height を書き、shim は path か error を足す
 const CHANNEL_FILE_KEYS = ['id', 'mime', 'size', 'width', 'height', 'path', 'error'] as const
 
+// meta.item の ID の形 (C163)。Channels の item 属性は、この形の ID を持つものだけ通す
+const ITEM_ID = /^C[1-9][0-9]*$/
+
+// meta.item の ID。UI と shim は { id, project, … } の形で付ける (protocol.md §2)。ID そのものの文字列も受ける。それ以外は undefined
+function itemIdOf(item: unknown): string | undefined {
+  if (typeof item === 'string') return item
+  if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+    const id = (item as Record<string, unknown>).id
+    if (typeof id === 'string') return id
+  }
+  return undefined
+}
+
 // Channels に載せる meta のキー。protocol.md §2 (Message の meta) が定義するもの: files (Hub が解釈) と item (UI / shim が付ける)。
 // 送り手が勝手に付けたキーは載せない (Hub が保証したように見えないため)。forwardedFrom / forwardedSender は meta ではなく
 // Message の項目で、channel 属性として既に載る。
+// item は、その ID が ^C[1-9][0-9]*$ の形のときだけ載せる (C163)。ほかの形の ID、ID のない値、文字列でない値は落とす (エラーにしない)。
+// Hub の保存と GET /messages は変えない。送り手が書いた item は inbox (<hub-message>) からは今までどおり読める。
 // 値は変換しない (キーで選ぶだけ)。Claude Code が属性値の " < > & を自分でエスケープする (design.md §6.1ad)。
 // 残るものがなければ undefined。ほかの送り手の meta は inbox (<hub-message>) からも読める
 export function channelMeta(meta: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
@@ -61,7 +76,8 @@ export function channelMeta(meta: Record<string, unknown> | undefined): Record<s
     }
     if (files.length > 0) out.files = files
   }
-  if (meta.item !== undefined) out.item = meta.item
+  const itemId = itemIdOf(meta.item)
+  if (itemId !== undefined && ITEM_ID.test(itemId)) out.item = meta.item
   return Object.keys(out).length > 0 ? out : undefined
 }
 
