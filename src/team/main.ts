@@ -3,6 +3,7 @@
 //   agent  --role <r> [--project <dir>] [--model <m>] [--mailbox <name>] [--permission-mode <m>]
 //   hooks  [--project <dir>] [--write]   (the Hub's hook settings for the project; C69)
 //   status [--project <dir>] [--item C<n>]   (the project's Mailboxes on the Hub and its latest report to the human; C108. --item: that item's thread, C139)
+//   reports --seq <n> [--project <dir>] [--json]   (one report by its seq, read once, in full; C166)
 //   reports --follow [--project <dir>] [--json] [--since <seq>]   (the reports the project's Mailboxes send to the human, as they arrive; read-only, opt-in; C135)
 //   hub    (what the Hub's tab runs)
 import { spawn } from 'node:child_process'
@@ -12,7 +13,7 @@ import { runAgent } from './agent.js'
 import { runGitHook } from './git-hook.js'
 import { runHooks } from './hooks.js'
 import { runStatus } from './status.js'
-import { runReports } from './reports.js'
+import { runReportBySeq, runReports } from './reports.js'
 import { ROOT } from './env.js'
 import { waitForEnter } from './prompt.js'
 import { parse, USAGE } from './options.js'
@@ -54,7 +55,10 @@ async function main(argv: string[]): Promise<number> {
   if (p.command === 'hooks') return runHooks(projectDir(p.project), ROOT, p.write)
   if (p.command === 'git-hook') return runGitHook(projectDir(p.project), ROOT, p.write)
   if (p.command === 'status') return runStatus(projectDir(p.project), ROOT, p.item)
-  if (p.command === 'reports') return runReports(projectDir(p.project), ROOT, { json: p.json, since: p.since })
+  if (p.command === 'reports') {
+    if (p.seq !== undefined) return runReportBySeq(projectDir(p.project), ROOT, { json: p.json, seq: p.seq })
+    return runReports(projectDir(p.project), ROOT, { json: p.json, since: p.since })
+  }
   if (p.command === 'agent') {
     return runAgent({ role: p.role!, projectDir: projectDir(p.project), model: p.model, mailbox: p.mailbox, permissionMode: p.permissionMode, fromTeam: p.fromTeam, attachTimeoutSec: p.attachTimeoutSec })
   }

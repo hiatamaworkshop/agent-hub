@@ -9,6 +9,7 @@ export const USAGE = `Usage:
   npm run team -- hooks [--project <dir>] [--write]   (list the Hub hooks the project lacks; --write adds them)
   npm run team -- git-hook [--project <dir>] [--write]   (the post-commit hook that sends the ledger index; --write adds it)
   npm run team -- status [--project <dir>] [--item C<n>]   (the project's Mailboxes on the Hub, its latest report to the human, the items with a request in flight, and whether the ledger changed after its index was sent (C108, C139); --item prints that item's thread instead)
+  npm run team -- reports --seq <n> [--project <dir>] [--json]   (C166: one report by its seq, read once, in full; exits 1 with one line when that Message is not a report of the project to the human)
   npm run team -- reports --follow [--project <dir>] [--json] [--since <seq>]   (C135: prints the reports the project's Mailboxes send to the human as they arrive; read-only, opt-in; --json prints one Message per line; --since first prints the reports after that seq)`
 
 export interface Parsed {
@@ -33,6 +34,8 @@ export interface Parsed {
   follow: boolean
   json: boolean
   since?: number
+  // C166: reports --seq <n> reads one report, once
+  seq?: number
 }
 
 export function parse(argv: string[]): Parsed {
@@ -57,6 +60,7 @@ export function parse(argv: string[]): Parsed {
       follow: { type: 'boolean' },
       json: { type: 'boolean' },
       since: { type: 'string' },
+      seq: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   })
@@ -69,9 +73,13 @@ export function parse(argv: string[]): Parsed {
   if (sub === 'agent' && !values.role && !values.help) throw new Error('agent needs --role')
   if (values.item !== undefined && sub !== 'status') throw new Error('--item is only for status')
   if (values.item !== undefined && !/^C\d+$/.test(values.item)) throw new Error(`--item must be a roadmap item ID such as C139: ${values.item}`)
-  const reportsOnly = values.follow || values.json || values.since !== undefined
-  if (reportsOnly && sub !== 'reports') throw new Error('--follow, --json and --since are only for reports')
-  if (sub === 'reports' && !values.follow && !values.help) throw new Error('reports needs --follow (it keeps reading the Hub; see usage.md)')
+  const reportsOnly = values.follow || values.json || values.since !== undefined || values.seq !== undefined
+  if (reportsOnly && sub !== 'reports') throw new Error('--follow, --json, --since and --seq are only for reports')
+  if (sub === 'reports' && !values.follow && values.seq === undefined && !values.help) throw new Error('reports needs --follow (it keeps reading the Hub) or --seq <n> (one report, read once; see usage.md)')
+  if (values.seq !== undefined && values.follow) throw new Error('--seq reads one report and --follow keeps reading; use one of them')
+  if (values.seq !== undefined && values.since !== undefined) throw new Error('--seq and --since cannot be used together (--since starts --follow)')
+  const seq = values.seq === undefined ? undefined : Number(values.seq)
+  if (seq !== undefined && (!Number.isInteger(seq) || seq < 1)) throw new Error(`--seq must be a positive whole number: ${values.seq}`)
   const since = values.since === undefined ? undefined : Number(values.since)
   if (since !== undefined && (!Number.isInteger(since) || since < 0)) throw new Error(`--since must be a seq of 0 or more: ${values.since}`)
   return {
@@ -93,5 +101,6 @@ export function parse(argv: string[]): Parsed {
     follow: values.follow ?? false,
     json: values.json ?? false,
     since,
+    seq,
   }
 }

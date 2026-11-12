@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C166
 - [ ] C167
 
 (Items with a status line are listed under "Items".)
@@ -640,6 +639,14 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: `.github/workflows/ci.yml` (`actions/checkout@v7`, `actions/setup-node@v7`; versions read 2026-11-12 from the release pages: checkout v7.0.1, setup-node v7.1.0). Commit `08b8439`.
   - Checked: `npm test` 698 pass in the run; the reviewer read the item in the run. On GitHub, run 43157897621 (`ab1ef4a`): https://github.com/hiatamaworkshop/agent-hub/actions/runs/43157897621, both jobs succeeded, and the Node.js 20 deprecation annotation is gone. Done-when wording not changed.
   - Left: the `ubuntu-latest` label moving to Ubuntu 26 (an annotation only; not filed).
+- [x] C166 Print one report in full, for a notification that cut it (2026-11-12, closed after the review)
+  - Decided 2026-11-12 in the planning session (the user accepted the recommendation): a one-shot `reports --seq <n>`, chosen over `--since` without `--follow` (which prints every later report, not the one that was cut) and over wrapping long body lines in the reader (which changes the body's lines).
+  - Changed: `src/team/reports.ts` (`reportBySeq`, `notReportReason`, `missingReason`, `runReportBySeq`, and `connection`, shared with `--follow`), `src/team/options.ts` (`--seq <n>`, its usage errors, the usage text), `src/team/main.ts` (dispatch), `src/team/reports.test.ts` (the `--seq` tests), `docs/usage.md` ("Reading one report in full (C166)"), `docs/design.md` §6.1ah (the check on 7777).
+  - Checked: `npm test` 745 pass, 0 fail; `npm run typecheck` passes; `npm run docs:check` 0 errors. `reports --seq <n>` reads with `GET /messages?after=<n-1>&limit=1`, then `GET /mailboxes`, and prints the report in the `--follow` format (or one JSON line with `--json`) and exits 0. A Message that is not a report of the project to the human gives one line and exit 1: no such Message, deleted, another project's Mailbox, or not to the human. `--seq` with `--follow` or `--since` is a usage error. usage.md says that a notification ending in `(truncated)` is read in full this way.
+  - Read-only check on the Hub on 7777: `--seq 637` printed all 10 lines of report #637, and `--seq 99999` gave the no-such-Message line with exit 1 (the latest seq was 644).
+  - Reviewer read the change: one finding, that the "never sent or deleted" wording did not say which applied. It was fixed after the review by splitting on the Hub's `lastSeq`; the fix itself was not re-reviewed.
+  - First use, by the planning session (2026-11-12): the Monitor notification of the closing report itself, #648, was cut twice (`...(truncated)`); `reports --seq 648 --project .` printed both cut parts in full and exited 0.
+  - Not checked: `--json` with `--seq` on the real Hub; the deleted wording on the real Hub (no deleted seq was available; the fake Hub covers it); which lines a Monitor notification cut (the deployer did not see that notification).
 - [x] C165 Mark `reports` body lines with a visible prefix, not only an indent (2026-11-12, closed after the review)
   - Decided 2026-11-12 in the planning session (the user accepted the recommendation): every body line of a text-mode report gets a visible mark, so a view that strips leading whitespace still shows a body line as a body line. `--json` is unchanged.
   - Changed: `src/team/reports.ts` (`BODY_PREFIX` = `  | `: two spaces, a mark, a space; the header stays unmarked at column 0; the escapes of C135 are applied before the prefix), `src/team/reports.test.ts` (20 tests, the text expectations moved to the mark), `docs/usage.md` ("Framing" rewritten around the mark), `docs/conventions-log.md` (one row, 2026-11-12, format: the change and how to read the indent-only output), `docs/design.md` §6.1ah (the Monitor result).
@@ -1074,19 +1081,6 @@ Status: proposed
 
 Raised 2026-11-11 from C129's report. The hook `tools/hooks/session-restore.mjs` finds the Mailbox by the Attachment's `session_id`, then `HUB_MAILBOX`. The Event hooks (`resolveMailbox`, design.md §3.4) also use the session map the Hub has learned and the cwd's folder name. So a session started by hand without `HUB_MAILBOX`, attached under its folder-name Mailbox, gets nothing printed after `/clear` (design.md §3.13 records it). Sessions started by `team` are not affected, and the `open_requests` tool and the instructions still cover the other case.
 - Idea: the Hub resolves it and the hook asks (a new endpoint or a field on `GET /mailboxes`), or the hook sends what the Event hooks send (`X-Hub-Mailbox`, cwd) and the Hub answers with the same text. Not decided; it matters only if sessions are often started by hand.
-
-### C166. Print one report in full, for a notification that cut it
-
-Raised 2026-11-12 in the planning session, from its review of C135, C164 and C165 (design.md §6.1ah, "Seen from the planning session" (d)). Decided the same day (the user accepted the recommendation; the outage half of the first draft became C167, since the two are independent).
-- Claude Code's Monitor notification cuts a long line (`...(truncated)`, seen on report #637), and no command prints one report in full: `reports` needs `--follow`, and `status` prints only the newest report. The planning session read the rest from `GET /messages` by hand.
-- Chosen: a one-shot `--seq <n>`. Rejected: `--since` without `--follow` (prints every later report, not the one that was cut) and wrapping long body lines in the reader (changes the body's lines).
-
-#### Done when
-- [ ] `npm run team -- reports --seq <n> --project <dir>` (also `hub-team reports --seq <n>`) prints report n in full, in the same format as `--follow` (text with the `  | ` mark, or one line with `--json`), then exits 0. It only reads.
-- [ ] When n is not a report of that project's Mailboxes to the human (no such Message, deleted, another project's, or not to the human), it says which in one line and exits 1. `--seq` with `--follow` or `--since` is a one-line usage error.
-- [ ] docs/usage.md says that a notification ending in `(truncated)` is read in full with `reports --seq <n>`, in the section on reading reports.
-- [ ] On the Hub on 7777 (read only), `reports --seq 637` prints all of report #637, including the lines the notification cut. The result is added to design.md §6.1ah.
-- [ ] Tests cover a report found, no such Message, another project's, a Message not to the human, `--json`, and the usage errors. `npm test`, `npm run typecheck` and `npm run docs:check` pass.
 
 ### C167. Keep a Hub outage quiet in a `reports --follow` reader
 

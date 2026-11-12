@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { BODY_PREFIX, followReports, isReportCandidate, reportHeader, reportLines, type ReportsOptions } from './reports.js'
+import { BODY_PREFIX, followReports, isReportCandidate, missingReason, reportBySeq, reportHeader, reportLines, type ReportsOptions } from './reports.js'
 import { parse } from './options.js'
 import { refusedTokenMessage } from '../shared/env-override.js'
 import type { StatusMailbox, StatusMessage } from './status.js'
@@ -42,7 +42,7 @@ const sse = (m: StatusMessage): string => `event: message\ndata: ${JSON.stringif
 
 // A fake Hub: /mailboxes, /messages (after, limit) and /stream (one scripted connection per call; a connection left open ends
 // when the request is aborted). Every call is recorded in `calls` so that reads can be told from posts
-function fakeHub(o: { store: StatusMessage[]; token?: string; streams?: Conn[]; calls?: string[]; onStream?: (n: number) => void }): typeof fetch {
+function fakeHub(o: { store: StatusMessage[]; token?: string; streams?: Conn[]; calls?: string[]; onStream?: (n: number) => void; noLastSeq?: boolean }): typeof fetch {
   const token = o.token ?? 'tok'
   const streams = [...(o.streams ?? [])]
   let n = 0
@@ -55,7 +55,9 @@ function fakeHub(o: { store: StatusMessage[]; token?: string; streams?: Conn[]; 
     if (url.pathname === '/messages') {
       const after = Number(url.searchParams.get('after') ?? '0')
       const limit = Number(url.searchParams.get('limit') ?? '100')
-      return Response.json({ messages: o.store.filter((m) => m.seq > after).slice(0, limit), lastSeq: 0 })
+      // lastSeq is the Hub's latest seq (it does not roll back on deletion; the fake takes the newest seq in the store)
+      const lastSeq = o.noLastSeq ? undefined : Math.max(0, ...o.store.map((m) => m.seq))
+      return Response.json({ messages: o.store.filter((m) => m.seq > after).slice(0, limit), lastSeq })
     }
     if (url.pathname === '/stream') {
       o.onStream?.(n++)
@@ -297,6 +299,119 @@ test('reports --json: control characters stay in the JSON line, which JSON.strin
   const m = mk(5, leader, human, 'a\u001b[G\b\u0085b')
   assert.deepEqual(reportLines(m, true), [JSON.stringify(m)])
   assert.equal((JSON.parse(reportLines(m, true)[0]!) as StatusMessage).body, m.body)
+})
+
+// `reports --seq <n>` (C166): one report by its seq, read once with GET only
+async function seqRun(store: StatusMessage[], seq: number, o: { json?: boolean; fetchFn?: typeof fetch; calls?: string[] } = {}) {
+  const lines: string[] = []
+  const errs: string[] = []
+  const code = await reportBySeq({
+    projectDir: PROJ, conn, json: o.json ?? false, seq,
+    fetchFn: o.fetchFn ?? fakeHub({ store, calls: o.calls }),
+    out: (l) => lines.push(l), err: (l) => errs.push(l),
+  })
+  return { code, lines, errs }
+}
+
+test('reports --seq: a report of the project is printed in full, as --follow prints it, and exits 0; GET only (C166)', async () => {
+  const calls: string[] = []
+  const r = await seqRun(history(), 6, { calls })
+  assert.equal(r.code, 0)
+  assert.deepEqual(r.lines, reportLines(history()[5]!, false))
+  assert.deepEqual(r.lines, ['#6 mailbox:proj.deployer request 2026-11-12T10:00:06.000Z', '  | multi', '  | line body'])
+  assert.deepEqual(r.errs, [])
+  assert.deepEqual(calls, ['GET /messages?after=5&limit=1', 'GET /mailboxes'])
+})
+
+test('reports --seq: a long body is printed in full, every line marked, the last one included (C166)', async () => {
+  const body = Array.from({ length: 50 }, (_, i) => `line ${i + 1}`).join('\n')
+  const store = [mk(1, leader, human, body)]
+  const r = await seqRun(store, 1)
+  assert.equal(r.code, 0)
+  assert.equal(r.lines.length, 51)
+  assert.equal(r.lines[50], '  | line 50')
+})
+
+test('reports --seq: a seq below the Hub\'s latest seq that is absent was deleted; one line, exit 1 (C166)', async () => {
+  // seq 6 deleted: the Hub's latest seq is still 8, so 6 is at or below it; GET /messages?after=5 gives seq 7
+  const deleted = await seqRun(history().filter((m) => m.seq !== 6), 6)
+  assert.equal(deleted.code, 1)
+  assert.deepEqual(deleted.errs, ['#6 is not a report: that Message was deleted (retention or manual deletion)'])
+  assert.deepEqual(deleted.lines, [])
+})
+
+test('reports --seq: a seq above the Hub\'s latest seq was not sent yet; one line, exit 1 (C166)', async () => {
+  const none = await seqRun(history(), 99)
+  assert.equal(none.code, 1)
+  assert.deepEqual(none.errs, ['#99 is not a report: no such Message on this Hub (the latest seq is 8)'])
+  assert.deepEqual(none.lines, [])
+})
+
+test('reports --seq: without a numeric lastSeq the combined wording is printed (C166)', async () => {
+  const absent = await seqRun(history().filter((m) => m.seq !== 6), 6, { fetchFn: fakeHub({ store: history().filter((m) => m.seq !== 6), noLastSeq: true }) })
+  assert.equal(absent.code, 1)
+  assert.deepEqual(absent.errs, ['#6 is not a report: no such Message (it was never sent, or it was deleted)'])
+  const above = await seqRun(history(), 99, { fetchFn: fakeHub({ store: history(), noLastSeq: true }) })
+  assert.deepEqual(above.errs, ['#99 is not a report: no such Message (it was never sent, or it was deleted)'])
+})
+
+test('reports --seq: missingReason splits at the latest seq; a seq equal to it was deleted (C166)', () => {
+  assert.equal(missingReason(8, 8), '#8 is not a report: that Message was deleted (retention or manual deletion)')
+  assert.equal(missingReason(9, 8), '#9 is not a report: no such Message on this Hub (the latest seq is 8)')
+  assert.equal(missingReason(9, '8'), '#9 is not a report: no such Message (it was never sent, or it was deleted)')
+  assert.equal(missingReason(9, undefined), '#9 is not a report: no such Message (it was never sent, or it was deleted)')
+})
+
+test('reports --seq: another project\'s Mailbox, or a Mailbox not on the Hub, is one line and exit 1 (C166)', async () => {
+  const other_ = await seqRun(history(), 2)
+  assert.equal(other_.code, 1)
+  assert.ok(other_.errs[0]!.startsWith('#2 is not a report of this project: it is from other.leader'), other_.errs[0])
+  const ghost = await seqRun(history(), 8)
+  assert.equal(ghost.code, 1)
+  assert.ok(ghost.errs[0]!.startsWith('#8 is not a report of this project: it is from ghost'), ghost.errs[0])
+})
+
+test('reports --seq: a Message not to the human, or not from a Mailbox, is one line and exit 1 (C166)', async () => {
+  const toMailbox = await seqRun(history(), 3)
+  assert.equal(toMailbox.code, 1)
+  assert.equal(toMailbox.errs[0], '#3 is not a report: it is addressed to mailbox:proj.leader, not to the human (user:browser)')
+  const fromHuman = await seqRun(history(), 4)
+  assert.equal(fromHuman.code, 1)
+  assert.equal(fromHuman.errs[0], '#4 is not a report: it is from user:browser, not from a Mailbox')
+  const toCli = await seqRun(history(), 7)
+  assert.equal(toCli.code, 1)
+  assert.equal(toCli.errs[0], '#7 is not a report: it is addressed to user:cli, not to the human (user:browser)')
+})
+
+test('reports --seq --json: the one line is the Message as GET /messages returns it (C166)', async () => {
+  const store = history()
+  const r = await seqRun(store, 6, { json: true })
+  assert.equal(r.code, 0)
+  assert.deepEqual(r.lines, [JSON.stringify(store[5])])
+  assert.deepEqual(JSON.parse(r.lines[0]!), store[5])
+})
+
+test('reports --seq: the Hub unreachable, or the token refused, is one line and exit 1 (C166)', async () => {
+  const unreachable = await seqRun(history(), 6, { fetchFn: (async () => { throw new TypeError('fetch failed') }) as typeof fetch })
+  assert.equal(unreachable.code, 1)
+  assert.equal(unreachable.errs.length, 1)
+  assert.ok(unreachable.errs[0]!.startsWith('Hub not reachable (http://127.0.0.1:7777): fetch failed'), unreachable.errs[0])
+  const refused = await seqRun(history(), 6, { fetchFn: fakeHub({ store: history(), token: 'the-right-one' }) })
+  assert.equal(refused.code, 1)
+  assert.deepEqual(refused.errs, [refusedTokenMessage(false)])
+})
+
+test('reports --seq: the usage errors are one line each (C166)', () => {
+  assert.equal(parse(['reports', '--seq', '6', '--project', 'x']).seq, 6)
+  assert.equal(parse(['reports', '--seq', '6', '--json']).json, true)
+  assert.throws(() => parse(['reports', '--seq', '6', '--follow']), /--seq reads one report and --follow keeps reading/)
+  assert.throws(() => parse(['reports', '--seq', '6', '--since', '3']), /--seq and --since cannot be used together/)
+  assert.throws(() => parse(['reports', '--seq', '0']), /--seq must be a positive whole number/)
+  assert.throws(() => parse(['reports', '--seq', 'x']), /--seq must be a positive whole number/)
+  assert.throws(() => parse(['reports', '--seq', '1.5']), /--seq must be a positive whole number/)
+  assert.throws(() => parse(['reports', '--seq=-1']), /--seq must be a positive whole number/)
+  assert.throws(() => parse(['status', '--seq', '6']), /only for reports/)
+  assert.throws(() => parse(['reports']), /--seq <n>/)
 })
 
 test('reports: the option is parsed; --follow is required; --json and --since are only for reports; --since is a seq of 0 or more (C135)', () => {

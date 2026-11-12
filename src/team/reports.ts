@@ -227,11 +227,80 @@ export async function followReports(o: ReportsOptions): Promise<number> {
   }
 }
 
-// `reports` from the command line: the Hub's address and token the same way as `status` (C108, C139)
-export async function runReports(projectDir: string, root = ROOT, opts: { json: boolean; since?: number }): Promise<number> {
+// The Hub's address and token, from the environment or agent-hub's .env, the same way as `status` (C108, C139). Prints the overrides once
+function connection(root: string): HubConn {
   const port = envSetting('HUB_PORT', '7777', root)
   const hubUrl = (envSetting('HUB_URL', '', root) || `http://127.0.0.1:${port}`).replace(/\/+$/, '')
   for (const name of envOverrides(root)) console.error(`WARNING: ${overrideWarning(name)}`)
-  const conn = { hubUrl, token: envSetting('HUB_TOKEN', '', root), tokenFromEnv: tokenFromEnvironment() }
-  return followReports({ projectDir, conn, json: opts.json, since: opts.since })
+  return { hubUrl, token: envSetting('HUB_TOKEN', '', root), tokenFromEnv: tokenFromEnvironment() }
+}
+
+// `reports --follow` from the command line
+export async function runReports(projectDir: string, root = ROOT, opts: { json: boolean; since?: number }): Promise<number> {
+  return followReports({ projectDir, conn: connection(root), json: opts.json, since: opts.since })
+}
+
+export interface SeqOptions {
+  projectDir: string
+  conn: HubConn
+  json: boolean
+  seq: number
+  fetchFn?: typeof fetch
+  out?: (line: string) => void
+  err?: (line: string) => void
+}
+
+// Why Message `seq` is not a report of this project's Mailboxes to the human, or null when it is one (C166). `names` are the
+// Mailboxes of the project. Pure
+export function notReportReason(m: StatusMessage, seq: number, names: ReadonlySet<string>): string | null {
+  if (m.from.type !== 'mailbox') return `#${seq} is not a report: it is from ${addr(m.from)}, not from a Mailbox`
+  if (!isReportCandidate(m)) return `#${seq} is not a report: it is addressed to ${addr(m.to)}, not to the human (user:browser)`
+  if (!names.has(m.from.id)) return `#${seq} is not a report of this project: it is from ${m.from.id}, a Mailbox of another project or not on this Hub`
+  return null
+}
+
+// Why Message `seq` is not there (C166, split by C166's review finding): a seq at or below the Hub's latest seq was deleted (seq does not roll back,
+// protocol.md §2 Retention); a seq above it was not sent yet. Without a numeric lastSeq, the combined wording. Pure
+export function missingReason(seq: number, lastSeq: unknown): string {
+  if (typeof lastSeq !== 'number' || !Number.isFinite(lastSeq)) return `#${seq} is not a report: no such Message (it was never sent, or it was deleted)`
+  if (seq <= lastSeq) return `#${seq} is not a report: that Message was deleted (retention or manual deletion)`
+  return `#${seq} is not a report: no such Message on this Hub (the latest seq is ${lastSeq})`
+}
+
+// One report by its seq (C166): read once with GET only, printed with the same lines as --follow. Exit 0 when printed; 1 with one line of reason
+export async function reportBySeq(o: SeqOptions): Promise<number> {
+  const fetchFn = o.fetchFn ?? fetch
+  const out = o.out ?? ((l: string) => console.log(l))
+  const err = o.err ?? ((l: string) => console.error(l))
+  const get = hubGet(o.conn, fetchFn)
+  // The first Message after seq-1 is seq itself when it exists (GET /messages is oldest first; a deleted seq gives the next one)
+  const page = await get(`/messages?after=${o.seq - 1}&limit=1`)
+  if (!page.ok) {
+    err(page.reason)
+    return 1
+  }
+  const body = page.json as { messages: StatusMessage[]; lastSeq?: unknown }
+  const m = body.messages.find((x) => x.seq === o.seq)
+  if (!m) {
+    err(missingReason(o.seq, body.lastSeq))
+    return 1
+  }
+  const mb = await get('/mailboxes')
+  if (!mb.ok) {
+    err(mb.reason)
+    return 1
+  }
+  const names = new Set((mb.json as { mailboxes: StatusMailbox[] }).mailboxes.filter((x) => inProject(x, o.projectDir)).map((x) => x.name))
+  const reason = notReportReason(m, o.seq, names)
+  if (reason) {
+    err(reason)
+    return 1
+  }
+  for (const line of reportLines(m, o.json)) out(line)
+  return 0
+}
+
+// `reports --seq <n>` from the command line (C166)
+export async function runReportBySeq(projectDir: string, root = ROOT, opts: { json: boolean; seq: number }): Promise<number> {
+  return reportBySeq({ projectDir, conn: connection(root), json: opts.json, seq: opts.seq })
 }
