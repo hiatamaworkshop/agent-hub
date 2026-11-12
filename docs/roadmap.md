@@ -25,6 +25,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C162
+- [ ] C163
 
 
 (Items with a status line are listed under "Items".)
@@ -1065,3 +1066,12 @@ Raised 2026-11-11 from C148's runs. The annotations say `actions/checkout@v4` an
 - [x] `.github/workflows/ci.yml` uses the current major versions of `actions/checkout` and `actions/setup-node`; the body names the versions and where they were read.
 - [ ] A run on GitHub Actions after the user's push passed on both systems without the Node.js 20 deprecation annotation, and its URL is in the body.
 - [ ] `npm run docs:check` passes.
+
+### C163. Pass `meta.item` to a Channels session only in the item ID's shape
+Raised 2026-11-12 from the run's report (#584, NEEDS DECISION 2 after C160). C160 passes the known `meta` keys (`files`, `item`) through Channels unconverted, so that attributes a sender invents do not reach a session as if the Hub vouched for them. But the Hub does not check the shape of a `meta.item` set by an HTTP sender (`resolveMeta` in `src/hub/app.ts`), so any value reaches the session as the `item` attribute. The shim's `post_message` and the C129 hook already accept only `^C[1-9][0-9]*$`.
+- Decided 2026-11-12 in the planning session (the user accepted the recommendation): `channelMeta` passes `item` only when its ID matches `^C[1-9][0-9]*$`, and drops it otherwise. The Hub's storage and `GET /messages` stay as they are (no new 400 for senders); the check sits where the value becomes a session-facing attribute.
+
+#### Done when
+- [ ] `channelMeta` passes `meta.item` only when its ID matches `^C[1-9][0-9]*$`, and drops it otherwise; unit tests cover a valid ID, a malformed one, and a non-string.
+- [ ] protocol.md §6 says that a Channels notification carries `item` only in that shape.
+- [ ] `npm test` and `npm run docs:check` pass.
