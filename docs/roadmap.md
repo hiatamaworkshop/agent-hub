@@ -24,9 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C162
-
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -635,6 +632,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: `npm test` 686 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 0 errors; `send-index.test.ts` 11 pass, 0 fail in a `node:lts` Linux container (a scratch copy of the tree, `npm ci`). The review found no finding, and probed a real folder on this machine: a case difference in a parent folder is named, the project path in upper case still works, and a name that differs by more than case keeps the old wording. Done-when wording not changed.
   - Not checked: the helper on macOS; a real case-differing file on a case-insensitive disk through the team start; the tests on Linux in the review.
   - Reviewer note: the helper relies on `realpathSync.native` returning the on-disk letter case, which holds on Windows. On macOS a Mac would keep the old reason (no wrong name).
+- [x] C162 Keep the CI actions current (2026-11-12, closed after the review)
+  - Decided 2026-11-12 in the planning session (the user accepted the recommendation): move `actions/checkout` and `actions/setup-node` to their current major versions, keep `ubuntu-latest` and `windows-latest`. The closing request came on the user's word.
+  - Changed: `.github/workflows/ci.yml` (`actions/checkout@v7`, `actions/setup-node@v7`; versions read 2026-11-12 from the release pages: checkout v7.0.1, setup-node v7.1.0). Commit `08b8439`.
+  - Checked: `npm test` 698 pass in the run; the reviewer read the item in the run. On GitHub, run 43157897621 (`ab1ef4a`): https://github.com/hiatamaworkshop/agent-hub/actions/runs/43157897621, both jobs succeeded, and the Node.js 20 deprecation annotation is gone. Done-when wording not changed.
+  - Left: the `ubuntu-latest` label moving to Ubuntu 26 (an annotation only; not filed).
 - [x] C163 Pass `meta.item` to a Channels session only in the item ID's shape (2026-11-12, closed after the review)
   - Decided 2026-11-12 in the planning session (the user accepted the recommendation): `channelMeta` passes `item` only when its ID matches `^C[1-9][0-9]*$`, and drops it otherwise. The Hub's storage and `GET /messages` stay as they are (no new 400 for senders).
   - Changed: `src/shared/format.ts` (`channelMeta`, `itemIdOf`, `ITEM_ID`), `src/shared/meta.test.ts` (five new tests: a valid ID and a string ID pass; malformed IDs, non-string values and an object without a string ID are dropped; a dropped item leaves `files` and no `meta` attribute), `docs/protocol.md` §6.
@@ -1059,16 +1061,3 @@ Status: proposed
 
 Raised 2026-11-11 from C129's report. The hook `tools/hooks/session-restore.mjs` finds the Mailbox by the Attachment's `session_id`, then `HUB_MAILBOX`. The Event hooks (`resolveMailbox`, design.md §3.4) also use the session map the Hub has learned and the cwd's folder name. So a session started by hand without `HUB_MAILBOX`, attached under its folder-name Mailbox, gets nothing printed after `/clear` (design.md §3.13 records it). Sessions started by `team` are not affected, and the `open_requests` tool and the instructions still cover the other case.
 - Idea: the Hub resolves it and the hook asks (a new endpoint or a field on `GET /mailboxes`), or the hook sends what the Event hooks send (`X-Hub-Mailbox`, cwd) and the Hub answers with the same text. Not decided; it matters only if sessions are often started by hand.
-
-### C162. Keep the CI actions current
-
-Raised 2026-11-11 from C148's runs. The annotations say `actions/checkout@v4` and `actions/setup-node@v4` target Node.js 20, which GitHub now forces onto Node 24, and the `ubuntu-latest` label moves to Ubuntu 26. The runs pass today.
-- To decide: whether to move the actions to their current major versions now, pin `ubuntu-24.04`, or wait for a failure. A change is checked by a run on both systems.
-- Decided 2026-11-12 in the planning session (the user accepted the recommendation): move `actions/checkout` and `actions/setup-node` to their current major versions (read from their release pages at the time of the change); keep `ubuntu-latest` and `windows-latest`.
-- Versions read 2026-11-12: `actions/checkout` v7.0.1 (marked Latest at https://github.com/actions/checkout/releases/latest; tag page https://github.com/actions/checkout/releases/tag/v7.0.1) and `actions/setup-node` v7.1.0 (marked Latest at https://github.com/actions/setup-node/releases/latest; tag page https://github.com/actions/setup-node/releases/tag/v7.1.0). Both action.yml files (raw.githubusercontent.com/actions/<action>/<tag>/action.yml) run on `node24`. The v7.0.0 notes show no removed inputs; `node-version` and `cache` are still in setup-node's action.yml, so the workflow inputs are unchanged.
-- GitHub run after the user's push of ab1ef4a (2026-11-12): https://github.com/hiatamaworkshop/agent-hub/actions/runs/43157897621 — `check (windows-latest)` and `check (ubuntu-latest)` both succeeded. The only annotation left is the `ubuntu-latest` label moving to Ubuntu 26; the Node.js 20 deprecation annotation is gone.
-
-#### Done when
-- [x] `.github/workflows/ci.yml` uses the current major versions of `actions/checkout` and `actions/setup-node`; the body names the versions and where they were read.
-- [x] A run on GitHub Actions after the user's push passed on both systems without the Node.js 20 deprecation annotation, and its URL is in the body.
-- [x] `npm run docs:check` passes.
