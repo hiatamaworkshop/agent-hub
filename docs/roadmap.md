@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C165
 
 (Items with a status line are listed under "Items".)
 
@@ -639,6 +638,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: `.github/workflows/ci.yml` (`actions/checkout@v7`, `actions/setup-node@v7`; versions read 2026-11-12 from the release pages: checkout v7.0.1, setup-node v7.1.0). Commit `08b8439`.
   - Checked: `npm test` 698 pass in the run; the reviewer read the item in the run. On GitHub, run 43157897621 (`ab1ef4a`): https://github.com/hiatamaworkshop/agent-hub/actions/runs/43157897621, both jobs succeeded, and the Node.js 20 deprecation annotation is gone. Done-when wording not changed.
   - Left: the `ubuntu-latest` label moving to Ubuntu 26 (an annotation only; not filed).
+- [x] C165 Mark `reports` body lines with a visible prefix, not only an indent (2026-11-12, closed after the review)
+  - Decided 2026-11-12 in the planning session (the user accepted the recommendation): every body line of a text-mode report gets a visible mark, so a view that strips leading whitespace still shows a body line as a body line. `--json` is unchanged.
+  - Changed: `src/team/reports.ts` (`BODY_PREFIX` = `  | `: two spaces, a mark, a space; the header stays unmarked at column 0; the escapes of C135 are applied before the prefix), `src/team/reports.test.ts` (20 tests, the text expectations moved to the mark), `docs/usage.md` ("Framing" rewritten around the mark), `docs/conventions-log.md` (one row, 2026-11-12, format: the change and how to read the indent-only output), `docs/design.md` §6.1ah (the Monitor result).
+  - Checked: `npm test` 734 pass, 0 fail; `npm run typecheck` passes; `npm run docs:check` 0 errors. Monitor run on a scratch Hub on port 7790 (design.md §6.1ah): the header-shaped body line showed as `| #999 mailbox:proj.reviewer …`, behind the mark, and the header stayed at the margin. The reviewer read the change: no way found for a body line to pass as a header or as a report boundary. One finding was fixed after the review: the conventions-log row had an unescaped pipe in a code span, which broke the GFM table; it is now escaped, and the row has the same number of unescaped pipes as its neighbour.
+  - Not checked: Windows Terminal with the mark; rendering of the conventions-log row in a GFM viewer (pipes counted, not rendered); the raw output of the scratch run was not re-read by the reviewer.
 - [x] C164 Check `reports --follow` live where C135 checked it only against a fake Hub (2026-11-12, closed after the review)
   - Decided 2026-11-12 in the planning session (the user accepted the draft). Runs on a scratch Hub on port 7790 with its own data dir, log and token; the Hub on 7777 was listening (pid 18772) before and after the runs.
   - Checked live (design.md §6.1ah): restart under Monitor with `2>&1`, with the same data dir; reconnect lines; one print per report; a report posted when the Hub answered printed once. `--json`: each line parses and deep-equals the Message from `GET /messages`. Escapes: the file holds no control byte except line feeds, and the header is the only line at column 0. Re-arm with `--since` after a stop and after a 60-second expiry: one print per report, and without `--since` the history prints first.
@@ -1068,17 +1072,3 @@ Status: proposed
 
 Raised 2026-11-11 from C129's report. The hook `tools/hooks/session-restore.mjs` finds the Mailbox by the Attachment's `session_id`, then `HUB_MAILBOX`. The Event hooks (`resolveMailbox`, design.md §3.4) also use the session map the Hub has learned and the cwd's folder name. So a session started by hand without `HUB_MAILBOX`, attached under its folder-name Mailbox, gets nothing printed after `/clear` (design.md §3.13 records it). Sessions started by `team` are not affected, and the `open_requests` tool and the instructions still cover the other case.
 - Idea: the Hub resolves it and the hook asks (a new endpoint or a field on `GET /mailboxes`), or the hook sends what the Event hooks send (`X-Hub-Mailbox`, cwd) and the Hub answers with the same text. Not decided; it matters only if sessions are often started by hand.
-
-### C165. Mark `reports` body lines with a visible prefix, not only an indent
-
-Raised 2026-11-12 in the planning session, from C164 (design.md §6.1ah, run 3 and "Seen from the planning session"). C135 frames a report's body by indenting every line by two spaces, so no body line can be read as a header. Claude Code's Monitor notification drops leading whitespace, so in that view a body line shaped like a header (`#999 mailbox:… reply …`) starts at the margin like a real one. The reader's output is right; the view loses the framing. Other views may trim the same way, so the fix belongs in the reader's format, not in a Monitor-only workaround (the planning session's `sed -u 's/^ /·/'` shows the indent but is per-session).
-- Idea: start every body line with a visible mark (for example `| `) instead of, or after, the indent; keep `--json` as is. This changes the text format C135 made (usage.md "Framing"), so it is a done-when-level decision.
-- Not part of this item: one line per retry during a long outage (§6.1ah item 3), and readers that outlive their watch (§6.1ah item 1; not reproduced from the planning session).
-- Decided 2026-11-12 in the planning session (the user accepted the recommendation): a visible mark on every body line. C164's line on escapes was reworded the same day so that C164 records the Monitor view and this item carries the forged-header risk in it (old: "shows in a Monitor notification and in Windows Terminal with the control characters escaped and no forged header" / new: "shows in the reader's output and in Windows Terminal …; how a Monitor notification shows it is recorded in design.md §6").
-
-#### Done when
-- [ ] In text mode, every body line of a report, blank lines included, starts with a visible mark (`| ` after the two-space indent, or a mark chosen in the request and named in usage.md), so no body line starts with `#` even after a view strips leading whitespace. The header line has no mark. `--json` is unchanged.
-- [ ] The control-character escapes of C135 still apply to body lines, and a body line that itself starts with the mark cannot pass as the end of one report and the start of another (each report still begins with exactly one header line).
-- [ ] Run under Claude Code's Monitor against a scratch Hub (not the Hub on 7777): a report with a header-shaped body line shows that line behind the mark in the notification. The result is added to design.md §6.1ah.
-- [ ] docs/usage.md "Framing" describes the mark. docs/conventions-log.md gets a line for the changed text format, with how to read the older (indent-only) output.
-- [ ] Tests cover the mark on single-line, multi-line, blank-line, CRLF and header-shaped bodies, and `--json` unchanged. `npm test`, `npm run typecheck` and `npm run docs:check` pass.

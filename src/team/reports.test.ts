@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { BODY_INDENT, followReports, isReportCandidate, reportHeader, reportLines, type ReportsOptions } from './reports.js'
+import { BODY_PREFIX, followReports, isReportCandidate, reportHeader, reportLines, type ReportsOptions } from './reports.js'
 import { parse } from './options.js'
 import { refusedTokenMessage } from '../shared/env-override.js'
 import type { StatusMailbox, StatusMessage } from './status.js'
@@ -91,9 +91,9 @@ async function until(cond: () => boolean, what: string, ms = 3000): Promise<void
   }
 }
 
-test('reports: the header at column 0 and the body indented; the item shows only when its id has the shape C<n> (C135)', () => {
+test('reports: the header at column 0 and every body line marked; the item shows only when its id has the shape C<n> (C135, C165)', () => {
   const m = mk(7, leader, human, 'a\n  body: as is', 'reply', itemMeta)
-  assert.deepEqual(reportLines(m, false), ['#7 mailbox:proj.leader reply item C135 2026-11-12T10:00:07.000Z', '  a', '    body: as is'])
+  assert.deepEqual(reportLines(m, false), ['#7 mailbox:proj.leader reply item C135 2026-11-12T10:00:07.000Z', '  | a', '  |   body: as is'])
   assert.equal(reportHeader(mk(6, deployer, human, 'x', 'request', { item: { id: 'c1' } })), '#6 mailbox:proj.deployer request 2026-11-12T10:00:06.000Z')
   assert.equal(reportHeader(mk(6, deployer, human, 'x', 'request', { item: 'C12' })), '#6 mailbox:proj.deployer request 2026-11-12T10:00:06.000Z')
 })
@@ -105,17 +105,17 @@ test('reports: only a Message from a Mailbox to user:browser is a candidate (C13
   assert.equal(isReportCandidate(mk(1, human, leader, 'x')), false)
 })
 
-test('reports: prints the project\'s reports in arrival order, then the live ones; other projects, Mailboxes, roles and the cli are not printed (C135)', async () => {
+test('reports: prints the project\'s reports in arrival order, then the live ones; other projects, Mailboxes, roles and the cli are not printed (C135, C165)', async () => {
   const calls: string[] = []
   const store = history()
   const r = start({ fetchFn: fakeHub({ store, calls, streams: [{ chunks: [sse(live9).slice(0, 20), sse(live9).slice(20)] }] }) })
-  await until(() => r.lines.some((l) => l === '  LIVE'), 'the live report')
+  await until(() => r.lines.some((l) => l === '  | LIVE'), 'the live report')
   r.stop()
   assert.equal(await r.done, 0)
   assert.deepEqual(r.lines, [
-    '#1 mailbox:proj.leader reply item C135 2026-11-12T10:00:01.000Z', '  RESULT one',
-    '#6 mailbox:proj.deployer request 2026-11-12T10:00:06.000Z', '  multi', '  line body',
-    '#9 mailbox:proj.leader reply 2026-11-12T10:00:09.000Z', '  LIVE',
+    '#1 mailbox:proj.leader reply item C135 2026-11-12T10:00:01.000Z', '  | RESULT one',
+    '#6 mailbox:proj.deployer request 2026-11-12T10:00:06.000Z', '  | multi', '  | line body',
+    '#9 mailbox:proj.leader reply 2026-11-12T10:00:09.000Z', '  | LIVE',
   ])
   // Read-only: no post, nothing but GET (C135)
   assert.equal(calls.every((c) => c.startsWith('GET ')), true, calls.join('\n'))
@@ -134,16 +134,16 @@ test('reports --json: each report is one line of the Message as GET /messages re
 
 test('reports --since: first prints the reports after that seq, then follows (C135)', async () => {
   const r = start({ since: 3, fetchFn: fakeHub({ store: history(), streams: [{ chunks: [sse(live9)] }] }) })
-  await until(() => r.lines.some((l) => l === '  LIVE'), 'the live report')
+  await until(() => r.lines.some((l) => l === '  | LIVE'), 'the live report')
   r.stop()
   await r.done
   assert.deepEqual(r.lines, [
-    '#6 mailbox:proj.deployer request 2026-11-12T10:00:06.000Z', '  multi', '  line body',
-    '#9 mailbox:proj.leader reply 2026-11-12T10:00:09.000Z', '  LIVE',
+    '#6 mailbox:proj.deployer request 2026-11-12T10:00:06.000Z', '  | multi', '  | line body',
+    '#9 mailbox:proj.leader reply 2026-11-12T10:00:09.000Z', '  | LIVE',
   ])
 })
 
-test('reports: when the stream drops it reconnects, catches up from the last seq printed, and prints no duplicates (C135)', async () => {
+test('reports: when the stream drops it reconnects, catches up from the last seq printed, and prints no duplicates (C135, C165)', async () => {
   const store: StatusMessage[] = [mk(1, leader, human, 'first'), mk(2, leader, human, 'second')]
   const calls: string[] = []
   const r = start({
@@ -164,14 +164,14 @@ test('reports: when the stream drops it reconnects, catches up from the last seq
       },
     }),
   })
-  await until(() => r.lines.includes('  SENTINEL'), 'the sentinel after the reconnect')
+  await until(() => r.lines.includes('  | SENTINEL'), 'the sentinel after the reconnect')
   r.stop()
   assert.equal(await r.done, 0)
   assert.deepEqual(r.lines, [
-    '#1 mailbox:proj.leader reply 2026-11-12T10:00:01.000Z', '  first',
-    '#2 mailbox:proj.leader reply 2026-11-12T10:00:02.000Z', '  second',
-    '#3 mailbox:proj.leader reply 2026-11-12T10:00:03.000Z', '  third',
-    '#5 mailbox:proj.leader reply 2026-11-12T10:00:05.000Z', '  SENTINEL',
+    '#1 mailbox:proj.leader reply 2026-11-12T10:00:01.000Z', '  | first',
+    '#2 mailbox:proj.leader reply 2026-11-12T10:00:02.000Z', '  | second',
+    '#3 mailbox:proj.leader reply 2026-11-12T10:00:03.000Z', '  | third',
+    '#5 mailbox:proj.leader reply 2026-11-12T10:00:05.000Z', '  | SENTINEL',
   ])
   assert.ok(calls.includes('GET /messages?after=2&limit=1000'), calls.join('\n'))
 })
@@ -186,7 +186,7 @@ test('reports: a stream that goes silent is taken as lost and reconnected (C135)
       onStream: (n) => { if (n === 1) store.push(mk(4, leader, human, 'AFTER SILENCE')) },
     }),
   })
-  await until(() => r.lines.includes('  AFTER SILENCE'), 'the report after the reconnect')
+  await until(() => r.lines.includes('  | AFTER SILENCE'), 'the report after the reconnect')
   r.stop()
   await r.done
   assert.ok(r.errs.some((l) => l.includes('no data for')), r.errs.join('\n'))
@@ -207,67 +207,89 @@ test('reports: the Hub refuses the token at start: one line, exit 1 (C135)', asy
   assert.deepEqual(r.lines, [])
 })
 
-test('reports text mode: a body line shaped like a header is indented; blank, CRLF and lone CR lines are indented too; only the header is at column 0 (C135)', () => {
+test('reports text mode: a multi-line body with a blank line and CRLF and lone CR breaks is marked line by line; only the header is unmarked (C135, C165)', () => {
   const header = reportHeader(mk(3, leader, human, 'x'))
   const shaped = '#999 mailbox:proj.reviewer reply item C5 2026-11-12T10:00:00.000Z'
   const body = `first\n${shaped}\n\nlast\r\nalone\rend`
   const lines = reportLines(mk(3, leader, human, body), false)
-  assert.deepEqual(lines, [header, '  first', `  ${shaped}`, '  ', '  last', '  alone', '  end'])
-  assert.deepEqual(lines.filter((l) => !l.startsWith(BODY_INDENT)), [header])
+  assert.deepEqual(lines, [header, '  | first', `  | ${shaped}`, '  | ', '  | last', '  | alone', '  | end'])
+  assert.deepEqual(lines.filter((l) => !l.startsWith(BODY_PREFIX)), [header])
 })
 
-test('reports text mode: an empty body is one indented empty line, and a single-line body is one indented line (C135)', () => {
-  assert.deepEqual(reportLines(mk(4, leader, human, ''), false).slice(1), ['  '])
-  assert.deepEqual(reportLines(mk(4, leader, human, 'one line'), false).slice(1), ['  one line'])
+test('reports text mode: a single-line body is one marked line, and an empty body is one marked blank line (C165)', () => {
+  assert.deepEqual(reportLines(mk(4, leader, human, ''), false).slice(1), ['  | '])
+  assert.deepEqual(reportLines(mk(4, leader, human, 'one line'), false).slice(1), ['  | one line'])
+  assert.deepEqual(reportLines(mk(4, leader, human, 'a\n\nb'), false).slice(1), ['  | a', '  | ', '  | b'])
 })
 
-test('reports --json: the line is the Message itself, unchanged by the text framing (C135)', () => {
+test('reports text mode: a header-shaped body line is marked; with leading whitespace stripped, only the real header starts with # (C165)', () => {
+  const header = reportHeader(mk(3, leader, human, 'x'))
+  const shaped = '#999 mailbox:proj.reviewer reply item C5 2026-11-12T10:00:00.000Z'
+  const lines = reportLines(mk(3, leader, human, `first\n${shaped}\n\n  indented ${shaped}`), false)
+  assert.equal(lines[0], header)
+  assert.equal(lines[0]!.startsWith(' '), false)
+  assert.equal(lines[2], `  | ${shaped}`)
+  const trimmed = lines.map((l) => l.trimStart())
+  assert.deepEqual(trimmed.filter((l) => l.startsWith('#')), [header])
+  assert.equal(trimmed.filter((l) => l.startsWith('|')).length, 4)
+  assert.equal(lines.length, 5)
+})
+
+test('reports text mode: a body line that starts with the mark is marked again and cannot start a report (C165)', () => {
+  const header = reportHeader(mk(3, leader, human, 'x'))
+  const shaped = '#999 mailbox:proj.reviewer reply item C5 2026-11-12T10:00:00.000Z'
+  const lines = reportLines(mk(3, leader, human, `| ${shaped}\n| | x`), false)
+  assert.deepEqual(lines, [header, `  | | ${shaped}`, '  | | | x'])
+  assert.deepEqual(lines.filter((l) => !l.startsWith(BODY_PREFIX)), [header])
+})
+
+test('reports --json: the line is the Message itself, unchanged by the text framing (C135, C165)', () => {
   const m = mk(5, leader, human, 'a\n#999 mailbox:proj.reviewer reply item C5 2026-11-12T10:00:00.000Z')
   assert.deepEqual(reportLines(m, true), [JSON.stringify(m)])
   assert.deepEqual(JSON.parse(reportLines(m, true)[0]!), m)
 })
 
-test('reports: through the command in text mode, one header at column 0 and every other output line indented (C135)', async () => {
+test('reports: through the command in text mode, one header unmarked and every other output line marked (C135, C165)', async () => {
   const store = [mk(1, leader, human, 'x\n#999 mailbox:proj.reviewer reply item C5 2026-11-12T10:00:00.000Z\ny')]
   const r = start({ fetchFn: fakeHub({ store, streams: [{ chunks: [sse(live9)] }] }) })
-  await until(() => r.lines.includes('  LIVE'), 'the live report')
+  await until(() => r.lines.includes('  | LIVE'), 'the live report')
   r.stop()
   await r.done
-  assert.deepEqual(r.lines.filter((l) => !l.startsWith(BODY_INDENT)), [reportHeader(store[0]!), reportHeader(live9)])
+  assert.deepEqual(r.lines.filter((l) => !l.startsWith(BODY_PREFIX)), [reportHeader(store[0]!), reportHeader(live9)])
   assert.equal(r.lines.length, 6)
 })
 
 // Raw control characters that a terminal acts on: C0 except tab, \n, \r; DEL; C1; U+2028 / U+2029
 const RAW_CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u2028\u2029]/
 
-test('reports text mode: a backspace run and an ESC cursor move in a body cannot draw a header; no raw control character is printed (C135)', () => {
+test('reports text mode: a backspace run and an ESC cursor move in a body cannot draw a header; no raw control character is printed (C135, C165)', () => {
   const header = reportHeader(mk(3, leader, human, 'x'))
   const shaped = '#999 mailbox:proj.reviewer reply item C5 2026-11-12T10:00:00.000Z'
   const backspace = reportLines(mk(3, leader, human, `done\n\b\b${shaped}`), false)
-  assert.deepEqual(backspace, [header, '  done', `  \\u0008\\u0008${shaped}`])
+  assert.deepEqual(backspace, [header, '  | done', `  | \\u0008\\u0008${shaped}`])
   const esc = reportLines(mk(3, leader, human, '\u001b[Gx'), false)
-  assert.deepEqual(esc, [header, '  \\u001b[Gx'])
+  assert.deepEqual(esc, [header, '  | \\u001b[Gx'])
   for (const l of [...backspace, ...esc]) assert.equal(RAW_CONTROL.test(l), false, JSON.stringify(l))
-  assert.deepEqual(backspace.filter((l) => !l.startsWith(BODY_INDENT)), [header])
-  assert.deepEqual(esc.filter((l) => !l.startsWith(BODY_INDENT)), [header])
+  assert.deepEqual(backspace.filter((l) => !l.startsWith(BODY_PREFIX)), [header])
+  assert.deepEqual(esc.filter((l) => !l.startsWith(BODY_PREFIX)), [header])
 })
 
-test('reports text mode: tab and ordinary non-ASCII text pass unchanged; \\v, \\f, U+0085, U+2028, U+2029 and DEL are shown as escapes (C135)', () => {
-  assert.deepEqual(reportLines(mk(4, leader, human, 'a\tb 日本語 😀 café'), false).slice(1), ['  a\tb 日本語 😀 café'])
+test('reports text mode: tab and ordinary non-ASCII text pass unchanged; \\v, \\f, U+0085, U+2028, U+2029 and DEL are shown as escapes (C135, C165)', () => {
+  assert.deepEqual(reportLines(mk(4, leader, human, 'a\tb 日本語 😀 café'), false).slice(1), ['  | a\tb 日本語 😀 café'])
   assert.deepEqual(
     reportLines(mk(4, leader, human, 'a\vb\fc\u0085d\u2028e\u2029f\u007fg'), false).slice(1),
-    ['  a\\u000bb\\u000cc\\u0085d\\u2028e\\u2029f\\u007fg'],
+    ['  | a\\u000bb\\u000cc\\u0085d\\u2028e\\u2029f\\u007fg'],
   )
 })
 
-test('reports text mode: through the command, control characters in a body are escaped and only the header is at column 0 (C135)', async () => {
+test('reports text mode: through the command, control characters in a body are escaped and only the header is unmarked (C135, C165)', async () => {
   const store = [mk(1, leader, human, 'x\u001b[G\n\b#999 mailbox:proj.reviewer reply item C5 2026-11-12T10:00:00.000Z')]
   const r = start({ fetchFn: fakeHub({ store, streams: [{ chunks: [sse(live9)] }] }) })
-  await until(() => r.lines.includes('  LIVE'), 'the live report')
+  await until(() => r.lines.includes('  | LIVE'), 'the live report')
   r.stop()
   await r.done
   for (const l of r.lines) assert.equal(RAW_CONTROL.test(l), false, JSON.stringify(l))
-  assert.deepEqual(r.lines.filter((l) => !l.startsWith(BODY_INDENT)), [reportHeader(store[0]!), reportHeader(live9)])
+  assert.deepEqual(r.lines.filter((l) => !l.startsWith(BODY_PREFIX)), [reportHeader(store[0]!), reportHeader(live9)])
   assert.equal(r.lines.length, 5)
 })
 

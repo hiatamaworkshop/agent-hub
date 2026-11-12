@@ -44,8 +44,10 @@ export function reportHeader(m: StatusMessage): string {
   return `#${m.seq} ${addr(m.from)} ${m.kind}${item} ${m.ts}`
 }
 
-// The indent of every body line in text mode (C135). The header is the only line at column 0, so no body line can be read as a header
-export const BODY_INDENT = '  '
+// The prefix of every body line in text mode (C135, changed by C165). Two spaces, a visible mark, and a space: `  | `. The header is the
+// only line without it. A view that strips leading whitespace still shows the mark, so a body line cannot read as a header; a blank
+// body line is `  | ` (trailing space; a view that trims it still shows `  |`)
+export const BODY_PREFIX = '  | '
 
 // Control characters that a terminal acts on (C135, the second review finding): C0 except tab, \n and \r (which split lines), DEL,
 // C1 (incl. NEL U+0085), and the line and paragraph separators U+2028 / U+2029. Each is shown as \uXXXX (lower-case hex), so ESC
@@ -55,12 +57,13 @@ export function escapeControl(s: string): string {
   return s.replace(CONTROL, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)
 }
 
-// The lines printed for one report. Text mode: the header at column 0, then the body with every line indented by BODY_INDENT (blank
-// lines too). The body's content is not changed, only split on its line breaks (\n, \r\n, and a lone \r, which a terminal also breaks on).
-// With --json: one line, the Message as GET /messages returns it. Pure
+// The lines printed for one report. Text mode: the header at column 0, then every body line with BODY_PREFIX (blank lines too). The body's
+// content is not changed, only split on its line breaks (\n, \r\n, and a lone \r, which a terminal also breaks on) and escaped (escapeControl)
+// before the prefix is added. Every body line starts with the prefix, so a body line that itself starts with `| ` is `  | | …` and cannot
+// start a report. With --json: one line, the Message as GET /messages returns it. Pure
 export function reportLines(m: StatusMessage, json: boolean): string[] {
   if (json) return [JSON.stringify(m)]
-  return [escapeControl(reportHeader(m)), ...m.body.split(/\r\n|\r|\n/).map((line) => BODY_INDENT + escapeControl(line))]
+  return [escapeControl(reportHeader(m)), ...m.body.split(/\r\n|\r|\n/).map((line) => BODY_PREFIX + escapeControl(line))]
 }
 
 // The data of one SSE `message` event, as a Message, or null when it is not one
