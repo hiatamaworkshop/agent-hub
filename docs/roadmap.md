@@ -25,7 +25,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C162
-- [ ] C137
 - [ ] C122
 
 
@@ -648,6 +647,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - How "in flight" is read: the Hub's count of requests awaiting a reply, so the closing rules of C157 apply. The holders are every Mailbox that owes a reply to one of the item's in-flight requests, each named once with its seqs; a request no Mailbox owes is held by its addressee. The Hub caps `awaitingReply.seqs` at 100 numbers (protocol.md §3), so an in-flight request beyond the cap can be missed. Items are matched by `meta.item.project` being the project's folder.
   - Checked: `npm test` 710 pass, 0 fail; `npm run typecheck` passes; `npm run docs:check` 0 errors, exit 0. The reviewer read the change and had one finding: the in-flight line named only the oldest request's holder. It was fixed, with a two-holder test and a one-holder-two-requests test; the leader checked the fix (not re-reviewed). On the running Hub (2026-11-12) the reviewer saw the "changed after the index" branch, and `status --item C160` printed the thread.
   - Not checked: a Hub without `awaitingReply.seqs`, and an item with more than 100 owed seqs (unit and doc only); the fixed in-flight line against a live Hub with a request in flight.
+- [x] C137 Give a project's planning session a thin block that points at the ledger rules (2026-11-12, closed after the review)
+  - Decided 2026-11-12 in the planning session (the user accepted the recommendation): the block's text lives in docs/project-setup.md, for the planning agent's own instructions on the machine where agent-hub is. It points and does not copy the rules, and it does not wait for C136.
+  - Changed (docs only): `docs/project-setup.md` (new §8 with the block, where it goes and why; a §7 line saying the readiness check does not look for it), `README.md` ("Using it in other repositories": one sentence pointing at §8), `CLAUDE.md` (the document map line for project-setup.md names the §8 block).
+  - The block is plain text with plain shell commands. It names no vendor's tool, skill or file convention; `AGENTS.md` and `CLAUDE.md` appear only outside it, as examples, and the section gives the reason for the user's own instructions as the default.
+  - Checked: `npm run docs:check` 0 errors, exit 0. The block's check command was run as written from agent-hub. The reviewer read the change and had one finding: the CLAUDE.md map did not name §8. It was fixed, and the leader checked the fix.
+  - Not checked: a planning agent actually using the block; a fresh session after compaction finding the block through the map.
 - [x] C140 Keep a record of convention changes, with reading notes for old forms (2026-11-08, decided and closed by the planning session on the user's word; docs only, no review)
   - Raised 2026-11-08: a change to the conventions reaches every registered project at once. Policy in design.md §3.12, "When the conventions change": old forms stay readable, new restrictions enter as warnings, a practice change applies forward with a reading note; no version pin per project yet.
   - Changed: `docs/conventions-log.md` (new; lines for C51, C64, C65, C102, C133 and C134, dates checked against the closed lines and the commits), `CLAUDE.md` (map line), `docs/roadmap.md` (a pointer line at the top), `docs/design.md` §3.12 (a row in the table of conventions, the file named in the section, no format number on the index yet).
@@ -1033,21 +1038,6 @@ Raised 2026-11-06 in the planning session, after the comparison with mcp_agent_m
 - [ ] The table says, for each enforcement, whether it runs in a project other than this repository.
 - [ ] Each row that is not fully enforced either points to a `C<n>` item (proposed) or says it is not planned, with the reason.
 - [x] `npm run docs:check` passes.
-
-### C137. Give a project's planning session a thin block that points at the ledger rules
-
-Raised 2026-11-06 in the planning session, from mcp_agent_mail's paste-in block (design.md §8.6). The team roles get their instructions through the Hub. The planning session does not (it is outside the Hub, yet it files items, writes done-when wording and decides the close), and in another person's setup nothing tells it agent-hub's conventions. On this machine they come from the user's own global instructions and the `roadmap-items` skill, which an adopter does not have.
-- Idea: a short block an adopter pastes into the instruction file their planning agent reads. It points and does not copy: the ledger's path, where the rules live (the top of roadmap.md, usage.md's "Try a round trip between roles"), and the check command (`docs:check`). Copied rule text drifts: when C133 changed the close order, the user's global instructions had to be fixed by hand. The same idea as the thin post-commit hook that calls agent-hub's script (project-setup.md §2).
-- Not tied to one vendor (design.md §3.7): the planning agent is not always Claude Code. The block is plain text with plain shell commands, without one vendor's tool names, skills or file conventions. Which file it goes in (`AGENTS.md`, `CLAUDE.md` and so on) is the adopter's choice; the guide names the common ones without preferring one.
-- To decide: whether the block goes in the project's file (committed and read by collaborators who may not use agent-hub, while agent-hub's path differs per machine), in the user's own instructions, or split between them; whether project-setup.md §7's readiness check looks for it.
-- After C136: the conventions its table finds not reaching other projects are the candidates for what the block points at.
-- Decided 2026-11-12 in the planning session (the user accepted the recommendation): the block's text lives in docs/project-setup.md. It is meant for the planning agent's own instructions on that machine (where agent-hub's path is known), written with a `<agent-hub>` placeholder; the guide says the project's committed file is the adopter's choice, not the default. §7's readiness check does not look for it (it cannot see a user's own files). It does not wait for C136: what it points at today is the ledger, the rules at the top of roadmap.md, the round trip in usage.md and `docs:check`.
-
-#### Done when
-- [ ] docs/project-setup.md has a section with the block: a few lines of plain text that point at the project's ledger, the rules at the top of agent-hub's roadmap.md, usage.md's "Try a round trip between roles", and the check command (`npm run docs:check -- <ledger>` run in `<agent-hub>`), and copy no rule text.
-- [ ] The block names no vendor's tool, skill or file convention; the section names `AGENTS.md` and `CLAUDE.md` side by side as examples of where it may go, and says why the user's own instructions are the default.
-- [ ] README's "using it in other repositories" part points at the section.
-- [ ] `npm run docs:check` passes.
 
 ### C154. Draft a run from the plan in the UI
 Status: held(after C153; decide once runs written by hand show what the draft needs)

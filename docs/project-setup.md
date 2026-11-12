@@ -125,4 +125,24 @@ Answer with one table:
 | … | | |
 
 - The check covers the delivery layer only: whether the Hub can read the ledger, start the team and see the hooks. The result names what fails; fixing the project's ledger content (statuses, done-when lines, closed lines) is requested of that project's leader, not done or judged here (agent-hub's `CLAUDE.md`, "When running another project's team").
+- The readiness check does not look for the block in §8: it reads the Hub and the ledger, and cannot see a user's own instruction files.
 - On Windows, paths are case-insensitive: with no `.agent-hub.json`, the default `docs/roadmap.md` opens a `docs/ROADMAP.md` if there is one. The summary now names the file that was read, for example `docs/roadmap.md opened docs/ROADMAP.md (letter case differs), which has no ### C<n>. items` (C131; seen in vcp, 2026-11-05). If the project's ledger is a different file, it needs `.agent-hub.json` either way.
+
+## 8. A block for the planning session's instructions
+
+The planning session files items and writes done-when wording, and it reads its own instruction file, not the Hub. The block below points it at the rules for doing that. It points and does not copy the rules: a copy in another file goes stale when the rules change (when C133 changed the close order, a user's global instructions had to be fixed by hand). The rules stay in agent-hub, and the block says where they are.
+
+**Where it goes.** The default is the planning agent's own instructions on the machine where agent-hub is, because the path to agent-hub is known there and the commands run as written. The path differs from machine to machine, so it cannot be committed for everyone. Putting the block in the project's committed file is possible, for example `AGENTS.md` or `CLAUDE.md` (both are used as examples here; the choice is the adopter's). It is then the adopter's choice, not the default: collaborators who do not use agent-hub read that file too, and each machine must fill in its own `<agent-hub>` path.
+
+Replace the placeholders: `<project>` is the project's absolute folder, `<ledger path>` is the ledger's path inside it, and `<agent-hub>` is agent-hub's folder on that machine.
+
+```text
+Project ledger: <project>/<ledger path>, for example docs/roadmap.md
+
+Writing and closing items in the ledger follows the rules at the top of <agent-hub>/docs/roadmap.md.
+How requests and the round trip between roles work: <agent-hub>/docs/usage.md, the section "Try a round trip between roles with two agents".
+Before an item is called ready, run this from <agent-hub>:
+  npm run docs:check -- <project>/<ledger path>
+Its exit code must be 0, and its output must show 0 errors.
+This block only points. The files named above are the rules.
+```

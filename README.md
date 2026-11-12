@@ -111,7 +111,7 @@ Send a `request` to `role:leader` from the browser; it goes user → leader → 
 
 ## Using it in other repositories
 
-**First time in a project**: read [docs/project-setup.md](docs/project-setup.md). It covers what to prepare (the document map in `CLAUDE.md`, the ledger and `.agent-hub.json`, the hooks), how to write items, and who writes what.
+**First time in a project**: read [docs/project-setup.md](docs/project-setup.md). It covers what to prepare (the document map in `CLAUDE.md`, the ledger and `.agent-hub.json`, the hooks), how to write items, and who writes what. For the planning session's own instructions there is a short block that points at the ledger rules ([docs/project-setup.md §8](docs/project-setup.md)).
 
 Start agents **at that project's root**. The `CLAUDE.md` they read, the hooks, the scope of permissions and `git diff` are all decided by the folder they start in (design.md §3.3).
 
