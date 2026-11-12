@@ -24,7 +24,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C164
+- [ ] C165
 
 (Items with a status line are listed under "Items".)
 
@@ -639,6 +639,13 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: `.github/workflows/ci.yml` (`actions/checkout@v7`, `actions/setup-node@v7`; versions read 2026-11-12 from the release pages: checkout v7.0.1, setup-node v7.1.0). Commit `08b8439`.
   - Checked: `npm test` 698 pass in the run; the reviewer read the item in the run. On GitHub, run 43157897621 (`ab1ef4a`): https://github.com/hiatamaworkshop/agent-hub/actions/runs/43157897621, both jobs succeeded, and the Node.js 20 deprecation annotation is gone. Done-when wording not changed.
   - Left: the `ubuntu-latest` label moving to Ubuntu 26 (an annotation only; not filed).
+- [x] C164 Check `reports --follow` live where C135 checked it only against a fake Hub (2026-11-12, closed after the review)
+  - Decided 2026-11-12 in the planning session (the user accepted the draft). Runs on a scratch Hub on port 7790 with its own data dir, log and token; the Hub on 7777 was listening (pid 18772) before and after the runs.
+  - Checked live (design.md §6.1ah): restart under Monitor with `2>&1`, with the same data dir; reconnect lines; one print per report; a report posted when the Hub answered printed once. `--json`: each line parses and deep-equals the Message from `GET /messages`. Escapes: the file holds no control byte except line feeds, and the header is the only line at column 0. Re-arm with `--since` after a stop and after a 60-second expiry: one print per report, and without `--since` the history prints first.
+  - Windows Terminal check, done by the user: the escapes shown, body lines indented, no forged header at the margin (recorded in §6.1ah). Done-when 3 was reworded on 2026-11-12 in the planning session; the Monitor view's missing indent (forged header at the margin) moved to C165.
+  - Found and recorded, not fixed here: a stopped watch's reader process can stay alive, and a second reader then prints each report twice; the Monitor view lacks the body indent (C165). usage.md and §6.1ah now say to check and stop the previous reader before re-arming.
+  - Reviewer read the change: three stale or missing statements (the C164 body, §6.1ah Cleanup, usage.md Re-arming) were fixed after the review.
+  - Not checked: a stream drop without a Hub restart; an erased data dir; `--since` against a Hub whose seq has passed the last printed one; the exact moment a report posted during reconnect arrived (inferred from the order of events, not measured); nothing else was written to 7777 beyond what the record says.
 - [x] C135 Let the planning session receive the leader's reports (2026-11-12, closed after the review)
   - Decided 2026-11-12 in the planning session (the user accepted the recommendation): the planning session stays not a Hub role. It receives reports through a read-only command on the host, `npm run team -- reports --follow --project <dir>` (also `hub-team reports --follow`), which follows the Hub's `GET /stream`. No Hub endpoint or field was added. Opt-in: team start, the hooks and the shim never start it.
   - Changed: `src/team/reports.ts` (new), `src/team/reports.test.ts` (new, 18 tests), `src/team/status.ts` (`hubGet` and `Get` exported), `src/team/options.ts` and `src/team/main.ts` (the command), `docs/usage.md` (section "Reading the leader's reports as they arrive", with the framing rule), `docs/project-setup.md` §8 (one optional line), `docs/design.md` §3.15 (the decision) and §6.1ag (the live runs).
@@ -1062,17 +1069,16 @@ Status: proposed
 Raised 2026-11-11 from C129's report. The hook `tools/hooks/session-restore.mjs` finds the Mailbox by the Attachment's `session_id`, then `HUB_MAILBOX`. The Event hooks (`resolveMailbox`, design.md §3.4) also use the session map the Hub has learned and the cwd's folder name. So a session started by hand without `HUB_MAILBOX`, attached under its folder-name Mailbox, gets nothing printed after `/clear` (design.md §3.13 records it). Sessions started by `team` are not affected, and the `open_requests` tool and the instructions still cover the other case.
 - Idea: the Hub resolves it and the hook asks (a new endpoint or a field on `GET /mailboxes`), or the hook sends what the Event hooks send (`X-Hub-Mailbox`, cwd) and the Hub answers with the same text. Not decided; it matters only if sessions are often started by hand.
 
-### C164. Check `reports --follow` live where C135 checked it only against a fake Hub
+### C165. Mark `reports` body lines with a visible prefix, not only an indent
 
-Raised 2026-11-12 in the planning session, after C135's close (the user asked for a plan to check that the Monitor reader behaves well). Decided the same day (the user accepted the draft). C135 showed the push path to a planning session, `--since` and the framing on the Hub on 7777 (design.md §6.1ag). Its report left these unchecked live: a stream drop and the catch-up after it, a Hub restart, `--json`, and the control-character escapes in a real terminal.
-- A gap seen in the planning session's own run: Claude Code's Monitor stops a watch after at most 30 minutes, and without `--since` the reader prints the whole history first, which floods a session with notifications. usage.md says neither. A planning session that re-arms needs the last seq it saw.
-- The reader writes its "reconnecting after #<seq>" line to stderr; under Monitor it reaches the session only when stderr is merged (`2>&1`).
-- Runs use a scratch Hub on its own port, data dir and token, as §6.1ag did, so a restart does not disturb a running team on 7777.
+Raised 2026-11-12 in the planning session, from C164 (design.md §6.1ah, run 3 and "Seen from the planning session"). C135 frames a report's body by indenting every line by two spaces, so no body line can be read as a header. Claude Code's Monitor notification drops leading whitespace, so in that view a body line shaped like a header (`#999 mailbox:… reply …`) starts at the margin like a real one. The reader's output is right; the view loses the framing. Other views may trim the same way, so the fix belongs in the reader's format, not in a Monitor-only workaround (the planning session's `sed -u 's/^ /·/'` shows the indent but is per-session).
+- Idea: start every body line with a visible mark (for example `| `) instead of, or after, the indent; keep `--json` as is. This changes the text format C135 made (usage.md "Framing"), so it is a done-when-level decision.
+- Not part of this item: one line per retry during a long outage (§6.1ah item 3), and readers that outlive their watch (§6.1ah item 1; not reproduced from the planning session).
+- Decided 2026-11-12 in the planning session (the user accepted the recommendation): a visible mark on every body line. C164's line on escapes was reworded the same day so that C164 records the Monitor view and this item carries the forged-header risk in it (old: "shows in a Monitor notification and in Windows Terminal with the control characters escaped and no forged header" / new: "shows in the reader's output and in Windows Terminal …; how a Monitor notification shows it is recorded in design.md §6").
 
 #### Done when
-- [ ] On a scratch Hub, with a reader following it under Monitor: the Hub is stopped and started again with the same data dir; the reader says it is reconnecting, and after the restart prints the next report once, with no earlier report printed again. A report posted while the reader is reconnecting is printed once.
-- [ ] `--json` on the scratch Hub: each report is one line that `JSON.parse` reads, equal to the Message `GET /messages` returns.
-- [ ] A report whose body holds ESC, a bare CR and a line shaped like a header shows in a Monitor notification and in Windows Terminal with the control characters escaped and no forged header.
-- [ ] Re-arming after Monitor's expiry: a report sent while no reader runs is printed once when the reader is started again with `--since <last seq seen>`. docs/usage.md says to re-arm this way and not to start a Monitor reader without `--since`, and that `2>&1` brings the reconnect lines into the session.
-- [ ] The results are recorded in design.md §6 (a new entry, or §6.1ag's "not checked" list updated). Something that does not behave as written is recorded and reported, not fixed in this item.
-- [ ] The Hub on 7777 is not stopped or written by the runs. `npm run docs:check` passes.
+- [ ] In text mode, every body line of a report, blank lines included, starts with a visible mark (`| ` after the two-space indent, or a mark chosen in the request and named in usage.md), so no body line starts with `#` even after a view strips leading whitespace. The header line has no mark. `--json` is unchanged.
+- [ ] The control-character escapes of C135 still apply to body lines, and a body line that itself starts with the mark cannot pass as the end of one report and the start of another (each report still begins with exactly one header line).
+- [ ] Run under Claude Code's Monitor against a scratch Hub (not the Hub on 7777): a report with a header-shaped body line shows that line behind the mark in the notification. The result is added to design.md §6.1ah.
+- [ ] docs/usage.md "Framing" describes the mark. docs/conventions-log.md gets a line for the changed text format, with how to read the older (indent-only) output.
+- [ ] Tests cover the mark on single-line, multi-line, blank-line, CRLF and header-shaped bodies, and `--json` unchanged. `npm test`, `npm run typecheck` and `npm run docs:check` pass.
