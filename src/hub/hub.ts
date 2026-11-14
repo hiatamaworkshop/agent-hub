@@ -298,11 +298,8 @@ export class Hub {
   // 優先順: sessionId (shim の申告か記録済み) → X-Hub-Mailbox → cwd のフォルダ名 (protocol.md §2 Event、design.md §3.4)。
   // cwd からの推測は、その名前の Mailbox があるときだけ使う
   private resolveMailbox(sessionId: string | undefined, header: string | undefined, cwd: string | undefined): string | undefined {
-    const known = sessionId ? this.sessionMailbox.get(sessionId) : undefined
-    if (known) return known
-    let name: string | undefined
-    if (header && isValidName(header)) name = header
-    else if (cwd && this.store.getMailbox(mailboxFromFolder(cwd))) name = mailboxFromFolder(cwd)
+    if (sessionId && this.sessionMailbox.has(sessionId)) return this.sessionMailbox.get(sessionId)
+    const name = this.lookupMailbox(sessionId, header, cwd)
     if (!name) return undefined
     // 第二・第三手段で解決できたら session を覚え、以後は第一手段と同じに扱う
     if (sessionId) {
@@ -312,6 +309,16 @@ export class Hub {
       if (at && !at.sessionId) at.sessionId = sessionId
     }
     return name
+  }
+
+  // resolveMailbox と同じ順で引くだけ (覚えない)。GET /mailboxes/resolve と SessionStart の復元 hook が使う (C161)。
+  // ヘッダーの名前は Event と同じく形だけを見る (まだ無い Mailbox でも返す。呼ぶ側が一覧で探す)
+  lookupMailbox(sessionId: string | undefined, header: string | undefined, cwd: string | undefined): string | undefined {
+    const known = sessionId ? this.sessionMailbox.get(sessionId) : undefined
+    if (known) return known
+    if (header && isValidName(header)) return header
+    if (cwd && this.store.getMailbox(mailboxFromFolder(cwd))) return mailboxFromFolder(cwd)
+    return undefined
   }
 
   // --- Mailbox / Attachment ---

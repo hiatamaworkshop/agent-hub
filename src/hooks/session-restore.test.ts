@@ -3,17 +3,24 @@ import { spawn } from 'node:child_process'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { resolve } from 'node:path'
 import { after, before, beforeEach, describe, it } from 'node:test'
+import { serve } from '@hono/node-server'
+import { createApp } from '../hub/app.js'
+import { Hub } from '../hub/hub.js'
+import { Store } from '../hub/store.js'
 
-// The SessionStart hook (C129): a child process that reads GET /mailboxes and GET /messages from a fake Hub on this machine.
+// The SessionStart hook (C129): a child process that reads GET /mailboxes/resolve, GET /mailboxes and GET /messages from a fake Hub
+// on this machine. The last describe runs it against the real Hub (C161).
 // The hook prints the open requests to stdout, or nothing, and always exits 0
 const SCRIPT = resolve(import.meta.dirname, '../../tools/hooks/session-restore.mjs')
 const TOKEN = 'test-token-0123456789'
 
-interface Seen { method: string; url: string; auth: string | undefined }
+interface Seen { method: string; url: string; auth: string | undefined; mailboxHeader: string | undefined }
 
 // What the fake Hub answers. Each test sets what it needs
 let seen: Seen[] = []
 let mailboxes: unknown[] = []
+// The session map the fake Hub has learned (the real one learns it from attach and Events)
+let sessions: Record<string, string> = {}
 let messages: Record<number, unknown> = {}
 let mailboxesStatus = 200
 let mailboxesBody: string | null = null
@@ -24,9 +31,20 @@ let port: number
 
 function handle(req: IncomingMessage, res: import('node:http').ServerResponse) {
   const url = req.url ?? ''
-  seen.push({ method: req.method ?? '', url, auth: req.headers.authorization })
+  const header = req.headers['x-hub-mailbox']
+  seen.push({ method: req.method ?? '', url, auth: req.headers.authorization, mailboxHeader: typeof header === 'string' ? header : undefined })
   const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
   if (req.method !== 'GET') return json(405, { error: 'method_not_allowed' })
+  if (url.startsWith('/mailboxes/resolve?')) {
+    if (mailboxesBody !== null) return res.writeHead(mailboxesStatus, { 'content-type': 'application/json' }).end(mailboxesBody)
+    if (mailboxesStatus !== 200) return json(mailboxesStatus, { error: 'boom' })
+    // The Hub's order, in short (the real one is tested in src/hub/app.test.ts): session map, header, cwd folder of a Mailbox
+    const q = new URL(url, 'http://x').searchParams
+    const folder = (q.get('cwd') ?? '').split(/[\\/]+/).filter(Boolean).pop() ?? ''
+    const names = mailboxes.map((m) => (m as { name: string }).name)
+    const name = sessions[q.get('session_id') ?? ''] ?? (typeof header === 'string' ? header : undefined) ?? (names.includes(folder) ? folder : null)
+    return json(200, { mailbox: name })
+  }
   if (url.startsWith('/mailboxes')) {
     if (mailboxesBody !== null) return res.writeHead(mailboxesStatus, { 'content-type': 'application/json' }).end(mailboxesBody)
     return json(mailboxesStatus, { mailboxes, startedAt: '2026-11-11T00:00:00.000Z' })
@@ -54,6 +72,7 @@ after(async () => {
 beforeEach(() => {
   seen = []
   mailboxes = []
+  sessions = {}
   messages = {}
   mailboxesStatus = 200
   mailboxesBody = null
@@ -171,10 +190,13 @@ describe('SessionStart hook: prints the open requests', () => {
     assert.ok(!r.stdout.includes('the body is not printed'))
     assert.ok(seen.every((s) => s.method === 'GET'))
     assert.ok(seen.every((s) => s.auth === `Bearer ${TOKEN}`))
-    assert.equal(seen[0]!.url, '/mailboxes')
+    assert.equal(seen[0]!.url, '/mailboxes/resolve?session_id=s-new&cwd=C%3A%2Fwork%2Fdemo')
+    assert.equal(seen[0]!.mailboxHeader, 'demo.leader')
+    assert.equal(seen[1]!.url, '/mailboxes')
   })
 
   it('a Mailbox found by session_id is used even when HUB_MAILBOX names another one', async () => {
+    sessions = { 's-1': 'demo.leader' }
     mailboxes = [
       leader({ name: 'other.leader', attachment: { id: 'a2', sessionId: 'other', attachedAt: '2026-11-11T00:00:00.000Z' } }),
       leader(),
@@ -183,6 +205,21 @@ describe('SessionStart hook: prints the open requests', () => {
     const sameSession = JSON.stringify({ session_id: 's-1', source: 'clear', hook_event_name: 'SessionStart' })
     const r = await runHook(sameSession, { HUB_MAILBOX: 'other.leader' })
     assert.match(r.stdout, /^Open requests of Mailbox "demo\.leader"/)
+  })
+
+  it('without HUB_MAILBOX, a Mailbox named after the cwd folder is found (C161)', async () => {
+    mailboxes = [leader({ name: 'demo', attachment: null })]
+    messages = { 3: message(3, 'user:browser') }
+    const r = await runHook(START)
+    assert.match(r.stdout, /^Open requests of Mailbox "demo"/)
+    assert.equal(seen[0]!.mailboxHeader, undefined)
+  })
+
+  it('a resolved name that is not in the list prints nothing', async () => {
+    mailboxes = [leader()]
+    const r = await runHook(START, { HUB_MAILBOX: 'not-there' })
+    assert.equal(r.code, 0)
+    assert.equal(r.stdout, '')
   })
 
   it('a request whose message has no meta.item is printed without the item part', async () => {
@@ -229,5 +266,31 @@ describe('SessionStart hook: prints the open requests', () => {
     const r = await runHook(START, { HUB_MAILBOX: 'demo.leader' })
     assert.ok(!r.stdout.includes('xxxx'))
     assert.ok(r.stdout.length < 400)
+  })
+})
+
+// C161: a session started by hand without HUB_MAILBOX, in a folder whose name is a Mailbox, gets that Mailbox's open requests.
+// The real Hub resolves it, so the hook and the Event hooks cannot disagree on the order
+describe('SessionStart hook against the real Hub (C161)', () => {
+  it('without HUB_MAILBOX, the cwd folder name finds the Mailbox, and its open requests are printed', async () => {
+    const hub = new Hub(new Store())
+    const at = hub.attach('demo', { client: 'claude-code' })
+    const asked = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'demo' }, body: 'GOAL: x' }, { type: 'user', id: 'browser', role: null })
+    hub.ack(at.attachmentId, asked.seq) // read, not yet answered: it owes a reply
+    const app = createApp({ hub, token: TOKEN, uiHtml: async () => '<html>ui</html>' })
+    const real = await new Promise<ReturnType<typeof serve>>((ok) => {
+      const s = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 }, () => ok(s))
+    })
+    try {
+      const realPort = (real.address() as { port: number }).port
+      const input = JSON.stringify({ session_id: 's-by-hand', source: 'clear', hook_event_name: 'SessionStart', cwd: 'C:\\work\\demo' })
+      const r = await runHook(input, { HUB_PORT: String(realPort) })
+      assert.equal(r.code, 0)
+      assert.equal(r.stdout,
+        'Open requests of Mailbox "demo" in agent-hub (pointers only; the bodies are not included):\n' +
+          `- owes a reply: #${asked.seq} from user:browser, id ${asked.id}\n`)
+    } finally {
+      await new Promise<void>((ok) => real.close(() => ok()))
+    }
   })
 })

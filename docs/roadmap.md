@@ -1094,10 +1094,11 @@ Raised 2026-11-10 with C153. After a run, what waits for the human is spread ove
 Raised 2026-11-11 from C129's report. The hook `tools/hooks/session-restore.mjs` finds the Mailbox by the Attachment's `session_id`, then `HUB_MAILBOX`. The Event hooks (`resolveMailbox`, design.md §3.4) also use the session map the Hub has learned and the cwd's folder name. So a session started by hand without `HUB_MAILBOX`, attached under its folder-name Mailbox, gets nothing printed after `/clear` (design.md §3.13 records it). Sessions started by `team` are not affected, and the `open_requests` tool and the instructions still cover the other case.
 - Idea: the Hub resolves it and the hook asks (a new endpoint or a field on `GET /mailboxes`), or the hook sends what the Event hooks send (`X-Hub-Mailbox`, cwd) and the Hub answers with the same text. Not decided; it matters only if sessions are often started by hand.
 - Decided 2026-11-13 in the planning session (the user asked to clear the small items): the Hub resolves, with the same function the Event hooks go through (`resolveMailbox` in `src/hub/hub.ts`), so the order cannot drift between the two. The hook still formats the text itself (`openRequestsText`); the Hub returns only the Mailbox name.
+- Done 2026-11-14 in the planning session, without a team: `GET /mailboxes/resolve` (`Hub.lookupMailbox`, the read-only half of `resolveMailbox`; it learns nothing). The hook asks it, then reads that Mailbox in `GET /mailboxes`. Tests: `src/hub/app.test.ts` (order and read-only), `src/hooks/session-restore.test.ts` (against the real Hub, a cwd `C:\work\demo` without `HUB_MAILBOX` prints Mailbox `demo`'s open request). Not reviewed (no reviewer); not yet seen on a real session after `/clear`.
 
 #### Done when
-- [ ] The Hub answers which Mailbox a session is, from `session_id`, `X-Hub-Mailbox` and cwd, in `resolveMailbox`'s order (an endpoint, or a query on `GET /mailboxes`; the implementer picks), and protocol.md §3 documents it.
-- [ ] `tools/hooks/session-restore.mjs` asks the Hub for the Mailbox, sending `session_id`, `HUB_MAILBOX` and its cwd, instead of matching on its own; with no match it prints nothing, as today.
-- [ ] A test covers a session without `HUB_MAILBOX` whose cwd folder name is an existing Mailbox: the hook prints that Mailbox's open requests.
-- [ ] design.md §3.13's note that hand-started sessions get nothing after `/clear` is updated.
-- [ ] `npm test` and `npm run docs:check` pass.
+- [x] The Hub answers which Mailbox a session is, from `session_id`, `X-Hub-Mailbox` and cwd, in `resolveMailbox`'s order (an endpoint, or a query on `GET /mailboxes`; the implementer picks), and protocol.md §3 documents it.
+- [x] `tools/hooks/session-restore.mjs` asks the Hub for the Mailbox, sending `session_id`, `HUB_MAILBOX` and its cwd, instead of matching on its own; with no match it prints nothing, as today.
+- [x] A test covers a session without `HUB_MAILBOX` whose cwd folder name is an existing Mailbox: the hook prints that Mailbox's open requests.
+- [x] design.md §3.13's note that hand-started sessions get nothing after `/clear` is updated.
+- [x] `npm test` and `npm run docs:check` pass.

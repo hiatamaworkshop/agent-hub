@@ -361,6 +361,37 @@ describe('GET /mailboxes: awaitingReply.seqs (C129)', () => {
   })
 })
 
+describe('GET /mailboxes/resolve (C161)', () => {
+  const resolveOf = async (app: ReturnType<typeof setup>['app'], query: string, headers: Record<string, string> = {}) =>
+    ((await (await app.request(`/mailboxes/resolve?${query}`, { headers: { ...bearer, ...headers } })).json()) as { mailbox: string | null }).mailbox
+
+  it('resolves in the Events order: the learned session first, then X-Hub-Mailbox, then the cwd folder name of an existing Mailbox', async () => {
+    const { hub, app } = setup()
+    hub.attach('demo.leader', { client: 'claude-code', sessionId: 's-1' })
+    hub.store.ensureMailbox('demo')
+    assert.equal(await resolveOf(app, 'session_id=s-1&cwd=C%3A%2Fwork%2Fdemo', { 'x-hub-mailbox': 'other' }), 'demo.leader')
+    assert.equal(await resolveOf(app, 'session_id=s-new&cwd=C%3A%2Fwork%2Fdemo', { 'x-hub-mailbox': 'other' }), 'other')
+    assert.equal(await resolveOf(app, 'session_id=s-new&cwd=C%3A%5Cwork%5Cdemo'), 'demo')
+    assert.equal(await resolveOf(app, 'cwd=%2Fhome%2Fx%2Fnowhere'), null)
+    assert.equal(await resolveOf(app, ''), null)
+  })
+
+  it('only reads: a session resolved by cwd is not learned, and the Attachment keeps no session_id', async () => {
+    const { hub, app } = setup()
+    hub.attach('demo', { client: 'claude-code' })
+    assert.equal(await resolveOf(app, 'session_id=s-new&cwd=C%3A%2Fwork%2Fdemo'), 'demo')
+    // Had it learned s-new, the header below would be ignored
+    assert.equal(await resolveOf(app, 'session_id=s-new', { 'x-hub-mailbox': 'other' }), 'other')
+    const listed = (await (await app.request('/mailboxes', { headers: bearer })).json()) as { mailboxes: { name: string; attachment: { sessionId?: string } | null }[] }
+    assert.equal(listed.mailboxes.find((m) => m.name === 'demo')!.attachment!.sessionId, undefined)
+  })
+
+  it('needs the token', async () => {
+    const { app } = setup()
+    assert.equal((await app.request('/mailboxes/resolve')).status, 401)
+  })
+})
+
 describe('GET /mailboxes: the Hub start time (C142)', () => {
   it('returns startedAt, the time this Hub process started, next to the Mailboxes', async () => {
     const hub = new Hub(new Store(), { now: () => new Date('2026-11-09T11:02:00.000Z') })
