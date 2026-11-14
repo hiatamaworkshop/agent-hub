@@ -1035,12 +1035,13 @@ Seen again 2026-10-31 after a Hub restart (C86's run): with the tab in the backg
 To decide after measuring: the delay with the tab hidden, then whether to re-read without a timer when hidden, or to update the state from the SSE event itself.
 - Decided 2026-11-13 in the planning session: no measurement first. While the page is hidden, `refreshMailboxes` re-reads without waiting on a timer (the 300 ms debounce exists for bursts while visible), and the page re-reads once when it becomes visible. Updating the state from the SSE event itself is not taken: it would be a second derivation of the card state beside `src/shared/card-state.js`.
 - Done 2026-11-14 in the planning session, without a team: `readMailboxes` in `public/index.html` does the read; `refreshMailboxes` calls it at once while `document.hidden`, and through the debounce timer while visible. Reads do not overlap (a request during a read asks for one more read after it), so a slower older answer cannot overwrite a newer list. `visibilitychange` to visible also calls `refreshMailboxes(0)`. The retry after a failed read still uses its backoff timer (throttled while hidden, as before) and comes back through `refreshMailboxes`. `npm test` 755 pass, `ui:check` 212 ok; `ui:check` has no hidden-tab scene, so the hand check below is the evidence for throttling. Not reviewed (no reviewer).
+- Hand check 2026-11-14 (the Hub started directly, serving `public/index.html` from disk): the page reloaded and put behind another tab at about 12:24 UTC; at 12:29:59 UTC, about six minutes later, a probe Mailbox `c87-probe` was attached and handed a request from the human (attach, `POST /messages`, ack; Working by the card rules). The user, watching the tab icon only, saw it turn blue at once. The probe and its request were deleted afterwards.
 
 #### Done when
 - [x] While `document.hidden`, an SSE message that calls `refreshMailboxes` starts the read without `setTimeout` (no timer in the path, so throttling cannot delay it); while visible, the debounce stays as it is.
 - [x] On `visibilitychange` to visible, the page calls `refreshMailboxes(0)` once.
 - [x] The retry after a failed read (`mailboxTries`) still works hidden or visible.
-- [ ] A check by hand is recorded in this section: the tab hidden for over five minutes, a deployer starts working, and the icon turns blue within a few seconds (date and what was seen).
+- [x] A check by hand is recorded in this section: the tab hidden for over five minutes, a deployer starts working, and the icon turns blue within a few seconds (date and what was seen).
 - [x] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
 
 ### C91. The human's open requests on the map
