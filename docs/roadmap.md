@@ -24,6 +24,8 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C161
+- [ ] C87
 
 (Items with a status line are listed under "Items".)
 
@@ -1027,11 +1029,18 @@ Raised 2026-10-30 as the second step of C76. A separate, non-LLM program and ord
 Open: the opt-in setting that allows sending without a human's Send, and the boundary it needs in design.md §2; how "no activity" is judged without vendor hooks (last Message sent, last `inbox` call, attachment heartbeat); how it is run (`npm run watcher`, a second compose service). Decide after using C76's button for a while.
 
 ### C87. The tab icon lags while the tab is in the background
-Status: proposed
 
 Seen 2026-10-31: with the agent-hub tab behind another tab, its icon stayed idle grey while the deployer was Working, and turned blue when the tab was brought forward. Likely cause, not measured: after an SSE message the page re-reads Mailboxes through `setTimeout` (`refreshMailboxes`, 300 ms), and Chrome throttles timers in hidden tabs, to about once a minute after a while. The icon (C70) exists to be read from the background.
 Seen again 2026-10-31 after a Hub restart (C86's run): with the tab in the background, the icon did turn blue when the team started working, so the lag is not every time. A likely difference is how long the tab had been hidden (Chrome's heavier throttling starts after about five minutes hidden), not yet measured.
 To decide after measuring: the delay with the tab hidden, then whether to re-read without a timer when hidden, or to update the state from the SSE event itself.
+- Decided 2026-11-13 in the planning session: no measurement first. While the page is hidden, `refreshMailboxes` re-reads without waiting on a timer (the 300 ms debounce exists for bursts while visible), and the page re-reads once when it becomes visible. Updating the state from the SSE event itself is not taken: it would be a second derivation of the card state beside `src/shared/card-state.js`.
+
+#### Done when
+- [ ] While `document.hidden`, an SSE message that calls `refreshMailboxes` starts the read without `setTimeout` (no timer in the path, so throttling cannot delay it); while visible, the debounce stays as it is.
+- [ ] On `visibilitychange` to visible, the page calls `refreshMailboxes(0)` once.
+- [ ] The retry after a failed read (`mailboxTries`) still works hidden or visible.
+- [ ] A check by hand is recorded in this section: the tab hidden for over five minutes, a deployer starts working, and the icon turns blue within a few seconds (date and what was seen).
+- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
 
 ### C91. The human's open requests on the map
 Status: proposed
@@ -1081,7 +1090,14 @@ Raised 2026-11-10 with C153. After a run, what waits for the human is spread ove
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
 
 ### C161. Let the restore hook find a Mailbox the way the Event hooks do
-Status: proposed
 
 Raised 2026-11-11 from C129's report. The hook `tools/hooks/session-restore.mjs` finds the Mailbox by the Attachment's `session_id`, then `HUB_MAILBOX`. The Event hooks (`resolveMailbox`, design.md §3.4) also use the session map the Hub has learned and the cwd's folder name. So a session started by hand without `HUB_MAILBOX`, attached under its folder-name Mailbox, gets nothing printed after `/clear` (design.md §3.13 records it). Sessions started by `team` are not affected, and the `open_requests` tool and the instructions still cover the other case.
 - Idea: the Hub resolves it and the hook asks (a new endpoint or a field on `GET /mailboxes`), or the hook sends what the Event hooks send (`X-Hub-Mailbox`, cwd) and the Hub answers with the same text. Not decided; it matters only if sessions are often started by hand.
+- Decided 2026-11-13 in the planning session (the user asked to clear the small items): the Hub resolves, with the same function the Event hooks go through (`resolveMailbox` in `src/hub/hub.ts`), so the order cannot drift between the two. The hook still formats the text itself (`openRequestsText`); the Hub returns only the Mailbox name.
+
+#### Done when
+- [ ] The Hub answers which Mailbox a session is, from `session_id`, `X-Hub-Mailbox` and cwd, in `resolveMailbox`'s order (an endpoint, or a query on `GET /mailboxes`; the implementer picks), and protocol.md §3 documents it.
+- [ ] `tools/hooks/session-restore.mjs` asks the Hub for the Mailbox, sending `session_id`, `HUB_MAILBOX` and its cwd, instead of matching on its own; with no match it prints nothing, as today.
+- [ ] A test covers a session without `HUB_MAILBOX` whose cwd folder name is an existing Mailbox: the hook prints that Mailbox's open requests.
+- [ ] design.md §3.13's note that hand-started sessions get nothing after `/clear` is updated.
+- [ ] `npm test` and `npm run docs:check` pass.
