@@ -3350,7 +3350,8 @@ document.addEventListener('pointerdown', (e) => {
 OS_DARK.addEventListener('change', () => applyTheme())
 function countTabUnread() { tabUnread++; showTabUnread() }
 function clearTabUnread() { if (tabUnread === 0) return; tabUnread = 0; showTabUnread() }
-document.addEventListener('visibilitychange', () => { if (!document.hidden) clearTabUnread() })
+// 前面に戻ったら一覧を 1 回読み直す。非表示の間に間引かれたタイマーの分を、ここで取り戻す (C87)
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { clearTabUnread(); refreshMailboxes(0) } })
 window.addEventListener('focus', clearTabUnread)
 applyTheme()
 
@@ -3359,20 +3360,32 @@ applyTheme()
 let mailboxTries = 0
 let mailboxError = false
 let mailboxTimer = null
+// 非表示のタブでは Chrome がタイマーを間引く (5 分ほど隠すと 1 分に 1 回まで)。タブの絵 (C70) は裏から読むためのものなので、
+// 非表示の間はタイマーを挟まずにすぐ読む (C87)。読んでいる最中に頼まれた分は、終わってから 1 回だけ読み直す (古い一覧で上書きしない)
+let mailboxReading = false
+let mailboxAgain = false
+async function readMailboxes() {
+  if (mailboxReading) { mailboxAgain = true; return }
+  mailboxReading = true
+  try {
+    await loadMailboxes()
+    mailboxTries = 0
+    if (mailboxError) { mailboxError = false; $('err').textContent = '' }
+  } catch (err) {
+    if (err.message === 'unauthorized') return
+    mailboxError = true
+    $('err').textContent = `Could not load Mailboxes: ${err.message || err}`
+    if (mailboxTries++ < 3) mailboxTimer = setTimeout(() => refreshMailboxes(0), 1000 * 2 ** mailboxTries)
+  } finally {
+    mailboxReading = false
+    if (mailboxAgain) { mailboxAgain = false; refreshMailboxes(0) }
+  }
+}
 function refreshMailboxes(delay = 300) {
   clearTimeout(mailboxTimer)
-  mailboxTimer = setTimeout(async () => {
-    try {
-      await loadMailboxes()
-      mailboxTries = 0
-      if (mailboxError) { mailboxError = false; $('err').textContent = '' }
-    } catch (err) {
-      if (err.message === 'unauthorized') return
-      mailboxError = true
-      $('err').textContent = `Could not load Mailboxes: ${err.message || err}`
-      if (mailboxTries++ < 3) mailboxTimer = setTimeout(() => refreshMailboxes(0), 1000 * 2 ** mailboxTries)
-    }
-  }, delay)
+  mailboxTimer = null
+  if (document.hidden) { void readMailboxes(); return }
+  mailboxTimer = setTimeout(readMailboxes, delay)
 }
 
 function connect() {
