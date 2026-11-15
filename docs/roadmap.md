@@ -24,6 +24,12 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C169
+- [ ] C170
+- [ ] C171
+- [ ] C172
+- [ ] C173
+- [ ] C174
 
 (Items with a status line are listed under "Items".)
 
@@ -687,6 +693,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: `public/index.html` (`readMailboxes`, reads that never overlap; `refreshMailboxes` reads at once while `document.hidden`, through the 300 ms debounce while visible; `visibilitychange` to visible calls `refreshMailboxes(0)`; the retry backoff unchanged), design.md §3.15 (the favicon paragraph).
   - Checked: `npm test` 755 pass; `npm run ui:check` 212 ok; `npm run docs:check` 0 errors. By hand: the page put behind another tab at about 12:24 UTC; at 12:29:59 UTC a probe Mailbox `c87-probe` was attached and handed a request from the human (Working by the card rules); the user, watching the icon only, saw it turn blue at once. The probe and its request were deleted afterwards. Done-when wording not changed.
   - Not checked: no reviewer read it; `ui:check` has no hidden-tab scene; browsers other than Chrome.
+- [x] C168 Decide which verification practices the Hub adopts for its own code (2026-11-15, decided by the user; split into C169 to C174)
+  - Raised 2026-11-15 in the planning session, after the user compared common verification practice (a feature map for runtime verification; TLA+ and Lean; the pre-production / testing-in-production lists) with this repository. The user's direction: adopt actively what fits the Hub, and nothing beyond its responsibility. The line, and what was left outside it with the reasons, is design.md §9-11.
+  - Decided: all five candidates, in the order the planning session chose (the user left the order to it): C169 the map from promise to proof (it shows the gaps the others fill), C170 and C171 property tests (the largest gap; the pure function first, where the tool is decided), C172 what to check again after a Claude Code update, C173 coverage, C174 `ui:check` in CI.
+  - Corrected while filing: the first record said nothing checks again after a Claude Code update. A start does warn about a newer version (C85); what is missing is what to check and where "last verified" comes from (C172).
+  - Read for the record, not run: `package.json`, `.github/workflows/ci.yml`, `tools/dev/roles/reviewer.md`, design.md §1.2 and §3.12, protocol.md §4, the list of test files. A decision only; no code changed and no reviewer read it.
 - [x] C160 Lift the provisional restriction on `meta` in Channels notifications (2026-11-12, closed after the review)
   - Decided 2026-11-12 in the planning session (the user accepted the recommendation): a list of known keys, not every key. The list is `files` and `item`, the `meta` keys protocol.md §2 defines; `forwardedFrom` / `forwardedSender` are Message fields, not `meta` keys, and already reach Channels as attributes.
   - Changed: `src/shared/format.ts` (`channelMeta` passes `files`, with its element keys as before, and `item`, unconverted; the rest is dropped), `src/shared/meta.test.ts` (a known key, an unknown key, values with `"` `<` `>` `&`), `docs/protocol.md` §2 and §6, `docs/design.md` §6.1ad and §6.2-4, `tools/probe/probe.mjs` and `tools/probe/README.md` §3b (both point at design.md §6.1ad).
@@ -1083,18 +1094,97 @@ Raised 2026-11-10 with C153. After a run, what waits for the human is spread ove
 - Idea: the Items list gets a tier, or a mark, for items whose done-when lines are all checked while the section is still there ("worked, waiting for the close"); the index already has the counts (`conditions.done` / `total`). `team status` (C139) could list the same.
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
 
-### C168. Decide which verification practices the Hub adopts for its own code
-Status: proposed
+### C169. A standing map from each promise of the Hub to what proves it
 
-Raised 2026-11-15 in the planning session, after the user compared common verification practice (a feature map for runtime verification; TLA+ and Lean; the pre-production / testing-in-production lists) with this repository. Direction from the user: adopt actively what fits the Hub, and nothing beyond its responsibility. This item is the preparation record only; nothing is adopted until the user decides, and each adopted practice becomes its own item.
-- Where we stand (read 2026-11-15: `package.json`, `.github/workflows/ci.yml`, `tools/dev/roles/reviewer.md`, design.md §1.2 and §3.12, the list of test files; the tests were not run or read one by one). Verification is not left to the reviewer alone: the deployer's `VERIFIED` names the command and its result, the leader runs the tests once and compares the diff with SCOPE, the reviewer reads the change against the sources of truth and names a `breaks when:` (it reads; it is not asked to run anything), CI runs `typecheck`, `npm test` and `docs:check` on Windows and Ubuntu, and the human checks by hand before the close. In place: unit tests (45 files), tests at the API level, `tsc`, `ui:check` (scenes against a real Hub and headless Chrome; not in CI, C151), `tools/probe`, the verification record of design.md §6, the Hub's own logs (§3.14). Not in place: property-based tests, fuzzing, model checking, mutation tests, coverage, lint, benchmarks.
-- The line (confirmed by the user 2026-11-15): the Hub's responsibility is the state for addresses and delivery (CLAUDE.md "Design invariants", design.md §3.14). A practice fits when it checks a promise the Hub itself makes, in protocol.md or in the card state derivation. It does not fit when it checks another project's content, or needs a production the Hub does not have (127.0.0.1, one user).
-- Candidates that seem to fit, each to be judged, not assumed:
-  1. A standing map from each promise to its proof. Proofs are attached to changes today (an item's done-when and its closed record), so after a close nothing lists "this guarantee → the test or §6 entry that shows it". The promises are already written (protocol.md §4, design.md §3.15 card states); the map would name the proof for each and show the ones with none.
-  2. Property-based tests for the Hub's state machines: the acked watermark and at-least-once delivery, the lease and takeover of an Attachment (protocol.md §4), and the card state derivation (`src/shared/card-state.js`, a pure function). Today these have example tests only. A TLA+ model of the same is the heavier form; judge it only if the property tests find what the examples missed.
-  3. Checking again after a Claude Code update. The §6 entries name the version they were observed with (the input envelope, design.md §1.2), but nothing runs `tools/probe` again when the version changes, and Channels is a research preview.
-  4. A measure of the tests themselves (coverage, or mutation tests on the pure modules), so that "the tests pass" says how much it covers.
-  5. `ui:check` in CI (left out in C151 because it needs Chrome).
-- Outside the line (confirmed by the user 2026-11-15; the reason is kept here so it is not raised again without new evidence): Lean proofs of the implementation (cost against a codebase this size); canarying, traffic shaping, A/B tests, load and soak tests (no production, one user); penetration tests beyond design.md §4 (loopback only, token on every API).
-- Relation to C136: C136 gives the working conventions (how agents are checked) their lineage and re-checks their status. This item is about verifying the Hub's code. The §1.2 row "Incidents in §6 become new verification angles" (Partly) touches both; candidate 1 would be where such an angle is written.
-- To decide: which candidates to take up and in what order.
+Decided 2026-11-15 by the user (from C168; the line for what fits is design.md §9-11). Proofs are attached to changes today: an item's done-when and its closed record. After a close, nothing lists "this guarantee → the test or §6 entry that shows it", so a guarantee with no proof does not show.
+- The promises are already written: the delivery guarantees (protocol.md §4) and the card states (design.md §3.15 "Card states"). The map names, for each, the proof that exists now: a test (file and test name), a `ui:check` scene, or a §6 entry with the version it was observed with.
+- A row with no proof says `none`. Nothing is invented to fill it; the `none` rows are the material the later items (C170, C171) and the planning session work from.
+- Where the map lives (a section of protocol.md, or its own file under `docs/`) is the implementer's choice; its place goes into CLAUDE.md's document map.
+- The §1.2 row "Incidents in §6 become new verification angles" (Partly) gets a home here: an incident adds or corrects a row.
+
+#### Done when
+- [ ] A table lists every guarantee of protocol.md §4 and every card state of design.md §3.15, each with its proof (test file and test name, `ui:check` scene, or design.md §6 entry) or `none`.
+- [ ] No row names a proof that does not show the guarantee as worded; a partial proof says what it leaves out.
+- [ ] CLAUDE.md's document map has a line for the map, and "Updating the docs" says when a row is added or changed (a change to a guarantee, a new §6 incident).
+- [ ] `npm run docs:check` warns when a row names a test file that does not exist (a warning, not an error), with a test for the check.
+- [ ] design.md §1.2's row "Incidents in §6 become new verification angles" points to the map, with its Status re-read.
+- [ ] `npm test` and `npm run docs:check` pass (0 errors).
+
+### C170. Property-based tests for the card state derivation
+
+Decided 2026-11-15 by the user (from C168). `src/shared/card-state.js` is a pure function from a Mailbox as the Hub describes it, plus the caller's context, to one state. `card-state.test.ts` and `ui:check` check it by examples and scenes; no test tries inputs nobody thought of.
+- The first of the two property-test items, taken first because the function is pure and small: the tool and the pattern are decided here, and C171 follows them.
+- The tool. Default: `fast-check` as a devDependency (generators and shrinking; it runs inside `node --test`). If the implementer finds a reason against it, the alternative is hand-written generators on a seeded PRNG. Either way the reason is written in design.md §5 first (CLAUDE.md "Technology stack").
+- A failing case must be reproducible: the seed (or the shrunk input) is printed, and a found failure becomes an example test.
+- A TLA+ model was judged the heavier form of the same check (design.md §9-11); not part of this item.
+
+#### Done when
+- [ ] design.md §5 says which tool the property tests use and why.
+- [ ] A property test generates arbitrary Mailboxes and contexts (missing fields included, as an older Hub would send) and checks that `stateOf` and `humanTurnOf` never throw and that `stateOf` returns `null` or one of the keys design.md §3.15 names.
+- [ ] A property test checks that a question or permission Event of the current Attachment that has not been answered always gives Needs you, whatever else the Mailbox holds (waits are not hidden).
+- [ ] A property test checks that an Event of an earlier Attachment (`staleEvent`) is never counted as waiting.
+- [ ] A failing run prints what is needed to run the same case again, and README or usage.md "Development" says how.
+- [ ] Each failure the properties found is fixed and kept as an example test, or recorded in the section's body as a finding for the planning session; the body says how many cases were run.
+- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass (0 errors).
+
+### C171. Property-based tests for delivery and Attachments
+Status: blocked(after C170)
+
+Decided 2026-11-15 by the user (from C168). The Hub's core promise is delivery (protocol.md §4), and its state is small: per Mailbox a `cursor`, a `received`, the unread range, and at most one Attachment with a lease. `src/hub/mailbox.test.ts` checks the paths one scenario at a time; no test runs arbitrary interleavings of post, attach, ack, `inbox`, detach, takeover and lease expiry.
+- A model-based test: generate a sequence of those operations against the real store (in memory, with the clock injected), and check the invariants after every step. Uses the tool and the pattern C170 decided.
+- Waits for C170 only for that decision.
+- Not in scope: the shim's transport (Channels returns no ack; that is the envelope of design.md §6, C172), and the HTTP layer.
+
+#### Done when
+- [ ] A property test runs generated sequences of post (to `mailbox:`, `role:`, `topic:`), attach (with and without `maxAgeMs` / `maxUnread`), ack, `inbox` (with and without `unconfirmed`), a conversation Message from the Mailbox, detach, takeover and lease expiry.
+- [ ] After every step it checks `received ≤ cursor ≤ the Mailbox's last seq`, and that neither `cursor` nor `received` ever moves backwards.
+- [ ] It checks at-least-once: a Message addressed to a Mailbox that is neither acked nor abandoned by the inflow limit is in the next attach's unread, and unread is in `seq` order.
+- [ ] It checks that `received` advances only by the three paths of protocol.md §4, and that an `inbox` ack does not jump over handed, unconfirmed Messages.
+- [ ] It checks that a Mailbox never has two live Attachments, that a takeover's successor has the subscriptions and the unread of the one it cut off, and that a lease expiry detaches without losing unread.
+- [ ] Each failure the properties found is fixed and kept as an example test, or recorded in the section's body as a finding for the planning session; the body says how many sequences were run and how long the test takes.
+- [ ] `npm test` and `npm run docs:check` pass (0 errors).
+
+### C172. Say what to check again when Claude Code is newer than the verified version
+
+Decided 2026-11-15 by the user (from C168). A start already warns when `claude --version` is newer than the last verified version, and records it in `logs/start-warnings.jsonl` (C85, C111; `src/team/startlog.ts`). Two things are missing.
+- Nothing says what to do about the warning. The behaviours delivery depends on are spread over design.md §6.1 (a channel notification wakes an idle session; `meta` reaches the model escaped; the hook payload's `session_id` and `cwd`; `X-Hub-Mailbox` on hook requests; a notification during a question or permission wait), and `tools/probe/README.md` has steps for some of them.
+- "Last verified" is the highest version named in any §6.1 heading. An entry that observed one unrelated behaviour on a newer version moves it for all of them, so the warning goes quiet without the delivery behaviours having been looked at.
+- The check itself needs a real `claude` session and a human at the terminal; it is not automated here (Channels is a research preview behind a development flag, §6.1c).
+
+#### Done when
+- [ ] One list names the Claude Code behaviours the Hub's delivery depends on, each with the §6 entry that verified it and the step that checks it again (`tools/probe/README.md`, or a hand check written out).
+- [ ] The version warning's text points to that list.
+- [ ] The last verified version is taken from a record of the list having been run (version, date, OS), not from the highest version in any §6.1 heading; `src/team/startlog.test.ts` covers the new source and a §6.1 entry with a newer version that does not move it.
+- [ ] The list was run once with the Claude Code version current at the time, and the result is recorded (design.md §6); a behaviour that changed is recorded as changed, not fixed in this item.
+- [ ] usage.md "Start warnings" says what to do when the warning shows.
+- [ ] `npm test` and `npm run docs:check` pass (0 errors).
+
+### C173. Measure what the tests cover
+
+Decided 2026-11-15 by the user (from C168). "`npm test` passes" is the evidence every report and close rests on (design.md §1.2), and nothing says how much of the code the tests run.
+- A measurement first, not a gate: a new restriction enters as a warning (design.md §3.12), and a threshold set before the numbers are known would be a guess.
+- Node's own coverage for `node --test` is the default (no dependency); whether it reports TypeScript sources correctly through `tsx` is to be checked first, and the result goes to design.md §5.
+- `public/index.html` is outside it (no unit tests; `ui:check` covers it by scenes).
+- Mutation tests on the pure modules (`src/shared/`) are the stronger measure. Judged after this item, from its numbers; not filed.
+
+#### Done when
+- [ ] One command (an `npm run` script) prints line and branch coverage per file under `src/`, with test files left out of the figures.
+- [ ] design.md §5 says which tool measures it and what was checked about its figures for TypeScript sources.
+- [ ] The figures of the first run are recorded in the section's body, with the files under `src/hub/` and `src/shared/` that have the lowest branch coverage named.
+- [ ] CI runs the command and shows the figures; no threshold fails the build.
+- [ ] README or usage.md "Development" says how to run it.
+- [ ] `npm test` and `npm run docs:check` pass (0 errors).
+
+### C174. Run `ui:check` in CI
+
+Decided 2026-11-15 by the user (from C168). This reverses the 2026-11-10 decision that `ui:check` stays off CI (the closed record of C148), which was made because it needs Chrome. `ui:check` is the only check that runs the page against a real Hub, and today it runs only when someone remembers to (CLAUDE.md "Notes on the development environment").
+- C151 made it take free ports, so a runner's ports are not a reason against it any more.
+- Whether the hosted runners' Chrome is enough, or the job installs one, is checked in the item.
+- A scene that passes locally and fails on a runner is a finding to record, not a scene to delete.
+
+#### Done when
+- [ ] `.github/workflows/ci.yml` runs `npm run ui:check` on `ubuntu-latest` at least; if `windows-latest` is left out, the file says why.
+- [ ] A run on GitHub with the job green is recorded in the section's body (the run's URL and the count of scenes).
+- [ ] A scene that fails only on the runner is fixed, or listed in the section's body with what differs; none is removed or skipped without that record.
+- [ ] README "Status" and CLAUDE.md "Notes on the development environment" say that CI runs `ui:check`.
+- [ ] `npm test` and `npm run docs:check` pass (0 errors).

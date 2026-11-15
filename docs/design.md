@@ -1365,6 +1365,11 @@ Read through fetched README / docs text, so details are unverified. Read with th
 (Decided 2026-10-16: the token is passed to the browser by cookie; §4)
 
 10. **Whether project filtering also leaves waits unhidden** (thread filtering in §3.2; came up in C59's implementation): the done-when condition is "questions, permission waits and requests to the human are not hidden by any combination of axes". C59 applied it to the Mailbox, kind, notification and collapse axes, and left project as before (waits in other projects are hidden and counted in `N waiting in other projects`). Extending it to project would show other projects' questions on the chosen project's screen. A human decides which.
+11. **Which verification practices the Hub adopts for its own code** (raised 2026-11-15, after comparing common practice with this repository: a feature map for runtime verification, TLA+ and Lean, the lists of pre-production tests and testing in production).
+   **Decision (2026-11-15, user): adopt actively what fits the Hub, and nothing beyond its responsibility.** The Hub's responsibility is the state for addresses and delivery (§3.14). A practice fits when it checks a promise the Hub itself makes, in protocol.md or in the card state derivation. It does not fit when it checks another project's content, or needs a production the Hub does not have (127.0.0.1, one user).
+   Adopted, as items: a map from each promise to its proof (C169), property-based tests for the card state derivation and for delivery and Attachments (C170, C171), what to check again after a Claude Code update (C172), coverage (C173), `ui:check` in CI (C174).
+   Left out, with the reason, so they are not raised again without new evidence: Lean proofs of the implementation (the cost against a codebase this size); canarying, traffic shaping, A/B tests, load and soak tests (no production, one user); penetration tests beyond §4 (loopback only, a token on every API). A TLA+ model is the heavier form of C171; judge it only if the property tests find what the examples missed. Mutation tests are judged from C173's figures.
+   This is about verifying the Hub's code. How agents are checked is §1.2 (C136).
 
 ## 10. References
 
