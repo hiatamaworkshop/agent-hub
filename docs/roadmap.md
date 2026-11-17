@@ -1141,21 +1141,30 @@ Decided 2026-11-15 by the user (from C168). `src/shared/card-state.js` is a pure
 - [x] `npm test`, `npm run ui:check` and `npm run docs:check` pass (0 errors).
 
 ### C171. Property-based tests for delivery and Attachments
-Status: blocked(after C170)
 
 Decided 2026-11-15 by the user (from C168). The Hub's core promise is delivery (protocol.md §4), and its state is small: per Mailbox a `cursor`, a `received`, the unread range, and at most one Attachment with a lease. `src/hub/mailbox.test.ts` checks the paths one scenario at a time; no test runs arbitrary interleavings of post, attach, ack, `inbox`, detach, takeover and lease expiry.
 - A model-based test: generate a sequence of those operations against the real store (in memory, with the clock injected), and check the invariants after every step. Uses the tool and the pattern C170 decided.
 - Waits for C170 only for that decision.
 - Not in scope: the shim's transport (Channels returns no ack; that is the envelope of design.md §6, C172), and the HTTP layer.
+- Worked 2026-11-17 (the planning session, no team; no review yet). The status line `blocked(after C170)` was removed when C170's tool and pattern were committed (`0e145ec`): the item waited for that decision only. The test is `src/hub/delivery.property.test.ts`.
+  - **How it runs**: the real `Hub` and `Store` in memory, the clock injected, the lease timers mocked (`t.mock.timers`), no stream opened (so every Attachment lives on its lease). Three Mailboxes: `a` and `b` with role `deployer`, `c` the leader and the subscriber of topic `t`. A model kept beside the Hub: per Mailbox, the Messages addressed to it (by its own rule, not the Hub's) and not yet acked or abandoned, the ones handed on the channel path and not yet returned by `inbox` or confirmed, and the lease deadline. Ops besides those the first line names: a reply to a Message the Mailbox received, a notice to the human (not a conversation Message), heartbeat, an ack behind the cursor. The ack after `inbox` is sent as the shim sends it (`src/shim/inbox.ts`).
+  - Checked after every step: `received ≤ cursor ≤` the Hub's last seq; neither moves back; the unread is exactly the model's not-acked, not-abandoned Messages, in `seq` order (so the next attach hands them over); every `inbox` result is in `seq` order; `received` moved only in a step of one of the three paths for that Mailbox; it never passes a Message handed and not confirmed (with the exception below); at most one live Attachment, the one the Mailbox names, live exactly while the model's lease runs; on an expiry the reason is `lease_expired`; on a takeover the one cut off is gone and the subscriptions are kept.
+  - **What the sequences reached** (counted over 300 sequences, the default run; counters removed afterwards): 11,173 steps, about 37 a sequence; 1,106 takeovers; 376 lease expiries; 333 attaches that abandoned unread; `received` moved 443 times by an `inbox` ack, 333 by abandonment, 145 by a conversation Message. About half the ack, `inbox` and conversation steps fell on a Mailbox not attached (a no-op, still checked).
+  - **The test can fail**: `src/hub/hub.ts` was broken four ways, one at a time, and restored after each. An `inbox` ack jumping the gap, a channel ack confirming, a takeover that leaves the old Attachment live, and a lease expiry that drops the unread each failed, shrunk to 2 to 5 steps.
+  - **Finding, filed as C175** (proposed; not fixed here): an attach that abandons unread (the inflow limit) moves `received` to the last abandoned seq, so a Message handed earlier on the channel path and never confirmed counts as confirmed too: it leaves the unconfirmed count, and `inbox` with `unconfirmed=true` no longer returns it. Smallest case: #1 to `a`, `a` attaches and acks #1 on the channel path; #2 and #3 to `a`; `a` attaches with `maxUnread: 1`, #2 is abandoned, and `received` becomes 2. protocol.md §4 says abandoned Messages do not count as unconfirmed; it does not say the earlier handed ones stop counting. A fix needs a decision: `received` is one high-water mark, so it cannot both pass the abandoned ones and stay below #1. The test's model follows the Hub here, with a comment naming this finding, so the other invariants are still checked. docs/proofs.md D10 records it.
+  - **The second done-when line is not checked**: its wording is "`cursor ≤` the Mailbox's last seq". The test checks the Hub's last seq instead, because the cursor goes past the last Message addressed to the Mailbox by design: an `inbox` with nothing more to return moves it to the Hub's last seq (`Hub.inbox`, protocol.md §3), and an ack may name a seq not addressed to it. Under "the Hub's last seq" the line is met; choosing that reading is the human's (design.md §3.15, C110).
+  - **Cases run and time**: 300 sequences of up to 80 steps in `npm test` (under a second for this file). Once, 10,000 sequences in 6 seconds, with no failure besides the finding.
+  - docs/proofs.md: D1, D3, D7, D9, D10, D18, D20, D21 and the takeover paragraph now name the test; D7 no longer reads `none`.
+  - `npm test`: 764 pass, 0 fail. `npm run docs:check`: 0 errors.
 
 #### Done when
-- [ ] A property test runs generated sequences of post (to `mailbox:`, `role:`, `topic:`), attach (with and without `maxAgeMs` / `maxUnread`), ack, `inbox` (with and without `unconfirmed`), a conversation Message from the Mailbox, detach, takeover and lease expiry.
+- [x] A property test runs generated sequences of post (to `mailbox:`, `role:`, `topic:`), attach (with and without `maxAgeMs` / `maxUnread`), ack, `inbox` (with and without `unconfirmed`), a conversation Message from the Mailbox, detach, takeover and lease expiry.
 - [ ] After every step it checks `received ≤ cursor ≤ the Mailbox's last seq`, and that neither `cursor` nor `received` ever moves backwards.
-- [ ] It checks at-least-once: a Message addressed to a Mailbox that is neither acked nor abandoned by the inflow limit is in the next attach's unread, and unread is in `seq` order.
-- [ ] It checks that `received` advances only by the three paths of protocol.md §4, and that an `inbox` ack does not jump over handed, unconfirmed Messages.
-- [ ] It checks that a Mailbox never has two live Attachments, that a takeover's successor has the subscriptions and the unread of the one it cut off, and that a lease expiry detaches without losing unread.
-- [ ] Each failure the properties found is fixed and kept as an example test, or recorded in the section's body as a finding for the planning session; the body says how many sequences were run and how long the test takes.
-- [ ] `npm test` and `npm run docs:check` pass (0 errors).
+- [x] It checks at-least-once: a Message addressed to a Mailbox that is neither acked nor abandoned by the inflow limit is in the next attach's unread, and unread is in `seq` order.
+- [x] It checks that `received` advances only by the three paths of protocol.md §4, and that an `inbox` ack does not jump over handed, unconfirmed Messages.
+- [x] It checks that a Mailbox never has two live Attachments, that a takeover's successor has the subscriptions and the unread of the one it cut off, and that a lease expiry detaches without losing unread.
+- [x] Each failure the properties found is fixed and kept as an example test, or recorded in the section's body as a finding for the planning session; the body says how many sequences were run and how long the test takes.
+- [x] `npm test` and `npm run docs:check` pass (0 errors).
 
 ### C172. Say what to check again when Claude Code is newer than the verified version
 
@@ -1214,3 +1223,16 @@ Decided 2026-11-15 by the user (from C168). This reverses the 2026-11-10 decisio
 - [ ] A scene that fails only on the runner is fixed, or listed in the section's body with what differs; none is removed or skipped without that record.
 - [ ] README "Status" and CLAUDE.md "Notes on the development environment" say that CI runs `ui:check`.
 - [ ] `npm test` and `npm run docs:check` pass (0 errors).
+
+### C175. Abandoning unread at attach confirms Messages handed earlier and never confirmed
+Status: proposed
+
+Found 2026-11-17 by C171's property test (`src/hub/delivery.property.test.ts`; filed by the user's word). An attach that abandons unread (the inflow limit, `maxUnread` / `maxAgeMs`) moves `received` to the last abandoned seq (`trimUnread` in `src/hub/hub.ts`). If a Message was handed on the channel path before that and never confirmed, it is counted as confirmed too: it leaves the unconfirmed count on the card, and `inbox` with `unconfirmed=true` no longer returns it, so a Message dropped by a session started without the channel (design.md §6.1k) disappears from view.
+- Smallest case: #1 to `a`; `a` attaches and acks #1 on the channel path (handed, unconfirmed); #2 and #3 to `a`; `a` attaches again with `maxUnread: 1`; #2 is abandoned and `received` becomes 2, past #1.
+- protocol.md §4 says abandoned Messages "were never handed over, so `received` advances together with `cursor` (they do not count as unconfirmed)". It does not say that Messages handed earlier stop counting. The property test follows the Hub with a comment naming this item; docs/proofs.md D10 records the gap.
+- Why it is not a one-line fix: `received` is one high-water mark per Mailbox, so it cannot pass the abandoned Messages and stay below #1 at once.
+- Options, for the human to choose:
+  - a. Write it down as a limit in protocol.md §4, next to the existing limit for a session started without the channel. No code change.
+  - b. Do not move `received` when abandoning if a handed, unconfirmed Message lies below the abandoned range (the same rule as the `inbox` ack). The abandoned ones would then read as unconfirmed until the next confirmation, which the current promise rules out, so the promise changes too.
+  - c. Keep a second mark, or a list of abandoned ranges, so unconfirmed is "handed and not confirmed" exactly. More state in the Store, and a format change of the log (design.md §3.14).
+- How often it matters: it needs a dropped channel notification (a session started without the channel) and then an attach that abandons, so it is rare in practice; whether a/b/c is worth it is the question.
