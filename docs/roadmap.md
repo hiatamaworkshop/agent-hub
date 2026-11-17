@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C171
 - [ ] C174
 
 (Items with a status line are listed under "Items".)
@@ -709,6 +708,13 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: design.md §6.3 (B1-B9: the behaviours delivery depends on, with the step that checks each again, and "Runs of this list"), `src/team/startlog.ts` (`lastVerified` reads the runs, not §6.1 headings; with no run recorded every version warns; the warning points to §6.3) with tests, usage.md "Start warnings", `tools/probe/delivery-report.mjs` (reads the probe log against the list), `tools/probe/README.md`.
   - Checked: the run of 2026-11-17 on Claude Code 2.1.326 / Windows 11, all nine as recorded (the first record of a notification during a permission wait); the warning is quiet for 2.1.326 and names the run for 2.1.327. `npm test` 764 pass, `docs:check` 0 errors. Done-when wording not changed.
   - Not checked: no reviewer read it; B9's `SessionStart` with `source: "clear"` did not reach the probe (an http hook), only the `session_id` change; no run on Linux or a Mac.
+- [x] C171 Property-based tests for delivery and Attachments (2026-11-17, closed on the user's word without a review)
+  - Decided 2026-11-15 (from C168). Done 2026-11-17 in the planning session, without a team. Commit `ca3610b`.
+  - Changed: `src/hub/delivery.property.test.ts` (the real `Hub` and `Store` in memory, clock injected, lease timers mocked; three Mailboxes; a model kept beside the Hub), docs/proofs.md (D1, D3, D7, D9, D10, D18, D20, D21 and the takeover paragraph name the test; D7 no longer reads `none`).
+  - Checked: 300 sequences in `npm test` (about 37 steps each, under a second); once 10,000 sequences in 6 seconds, no failure besides the finding. `hub.ts` broken four ways (an `inbox` ack jumping the gap, a channel ack confirming, a takeover leaving the old Attachment live, a lease expiry dropping unread), each caught and shrunk to 2-5 steps. `npm test` 764 pass, `docs:check` 0 errors.
+  - Done-when line 2 (`received ≤ cursor ≤ the Mailbox's last seq`) is checked under the reading "the Hub's last seq", because `cursor` passes the last Message addressed to the Mailbox by design (`Hub.inbox`, protocol.md §3). The user closed the item knowing this; the wording is not changed.
+  - Finding: an attach that abandons unread also counts earlier handed, unconfirmed Messages as confirmed. Filed as C175 (proposed); docs/proofs.md D10 records it.
+  - Not checked: no reviewer read it; the shim's transport (Channels returns no ack; design.md §6) and the HTTP layer are out of scope.
 - [x] C173 Measure what the tests cover (2026-11-17, closed on the user's word without a review)
   - Decided 2026-11-15 (from C168). Done 2026-11-16 to 17 in the planning session, without a team. Commit `2819f5c`.
   - Changed: `npm run test:coverage` (`tools/dev/coverage.mjs`, with `tools/dev/ts-resolve.mjs` and `src/test-child.ts`), `.github/workflows/ci.yml` (a step after `docs:check`; the table also goes to the job summary), `erasableSyntaxOnly` in `tsconfig.json` with parameter properties rewritten as fields in nine classes, design.md §5, usage.md "Development", README "Status".
@@ -1111,32 +1117,6 @@ Status: held(after C153; decide once a real run shows what is hard to find)
 Raised 2026-11-10 with C153. After a run, what waits for the human is spread over the last report (a Message, deleted after the retention period), the items' sections (the defaults taken, the items left open) and `git log` (unpushed commits). The ledger is the place that lasts (design.md §3.16).
 - Idea: the Items list gets a tier, or a mark, for items whose done-when lines are all checked while the section is still there ("worked, waiting for the close"); the index already has the counts (`conditions.done` / `total`). `team status` (C139) could list the same.
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
-
-### C171. Property-based tests for delivery and Attachments
-
-Decided 2026-11-15 by the user (from C168). The Hub's core promise is delivery (protocol.md §4), and its state is small: per Mailbox a `cursor`, a `received`, the unread range, and at most one Attachment with a lease. `src/hub/mailbox.test.ts` checks the paths one scenario at a time; no test runs arbitrary interleavings of post, attach, ack, `inbox`, detach, takeover and lease expiry.
-- A model-based test: generate a sequence of those operations against the real store (in memory, with the clock injected), and check the invariants after every step. Uses the tool and the pattern C170 decided.
-- Waits for C170 only for that decision.
-- Not in scope: the shim's transport (Channels returns no ack; that is the envelope of design.md §6, C172), and the HTTP layer.
-- Worked 2026-11-17 (the planning session, no team; no review yet). The status line `blocked(after C170)` was removed when C170's tool and pattern were committed (`0e145ec`): the item waited for that decision only. The test is `src/hub/delivery.property.test.ts`.
-  - **How it runs**: the real `Hub` and `Store` in memory, the clock injected, the lease timers mocked (`t.mock.timers`), no stream opened (so every Attachment lives on its lease). Three Mailboxes: `a` and `b` with role `deployer`, `c` the leader and the subscriber of topic `t`. A model kept beside the Hub: per Mailbox, the Messages addressed to it (by its own rule, not the Hub's) and not yet acked or abandoned, the ones handed on the channel path and not yet returned by `inbox` or confirmed, and the lease deadline. Ops besides those the first line names: a reply to a Message the Mailbox received, a notice to the human (not a conversation Message), heartbeat, an ack behind the cursor. The ack after `inbox` is sent as the shim sends it (`src/shim/inbox.ts`).
-  - Checked after every step: `received ≤ cursor ≤` the Hub's last seq; neither moves back; the unread is exactly the model's not-acked, not-abandoned Messages, in `seq` order (so the next attach hands them over); every `inbox` result is in `seq` order; `received` moved only in a step of one of the three paths for that Mailbox; it never passes a Message handed and not confirmed (with the exception below); at most one live Attachment, the one the Mailbox names, live exactly while the model's lease runs; on an expiry the reason is `lease_expired`; on a takeover the one cut off is gone and the subscriptions are kept.
-  - **What the sequences reached** (counted over 300 sequences, the default run; counters removed afterwards): 11,173 steps, about 37 a sequence; 1,106 takeovers; 376 lease expiries; 333 attaches that abandoned unread; `received` moved 443 times by an `inbox` ack, 333 by abandonment, 145 by a conversation Message. About half the ack, `inbox` and conversation steps fell on a Mailbox not attached (a no-op, still checked).
-  - **The test can fail**: `src/hub/hub.ts` was broken four ways, one at a time, and restored after each. An `inbox` ack jumping the gap, a channel ack confirming, a takeover that leaves the old Attachment live, and a lease expiry that drops the unread each failed, shrunk to 2 to 5 steps.
-  - **Finding, filed as C175** (proposed; not fixed here): an attach that abandons unread (the inflow limit) moves `received` to the last abandoned seq, so a Message handed earlier on the channel path and never confirmed counts as confirmed too: it leaves the unconfirmed count, and `inbox` with `unconfirmed=true` no longer returns it. Smallest case: #1 to `a`, `a` attaches and acks #1 on the channel path; #2 and #3 to `a`; `a` attaches with `maxUnread: 1`, #2 is abandoned, and `received` becomes 2. protocol.md §4 says abandoned Messages do not count as unconfirmed; it does not say the earlier handed ones stop counting. A fix needs a decision: `received` is one high-water mark, so it cannot both pass the abandoned ones and stay below #1. The test's model follows the Hub here, with a comment naming this finding, so the other invariants are still checked. docs/proofs.md D10 records it.
-  - **The second done-when line is not checked**: its wording is "`cursor ≤` the Mailbox's last seq". The test checks the Hub's last seq instead, because the cursor goes past the last Message addressed to the Mailbox by design: an `inbox` with nothing more to return moves it to the Hub's last seq (`Hub.inbox`, protocol.md §3), and an ack may name a seq not addressed to it. Under "the Hub's last seq" the line is met; choosing that reading is the human's (design.md §3.15, C110).
-  - **Cases run and time**: 300 sequences of up to 80 steps in `npm test` (under a second for this file). Once, 10,000 sequences in 6 seconds, with no failure besides the finding.
-  - docs/proofs.md: D1, D3, D7, D9, D10, D18, D20, D21 and the takeover paragraph now name the test; D7 no longer reads `none`.
-  - `npm test`: 764 pass, 0 fail. `npm run docs:check`: 0 errors.
-
-#### Done when
-- [x] A property test runs generated sequences of post (to `mailbox:`, `role:`, `topic:`), attach (with and without `maxAgeMs` / `maxUnread`), ack, `inbox` (with and without `unconfirmed`), a conversation Message from the Mailbox, detach, takeover and lease expiry.
-- [ ] After every step it checks `received ≤ cursor ≤ the Mailbox's last seq`, and that neither `cursor` nor `received` ever moves backwards.
-- [x] It checks at-least-once: a Message addressed to a Mailbox that is neither acked nor abandoned by the inflow limit is in the next attach's unread, and unread is in `seq` order.
-- [x] It checks that `received` advances only by the three paths of protocol.md §4, and that an `inbox` ack does not jump over handed, unconfirmed Messages.
-- [x] It checks that a Mailbox never has two live Attachments, that a takeover's successor has the subscriptions and the unread of the one it cut off, and that a lease expiry detaches without losing unread.
-- [x] Each failure the properties found is fixed and kept as an example test, or recorded in the section's body as a finding for the planning session; the body says how many sequences were run and how long the test takes.
-- [x] `npm test` and `npm run docs:check` pass (0 errors).
 
 ### C174. Run `ui:check` in CI
 
