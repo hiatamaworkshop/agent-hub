@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { codeNames } from './code-names.js'
 import { hubRoutes } from './hub-routes.js'
-import { checkDecisionDates, checkKinds, checkMap, checkMcpTools, checkRepo, checkRoutes, checkShimEvents, checkUiEmitters, checkUiEvents, parseMap } from './repo.js'
+import { checkDecisionDates, checkKinds, checkMap, checkMcpTools, checkProofs, checkRepo, checkRoutes, checkShimEvents, checkUiEmitters, checkUiEvents, parseMap } from './repo.js'
 
 const claudeMd = [
   '# Rules',
@@ -195,6 +195,27 @@ describe('checkShimEvents (C124)', () => {
       { file: 'docs/protocol.md', line: 1, level: 'error', message: 'the Hub sends the shim event heartbeat, which is not in the SSE table for the shim in §3' },
       { file: 'docs/protocol.md', line: 10, level: 'error', message: '§3\'s SSE table for the shim lists terminated, which the Hub does not send' },
     ])
+  })
+})
+
+describe('checkProofs (C169)', () => {
+  const text = [
+    '| D1 | resent | `src/hub/mailbox.test.ts` "a test"; `src/hub/gone.test.ts` "another" | — |',
+    '| S1 | a scene | `tools/dev/ui-check.mjs` scene, and `src/hub/gone.test.ts` again, twice `src/hub/gone.test.ts` | `none` |',
+    'A word in backticks (`ui:check`, `received`, `docs/design.md`) is not a file under src/, tools/ or public/.',
+  ].join('\n')
+  const exists = (p: string) => p !== 'src/hub/gone.test.ts'
+
+  it('warns once per line for a named file that does not exist, and passes the ones that do', () => {
+    assert.deepEqual(checkProofs(text, exists), [
+      { file: 'docs/proofs.md', line: 1, level: 'warning', message: 'the map of proofs names src/hub/gone.test.ts, which does not exist' },
+      { file: 'docs/proofs.md', line: 2, level: 'warning', message: 'the map of proofs names src/hub/gone.test.ts, which does not exist' },
+    ])
+  })
+
+  it('a missing map or one that names no file gives nothing', () => {
+    assert.deepEqual(checkProofs('', () => false), [])
+    assert.deepEqual(checkProofs('| D2 | idempotent | none | no test |', () => false), [])
   })
 })
 

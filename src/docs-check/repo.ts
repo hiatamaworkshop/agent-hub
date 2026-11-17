@@ -3,9 +3,10 @@
 // - table drift: the Hub's routes and EVENT_KINDS / MESSAGE_KINDS against protocol.md §3 and §2 (C9)
 // - table drift: the shim's MCP tools against §5, the UI stream's event names against §7, the shim stream's against the §3 table (C124)
 // - §9 dates: a Decision / Direction / Decided label in design.md §9 carries a date
+// - proofs: a file docs/proofs.md names as a proof exists (C169; a warning)
 // The functions take text and names so tests can feed small inputs; checkRepo reads the files of this repository.
 // The names come from the code (code-names.ts), not from this file.
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { EVENT_KINDS, MESSAGE_KINDS } from '../shared/types.js'
 
@@ -289,6 +290,27 @@ export function checkShimEvents(sent: readonly string[], protocol: string): DocP
   })
 }
 
+const PROOFS_FILE = 'docs/proofs.md'
+// A file of this repository named in backticks: a path under src/, tools/ or public/ that ends in an extension
+const PROOF_PATH = /`((?:src|tools|public)\/[\w./-]+\.\w+)`/g
+
+// The files docs/proofs.md names as proofs must exist (C169). A warning, not an error: a new restriction enters as a warning
+// (design.md §3.12). It does not read the test names or what a test asserts. `exists` takes a path relative to the repository
+export function checkProofs(proofs: string, exists: (path: string) => boolean): DocProblem[] {
+  const problems: DocProblem[] = []
+  const known = new Map<string, boolean>()
+  proofs.split(/\r?\n/).forEach((text, i) => {
+    const missing = new Set<string>()
+    for (const m of text.matchAll(PROOF_PATH)) {
+      const path = m[1]!
+      if (!known.has(path)) known.set(path, exists(path))
+      if (!known.get(path)) missing.add(path)
+    }
+    for (const path of missing) problems.push({ file: PROOFS_FILE, line: i + 1, level: 'warning', message: `the map of proofs names ${path}, which does not exist` })
+  })
+  return problems
+}
+
 // All the checks above on the repository at `root`. `routes` are the Hub's, `names` the code's (see main.ts)
 export function checkRepo(root: string, routes: readonly Route[], names: CodeNames): DocProblem[] {
   const read = (p: string): string | undefined => {
@@ -310,5 +332,6 @@ export function checkRepo(root: string, routes: readonly Route[], names: CodeNam
     ...checkUiEmitters(names.uiEvents, names.uiEmitters, declarationLines(read('src/shared/types.ts') ?? '')),
     ...checkShimEvents(names.shimEvents, protocol),
     ...checkDecisionDates(read('docs/design.md') ?? ''),
+    ...checkProofs(read(PROOFS_FILE) ?? '', (p) => existsSync(join(root, p))),
   ]
 }

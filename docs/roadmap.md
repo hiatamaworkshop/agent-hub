@@ -1101,14 +1101,20 @@ Decided 2026-11-15 by the user (from C168; the line for what fits is design.md �
 - A row with no proof says `none`. Nothing is invented to fill it; the `none` rows are the material the later items (C170, C171) and the planning session work from.
 - Where the map lives (a section of protocol.md, or its own file under `docs/`) is the implementer's choice; its place goes into CLAUDE.md's document map.
 - The §1.2 row "Incidents in §6 become new verification angles" (Partly) gets a home here: an incident adds or corrects a row.
+- Worked 2026-11-16 (the planning session, no team; no review yet, so the close waits). The map is its own file, [docs/proofs.md](proofs.md): 22 rows for protocol.md §4 (D1-D22, plus a paragraph on the takeover promises of §2 / §3 the rows lean on) and 23 for the card states (S1-S23), each with a "Leaves out" column.
+  - Rows with no proof (`none`): D2 (idempotent by `id`; the shim's recent `id`s), D7 (that `received` moves **only** by the three paths), D16 (the unconfirmed count on the card), D22 (the shim sends no heartbeats), S22 (the count per state above the sidebar), and "a Mailbox never has two live Attachments under any order". Partial ones name the gap, e.g. D20 (lease extension by ack and at the opening of the stream), D11 (`mailbox.acked` after a conversation Message), S1 / S11 (no `ui:check` scene expects `Offline` or `Working?`).
+  - How the rows were checked: the cited tests of `mailbox.test.ts`, `shim.test.ts`, `card-state.test.ts`, and the cited ones of `store.test.ts`, `retention.test.ts` and `app.test.ts` were read against the wording; the 71 quoted test names were matched against the test files by a throwaway script (it is not part of `docs:check`). `ui:check` scenes are cited by the fixture Mailbox and the card text the scene expects, read from the scene list of `tools/dev/ui-check.mjs`; `ui:check` itself was not run for this item (no code of the page or the derivation changed).
+  - The check: `checkProofs` in `src/docs-check/repo.ts` warns for a file named in backticks under `src/`, `tools/` or `public/` that does not exist; tests in `src/docs-check/repo.test.ts` ("checkProofs (C169)"). It does not read test names. Not a convention other projects follow (it runs on this repository's own docs only), so no line in conventions-log.md.
+  - §1.2's Status stays "Partly": the incident now has a place to go and an instruction that says so, and nothing checks that a new §6 entry changed a row.
+  - `npm test`: 757 pass, 0 fail. `npm run docs:check`: 33 items, 0 errors, 1 warning (this section's own "all done-when conditions are checked", expected until the close).
 
 #### Done when
-- [ ] A table lists every guarantee of protocol.md §4 and every card state of design.md §3.15, each with its proof (test file and test name, `ui:check` scene, or design.md §6 entry) or `none`.
-- [ ] No row names a proof that does not show the guarantee as worded; a partial proof says what it leaves out.
-- [ ] CLAUDE.md's document map has a line for the map, and "Updating the docs" says when a row is added or changed (a change to a guarantee, a new §6 incident).
-- [ ] `npm run docs:check` warns when a row names a test file that does not exist (a warning, not an error), with a test for the check.
-- [ ] design.md §1.2's row "Incidents in §6 become new verification angles" points to the map, with its Status re-read.
-- [ ] `npm test` and `npm run docs:check` pass (0 errors).
+- [x] A table lists every guarantee of protocol.md §4 and every card state of design.md §3.15, each with its proof (test file and test name, `ui:check` scene, or design.md §6 entry) or `none`.
+- [x] No row names a proof that does not show the guarantee as worded; a partial proof says what it leaves out.
+- [x] CLAUDE.md's document map has a line for the map, and "Updating the docs" says when a row is added or changed (a change to a guarantee, a new §6 incident).
+- [x] `npm run docs:check` warns when a row names a test file that does not exist (a warning, not an error), with a test for the check.
+- [x] design.md §1.2's row "Incidents in §6 become new verification angles" points to the map, with its Status re-read.
+- [x] `npm test` and `npm run docs:check` pass (0 errors).
 
 ### C170. Property-based tests for the card state derivation
 
