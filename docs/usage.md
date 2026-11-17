@@ -438,7 +438,7 @@ npm run docs:check   # checks how roadmap items are written (exit 1 if broken). 
                      # and the shim stream's event: names against §7 and §3, and dates on design.md §9's decisions. The names are read from the code
 npm run docs:index   # sends the roadmap item index to the Hub for the UI's Items ("Request work from roadmap items" above)
 npm run hub:dev   # watches for changes and restarts the Hub
-npm run ui:check  # checks the card states scene by scene with a Hub on another port and headless Chrome (needs Chrome; set its location with CHROME)
+npm run ui:check  # checks the card states scene by scene with a Hub on another port and headless Chrome (needs Chrome; set its location with CHROME, else the usual path on Windows or `google-chrome` on the PATH; `UI_CHECK_NO_SANDBOX=1` adds `--no-sandbox`, which CI sets on Linux)
 ```
 
 - **Checking the UI with headless Chrome**: the fixed scenes are in `npm run ui:check` (`tools/dev/ui-check.mjs`). Run it when you change the UI, and add new scenes there. Points for doing it by hand: the UI keeps `/stream` (SSE) open, so `chrome --headless=new --dump-dom` never returns (even with `--virtual-time-budget`). Instead:

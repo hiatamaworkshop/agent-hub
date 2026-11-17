@@ -1,6 +1,6 @@
 name: CI
 
-# Runs the checks that do not need Chrome (ui:check is not here; C151).
+# Typecheck, unit tests, docs:check, coverage, and ui:check (which needs Chrome; both runners have it, C174).
 on:
   push:
     branches: [main]
@@ -34,3 +34,9 @@ jobs:
       # A measurement, not a gate (C173): prints line and branch coverage per file, and writes the table to the job summary.
       # No threshold fails the build; the step fails only if a test fails in its run.
       - run: npm run test:coverage
+      # The page against a real Hub, scene by scene (C174). Chrome is on both hosted runners; its sandbox does not start on
+      # the Linux one (no user namespaces for it), so only there --no-sandbox is added. A scene that fails only on a runner
+      # is a finding to record in the item, not a scene to skip.
+      - run: npm run ui:check
+        env:
+          UI_CHECK_NO_SANDBOX: ${{ runner.os == 'Linux' && '1' || '0' }}

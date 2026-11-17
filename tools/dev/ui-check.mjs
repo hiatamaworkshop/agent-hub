@@ -9,7 +9,10 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
-const CHROME = process.env.CHROME ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe'
+// Where Chrome is: CHROME, else the usual place on Windows, else `google-chrome` on the PATH (the GitHub runners have it; C174).
+// UI_CHECK_NO_SANDBOX=1 adds --no-sandbox: Chrome's sandbox does not start on a runner without user namespaces (CI sets it on Linux only)
+const CHROME = process.env.CHROME || (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : 'google-chrome')
+const CHROME_FLAGS = process.env.UI_CHECK_NO_SANDBOX === '1' ? ['--no-sandbox'] : []
 const TOKEN = 'ui-check-token-0123456789'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -231,7 +234,7 @@ try {
   await turnEnd('demo.leader', 's-lead')
   await turnEnd('demo.deployer', 's-dep')
 
-  chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${join(work, 'chrome')}`, '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore' })
+  chrome = spawn(CHROME, [...CHROME_FLAGS, '--headless=new', `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${join(work, 'chrome')}`, '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore' })
   const page = await until(async () => (await (await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`)).json()).find((t) => t.type === 'page'), 'chrome')
   ws = new WebSocket(page.webSocketDebuggerUrl)
   await new Promise((r) => ws.addEventListener('open', r, { once: true }))

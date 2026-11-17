@@ -66,7 +66,7 @@ After compaction this map is back but the sections you read are not (the large d
 - The development machine is Windows 11. The shell is PowerShell (Git Bash also works). Watch path separators and line endings.
 - Do not commit real tokens or `.env` (already in `.gitignore`). Keep `.env.example`.
 - Do not commit runtime logs or data (`logs/`, `data/`) either.
-- The UI (`public/index.html`) has no unit tests; the card state module (`src/shared/card-state.js`) has them, in `card-state.test.ts` and the property test `card-state.property.test.ts` (C170). When you change it, run `npm run ui:check` in addition to `npm test` (it checks card states scene by scene with a Hub on another port and headless Chrome; Chrome is needed).
+- The UI (`public/index.html`) has no unit tests; the card state module (`src/shared/card-state.js`) has them, in `card-state.test.ts` and the property test `card-state.property.test.ts` (C170). When you change it, run `npm run ui:check` in addition to `npm test` (it checks card states scene by scene with a Hub on another port and headless Chrome; Chrome is needed). CI runs it on Windows and Linux (C174); a scene that fails only there is a finding, not a scene to skip.
 
 ## When running another project's team
 

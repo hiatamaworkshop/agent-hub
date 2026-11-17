@@ -1125,11 +1125,14 @@ Decided 2026-11-15 by the user (from C168). This reverses the 2026-11-10 decisio
 - Whether the hosted runners' Chrome is enough, or the job installs one, is checked in the item.
 - A scene that passes locally and fails on a runner is a finding to record, not a scene to delete.
 
+- Worked 2026-11-17 (the planning session, no team; no review yet). `.github/workflows/ci.yml` runs `npm run ui:check` as the last step of the existing `check` job, so on `windows-latest` and `ubuntu-latest` both. `tools/dev/ui-check.mjs` found Chrome only at the Windows path; it now takes `CHROME`, else that path on Windows, else `google-chrome` on the PATH, and `UI_CHECK_NO_SANDBOX=1` adds `--no-sandbox` (the workflow sets it on Linux only, where the sandbox needs user namespaces the runner may not give). README, CLAUDE.md and usage.md say CI runs it.
+  - Checked locally (Windows 11): `npm run ui:check` 212 ok, 0 NG, exit 0, with the changed file. Not run on Linux or on a runner: no push yet (CLAUDE.md "Do not push until the user says so"), so the two lines that need a run on GitHub stay open.
+
 #### Done when
-- [ ] `.github/workflows/ci.yml` runs `npm run ui:check` on `ubuntu-latest` at least; if `windows-latest` is left out, the file says why.
+- [x] `.github/workflows/ci.yml` runs `npm run ui:check` on `ubuntu-latest` at least; if `windows-latest` is left out, the file says why.
 - [ ] A run on GitHub with the job green is recorded in the section's body (the run's URL and the count of scenes).
 - [ ] A scene that fails only on the runner is fixed, or listed in the section's body with what differs; none is removed or skipped without that record.
-- [ ] README "Status" and CLAUDE.md "Notes on the development environment" say that CI runs `ui:check`.
+- [x] README "Status" and CLAUDE.md "Notes on the development environment" say that CI runs `ui:check`.
 - [ ] `npm test` and `npm run docs:check` pass (0 errors).
 
 ### C175. Abandoning unread at attach confirms Messages handed earlier and never confirmed
