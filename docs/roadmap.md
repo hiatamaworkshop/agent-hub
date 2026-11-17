@@ -1126,14 +1126,17 @@ Decided 2026-11-15 by the user (from C168). This reverses the 2026-11-10 decisio
 - A scene that passes locally and fails on a runner is a finding to record, not a scene to delete.
 
 - Worked 2026-11-17 (the planning session, no team; no review yet). `.github/workflows/ci.yml` runs `npm run ui:check` as the last step of the existing `check` job, so on `windows-latest` and `ubuntu-latest` both. `tools/dev/ui-check.mjs` found Chrome only at the Windows path; it now takes `CHROME`, else that path on Windows, else `google-chrome` on the PATH, and `UI_CHECK_NO_SANDBOX=1` adds `--no-sandbox` (the workflow sets it on Linux only, where the sandbox needs user namespaces the runner may not give). README, CLAUDE.md and usage.md say CI runs it.
-  - Checked locally (Windows 11): `npm run ui:check` 212 ok, 0 NG, exit 0, with the changed file. Not run on Linux or on a runner: no push yet (CLAUDE.md "Do not push until the user says so"), so the two lines that need a run on GitHub stay open.
+  - Checked locally (Windows 11): `npm run ui:check` 212 ok, 0 NG, exit 0, with the changed file. The run on GitHub followed the user's word to push.
+
+  - The first run on GitHub, 2026-11-17 (commit `c9291fd`): https://github.com/hiatamaworkshop/agent-hub/actions/runs/44093861276, green on both. `ui:check` 212 ok, 0 NG on `windows-latest` and on `ubuntu-latest`, the same count as locally; no scene failed only on a runner, so nothing to fix or list. The step takes about 4.5 minutes, so a job now takes about 5.5 instead of about 1.5. The Linux runner's annotation says `ubuntu-latest` moves to Ubuntu 26 from 2026-10-19; nothing to do here unless a later run breaks.
+  - `npm test` 764 pass, 0 fail; `npm run docs:check` 0 errors (locally and in the same run).
 
 #### Done when
 - [x] `.github/workflows/ci.yml` runs `npm run ui:check` on `ubuntu-latest` at least; if `windows-latest` is left out, the file says why.
-- [ ] A run on GitHub with the job green is recorded in the section's body (the run's URL and the count of scenes).
-- [ ] A scene that fails only on the runner is fixed, or listed in the section's body with what differs; none is removed or skipped without that record.
+- [x] A run on GitHub with the job green is recorded in the section's body (the run's URL and the count of scenes).
+- [x] A scene that fails only on the runner is fixed, or listed in the section's body with what differs; none is removed or skipped without that record.
 - [x] README "Status" and CLAUDE.md "Notes on the development environment" say that CI runs `ui:check`.
-- [ ] `npm test` and `npm run docs:check` pass (0 errors).
+- [x] `npm test` and `npm run docs:check` pass (0 errors).
 
 ### C175. Abandoning unread at attach confirms Messages handed earlier and never confirmed
 Status: proposed
