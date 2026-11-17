@@ -1156,14 +1156,20 @@ Decided 2026-11-15 by the user (from C168). A start already warns when `claude -
 - Nothing says what to do about the warning. The behaviours delivery depends on are spread over design.md §6.1 (a channel notification wakes an idle session; `meta` reaches the model escaped; the hook payload's `session_id` and `cwd`; `X-Hub-Mailbox` on hook requests; a notification during a question or permission wait), and `tools/probe/README.md` has steps for some of them.
 - "Last verified" is the highest version named in any §6.1 heading. An entry that observed one unrelated behaviour on a newer version moves it for all of them, so the warning goes quiet without the delivery behaviours having been looked at.
 - The check itself needs a real `claude` session and a human at the terminal; it is not automated here (Channels is a research preview behind a development flag, §6.1c).
+- Worked 2026-11-16 (the planning session, no team; no review yet). **Open: the run itself** (the fourth line): it needs the user at a terminal with a real `claude` session, so it was not done in this session.
+  - The list is design.md §6.3: nine behaviours (B1-B9), each with what depends on it, the §6.1 entry and version that recorded it, and the step that checks it again (the steps of `tools/probe/README.md`, plus two hand checks written out: a notification during a permission wait, and `/clear`). A notification during a **permission** wait has no earlier record (§6.1s records the wait's Events only); the list says so.
+  - The record is the table "Runs of this list" in the same section (`| date | version | OS | result |`). `lastVerified` in `src/team/startlog.ts` reads the highest version among its rows, and nothing else in design.md.
+  - **A default taken, for the user to confirm**: with no run recorded, a start warns for any Claude Code version (`… has no verified version to compare with: design.md §6.3 records no run …`), loud on the first start with a version and a plain line after it, as before (C111). The other choice was to stay silent until the first run, which is the fault this item is about. So from this change until the first row is added, every start has the warning.
+  - The start record's fields keep their names: `lastVerified` is now the version of the last run and `verifiedSection` is `6.3` (usage.md says how lines from before read).
+  - `npm test`: 760 pass, 0 fail. `npm run docs:check`: 0 errors.
 
 #### Done when
-- [ ] One list names the Claude Code behaviours the Hub's delivery depends on, each with the §6 entry that verified it and the step that checks it again (`tools/probe/README.md`, or a hand check written out).
-- [ ] The version warning's text points to that list.
-- [ ] The last verified version is taken from a record of the list having been run (version, date, OS), not from the highest version in any §6.1 heading; `src/team/startlog.test.ts` covers the new source and a §6.1 entry with a newer version that does not move it.
+- [x] One list names the Claude Code behaviours the Hub's delivery depends on, each with the §6 entry that verified it and the step that checks it again (`tools/probe/README.md`, or a hand check written out).
+- [x] The version warning's text points to that list.
+- [x] The last verified version is taken from a record of the list having been run (version, date, OS), not from the highest version in any §6.1 heading; `src/team/startlog.test.ts` covers the new source and a §6.1 entry with a newer version that does not move it.
 - [ ] The list was run once with the Claude Code version current at the time, and the result is recorded (design.md §6); a behaviour that changed is recorded as changed, not fixed in this item.
-- [ ] usage.md "Start warnings" says what to do when the warning shows.
-- [ ] `npm test` and `npm run docs:check` pass (0 errors).
+- [x] usage.md "Start warnings" says what to do when the warning shows.
+- [x] `npm test` and `npm run docs:check` pass (0 errors).
 
 ### C173. Measure what the tests cover
 

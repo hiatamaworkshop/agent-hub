@@ -19,40 +19,49 @@ export function compareVersions(a: Version, b: Version): number {
   return 0
 }
 
-export interface Verified { version: Version; section: string }
+// The section of design.md with the list of Claude Code behaviours delivery depends on, and the record of its runs (C172)
+export const CHECKS_SECTION = '6.3'
 
-// The highest Claude Code version named in the headings of design.md §6.1 (§6.1, §6.1b … §6.1x; §6.2 is not a verification).
-// Only versions after "Claude Code" count, so other versions in a heading (Docker 29.8.2) are not taken.
-// Returns null when no heading names one.
+// `date` and `os` are the run's, as written in its row
+export interface Verified { version: Version; section: string; date: string; os: string }
+
+// The highest Claude Code version the list of design.md §6.3 was run with: a row of that section's table of runs,
+// `| YYYY-MM-DD | x.y.z | OS | result |` (C172). A version named in a §6.1 heading does not count: an entry that observed one
+// unrelated behaviour on a newer version would move it for all of them. Returns null when the section has no such row.
 export function lastVerified(design: string): Verified | null {
   let best: Verified | null = null
+  let inside = false
   for (const line of design.split(/\r?\n/)) {
-    const heading = /^### (6\.1[a-z]*) /.exec(line)
-    if (!heading) continue
-    const named = /Claude Code ((?:\d+\.\d+\.\d+)(?: (?:or|to) \d+\.\d+\.\d+)*)/.exec(line)
-    if (!named) continue
-    for (const m of named[1]!.matchAll(/\d+\.\d+\.\d+/g)) {
-      const version = parseVersion(m[0])!
-      if (!best || compareVersions(version, best.version) > 0) best = { version, section: heading[1]! }
-    }
+    if (/^#{2,3} /.test(line)) inside = line.startsWith(`### ${CHECKS_SECTION} `)
+    if (!inside) continue
+    const row = /^\| *(\d{4}-\d{2}-\d{2}) *\| *(?:Claude Code )?(\d+\.\d+\.\d+) *\| *([^|]+?) *\|/.exec(line)
+    if (!row) continue
+    const version = parseVersion(row[2]!)!
+    if (!best || compareVersions(version, best.version) > 0) best = { version, section: CHECKS_SECTION, date: row[1]!, os: row[3]! }
   }
   return best
 }
 
-// The warning for a Claude Code newer than the last verified one. Null when it is not newer, or either version is unknown.
-// The start is not stopped; the warning says what it means
+const NEVER_RUN = 'has no verified version to compare with: '
+
+// The warning for a Claude Code newer than the last one the list was run with, or for any Claude Code when no run is recorded.
+// Null when it is not newer, or the running version is unknown. The start is not stopped; the warning says what it means
+// and where the checks to run again are (C172)
 export function versionWarning(running: Version | null, verified: Verified | null): string | null {
-  if (!running || !verified || compareVersions(running, verified.version) <= 0) return null
-  const v = verified.version.join('.')
+  if (!running) return null
   const r = running.join('.')
-  return `Claude Code ${r} is newer than the last verified ${v} (design.md §${verified.section}). Its behaviour is outside the verified envelope`
+  const todo = `Its behaviour is outside the verified envelope: run the checks listed in design.md §${CHECKS_SECTION} and record the run there`
+  if (!verified) return `Claude Code ${r} ${NEVER_RUN}design.md §${CHECKS_SECTION} records no run of the delivery checks. ${todo}`
+  if (compareVersions(running, verified.version) <= 0) return null
+  const v = verified.version.join('.')
+  return `Claude Code ${r} is newer than the last verified ${v} (the delivery checks of design.md §${verified.section}, run ${verified.date} on ${verified.os}). ${todo}`
 }
 
 // Whether an earlier start in the log already warned about this running version (C111). The warning is loud (WARNING) only on the first
 // start with a version; later starts print it as one plain line in the summary. Starts with warnings are recorded in the log, so the log
 // is the record and no other state is kept. A missing or unreadable log counts as not warned
 export function versionWarnedBefore(running: Version, file = startLogPath()): boolean {
-  const prefix = `Claude Code ${running.join('.')} is newer than the last verified `
+  const prefixes = [`Claude Code ${running.join('.')} is newer than the last verified `, `Claude Code ${running.join('.')} ${NEVER_RUN}`]
   let text: string
   try {
     text = readFileSync(file, 'utf8')
@@ -67,20 +76,21 @@ export function versionWarnedBefore(running: Version, file = startLogPath()): bo
     } catch {
       continue
     }
-    if (r.kind === 'start' && (r.warnings ?? []).some((w) => w.startsWith(prefix))) return true
+    if (r.kind === 'start' && (r.warnings ?? []).some((w) => prefixes.some((p) => w.startsWith(p)))) return true
   }
   return false
 }
 
 export interface VersionCheck {
   warning: string | null
-  // The last verified version and its §6.1 section, or the reason none is known (design.md unreadable or no version named)
+  // The last version the delivery checks were run with and the section that records the run (design.md §6.3), or the reason
+  // none is known (design.md unreadable, or no run recorded)
   lastVerified: string | null
   verifiedSection: string | null
   verifiedNote: string | null
 }
 
-// Compare `claude --version` (its output, or null if unknown) with design.md §6.1, read from `root`
+// Compare `claude --version` (its output, or null if unknown) with the runs recorded in design.md §6.3, read from `root`
 export function checkClaudeVersion(output: string | null, root = ROOT): VersionCheck {
   const file = join(root, 'docs', 'design.md')
   let text: string
@@ -91,7 +101,7 @@ export function checkClaudeVersion(output: string | null, root = ROOT): VersionC
   }
   const verified = lastVerified(text)
   if (!verified) {
-    return { warning: null, lastVerified: null, verifiedSection: null, verifiedNote: 'no Claude Code version named in the headings of design.md §6.1' }
+    return { warning: versionWarning(parseVersion(output), null), lastVerified: null, verifiedSection: null, verifiedNote: `no run of the delivery checks recorded in design.md §${CHECKS_SECTION}` }
   }
   return {
     warning: versionWarning(parseVersion(output), verified),

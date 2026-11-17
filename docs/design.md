@@ -1215,6 +1215,35 @@ From code.claude.com/docs/en/context-window, "What survives compaction". Compact
 8. **Starting a team on macOS (C62)**: the Terminal.app opener (`osascript … do script`) is covered only by a unit test of the command it builds; it has not been run on a Mac. The unit tests, that one included, are covered by CI on Windows and Linux (`.github/workflows/ci.yml`: typecheck, `npm test` and `docs:check`; C148). The first run on GitHub is still to be recorded (C148). CI does not start `osascript` or a `claude` session. Nor has a real `claude` session on Linux or a Mac been started by `npm run team` (§6.1x used a stub). Check: on a Mac, `npm run team -- --roles leader,deployer`, and see that a window per role opens in the project folder and attaches.
 
 ## 7. Relation to MCP Events (SEP-3415)
+### 6.3 Delivery behaviours of Claude Code to check again on a newer version (C172, 2026-11-16)
+
+The Hub's delivery rests on behaviours of Claude Code that the Hub cannot test: they need a real `claude` session and a human at the terminal, and Channels is a research preview behind a development flag (§6.1), so they can change without notice. Each was observed once, on the version its §6.1 entry names. This section is the one list of them, with the step that checks each again, and the record of the list having been run.
+
+**When to run it**: when a start warns that Claude Code is newer than the last verified version (`npm run team`, `agent`; docs/usage.md "Start warnings"). The warning compares `claude --version` with the highest version in "Runs of this list" below (`lastVerified` in `src/team/startlog.ts`). A version named in a §6.1 heading does not count: before C172 the highest of those was taken, so an entry that observed one unrelated behaviour on a newer version made the warning go quiet for all of them.
+
+**How**: the steps are those of `tools/probe/README.md` (a throwaway channel server and hook receiver that record to `logs/probe.jsonl`; the Hub on 7777 is not touched). Run its steps 1 to 5 once, with the two additions written in the table (B7's permission wait and B9's `/clear`, done between its steps 4 and 5), then read `logs/probe.jsonl` against the table. B8 needs a second start without the flag. Then add a row to "Runs of this list". A behaviour that differs is recorded as changed, in a new §6.1 entry named in the row; fixing what depends on it is a new item, written by the planning session, and the row in docs/proofs.md that leaned on the behaviour is corrected.
+
+| # | Behaviour | What depends on it | Last recorded | Check again |
+|---|---|---|---|---|
+| B1 | A self-made channel registers with `--dangerously-load-development-channels server:<name>` (an SDK 1.x server; the protocol falls back to `2025-11-25`) | The whole Channels path of the shim (§3.7) | §6.1c (2.1.301); the flag unlisted in `--help` but working, §6.1 (2.1.316) | Probe step 1: the banner line `Channels (experimental) messages from server:agent-hub-probe inject directly in this session` |
+| B2 | A channel notification wakes an idle session: Claude starts a turn on its own | Delivery with nobody typing; the card state Working ("Channels start a turn when handed", §3.15) | §6.1c (2.1.301) | Probe step 2 (`/case/hello` to a session doing nothing) |
+| B3 | `initialize` carries `clientInfo.name: "claude-code"` | The shim's choice between Channels and `inbox` (§3.7, protocol.md §4) | §6.1c (2.1.301) | `logs/probe.jsonl`: the `rpc-in` line of `initialize` |
+| B4 | `</channel>` in a body arrives as `<\/channel>`, and `"` `<` `>` `&` in `meta` values arrive as entities; the tag stays whole | "The body is data" on the Channels path; the shim leaves `meta` values unconverted (`channelMeta`, protocol.md §6) | §6.1c (2.1.301) for the body; §6.1ad (2.1.322) for `meta` | Probe steps 3 and 3b (`/case/escape`, `/case/attr`, copied into `probe_note`) |
+| B5 | The hook input carries `session_id` and `cwd` (and `Stop` carries `background_tasks`) | Resolving an Event to its Mailbox (§3.4); the card states (§3.15, C43) | §6.1c (2.1.301) | `logs/probe.jsonl`: the keys of the `hook` lines |
+| B6 | An HTTP hook's header `X-Hub-Mailbox: $HUB_MAILBOX` arrives expanded; the stdio server inherits `HUB_MAILBOX` and gets `CLAUDE_CODE_SESSION_ID`, equal to the hooks' `session_id` | The second means of resolving the Mailbox (§3.4); the `sessionId` the shim declares at attach | §6.1c (2.1.301); §6.1ac (2.1.321) | `logs/probe.jsonl`: `headers.x-hub-mailbox` of a `hook` line is `probe-test`; `startup.env` has `HUB_MAILBOX` and a `CLAUDE_CODE_SESSION_ID` equal to that `hook` line's `session_id` |
+| B7 | A notification sent during a question wait is held: not taken as the answer, the options stay open, and it is handed over after the answer. The same during a permission wait | Nothing is lost or misread while a session waits for the human (Needs you, §3.15) | Question wait: §6.1c (2.1.301). Permission wait: not recorded for a notification sent during it (§6.1s, 2.1.310, records the Events of the wait only) | Question: probe step 4 (`/case/during_question`). Permission, by hand: in the probe session, with the permission mode set to `manual`, ask it to run `node -e "console.log(1)"` with Bash; while the permission dialog shows, send `/case/hello` from the other terminal; note whether the dialog stays, then allow, and note whether the notification is handed over after the tool ran |
+| B8 | Started without the channel flag, the notification is dropped silently, and the server cannot tell | The delivery state "handed, unconfirmed" and its limit (protocol.md §4) | §6.1k (2.1.302) | A second start as in probe step 1 but without `--dangerously-load-development-channels …`, then `/case/hello`: nothing shows, no error. If it now shows or errors, record that: the shim could then tell |
+| B9 | `/clear` gives the hooks a new `session_id`; the header of B6 still arrives | Events after `/clear` still resolve to the Mailbox; questions after the attach count with another `session_id` (§3.15) | §6.1ac (2.1.321) | By hand, in the probe session: type a line, `/clear`, a line; in `logs/probe.jsonl` the `session_id` of the `Stop` `hook` lines differs before and after, and `headers.x-hub-mailbox` is on both |
+
+Not on the list, because delivery does not depend on them: how the model and effort are read (§6.1v), the usage-limit notifications (§6.1q; they change a card's text, not delivery), what survives compaction (§6.1z), `claude -p` with the channel (§6.1af).
+
+**Runs of this list** (one row per run; the start warning reads the highest version here)
+
+| Date | Claude Code | OS | Result |
+|---|---|---|---|
+
+No run is recorded yet (2026-11-16): the list was written from the §6.1 entries, each observed on its own version (2.1.301 to 2.1.322), and has not been run as a list. Until a row is added, a start warns for any Claude Code version, saying that no run is recorded.
+
 
 ### Current state (as of 2026-10-16)
 

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -23,47 +23,85 @@ test('compareVersions: numeric, not textual', () => {
   assert.equal(compareVersions([2, 1, 310], [2, 1, 310]), 0)
 })
 
-test('lastVerified: the highest version named after "Claude Code" in a §6.1 heading', () => {
-  const design = [
-    '# Design',
-    '### 6.1 Verified (2026-10-16, checked against the official Channels reference)',
-    '### 6.1c Confirmed on a real machine (2026-10-16, Claude Code 2.1.301 / Windows 11 / Pro)',
-    '### 6.1l The Hub in Docker Desktop (2026-10-18, Docker 29.8.2 / Windows 11)',
-    '### 6.1r A request (2026-10-26, Claude Code 2.1.309 or 2.1.310; looking afterwards, it had auto-updated to 2.1.312)',
-    'Claude Code 2.1.399 in a body line does not count.',
-    '### 6.2 Unverified (Claude Code 2.1.400)',
-  ].join('\n')
-  assert.deepEqual(lastVerified(design), { version: [2, 1, 310], section: '6.1r' })
+const RUNS = [
+  '# Design',
+  '### 6.1c Confirmed on a real machine (2026-10-16, Claude Code 2.1.301 / Windows 11 / Pro)',
+  '| 2026-10-16 | 9.9.9 | a table row outside the section | does not count |',
+  '### 6.3 Delivery behaviours of Claude Code to check again on a newer version (C172)',
+  '| Date | Claude Code | OS | Result |',
+  '|---|---|---|---|',
+  '| 2026-11-20 | 2.1.330 | Windows 11 | all as recorded |',
+  '| 2026-12-02 | 2.1.341 | Ubuntu 24.04 | B4 changed, see §6.1aj |',
+  '| 2026-12-05 | 2.1.335 | Windows 11 | an older version run later does not lower it |',
+  'Claude Code 2.1.399 in a body line does not count.',
+].join('\n')
+
+test('lastVerified: the highest version among the runs recorded in §6.3, with the run\'s date and OS (C172)', () => {
+  assert.deepEqual(lastVerified(RUNS), { version: [2, 1, 341], section: '6.3', date: '2026-12-02', os: 'Ubuntu 24.04' })
 })
 
-test('lastVerified: null when no §6.1 heading names a version', () => {
-  assert.equal(lastVerified('### 6.1 Verified (2026-10-16)\n### 6.1b Verified (Docker 29.8.2)'), null)
+test('lastVerified: a §6.1 entry with a newer version does not move it (C172)', () => {
+  const design = `${RUNS}\n### 6.1zz One unrelated behaviour (2026-12-20, Claude Code 2.1.400 / Windows 11)\n| 2026-12-20 | 2.1.400 | Windows 11 | a row under another heading |\n### 6.2 Unverified (Claude Code 2.1.401)`
+  assert.deepEqual(lastVerified(design)?.version, [2, 1, 341])
+  // the same entry placed before §6.3 does not move it either
+  assert.deepEqual(lastVerified(`### 6.1zz One unrelated behaviour (2026-12-20, Claude Code 2.1.400 / Windows 11)\n${RUNS}`)?.version, [2, 1, 341])
 })
 
-test('versionWarning: only a version newer than the last verified one', () => {
-  const verified = { version: [2, 1, 310] as [number, number, number], section: '6.1r' }
+test('lastVerified: null when §6.3 records no run, or is not there', () => {
+  assert.equal(lastVerified('### 6.3 Delivery behaviours\n| Date | Claude Code | OS | Result |\n|---|---|---|---|\n| B1 | a behaviour row | §6.1c (2.1.301) | step 2 |'), null)
+  assert.equal(lastVerified('### 6.1c Confirmed on a real machine (2026-10-16, Claude Code 2.1.301 / Windows 11)'), null)
+})
+
+test('versionWarning: only a version newer than the last verified one, and it points to the list (C172)', () => {
+  const verified = { version: [2, 1, 310] as [number, number, number], section: '6.3', date: '2026-11-20', os: 'Windows 11' }
   const w = versionWarning([2, 1, 311], verified)
   assert.ok(w)
-  assert.match(w, /2\.1\.311/)
-  assert.match(w, /2\.1\.310/)
-  assert.match(w, /§6\.1r/)
+  assert.match(w, /^Claude Code 2\.1\.311 is newer than the last verified 2\.1\.310 /)
+  assert.match(w, /run 2026-11-20 on Windows 11/)
+  assert.match(w, /run the checks listed in design\.md §6\.3 and record the run there/)
   assert.equal(versionWarning([2, 1, 310], verified), null)
   assert.equal(versionWarning([2, 1, 309], verified), null)
   assert.equal(versionWarning(null, verified), null)
-  assert.equal(versionWarning([2, 1, 311], null), null)
 })
 
-test('checkClaudeVersion: the real design.md names a last verified version', () => {
+test('versionWarning: with no recorded run, any known version is outside the envelope (C172)', () => {
+  const w = versionWarning([2, 1, 311], null)
+  assert.ok(w)
+  assert.match(w, /^Claude Code 2\.1\.311 has no verified version to compare with: design\.md §6\.3 records no run/)
+  assert.match(w, /run the checks listed in design\.md §6\.3/)
+  assert.equal(versionWarning(null, null), null)
+})
+
+test('checkClaudeVersion: the real design.md has §6.3, and gives a run or the note that none is recorded', () => {
   const r = checkClaudeVersion(null)
-  assert.equal(r.verifiedNote, null)
-  assert.match(r.lastVerified ?? '', /^\d+\.\d+\.\d+$/)
-  assert.match(r.verifiedSection ?? '', /^6\.1[a-z]*$/)
-  assert.equal(r.warning, null)
+  assert.equal(r.warning, null, 'an unknown running version is not a warning')
+  if (r.lastVerified === null) {
+    assert.match(r.verifiedNote ?? '', /^no run of the delivery checks recorded in design\.md §6\.3$/)
+    assert.equal(r.verifiedSection, null)
+  } else {
+    assert.match(r.lastVerified, /^\d+\.\d+\.\d+$/)
+    assert.equal(r.verifiedSection, '6.3')
+    assert.equal(r.verifiedNote, null)
+  }
 })
 
 test('checkClaudeVersion: a newer claude is a warning, an unknown one is not', () => {
-  assert.ok(checkClaudeVersion('99.0.0 (Claude Code)').warning)
+  assert.match(checkClaudeVersion('99.0.0 (Claude Code)').warning ?? '', /design\.md §6\.3/)
   assert.equal(checkClaudeVersion(null).warning, null)
+})
+
+test('checkClaudeVersion: runs are read from the design.md under root; without a run the warning says so', () => {
+  const withRuns = tmp()
+  mkdirSync(join(withRuns, 'docs'))
+  writeFileSync(join(withRuns, 'docs', 'design.md'), RUNS)
+  assert.deepEqual(checkClaudeVersion('2.1.341 (Claude Code)', withRuns), { warning: null, lastVerified: '2.1.341', verifiedSection: '6.3', verifiedNote: null })
+  assert.match(checkClaudeVersion('2.1.342 (Claude Code)', withRuns).warning ?? '', /newer than the last verified 2\.1\.341/)
+  const noRuns = tmp()
+  mkdirSync(join(noRuns, 'docs'))
+  writeFileSync(join(noRuns, 'docs', 'design.md'), '### 6.1c Confirmed (2026-10-16, Claude Code 2.1.301)\n### 6.3 Delivery behaviours\n')
+  const r = checkClaudeVersion('2.1.301 (Claude Code)', noRuns)
+  assert.match(r.warning ?? '', /has no verified version to compare with/)
+  assert.equal(r.lastVerified, null)
 })
 
 test('checkClaudeVersion: a missing design.md is a note, not a warning', () => {
@@ -208,4 +246,9 @@ test('version warning: loud only on the first start with a version; every start 
   const otherFile = join(other, 'start-warnings.jsonl')
   await recordStart({ ...input, warnings: ['Hub hooks missing for Stop'] }, otherFile)
   assert.equal(versionWarnedBefore(running, otherFile), false)
+  // the warning for "no run recorded" counts as a warning about that version too (C172)
+  const never = versionWarning(running, null)!
+  await recordStart({ ...input, warnings: [never] }, otherFile)
+  assert.equal(versionWarnedBefore(running, otherFile), true)
+  assert.equal(versionWarnedBefore([99, 0, 2], otherFile), false)
 })
