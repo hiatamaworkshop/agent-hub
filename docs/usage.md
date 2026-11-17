@@ -421,7 +421,12 @@ When the Hub runs outside Docker (`npm run hub`, or the Hub that `npm run team` 
 ## Development
 
 ```powershell
-npm test          # unit tests, and integration tests that start the shim as a real process
+npm test          # unit tests, and integration tests that start the shim as a real process. Property tests (*.property.test.ts)
+                  # are part of it; a failure prints `{ seed: …, path: "…" }`. To run that case again, only that test:
+                  #   $env:FC_SEED="<seed>"; $env:FC_PATH="<path>"
+                  #   node --import tsx --test --test-name-pattern="<part of the test's name>" <the .property.test.ts file>
+                  #   Remove-Item env:FC_SEED, env:FC_PATH
+                  # FC_NUM_RUNS changes the number of cases per property (default 1000)
 npm run test:coverage   # runs the same tests once more and prints line and branch coverage per file under src/ (test files left out).
                         # A measurement: no threshold, exit 1 only if a test fails. Files no test loads are listed apart, and the files
                         # with the lowest branch coverage under src/hub and src/shared are named (`-- --lowest 10` for more). CI runs it and

@@ -1123,15 +1123,22 @@ Decided 2026-11-15 by the user (from C168). `src/shared/card-state.js` is a pure
 - The tool. Default: `fast-check` as a devDependency (generators and shrinking; it runs inside `node --test`). If the implementer finds a reason against it, the alternative is hand-written generators on a seeded PRNG. Either way the reason is written in design.md §5 first (CLAUDE.md "Technology stack").
 - A failing case must be reproducible: the seed (or the shrunk input) is printed, and a found failure becomes an example test.
 - A TLA+ model was judged the heavier form of the same check (design.md §9-11); not part of this item.
+- Worked 2026-11-17 (the planning session, no team; no review yet). `fast-check` 4.10.2, installed by the user. The tests are `src/shared/card-state.property.test.ts`; the tool and the pattern C171 follows are in design.md §5.
+  - **What "arbitrary" covers** (the file's header): the shapes the Hub has sent over time, read from `git log -S` of `src/hub/store.ts`. No backlog (before 2026-10-19), a backlog without `outgoing` / `lastHanded` (before 2026-10-22), and the current one with each later field missing or present (per-target counts, `recipients`, `running`, `seqs`, `open`, the Hub's start time). Not generated: a backlog with `unread` or `awaitingReply` missing (no Hub sent one; `stateOf` would throw on it), and times that are not ISO strings.
+  - The generator was weighted after measuring it with `fc.statistics` over 20,000 cases: unweighted, 47% gave `null` (older Hubs) and Idle and Stopped came up in 0.2% each. Weighted: Needs you (request) 19%, `null` 14%, Working 10%, Offline 10%, Idle 9%, Stopped (Hub restarted) 2.4%, Waiting on others 1.8%, Stopped 1.6%, Paused 1%, Working in the background 1.6%; an Event of an earlier Attachment in 14% of cases. Rarest: Stopped with an unconnected party, 0.06%.
+  - **The properties can fail**: the derivation was broken one way per property and restored after each (`git checkout` of `card-state.js`). Counting a stale question as waiting failed only the staleEvent property; letting a running background task hide Needs you failed only the Needs-you property; a key outside §3.15 failed only the first. Each failure printed `{ seed, path }`, and `FC_SEED` / `FC_PATH` with `--test-name-pattern` replayed the M1 case as the first case run.
+  - **Cases run**: 1,000 per property in `npm test` (3,000 in all, under a second). Once, 100,000 per property (300,000, 30 seconds). No failure on the unchanged code, so no example test was added and there is no finding to record.
+  - docs/proofs.md: S2, S3, S18 and S19 now name the properties.
+  - `npm test`: 763 pass, 0 fail. `npm run ui:check`: 212 ok, 0 NG (the derivation itself did not change). `npm run docs:check`: 0 errors; warnings for C169 and C170, whose done-when lines are all checked (expected until the close).
 
 #### Done when
-- [ ] design.md §5 says which tool the property tests use and why.
-- [ ] A property test generates arbitrary Mailboxes and contexts (missing fields included, as an older Hub would send) and checks that `stateOf` and `humanTurnOf` never throw and that `stateOf` returns `null` or one of the keys design.md §3.15 names.
-- [ ] A property test checks that a question or permission Event of the current Attachment that has not been answered always gives Needs you, whatever else the Mailbox holds (waits are not hidden).
-- [ ] A property test checks that an Event of an earlier Attachment (`staleEvent`) is never counted as waiting.
-- [ ] A failing run prints what is needed to run the same case again, and README or usage.md "Development" says how.
-- [ ] Each failure the properties found is fixed and kept as an example test, or recorded in the section's body as a finding for the planning session; the body says how many cases were run.
-- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass (0 errors).
+- [x] design.md §5 says which tool the property tests use and why.
+- [x] A property test generates arbitrary Mailboxes and contexts (missing fields included, as an older Hub would send) and checks that `stateOf` and `humanTurnOf` never throw and that `stateOf` returns `null` or one of the keys design.md §3.15 names.
+- [x] A property test checks that a question or permission Event of the current Attachment that has not been answered always gives Needs you, whatever else the Mailbox holds (waits are not hidden).
+- [x] A property test checks that an Event of an earlier Attachment (`staleEvent`) is never counted as waiting.
+- [x] A failing run prints what is needed to run the same case again, and README or usage.md "Development" says how.
+- [x] Each failure the properties found is fixed and kept as an example test, or recorded in the section's body as a finding for the planning session; the body says how many cases were run.
+- [x] `npm test`, `npm run ui:check` and `npm run docs:check` pass (0 errors).
 
 ### C171. Property-based tests for delivery and Attachments
 Status: blocked(after C170)
