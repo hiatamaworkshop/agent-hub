@@ -107,7 +107,7 @@ npm run team -- --roles leader,deployer           # name them instead of choosin
 npm run team -- agent --role deployer             # one role in this terminal (Mailbox = agent-hub.deployer)
 ```
 
-Send a `request` to `role:leader` from the browser; it goes user → leader → deployer → leader → user. A start with warnings (a Claude Code newer than the last verified one, a stale checkout, missing hooks) is not stopped; it appends one line to `logs/start-warnings.jsonl` ([start warnings](docs/usage.md#start-warnings-logsstart-warningsjsonl)). Tab handling per OS, the checks it makes before starting, `--force`, `--permission-mode` and the reply format are in the [usage guide](docs/usage.md#try-a-round-trip-between-roles-with-two-agents-leader--deployer).
+Send a `request` to `role:leader` from the browser; it goes user → leader → deployer → leader → user. A start with warnings (a Claude Code newer than the last verified one, design.md §6.3; a stale checkout, missing hooks) is not stopped; it appends one line to `logs/start-warnings.jsonl` ([start warnings](docs/usage.md#start-warnings-logsstart-warningsjsonl)). Tab handling per OS, the checks it makes before starting, `--force`, `--permission-mode` and the reply format are in the [usage guide](docs/usage.md#try-a-round-trip-between-roles-with-two-agents-leader--deployer).
 
 ## Using it in other repositories
 
@@ -142,7 +142,7 @@ claude --dangerously-load-development-channels server:agent-hub
 - Browser: [reading the cards](docs/usage.md#reading-the-cards-in-the-browser-state-and-backlog), [custom commands](docs/usage.md#custom-commands), [pasting images](docs/usage.md#pasting-images), [Forward](docs/usage.md#carry-an-agents-output-to-another-agent-forward)
 - Mailboxes: [subscriptions](docs/usage.md#subscribing-once-per-mailbox-is-enough), [takeover](docs/usage.md#replacing-an-agent-takeover), [deleting](docs/usage.md#deleting-mailboxes-you-no-longer-use), [retention](docs/usage.md#message-retention-and-deletion)
 - Teams and work: [teams in detail](docs/usage.md#try-a-round-trip-between-roles-with-two-agents-leader--deployer), [requesting work from roadmap items](docs/usage.md#request-work-from-roadmap-items-items), [roles.json](docs/usage.md#role-definitions-rolesjson), [`HUB_LANGUAGE`](docs/usage.md#the-language-agents-write-to-the-human-in-hub_language)
-- Other: [start warnings](docs/usage.md#start-warnings-logsstart-warningsjsonl), [agents other than Claude Code (`inbox`)](docs/usage.md#using-it-with-agents-other-than-claude-code-inbox), [curl on Windows](docs/usage.md#using-curl-notes-for-windows), [development](docs/usage.md#development) (`npm test`, `npm run typecheck`, `npm run docs:check`, `npm run ui:check`)
+- Other: [start warnings](docs/usage.md#start-warnings-logsstart-warningsjsonl), [agents other than Claude Code (`inbox`)](docs/usage.md#using-it-with-agents-other-than-claude-code-inbox), [curl on Windows](docs/usage.md#using-curl-notes-for-windows), [development](docs/usage.md#development) (`npm test`, `npm run test:coverage`, `npm run typecheck`, `npm run docs:check`, `npm run ui:check`)
 
 ## Documents
 
@@ -152,9 +152,10 @@ claude --dangerously-load-development-channels server:agent-hub
 | [docs/usage.md](docs/usage.md) | Reference for everyday use (the sections above) |
 | [docs/design.md](docs/design.md) | Background, requirements, architecture, design decisions, unverified items |
 | [docs/protocol.md](docs/protocol.md) | HTTP API, message schema, MCP tools, delivery guarantees |
+| [docs/proofs.md](docs/proofs.md) | What proves each promise: every delivery guarantee and card state, with the test, `ui:check` scene or verification record that shows it, or `none` |
 | [docs/roadmap.md](docs/roadmap.md) | Phases and acceptance criteria (P0 → P2), open items (`C<n>`; the rules for writing them are at the top) |
 | [docs/conventions-log.md](docs/conventions-log.md) | One line per change of the conventions, with how to read the older form |
-| [tools/probe/README.md](tools/probe/README.md) | Steps for checking unverified items (design.md §6.2) on a real machine |
+| [tools/probe/README.md](tools/probe/README.md) | Steps for checking Claude Code on a real machine: unverified items (design.md §6.2), and the delivery checks to run again on a newer version (§6.3) |
 | [tools/dev/roles/](tools/dev/roles/) | Operating instructions for leader / deployer / reviewer (message formats; reviewer findings name a `breaks when:`). `npm run team` adds them to the system prompt |
 | [CLAUDE.md](CLAUDE.md) | Working rules for implementing agents |
 | [LICENSE](LICENSE) | MIT |

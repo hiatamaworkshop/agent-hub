@@ -2,6 +2,8 @@
 
 design.md §6.2 の未検証事項を、実際の Claude Code セッションで確かめるための使い捨てツール。本実装ではない。
 
+The delivery checks to run again when Claude Code is newer than the last verified version are listed in design.md §6.3, which names the steps below to use (C172).
+
 `probe.mjs` は 1 プロセスで次を兼ね、すべて `logs/probe.jsonl` に記録する。
 
 - channel MCP サーバー: 起動時の環境変数、Claude Code から届いた JSON-RPC (initialize を含む) を記録。ツール `probe_note` を公開
