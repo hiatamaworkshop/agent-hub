@@ -1222,7 +1222,7 @@ The Hub's delivery rests on behaviours of Claude Code that the Hub cannot test: 
 
 **When to run it**: when a start warns that Claude Code is newer than the last verified version (`npm run team`, `agent`; docs/usage.md "Start warnings"). The warning compares `claude --version` with the highest version in "Runs of this list" below (`lastVerified` in `src/team/startlog.ts`). A version named in a §6.1 heading does not count: before C172 the highest of those was taken, so an entry that observed one unrelated behaviour on a newer version made the warning go quiet for all of them.
 
-**How**: the steps are those of `tools/probe/README.md` (a throwaway channel server and hook receiver that record to `logs/probe.jsonl`; the Hub on 7777 is not touched). Run its steps 1 to 5 once, with the two additions written in the table (B7's permission wait and B9's `/clear`, done between its steps 4 and 5), then read `logs/probe.jsonl` against the table. B8 needs a second start without the flag. Then add a row to "Runs of this list". A behaviour that differs is recorded as changed, in a new §6.1 entry named in the row; fixing what depends on it is a new item, written by the planning session, and the row in docs/proofs.md that leaned on the behaviour is corrected.
+**How**: the steps are those of `tools/probe/README.md` (a throwaway channel server and hook receiver that record to `logs/probe.jsonl`; the Hub on 7777 is not touched). Run its steps 1 to 5 once, with the two additions written in the table (B7's permission wait and B9's `/clear`, done between its steps 4 and 5), then read `logs/probe.jsonl` against the table: `node tools/probe/delivery-report.mjs --mark` before the first session, and `node tools/probe/delivery-report.mjs` after the last prints what the log shows for each row (`ok`, `CHANGED`, or what is left to what you saw). B8 needs a second start without the flag. Then add a row to "Runs of this list". A behaviour that differs is recorded as changed, in a new §6.1 entry named in the row; fixing what depends on it is a new item, written by the planning session, and the row in docs/proofs.md that leaned on the behaviour is corrected.
 
 | # | Behaviour | What depends on it | Last recorded | Check again |
 |---|---|---|---|---|
@@ -1242,8 +1242,19 @@ Not on the list, because delivery does not depend on them: how the model and eff
 
 | Date | Claude Code | OS | Result |
 |---|---|---|---|
+| 2026-11-17 | 2.1.326 | Windows 11 | All nine as recorded; none changed (below) |
 
-No run is recorded yet (2026-11-16): the list was written from the §6.1 entries, each observed on its own version (2.1.301 to 2.1.322), and has not been run as a list. Until a row is added, a start warns for any Claude Code version, saying that no run is recorded.
+The list was written on 2026-11-16 from the §6.1 entries, each observed on its own version (2.1.301 to 2.1.322). Before the first row, a start warned for any version.
+
+**The run of 2026-11-17** (Claude Code 2.1.326 / Windows 11 Home / Node v26.10.0 for `claude`; the user at the terminal, the planning session reading `logs/probe.jsonl` with `tools/probe/delivery-report.mjs`; three probe sessions, 01:16Z to 01:33Z):
+- B1: the banner line shown, with the false warning of §6.1c (`no MCP server configured with that name`), as before. B2: a turn ended 3 s after `/case/hello`, nothing typed. B3: `clientInfo.name` `claude-code`, protocol `2025-11-25`.
+- B4: in a third session (the first run had sent `escape` and `attr`, but nothing was copied into `probe_note`). Both `</channel>` in the body arrived as `<\/channel>`, the outer tag whole, the injected `<channel source="evil" …>` inside the body; `probe_quote` arrived as `a&quot;b&lt;c&gt;&amp;d`.
+- B5, B6: 11 hook inputs, all with `session_id` and `cwd`; `Stop` has `background_tasks`; `X-Hub-Mailbox` expanded on every hook; `HUB_MAILBOX` inherited; `CLAUDE_CODE_SESSION_ID` equal to the hooks' `session_id`.
+- B7: question: `PreToolUse` (`AskUserQuestion`) 01:22:01, `permission_prompt` 01:22:07, notification sent 01:22:21, one `Stop` 01:22:47 after the answer. Permission (mode `manual`): `permission_prompt` 01:23:18, notification sent 01:23:38, `Stop` 01:23:47 after the approval. The user saw both waits stay open and the notification handed over after them ("all good"). **First record of a notification during a permission wait.**
+- B8: started without the flag, `/case/hello` was followed by no turn within 2 minutes, nothing shown and no error.
+- B9: `/clear` changed the hooks' `session_id` (`f7cdb611…` to `064d3307…`), and `X-Hub-Mailbox` was on every hook. Not seen: a `SessionStart` with `source: "clear"`. The probe registers `SessionStart` as an http hook, and no `SessionStart` reached it at all in this run, not even at startup. The team's hooks send it through a command hook (`post-event.mjs`), which §6.1ac saw. A limit of the probe, not a change.
+- Unrelated noise: the user's own hooks for the Hub on 7777 failed (`ECONNREFUSED`) because no Hub was running; they do not touch the probe.
+- `claude` first failed with `error: CommandNotFound`: the active Node had moved to v26.13.1 while Claude Code was installed under v26.10.0. The user ran it under v26.10.0.
 
 ## 7. Relation to MCP Events (SEP-3415)
 
