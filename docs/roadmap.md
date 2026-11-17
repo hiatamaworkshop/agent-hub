@@ -24,8 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C174
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -722,6 +720,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - First figures (2026-11-17, Windows 11, Node 26.13.1, the same in three runs): lines 91.91%, branches 92.06%; lowest branch coverage under `src/hub/`: `files.ts` 91.75%, `settings.ts`, `app.ts`, `store.ts`, `log.ts`; under `src/shared/`: `language.ts` 76.92%, `card-state.js` 86.47%, `env-override.ts`, `ledger.ts`, `open-requests.js`.
   - Checked on GitHub: run 43996972479 (https://github.com/hiatamaworkshop/agent-hub/actions/runs/43996972479), green on `windows-latest` and `ubuntu-latest`; both logs print the table (764 tests pass; lines 91.91%, branches 92.63%). By then C170's property tests had raised `card-state.js` to 98.08% of its branches. Done-when wording not changed.
   - Not checked: no reviewer read it; the job summary page was not opened (the step writes it; tried locally with the variable pointed at a file).
+- [x] C174 Run `ui:check` in CI (2026-11-17, closed on the user's word without a review)
+  - Decided 2026-11-15 (from C168; reverses the 2026-11-10 decision in C148's record). Done 2026-11-17 in the planning session, without a team. Commits `c9291fd`, `55675c0` (the run).
+  - Changed: `.github/workflows/ci.yml` (`npm run ui:check` last in the `check` job, so on `windows-latest` and `ubuntu-latest`; `UI_CHECK_NO_SANDBOX=1` on Linux only), `tools/dev/ui-check.mjs` (Chrome from `CHROME`, else the Windows path, else `google-chrome` on the PATH; `--no-sandbox` on `UI_CHECK_NO_SANDBOX=1`), README "Status", CLAUDE.md, usage.md "Development".
+  - Checked: the first run on GitHub (https://github.com/hiatamaworkshop/agent-hub/actions/runs/44093861276) green on both runners, 212 ok, 0 NG each, the same as locally on Windows 11; no scene failed only on a runner. The step takes about 4.5 minutes; a job about 5.5 instead of 1.5. `npm test` 764 pass, `docs:check` 0 errors. Done-when wording not changed.
+  - Not checked: no reviewer read it; whether the Linux runner needs `--no-sandbox` was not tried without it; `ubuntu-latest` moving to Ubuntu 26 (the runner's annotation) is left to a later run.
 - [x] C160 Lift the provisional restriction on `meta` in Channels notifications (2026-11-12, closed after the review)
   - Decided 2026-11-12 in the planning session (the user accepted the recommendation): a list of known keys, not every key. The list is `files` and `item`, the `meta` keys protocol.md §2 defines; `forwardedFrom` / `forwardedSender` are Message fields, not `meta` keys, and already reach Channels as attributes.
   - Changed: `src/shared/format.ts` (`channelMeta` passes `files`, with its element keys as before, and `item`, unconverted; the rest is dropped), `src/shared/meta.test.ts` (a known key, an unknown key, values with `"` `<` `>` `&`), `docs/protocol.md` §2 and §6, `docs/design.md` §6.1ad and §6.2-4, `tools/probe/probe.mjs` and `tools/probe/README.md` §3b (both point at design.md §6.1ad).
@@ -1117,26 +1120,6 @@ Status: held(after C153; decide once a real run shows what is hard to find)
 Raised 2026-11-10 with C153. After a run, what waits for the human is spread over the last report (a Message, deleted after the retention period), the items' sections (the defaults taken, the items left open) and `git log` (unpushed commits). The ledger is the place that lasts (design.md §3.16).
 - Idea: the Items list gets a tier, or a mark, for items whose done-when lines are all checked while the section is still there ("worked, waiting for the close"); the index already has the counts (`conditions.done` / `total`). `team status` (C139) could list the same.
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
-
-### C174. Run `ui:check` in CI
-
-Decided 2026-11-15 by the user (from C168). This reverses the 2026-11-10 decision that `ui:check` stays off CI (the closed record of C148), which was made because it needs Chrome. `ui:check` is the only check that runs the page against a real Hub, and today it runs only when someone remembers to (CLAUDE.md "Notes on the development environment").
-- C151 made it take free ports, so a runner's ports are not a reason against it any more.
-- Whether the hosted runners' Chrome is enough, or the job installs one, is checked in the item.
-- A scene that passes locally and fails on a runner is a finding to record, not a scene to delete.
-
-- Worked 2026-11-17 (the planning session, no team; no review yet). `.github/workflows/ci.yml` runs `npm run ui:check` as the last step of the existing `check` job, so on `windows-latest` and `ubuntu-latest` both. `tools/dev/ui-check.mjs` found Chrome only at the Windows path; it now takes `CHROME`, else that path on Windows, else `google-chrome` on the PATH, and `UI_CHECK_NO_SANDBOX=1` adds `--no-sandbox` (the workflow sets it on Linux only, where the sandbox needs user namespaces the runner may not give). README, CLAUDE.md and usage.md say CI runs it.
-  - Checked locally (Windows 11): `npm run ui:check` 212 ok, 0 NG, exit 0, with the changed file. The run on GitHub followed the user's word to push.
-
-  - The first run on GitHub, 2026-11-17 (commit `c9291fd`): https://github.com/hiatamaworkshop/agent-hub/actions/runs/44093861276, green on both. `ui:check` 212 ok, 0 NG on `windows-latest` and on `ubuntu-latest`, the same count as locally; no scene failed only on a runner, so nothing to fix or list. The step takes about 4.5 minutes, so a job now takes about 5.5 instead of about 1.5. The Linux runner's annotation says `ubuntu-latest` moves to Ubuntu 26 from 2026-10-19; nothing to do here unless a later run breaks.
-  - `npm test` 764 pass, 0 fail; `npm run docs:check` 0 errors (locally and in the same run).
-
-#### Done when
-- [x] `.github/workflows/ci.yml` runs `npm run ui:check` on `ubuntu-latest` at least; if `windows-latest` is left out, the file says why.
-- [x] A run on GitHub with the job green is recorded in the section's body (the run's URL and the count of scenes).
-- [x] A scene that fails only on the runner is fixed, or listed in the section's body with what differs; none is removed or skipped without that record.
-- [x] README "Status" and CLAUDE.md "Notes on the development environment" say that CI runs `ui:check`.
-- [x] `npm test` and `npm run docs:check` pass (0 errors).
 
 ### C175. Abandoning unread at attach confirms Messages handed earlier and never confirmed
 Status: proposed
