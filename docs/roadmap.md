@@ -25,7 +25,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C171
-- [ ] C173
 - [ ] C174
 
 (Items with a status line are listed under "Items".)
@@ -710,6 +709,13 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: design.md §6.3 (B1-B9: the behaviours delivery depends on, with the step that checks each again, and "Runs of this list"), `src/team/startlog.ts` (`lastVerified` reads the runs, not §6.1 headings; with no run recorded every version warns; the warning points to §6.3) with tests, usage.md "Start warnings", `tools/probe/delivery-report.mjs` (reads the probe log against the list), `tools/probe/README.md`.
   - Checked: the run of 2026-11-17 on Claude Code 2.1.326 / Windows 11, all nine as recorded (the first record of a notification during a permission wait); the warning is quiet for 2.1.326 and names the run for 2.1.327. `npm test` 764 pass, `docs:check` 0 errors. Done-when wording not changed.
   - Not checked: no reviewer read it; B9's `SessionStart` with `source: "clear"` did not reach the probe (an http hook), only the `session_id` change; no run on Linux or a Mac.
+- [x] C173 Measure what the tests cover (2026-11-17, closed on the user's word without a review)
+  - Decided 2026-11-15 (from C168). Done 2026-11-16 to 17 in the planning session, without a team. Commit `2819f5c`.
+  - Changed: `npm run test:coverage` (`tools/dev/coverage.mjs`, with `tools/dev/ts-resolve.mjs` and `src/test-child.ts`), `.github/workflows/ci.yml` (a step after `docs:check`; the table also goes to the job summary), `erasableSyntaxOnly` in `tsconfig.json` with parameter properties rewritten as fields in nine classes, design.md §5, usage.md "Development", README "Status".
+  - Found while measuring (design.md §5): Node's coverage through tsx names the wrong lines, so the run uses Node's own type stripping; with child processes measured the figures changed between runs (`roadmap.ts` 54% and 99.77%), so children are left out.
+  - First figures (2026-11-17, Windows 11, Node 26.13.1, the same in three runs): lines 91.91%, branches 92.06%; lowest branch coverage under `src/hub/`: `files.ts` 91.75%, `settings.ts`, `app.ts`, `store.ts`, `log.ts`; under `src/shared/`: `language.ts` 76.92%, `card-state.js` 86.47%, `env-override.ts`, `ledger.ts`, `open-requests.js`.
+  - Checked on GitHub: run 43996972479 (https://github.com/hiatamaworkshop/agent-hub/actions/runs/43996972479), green on `windows-latest` and `ubuntu-latest`; both logs print the table (764 tests pass; lines 91.91%, branches 92.63%). By then C170's property tests had raised `card-state.js` to 98.08% of its branches. Done-when wording not changed.
+  - Not checked: no reviewer read it; the job summary page was not opened (the step writes it; tried locally with the variable pointed at a file).
 - [x] C160 Lift the provisional restriction on `meta` in Channels notifications (2026-11-12, closed after the review)
   - Decided 2026-11-12 in the planning session (the user accepted the recommendation): a list of known keys, not every key. The list is `files` and `item`, the `meta` keys protocol.md §2 defines; `forwardedFrom` / `forwardedSender` are Message fields, not `meta` keys, and already reach Channels as attributes.
   - Changed: `src/shared/format.ts` (`channelMeta` passes `files`, with its element keys as before, and `item`, unconverted; the rest is dropped), `src/shared/meta.test.ts` (a known key, an unknown key, values with `"` `<` `>` `&`), `docs/protocol.md` §2 and §6, `docs/design.md` §6.1ad and §6.2-4, `tools/probe/probe.mjs` and `tools/probe/README.md` §3b (both point at design.md §6.1ad).
@@ -1130,29 +1136,6 @@ Decided 2026-11-15 by the user (from C168). The Hub's core promise is delivery (
 - [x] It checks that `received` advances only by the three paths of protocol.md §4, and that an `inbox` ack does not jump over handed, unconfirmed Messages.
 - [x] It checks that a Mailbox never has two live Attachments, that a takeover's successor has the subscriptions and the unread of the one it cut off, and that a lease expiry detaches without losing unread.
 - [x] Each failure the properties found is fixed and kept as an example test, or recorded in the section's body as a finding for the planning session; the body says how many sequences were run and how long the test takes.
-- [x] `npm test` and `npm run docs:check` pass (0 errors).
-
-### C173. Measure what the tests cover
-
-Decided 2026-11-15 by the user (from C168). "`npm test` passes" is the evidence every report and close rests on (design.md §1.2), and nothing says how much of the code the tests run.
-- A measurement first, not a gate: a new restriction enters as a warning (design.md §3.12), and a threshold set before the numbers are known would be a guess.
-- Node's own coverage for `node --test` is the default (no dependency); whether it reports TypeScript sources correctly through `tsx` is to be checked first, and the result goes to design.md §5.
-- `public/index.html` is outside it (no unit tests; `ui:check` covers it by scenes).
-- Mutation tests on the pure modules (`src/shared/`) are the stronger measure. Judged after this item, from its numbers; not filed.
-- Worked 2026-11-16 to 17 (the planning session, no team; no review yet). The command is `npm run test:coverage` (`tools/dev/coverage.mjs`).
-  - **What the check of the figures found** (design.md §5 has the whole of it): Node's coverage through tsx counts the lines of tsx's rewritten text, not of the file, so the figures named the wrong lines. The command therefore runs the sources with Node's own type stripping (`tools/dev/ts-resolve.mjs`). That needed erasable syntax only: constructor parameter properties in nine classes were rewritten as fields (`src/hub/auth.ts`, `files.ts`, `hub.ts`, `indexes.ts`, `log.ts`, `settings.ts`, `src/shim/files.ts`, `hub-client.ts`), with no change of behaviour, and `erasableSyntaxOnly` is on in `tsconfig.json`. `npm test` and the Hub still run with tsx.
-  - Child processes the tests start are not measured: with them measured, three runs gave different figures (`roadmap.ts` 54% and 99.77% of its lines). Left out, three runs gave the same figures for every file. The cost: `src/shim/main.ts` and `src/docs-check/push-index.ts` have no figures (listed by the command with the three entry points no test loads).
-  - **First figures** (2026-11-17, Windows 11, Node 26.13.1; the same in three runs): 46 files with figures, lines 91.91% (7017/7635), branches 92.06% (2562/2783). Under `src/hub/`: lines 99.25% or more except `log.ts` 81.16%, `app.ts` 97.73%, `files.ts` 96.74%, `settings.ts` 95.65%. Lowest branch coverage under `src/hub/`: `files.ts` 91.75% (89/97), `settings.ts` 93.94% (62/66), `app.ts` 93.98% (156/166), `store.ts` 95.95% (284/296), `log.ts` 96.55% (28/29). Under `src/shared/`: `language.ts` 76.92% (10/13), `card-state.js` 86.47% (115/133), `env-override.ts` 92.86% (26/28), `ledger.ts` 93.94% (31/33), `open-requests.js` 95.96% (95/99). Lowest overall: `src/team/team.ts` (lines 35.95%; the start itself, which opens tabs and runs claude), `agent.ts` 63.11%, `checks.ts` 64.83%.
-  - Read for the planning session (not filed): `card-state.js` has every line run and 18 branches not taken, which is what C170's properties are for.
-  - CI: a step `npm run test:coverage` after `docs:check`, on both runners; it writes the table to the job summary (`GITHUB_STEP_SUMMARY`; tried locally with the variable pointed at a file). No threshold; the step fails only if a test fails in its run. Not yet seen on GitHub (nothing is pushed).
-  - `npm test`: 760 pass, 0 fail. `npm run docs:check`: 0 errors. `npm run build` passes.
-
-#### Done when
-- [x] One command (an `npm run` script) prints line and branch coverage per file under `src/`, with test files left out of the figures.
-- [x] design.md §5 says which tool measures it and what was checked about its figures for TypeScript sources.
-- [x] The figures of the first run are recorded in the section's body, with the files under `src/hub/` and `src/shared/` that have the lowest branch coverage named.
-- [ ] CI runs the command and shows the figures; no threshold fails the build.
-- [x] README or usage.md "Development" says how to run it.
 - [x] `npm test` and `npm run docs:check` pass (0 errors).
 
 ### C174. Run `ui:check` in CI
