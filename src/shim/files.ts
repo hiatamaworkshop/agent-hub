@@ -26,8 +26,11 @@ export interface FileContext {
 
 // 取得の失敗は code だけを agent に渡す (expired は期限切れ、fetch_failed はそれ以外)
 class FetchError extends Error {
-  constructor(readonly code: 'expired' | 'fetch_failed') {
+  readonly code: 'expired' | 'fetch_failed'
+
+  constructor(code: 'expired' | 'fetch_failed') {
     super(code)
+    this.code = code
   }
 }
 

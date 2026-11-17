@@ -422,6 +422,10 @@ When the Hub runs outside Docker (`npm run hub`, or the Hub that `npm run team` 
 
 ```powershell
 npm test          # unit tests, and integration tests that start the shim as a real process
+npm run test:coverage   # runs the same tests once more and prints line and branch coverage per file under src/ (test files left out).
+                        # A measurement: no threshold, exit 1 only if a test fails. Files no test loads are listed apart, and the files
+                        # with the lowest branch coverage under src/hub and src/shared are named (`-- --lowest 10` for more). CI runs it and
+                        # shows the table in the job summary. It runs the sources with Node's type stripping, not tsx (why: design.md §5)
 npm run typecheck
 npm run docs:check   # checks how roadmap items are written (exit 1 if broken). `-- --index` prints the item index as JSON
                      # on this repository's own roadmap it also checks the docs (C9, C124): the CLAUDE.md map against the headings, the Hub's

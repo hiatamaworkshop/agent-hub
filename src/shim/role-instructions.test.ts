@@ -13,6 +13,7 @@ import { createApp } from '../hub/app.js'
 import { Hub } from '../hub/hub.js'
 import { parseRoles } from '../hub/roles.js'
 import { Store } from '../hub/store.js'
+import { childEnv, tsNodeArgs } from '../test-child.js'
 import { agentHubFolderLine, instructionsFor, routeFor } from './instructions.js'
 
 const TOKEN = 'test-token-0123456789'
@@ -104,9 +105,9 @@ async function startShim(env: Record<string, string>) {
   const client = new Client({ name: 'test', version: '0' })
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: ['--import', 'tsx', 'src/shim/main.ts'],
+    args: [...tsNodeArgs(), 'src/shim/main.ts'],
     cwd: ROOT,
-    env: { ...(process.env as Record<string, string>), HUB_TOKEN: TOKEN, ...env },
+    env: { ...childEnv(), HUB_TOKEN: TOKEN, ...env },
     stderr: 'pipe',
   })
   await client.connect(transport)

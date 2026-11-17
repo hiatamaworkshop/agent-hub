@@ -19,8 +19,10 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 export class Auth {
   // cookie にはトークンそのものではなく派生値を入れる
   readonly cookieValue: string
+  private readonly token: string
 
-  constructor(private readonly token: string) {
+  constructor(token: string) {
+    this.token = token
     this.cookieValue = createHmac('sha256', token).update('agent-hub browser session').digest('base64url')
   }
 

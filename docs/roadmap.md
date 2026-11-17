@@ -1178,14 +1178,21 @@ Decided 2026-11-15 by the user (from C168). "`npm test` passes" is the evidence 
 - Node's own coverage for `node --test` is the default (no dependency); whether it reports TypeScript sources correctly through `tsx` is to be checked first, and the result goes to design.md §5.
 - `public/index.html` is outside it (no unit tests; `ui:check` covers it by scenes).
 - Mutation tests on the pure modules (`src/shared/`) are the stronger measure. Judged after this item, from its numbers; not filed.
+- Worked 2026-11-16 to 17 (the planning session, no team; no review yet). The command is `npm run test:coverage` (`tools/dev/coverage.mjs`).
+  - **What the check of the figures found** (design.md §5 has the whole of it): Node's coverage through tsx counts the lines of tsx's rewritten text, not of the file, so the figures named the wrong lines. The command therefore runs the sources with Node's own type stripping (`tools/dev/ts-resolve.mjs`). That needed erasable syntax only: constructor parameter properties in nine classes were rewritten as fields (`src/hub/auth.ts`, `files.ts`, `hub.ts`, `indexes.ts`, `log.ts`, `settings.ts`, `src/shim/files.ts`, `hub-client.ts`), with no change of behaviour, and `erasableSyntaxOnly` is on in `tsconfig.json`. `npm test` and the Hub still run with tsx.
+  - Child processes the tests start are not measured: with them measured, three runs gave different figures (`roadmap.ts` 54% and 99.77% of its lines). Left out, three runs gave the same figures for every file. The cost: `src/shim/main.ts` and `src/docs-check/push-index.ts` have no figures (listed by the command with the three entry points no test loads).
+  - **First figures** (2026-11-17, Windows 11, Node 26.13.1; the same in three runs): 46 files with figures, lines 91.91% (7017/7635), branches 92.06% (2562/2783). Under `src/hub/`: lines 99.25% or more except `log.ts` 81.16%, `app.ts` 97.73%, `files.ts` 96.74%, `settings.ts` 95.65%. Lowest branch coverage under `src/hub/`: `files.ts` 91.75% (89/97), `settings.ts` 93.94% (62/66), `app.ts` 93.98% (156/166), `store.ts` 95.95% (284/296), `log.ts` 96.55% (28/29). Under `src/shared/`: `language.ts` 76.92% (10/13), `card-state.js` 86.47% (115/133), `env-override.ts` 92.86% (26/28), `ledger.ts` 93.94% (31/33), `open-requests.js` 95.96% (95/99). Lowest overall: `src/team/team.ts` (lines 35.95%; the start itself, which opens tabs and runs claude), `agent.ts` 63.11%, `checks.ts` 64.83%.
+  - Read for the planning session (not filed): `card-state.js` has every line run and 18 branches not taken, which is what C170's properties are for.
+  - CI: a step `npm run test:coverage` after `docs:check`, on both runners; it writes the table to the job summary (`GITHUB_STEP_SUMMARY`; tried locally with the variable pointed at a file). No threshold; the step fails only if a test fails in its run. Not yet seen on GitHub (nothing is pushed).
+  - `npm test`: 760 pass, 0 fail. `npm run docs:check`: 0 errors. `npm run build` passes.
 
 #### Done when
-- [ ] One command (an `npm run` script) prints line and branch coverage per file under `src/`, with test files left out of the figures.
-- [ ] design.md §5 says which tool measures it and what was checked about its figures for TypeScript sources.
-- [ ] The figures of the first run are recorded in the section's body, with the files under `src/hub/` and `src/shared/` that have the lowest branch coverage named.
+- [x] One command (an `npm run` script) prints line and branch coverage per file under `src/`, with test files left out of the figures.
+- [x] design.md §5 says which tool measures it and what was checked about its figures for TypeScript sources.
+- [x] The figures of the first run are recorded in the section's body, with the files under `src/hub/` and `src/shared/` that have the lowest branch coverage named.
 - [ ] CI runs the command and shows the figures; no threshold fails the build.
-- [ ] README or usage.md "Development" says how to run it.
-- [ ] `npm test` and `npm run docs:check` pass (0 errors).
+- [x] README or usage.md "Development" says how to run it.
+- [x] `npm test` and `npm run docs:check` pass (0 errors).
 
 ### C174. Run `ui:check` in CI
 

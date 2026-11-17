@@ -15,6 +15,7 @@ import { FileStore, resolveMeta } from '../hub/files.js'
 import { Hub } from '../hub/hub.js'
 import { Store } from '../hub/store.js'
 import { HubClient, parseSse } from './hub-client.js'
+import { childEnv, tsNodeArgs } from '../test-child.js'
 import { fetchInbox } from './inbox.js'
 
 const TOKEN = 'test-token-0123456789'
@@ -105,10 +106,10 @@ describe('shim と Hub の結合', () => {
       }),
       (n) => void notifications.push(n.params),
     )
-    const env = { ...(process.env as Record<string, string>), HUB_URL: hubUrl, HUB_TOKEN: TOKEN, HUB_MAILBOX: 'test-mb', CLAUDE_CODE_SESSION_ID: 'sess-1', HUB_FILES_DIR: join(tmpDir, 'shim-files') }
+    const env = { ...childEnv(), HUB_URL: hubUrl, HUB_TOKEN: TOKEN, HUB_MAILBOX: 'test-mb', CLAUDE_CODE_SESSION_ID: 'sess-1', HUB_FILES_DIR: join(tmpDir, 'shim-files') }
     delete env.HUB_ROLE
     env.CLAUDE_PROJECT_DIR = ROOT // meta.item.project の期待値を環境に依らず決める
-    await client.connect(new StdioClientTransport({ command: process.execPath, args: ['--import', 'tsx', 'src/shim/main.ts'], cwd: ROOT, env, stderr: 'pipe' }))
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: [...tsNodeArgs(), 'src/shim/main.ts'], cwd: ROOT, env, stderr: 'pipe' }))
   })
 
   after(async () => {
@@ -344,7 +345,7 @@ describe('shim: takeover で引き継がれた後', () => {
       })
     })
     const client = new Client({ name: 'claude-code', version: '0' })
-    const env = { ...(process.env as Record<string, string>), HUB_URL: hubUrl, HUB_TOKEN: TOKEN, HUB_MAILBOX: 'handover', CLAUDE_CODE_SESSION_ID: 'sess-a' }
+    const env = { ...childEnv(), HUB_URL: hubUrl, HUB_TOKEN: TOKEN, HUB_MAILBOX: 'handover', CLAUDE_CODE_SESSION_ID: 'sess-a' }
     delete env.HUB_ROLE
     const call = async (name: string, args: Record<string, unknown> = {}) => {
       const r = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean }
@@ -359,7 +360,7 @@ describe('shim: takeover で引き継がれた後', () => {
     }
     const state = async () => (JSON.parse((await call('whoami')).text) as { state: string }).state
     try {
-      await client.connect(new StdioClientTransport({ command: process.execPath, args: ['--import', 'tsx', 'src/shim/main.ts'], cwd: ROOT, env, stderr: 'pipe' }))
+      await client.connect(new StdioClientTransport({ command: process.execPath, args: [...tsNodeArgs(), 'src/shim/main.ts'], cwd: ROOT, env, stderr: 'pipe' }))
       await until(async () => (await state()) === 'attached')
       assert.equal((await call('subscribe', { topic: 'keep.me' })).isError, false)
 
@@ -568,7 +569,7 @@ describe('shim: Claude Code 以外のクライアント (inbox 経路)', () => {
     const client = new Client({ name: 'codex', version: '0' })
     const pushed: unknown[] = []
     client.fallbackNotificationHandler = async (n) => void pushed.push(n)
-    const env = { ...(process.env as Record<string, string>), HUB_URL: hubUrl, HUB_TOKEN: TOKEN, HUB_MAILBOX: 'poll-mb', HUB_FILES_DIR: join(tmpdir(), 'agent-hub-poll-test') }
+    const env = { ...childEnv(), HUB_URL: hubUrl, HUB_TOKEN: TOKEN, HUB_MAILBOX: 'poll-mb', HUB_FILES_DIR: join(tmpdir(), 'agent-hub-poll-test') }
     delete env.HUB_ROLE
     delete env.CLAUDE_CODE_SESSION_ID
     const call = async (name: string, args: Record<string, unknown> = {}) => {
@@ -583,7 +584,7 @@ describe('shim: Claude Code 以外のクライアント (inbox 経路)', () => {
       }
     }
     try {
-      await client.connect(new StdioClientTransport({ command: process.execPath, args: ['--import', 'tsx', 'src/shim/main.ts'], cwd: ROOT, env, stderr: 'pipe' }))
+      await client.connect(new StdioClientTransport({ command: process.execPath, args: [...tsNodeArgs(), 'src/shim/main.ts'], cwd: ROOT, env, stderr: 'pipe' }))
       const instructions = client.getInstructions() ?? ''
       assert.match(instructions, /Fetch them with the inbox tool/)
       assert.doesNotMatch(instructions, /<channel/)

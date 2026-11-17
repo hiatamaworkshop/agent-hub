@@ -4,12 +4,13 @@ import type { Message } from '../shared/types.js'
 import type { ShimConfig } from './config.js'
 
 export class HubHttpError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-  ) {
+  readonly status: number
+  readonly code: string
+
+  constructor(status: number, code: string, message: string) {
     super(message)
+    this.status = status
+    this.code = code
   }
 }
 
@@ -60,14 +61,24 @@ export class HubClient {
   private stopped = false
   private abort: AbortController | undefined
 
+  private readonly cfg: ShimConfig
+  // Claude へ渡す。解決したら ack する
+  private readonly deliver: (m: Message) => Promise<void>
+  private readonly log: (msg: string) => void
+  // 古い未読を省略したことを Claude へ伝える (protocol.md §6.3)
+  private readonly notifySkipped: (skipped: number) => Promise<void>
+
   constructor(
-    private readonly cfg: ShimConfig,
-    // Claude へ渡す。解決したら ack する
-    private readonly deliver: (m: Message) => Promise<void>,
-    private readonly log: (msg: string) => void,
-    // 古い未読を省略したことを Claude へ伝える (protocol.md §6.3)
-    private readonly notifySkipped: (skipped: number) => Promise<void> = async () => undefined,
-  ) {}
+    cfg: ShimConfig,
+    deliver: (m: Message) => Promise<void>,
+    log: (msg: string) => void,
+    notifySkipped: (skipped: number) => Promise<void> = async () => undefined,
+  ) {
+    this.cfg = cfg
+    this.deliver = deliver
+    this.log = log
+    this.notifySkipped = notifySkipped
+  }
 
   async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = { authorization: `Bearer ${this.cfg.token}` }

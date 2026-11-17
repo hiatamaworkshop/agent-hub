@@ -45,12 +45,21 @@ export class HubLogFile {
   private warned = false
   private rotateWarned = false
 
+  readonly file: string
+  private readonly secrets: readonly string[]
+  private readonly maxBytes: number
+  private readonly report: (message: string) => void
+
   constructor(
-    readonly file: string,
-    private readonly secrets: readonly string[],
-    private readonly maxBytes = HUB_LOG_MAX_BYTES,
-    private readonly report: (message: string) => void = (message) => process.stderr.write(`${message}\n`),
+    file: string,
+    secrets: readonly string[],
+    maxBytes = HUB_LOG_MAX_BYTES,
+    report: (message: string) => void = (message) => process.stderr.write(`${message}\n`),
   ) {
+    this.file = file
+    this.secrets = secrets
+    this.maxBytes = maxBytes
+    this.report = report
     this.size = this.fileSize()
   }
 

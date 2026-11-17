@@ -70,12 +70,13 @@ const keyOf = (project: string, source: string) => `${normalizeProjectPath(proje
 
 export class IndexStore {
   private readonly indexes = new Map<string, ProjectIndex>()
+  private readonly file?: string
+  private readonly now: () => Date
 
   // file を省くとメモリのみ (テスト用)。読めない・壊れているときは空から始める (送り直せば戻るので止めない)
-  constructor(
-    private readonly file?: string,
-    private readonly now: () => Date = () => new Date(),
-  ) {
+  constructor(file?: string, now: () => Date = () => new Date()) {
+    this.file = file
+    this.now = now
     if (!file) return
     let raw: string
     try {

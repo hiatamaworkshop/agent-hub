@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { childEnv, tsNodeArgs } from '../test-child.js'
 
 const AGENT_HUB = fileURLToPath(new URL('../..', import.meta.url))
 const HOOK = join(AGENT_HUB, 'tools', 'hooks', 'post-commit-index.sh')
@@ -25,7 +26,7 @@ function repo(): string {
   return dir
 }
 
-const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid' }
+const env = { ...childEnv(), GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid' }
 function git(dir: string, ...args: string[]) {
   const r = spawnSync('git', args, { cwd: dir, env, encoding: 'utf8' })
   assert.equal(r.status, 0, `git ${args.join(' ')}: ${r.stderr}`)
@@ -104,7 +105,7 @@ test('a failed send says the real reason, not "Hub stopped or no token" (C126)',
 test('docs:index --file in another spelling names the same source (./docs/items.md is docs/items.md) (C126)', () => {
   const dir = repo()
   commit(dir, { 'docs/items.md': ITEM })
-  const r = spawnSync(process.execPath, ['--import', 'tsx', PUSH_INDEX, '--project', dir, '--file', './docs/items.md'], {
+  const r = spawnSync(process.execPath, [...tsNodeArgs(), PUSH_INDEX, '--project', dir, '--file', './docs/items.md'], {
     cwd: AGENT_HUB,
     env: { ...env, HUB_URL: 'http://127.0.0.1:9', HUB_TOKEN: 'test-token' },
     encoding: 'utf8',
@@ -115,7 +116,7 @@ test('docs:index --file in another spelling names the same source (./docs/items.
 
 // docs:index with --file, run for real in a project; the Hub is unreachable, so the result shows which file was sent
 function indexFile(dir: string, file: string) {
-  return spawnSync(process.execPath, ['--import', 'tsx', PUSH_INDEX, '--project', dir, '--file', file], {
+  return spawnSync(process.execPath, [...tsNodeArgs(), PUSH_INDEX, '--project', dir, '--file', file], {
     cwd: AGENT_HUB,
     env: { ...env, HUB_URL: 'http://127.0.0.1:9', HUB_TOKEN: 'test-token' },
     encoding: 'utf8',

@@ -28,12 +28,13 @@ function readDefaultTo(extra: Record<string, unknown>): string | undefined {
 
 // HTTP にそのまま返せる失敗。code と status は app.ts の onError で使う
 export class SettingsError extends Error {
-  constructor(
-    readonly status: 400 | 500,
-    readonly code: string,
-    message: string,
-  ) {
+  readonly status: 400 | 500
+  readonly code: string
+
+  constructor(status: 400 | 500, code: string, message: string) {
     super(message)
+    this.status = status
+    this.code = code
   }
 }
 
@@ -102,7 +103,11 @@ function parseFile(raw: string): { commands: Command[]; extra: Record<string, un
 export class SettingsStore {
   private queue: Promise<unknown> = Promise.resolve()
 
-  constructor(readonly file: string) {}
+  readonly file: string
+
+  constructor(file: string) {
+    this.file = file
+  }
 
   // 毎回読む。ファイルがなければ空の設定
   async read(): Promise<Settings> {

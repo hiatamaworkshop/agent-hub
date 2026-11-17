@@ -31,3 +31,6 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run docs:check
+      # A measurement, not a gate (C173): prints line and branch coverage per file, and writes the table to the job summary.
+      # No threshold fails the build; the step fails only if a test fails in its run.
+      - run: npm run test:coverage

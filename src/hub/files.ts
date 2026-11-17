@@ -14,12 +14,13 @@ const JPEG_QUALITY = 85
 
 // HTTP にそのまま返せる失敗。code と status は app.ts の onError で使う
 export class FileError extends Error {
-  constructor(
-    readonly status: 400 | 404 | 413 | 500,
-    readonly code: string,
-    message: string,
-  ) {
+  readonly status: 400 | 404 | 413 | 500
+  readonly code: string
+
+  constructor(status: 400 | 404 | 413 | 500, code: string, message: string) {
     super(message)
+    this.status = status
+    this.code = code
   }
 }
 

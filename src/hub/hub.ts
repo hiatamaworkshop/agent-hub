@@ -6,12 +6,13 @@ import type { Roles } from './roles.js'
 import type { Store } from './store.js'
 
 export class HubError extends Error {
-  constructor(
-    readonly status: 400 | 404 | 409,
-    readonly code: string,
-    message: string,
-  ) {
+  readonly status: 400 | 404 | 409
+  readonly code: string
+
+  constructor(status: 400 | 404 | 409, code: string, message: string) {
     super(message)
+    this.status = status
+    this.code = code
   }
 }
 
@@ -141,11 +142,10 @@ export class Hub {
   private readonly unreadMax: number
   private readonly readRetentionMs: number
   private readonly language: string | null
+  readonly store: Store
 
-  constructor(
-    readonly store: Store,
-    opts: HubOptions = {},
-  ) {
+  constructor(store: Store, opts: HubOptions = {}) {
+    this.store = store
     this.now = opts.now ?? (() => new Date())
     this.startedAt = this.now().toISOString()
     this.roles = opts.roles ?? null
