@@ -24,10 +24,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C169
-- [ ] C170
 - [ ] C171
-- [ ] C172
 - [ ] C173
 - [ ] C174
 
@@ -698,6 +695,21 @@ In the order they will be taken up. Only items without a status line and blocked
   - Decided: all five candidates, in the order the planning session chose (the user left the order to it): C169 the map from promise to proof (it shows the gaps the others fill), C170 and C171 property tests (the largest gap; the pure function first, where the tool is decided), C172 what to check again after a Claude Code update, C173 coverage, C174 `ui:check` in CI.
   - Corrected while filing: the first record said nothing checks again after a Claude Code update. A start does warn about a newer version (C85); what is missing is what to check and where "last verified" comes from (C172).
   - Read for the record, not run: `package.json`, `.github/workflows/ci.yml`, `tools/dev/roles/reviewer.md`, design.md §1.2 and §3.12, protocol.md §4, the list of test files. A decision only; no code changed and no reviewer read it.
+- [x] C169 A standing map from each promise of the Hub to what proves it (2026-11-17, closed on the user's word without a review)
+  - Decided 2026-11-15 (from C168). Done 2026-11-16 in the planning session, without a team. Commit `0f80afa`; rows added since by C170, C171 and C172.
+  - Changed: docs/proofs.md (D1-D22 for protocol.md §4, S1-S23 for the card states, each with its proof or `none` and what it leaves out), `checkProofs` in `src/docs-check/repo.ts` (a warning for a named file that does not exist) with tests, CLAUDE.md (the map's line; "Updating the docs" says when a row changes), design.md §1.2 (the incidents row points to the map; Status stays Partly) and §3.12.
+  - Checked: `npm test` 757 pass; `docs:check` 0 errors; the 71 quoted test names matched against the test files by a throwaway script. Done-when wording not changed.
+  - Not checked: no reviewer read it; `docs:check` does not read test names, so a renamed test is caught only by reading.
+- [x] C170 Property-based tests for the card state derivation (2026-11-17, closed on the user's word without a review)
+  - Decided 2026-11-15 (from C168). Done 2026-11-17 in the planning session, without a team; `fast-check` 4.10.2 installed by the user. Commit `0e145ec`.
+  - Changed: `src/shared/card-state.property.test.ts` (three properties over the Mailbox shapes the Hub has sent over time), design.md §5 (the tool, and the pattern C171 followed), usage.md "Development" (replaying with `FC_SEED` / `FC_PATH`), docs/proofs.md S2, S3, S18, S19.
+  - Checked: the generator's spread measured with `fc.statistics` and weighted; the derivation broken three ways, each caught by its property only; a replay by seed and path. 1,000 cases per property in `npm test`, once 100,000; no failure, so no finding. `npm test` 763 pass, `ui:check` 212 ok, `docs:check` 0 errors. Done-when wording not changed.
+  - Not checked: no reviewer read it; a backlog with `unread` or `awaitingReply` missing is not generated (no Hub sent one).
+- [x] C172 Say what to check again when Claude Code is newer than the verified version (2026-11-17, closed on the user's word without a review)
+  - Decided 2026-11-15 (from C168). Done 2026-11-16 in the planning session, without a team; the run on 2026-11-17 by the user at the terminal. Commits `7f5ff19`, `457f544` (usage.md caught up), `f2a4dcb` (the run).
+  - Changed: design.md §6.3 (B1-B9: the behaviours delivery depends on, with the step that checks each again, and "Runs of this list"), `src/team/startlog.ts` (`lastVerified` reads the runs, not §6.1 headings; with no run recorded every version warns; the warning points to §6.3) with tests, usage.md "Start warnings", `tools/probe/delivery-report.mjs` (reads the probe log against the list), `tools/probe/README.md`.
+  - Checked: the run of 2026-11-17 on Claude Code 2.1.326 / Windows 11, all nine as recorded (the first record of a notification during a permission wait); the warning is quiet for 2.1.326 and names the run for 2.1.327. `npm test` 764 pass, `docs:check` 0 errors. Done-when wording not changed.
+  - Not checked: no reviewer read it; B9's `SessionStart` with `source: "clear"` did not reach the probe (an http hook), only the `session_id` change; no run on Linux or a Mac.
 - [x] C160 Lift the provisional restriction on `meta` in Channels notifications (2026-11-12, closed after the review)
   - Decided 2026-11-12 in the planning session (the user accepted the recommendation): a list of known keys, not every key. The list is `files` and `item`, the `meta` keys protocol.md §2 defines; `forwardedFrom` / `forwardedSender` are Message fields, not `meta` keys, and already reach Channels as attributes.
   - Changed: `src/shared/format.ts` (`channelMeta` passes `files`, with its element keys as before, and `item`, unconverted; the rest is dropped), `src/shared/meta.test.ts` (a known key, an unknown key, values with `"` `<` `>` `&`), `docs/protocol.md` §2 and §6, `docs/design.md` §6.1ad and §6.2-4, `tools/probe/probe.mjs` and `tools/probe/README.md` §3b (both point at design.md §6.1ad).
@@ -1094,52 +1106,6 @@ Raised 2026-11-10 with C153. After a run, what waits for the human is spread ove
 - Idea: the Items list gets a tier, or a mark, for items whose done-when lines are all checked while the section is still there ("worked, waiting for the close"); the index already has the counts (`conditions.done` / `total`). `team status` (C139) could list the same.
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
 
-### C169. A standing map from each promise of the Hub to what proves it
-
-Decided 2026-11-15 by the user (from C168; the line for what fits is design.md §9-11). Proofs are attached to changes today: an item's done-when and its closed record. After a close, nothing lists "this guarantee → the test or §6 entry that shows it", so a guarantee with no proof does not show.
-- The promises are already written: the delivery guarantees (protocol.md §4) and the card states (design.md §3.15 "Card states"). The map names, for each, the proof that exists now: a test (file and test name), a `ui:check` scene, or a §6 entry with the version it was observed with.
-- A row with no proof says `none`. Nothing is invented to fill it; the `none` rows are the material the later items (C170, C171) and the planning session work from.
-- Where the map lives (a section of protocol.md, or its own file under `docs/`) is the implementer's choice; its place goes into CLAUDE.md's document map.
-- The §1.2 row "Incidents in §6 become new verification angles" (Partly) gets a home here: an incident adds or corrects a row.
-- Worked 2026-11-16 (the planning session, no team; no review yet, so the close waits). The map is its own file, [docs/proofs.md](proofs.md): 22 rows for protocol.md §4 (D1-D22, plus a paragraph on the takeover promises of §2 / §3 the rows lean on) and 23 for the card states (S1-S23), each with a "Leaves out" column.
-  - Rows with no proof (`none`): D2 (idempotent by `id`; the shim's recent `id`s), D7 (that `received` moves **only** by the three paths), D16 (the unconfirmed count on the card), D22 (the shim sends no heartbeats), S22 (the count per state above the sidebar), and "a Mailbox never has two live Attachments under any order". Partial ones name the gap, e.g. D20 (lease extension by ack and at the opening of the stream), D11 (`mailbox.acked` after a conversation Message), S1 / S11 (no `ui:check` scene expects `Offline` or `Working?`).
-  - How the rows were checked: the cited tests of `mailbox.test.ts`, `shim.test.ts`, `card-state.test.ts`, and the cited ones of `store.test.ts`, `retention.test.ts` and `app.test.ts` were read against the wording; the 71 quoted test names were matched against the test files by a throwaway script (it is not part of `docs:check`). `ui:check` scenes are cited by the fixture Mailbox and the card text the scene expects, read from the scene list of `tools/dev/ui-check.mjs`; `ui:check` itself was not run for this item (no code of the page or the derivation changed).
-  - The check: `checkProofs` in `src/docs-check/repo.ts` warns for a file named in backticks under `src/`, `tools/` or `public/` that does not exist; tests in `src/docs-check/repo.test.ts` ("checkProofs (C169)"). It does not read test names. Not a convention other projects follow (it runs on this repository's own docs only), so no line in conventions-log.md.
-  - §1.2's Status stays "Partly": the incident now has a place to go and an instruction that says so, and nothing checks that a new §6 entry changed a row.
-  - `npm test`: 757 pass, 0 fail. `npm run docs:check`: 33 items, 0 errors, 1 warning (this section's own "all done-when conditions are checked", expected until the close).
-
-#### Done when
-- [x] A table lists every guarantee of protocol.md §4 and every card state of design.md §3.15, each with its proof (test file and test name, `ui:check` scene, or design.md §6 entry) or `none`.
-- [x] No row names a proof that does not show the guarantee as worded; a partial proof says what it leaves out.
-- [x] CLAUDE.md's document map has a line for the map, and "Updating the docs" says when a row is added or changed (a change to a guarantee, a new §6 incident).
-- [x] `npm run docs:check` warns when a row names a test file that does not exist (a warning, not an error), with a test for the check.
-- [x] design.md §1.2's row "Incidents in §6 become new verification angles" points to the map, with its Status re-read.
-- [x] `npm test` and `npm run docs:check` pass (0 errors).
-
-### C170. Property-based tests for the card state derivation
-
-Decided 2026-11-15 by the user (from C168). `src/shared/card-state.js` is a pure function from a Mailbox as the Hub describes it, plus the caller's context, to one state. `card-state.test.ts` and `ui:check` check it by examples and scenes; no test tries inputs nobody thought of.
-- The first of the two property-test items, taken first because the function is pure and small: the tool and the pattern are decided here, and C171 follows them.
-- The tool. Default: `fast-check` as a devDependency (generators and shrinking; it runs inside `node --test`). If the implementer finds a reason against it, the alternative is hand-written generators on a seeded PRNG. Either way the reason is written in design.md §5 first (CLAUDE.md "Technology stack").
-- A failing case must be reproducible: the seed (or the shrunk input) is printed, and a found failure becomes an example test.
-- A TLA+ model was judged the heavier form of the same check (design.md §9-11); not part of this item.
-- Worked 2026-11-17 (the planning session, no team; no review yet). `fast-check` 4.10.2, installed by the user. The tests are `src/shared/card-state.property.test.ts`; the tool and the pattern C171 follows are in design.md §5.
-  - **What "arbitrary" covers** (the file's header): the shapes the Hub has sent over time, read from `git log -S` of `src/hub/store.ts`. No backlog (before 2026-10-19), a backlog without `outgoing` / `lastHanded` (before 2026-10-22), and the current one with each later field missing or present (per-target counts, `recipients`, `running`, `seqs`, `open`, the Hub's start time). Not generated: a backlog with `unread` or `awaitingReply` missing (no Hub sent one; `stateOf` would throw on it), and times that are not ISO strings.
-  - The generator was weighted after measuring it with `fc.statistics` over 20,000 cases: unweighted, 47% gave `null` (older Hubs) and Idle and Stopped came up in 0.2% each. Weighted: Needs you (request) 19%, `null` 14%, Working 10%, Offline 10%, Idle 9%, Stopped (Hub restarted) 2.4%, Waiting on others 1.8%, Stopped 1.6%, Paused 1%, Working in the background 1.6%; an Event of an earlier Attachment in 14% of cases. Rarest: Stopped with an unconnected party, 0.06%.
-  - **The properties can fail**: the derivation was broken one way per property and restored after each (`git checkout` of `card-state.js`). Counting a stale question as waiting failed only the staleEvent property; letting a running background task hide Needs you failed only the Needs-you property; a key outside §3.15 failed only the first. Each failure printed `{ seed, path }`, and `FC_SEED` / `FC_PATH` with `--test-name-pattern` replayed the M1 case as the first case run.
-  - **Cases run**: 1,000 per property in `npm test` (3,000 in all, under a second). Once, 100,000 per property (300,000, 30 seconds). No failure on the unchanged code, so no example test was added and there is no finding to record.
-  - docs/proofs.md: S2, S3, S18 and S19 now name the properties.
-  - `npm test`: 763 pass, 0 fail. `npm run ui:check`: 212 ok, 0 NG (the derivation itself did not change). `npm run docs:check`: 0 errors; warnings for C169 and C170, whose done-when lines are all checked (expected until the close).
-
-#### Done when
-- [x] design.md §5 says which tool the property tests use and why.
-- [x] A property test generates arbitrary Mailboxes and contexts (missing fields included, as an older Hub would send) and checks that `stateOf` and `humanTurnOf` never throw and that `stateOf` returns `null` or one of the keys design.md §3.15 names.
-- [x] A property test checks that a question or permission Event of the current Attachment that has not been answered always gives Needs you, whatever else the Mailbox holds (waits are not hidden).
-- [x] A property test checks that an Event of an earlier Attachment (`staleEvent`) is never counted as waiting.
-- [x] A failing run prints what is needed to run the same case again, and README or usage.md "Development" says how.
-- [x] Each failure the properties found is fixed and kept as an example test, or recorded in the section's body as a finding for the planning session; the body says how many cases were run.
-- [x] `npm test`, `npm run ui:check` and `npm run docs:check` pass (0 errors).
-
 ### C171. Property-based tests for delivery and Attachments
 
 Decided 2026-11-15 by the user (from C168). The Hub's core promise is delivery (protocol.md §4), and its state is small: per Mailbox a `cursor`, a `received`, the unread range, and at most one Attachment with a lease. `src/hub/mailbox.test.ts` checks the paths one scenario at a time; no test runs arbitrary interleavings of post, attach, ack, `inbox`, detach, takeover and lease expiry.
@@ -1164,28 +1130,6 @@ Decided 2026-11-15 by the user (from C168). The Hub's core promise is delivery (
 - [x] It checks that `received` advances only by the three paths of protocol.md §4, and that an `inbox` ack does not jump over handed, unconfirmed Messages.
 - [x] It checks that a Mailbox never has two live Attachments, that a takeover's successor has the subscriptions and the unread of the one it cut off, and that a lease expiry detaches without losing unread.
 - [x] Each failure the properties found is fixed and kept as an example test, or recorded in the section's body as a finding for the planning session; the body says how many sequences were run and how long the test takes.
-- [x] `npm test` and `npm run docs:check` pass (0 errors).
-
-### C172. Say what to check again when Claude Code is newer than the verified version
-
-Decided 2026-11-15 by the user (from C168). A start already warns when `claude --version` is newer than the last verified version, and records it in `logs/start-warnings.jsonl` (C85, C111; `src/team/startlog.ts`). Two things are missing.
-- Nothing says what to do about the warning. The behaviours delivery depends on are spread over design.md §6.1 (a channel notification wakes an idle session; `meta` reaches the model escaped; the hook payload's `session_id` and `cwd`; `X-Hub-Mailbox` on hook requests; a notification during a question or permission wait), and `tools/probe/README.md` has steps for some of them.
-- "Last verified" is the highest version named in any §6.1 heading. An entry that observed one unrelated behaviour on a newer version moves it for all of them, so the warning goes quiet without the delivery behaviours having been looked at.
-- The check itself needs a real `claude` session and a human at the terminal; it is not automated here (Channels is a research preview behind a development flag, §6.1c).
-- Worked 2026-11-16 (the planning session, no team; no review yet). The run itself was done on 2026-11-17 by the user at the terminal (below).
-  - The list is design.md §6.3: nine behaviours (B1-B9), each with what depends on it, the §6.1 entry and version that recorded it, and the step that checks it again (the steps of `tools/probe/README.md`, plus two hand checks written out: a notification during a permission wait, and `/clear`). A notification during a **permission** wait has no earlier record (§6.1s records the wait's Events only); the list says so.
-  - The record is the table "Runs of this list" in the same section (`| date | version | OS | result |`). `lastVerified` in `src/team/startlog.ts` reads the highest version among its rows, and nothing else in design.md.
-  - **A default taken, for the user to confirm**: with no run recorded, a start warns for any Claude Code version (`… has no verified version to compare with: design.md §6.3 records no run …`), loud on the first start with a version and a plain line after it, as before (C111). The other choice was to stay silent until the first run, which is the fault this item is about. So from this change until the first row is added, every start has the warning.
-  - The start record's fields keep their names: `lastVerified` is now the version of the last run and `verifiedSection` is `6.3` (usage.md says how lines from before read).
-  - `npm test`: 760 pass, 0 fail. `npm run docs:check`: 0 errors.
-  - **The run** (2026-11-17, Claude Code 2.1.326 / Windows 11): all nine behaviours as recorded, none changed; recorded as the first row of "Runs of this list" with the details under it (design.md §6.3). New: the first record of a notification during a permission wait (B7). B9's `SessionStart` with `source: "clear"` did not reach the probe (it registers `SessionStart` as an http hook); the `session_id` change itself was seen. `tools/probe/delivery-report.mjs` was added to read the log against the list (`--mark` before, a report after), and checked against the probe log of 2026-10-16 first, which it read as §6.1c recorded. The start warning now reads 2.1.326 from the run (`checkClaudeVersion`).
-
-#### Done when
-- [x] One list names the Claude Code behaviours the Hub's delivery depends on, each with the §6 entry that verified it and the step that checks it again (`tools/probe/README.md`, or a hand check written out).
-- [x] The version warning's text points to that list.
-- [x] The last verified version is taken from a record of the list having been run (version, date, OS), not from the highest version in any §6.1 heading; `src/team/startlog.test.ts` covers the new source and a §6.1 entry with a newer version that does not move it.
-- [x] The list was run once with the Claude Code version current at the time, and the result is recorded (design.md §6); a behaviour that changed is recorded as changed, not fixed in this item.
-- [x] usage.md "Start warnings" says what to do when the warning shows.
 - [x] `npm test` and `npm run docs:check` pass (0 errors).
 
 ### C173. Measure what the tests cover
