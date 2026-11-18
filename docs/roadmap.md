@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C175
 - [ ] C176
 
 (Items with a status line are listed under "Items".)
@@ -728,6 +727,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: `.github/workflows/ci.yml` (`npm run ui:check` last in the `check` job, so on `windows-latest` and `ubuntu-latest`; `UI_CHECK_NO_SANDBOX=1` on Linux only), `tools/dev/ui-check.mjs` (Chrome from `CHROME`, else the Windows path, else `google-chrome` on the PATH; `--no-sandbox` on `UI_CHECK_NO_SANDBOX=1`), README "Status", CLAUDE.md, usage.md "Development".
   - Checked: the first run on GitHub (https://github.com/hiatamaworkshop/agent-hub/actions/runs/44093861276) green on both runners, 212 ok, 0 NG each, the same as locally on Windows 11; no scene failed only on a runner. The step takes about 4.5 minutes; a job about 5.5 instead of 1.5. `npm test` 764 pass, `docs:check` 0 errors. Done-when wording not changed.
   - Not checked: no reviewer read it; whether the Linux runner needs `--no-sandbox` was not tried without it; `ubuntu-latest` moving to Ubuntu 26 (the runner's annotation) is left to a later run.
+- [x] C175 Abandoning unread at attach confirms Messages handed earlier and never confirmed (2026-11-18, closed on the user's word without a review)
+  - Found 2026-11-17 by C171's property test. Decided 2026-11-18 by the user, option a of three: write it down as a limit, no code change (b would change the promise, c the Store and the log format). Done 2026-11-18 in the planning session, without a team. Commit `d387f25`.
+  - Changed: protocol.md §4 (the limit, next to the one for a session started without the channel), docs/proofs.md D10, the comment in `src/hub/delivery.property.test.ts` (the only edit under `src/`).
+  - Checked: `npm run typecheck` passes, `npm test` 764 pass, `docs:check` 0 errors. Done-when wording not changed.
+  - Not checked: no reviewer read it; the behaviour is as C171 found it, and how often it happens in a real team is not measured.
 - [x] C160 Lift the provisional restriction on `meta` in Channels notifications (2026-11-12, closed after the review)
   - Decided 2026-11-12 in the planning session (the user accepted the recommendation): a list of known keys, not every key. The list is `files` and `item`, the `meta` keys protocol.md §2 defines; `forwardedFrom` / `forwardedSender` are Message fields, not `meta` keys, and already reach Channels as attributes.
   - Changed: `src/shared/format.ts` (`channelMeta` passes `files`, with its element keys as before, and `item`, unconverted; the rest is dropped), `src/shared/meta.test.ts` (a known key, an unknown key, values with `"` `<` `>` `&`), `docs/protocol.md` §2 and §6, `docs/design.md` §6.1ad and §6.2-4, `tools/probe/probe.mjs` and `tools/probe/README.md` §3b (both point at design.md §6.1ad).
@@ -1123,20 +1127,6 @@ Status: held(after C153; decide once a real run shows what is hard to find)
 Raised 2026-11-10 with C153. After a run, what waits for the human is spread over the last report (a Message, deleted after the retention period), the items' sections (the defaults taken, the items left open) and `git log` (unpushed commits). The ledger is the place that lasts (design.md §3.16).
 - Idea: the Items list gets a tier, or a mark, for items whose done-when lines are all checked while the section is still there ("worked, waiting for the close"); the index already has the counts (`conditions.done` / `total`). `team status` (C139) could list the same.
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
-
-### C175. Abandoning unread at attach confirms Messages handed earlier and never confirmed
-Found 2026-11-17 by C171's property test (`src/hub/delivery.property.test.ts`; filed by the user's word). An attach that abandons unread (the inflow limit, `maxUnread` / `maxAgeMs`) moves `received` to the last abandoned seq (`trimUnread` in `src/hub/hub.ts`). If a Message was handed on the channel path before that and never confirmed, it is counted as confirmed too: it leaves the unconfirmed count on the card, and `inbox` with `unconfirmed=true` no longer returns it, so a Message dropped by a session started without the channel (design.md §6.1k) disappears from view.
-- Smallest case: #1 to `a`; `a` attaches and acks #1 on the channel path (handed, unconfirmed); #2 and #3 to `a`; `a` attaches again with `maxUnread: 1`; #2 is abandoned and `received` becomes 2, past #1.
-- protocol.md §4 says abandoned Messages "were never handed over, so `received` advances together with `cursor` (they do not count as unconfirmed)". It does not say that Messages handed earlier stop counting. The property test follows the Hub with a comment naming this item; docs/proofs.md D10 records the gap.
-- Why it is not a one-line fix: `received` is one high-water mark per Mailbox, so it cannot pass the abandoned Messages and stay below #1 at once.
-- Decided 2026-11-18 by the user, from the options the planning session set out: **a**. Write it down as a limit in protocol.md §4, next to the existing limit for a session started without the channel; no code change. b (not moving `received` while a handed, unconfirmed Message lies below the abandoned range) changes the promise, and c (a second mark, or a list of abandoned ranges) changes the Store and the log format (design.md §3.14); both cost more than a case that needs a dropped notification and then an attach that abandons.
-- Done in the planning session on 2026-11-18, without a team: protocol.md §4 has the limit, and docs/proofs.md D10 says so. The close waits for the user's word.
-
-#### Done when
-- [x] protocol.md §4 says that an attach which abandons unread also counts earlier handed, unconfirmed Messages as confirmed, and that it is not fixed on purpose (next to the limit for a session started without the channel).
-- [x] docs/proofs.md D10 points to that limit instead of to this item as proposed.
-- [x] The Hub's behaviour is unchanged: the property test in `src/hub/delivery.property.test.ts` still follows the Hub, and its comment (the only edit under `src/`) points to the limit in protocol.md §4.
-- [x] `npm run docs:check` passes.
 
 ### C176. Give the three delivery and card promises that have no proof one (D2, D16, D22)
 Raised 2026-11-18 in the planning session from docs/proofs.md, whose rows read `none` for these three; filed as decided on the user's word (they agreed to bundle them as one item). They are small and independent of each other, and each leaves one `none` in the map.
