@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C176
 
 (Items with a status line are listed under "Items".)
 
@@ -727,6 +726,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: `.github/workflows/ci.yml` (`npm run ui:check` last in the `check` job, so on `windows-latest` and `ubuntu-latest`; `UI_CHECK_NO_SANDBOX=1` on Linux only), `tools/dev/ui-check.mjs` (Chrome from `CHROME`, else the Windows path, else `google-chrome` on the PATH; `--no-sandbox` on `UI_CHECK_NO_SANDBOX=1`), README "Status", CLAUDE.md, usage.md "Development".
   - Checked: the first run on GitHub (https://github.com/hiatamaworkshop/agent-hub/actions/runs/44093861276) green on both runners, 212 ok, 0 NG each, the same as locally on Windows 11; no scene failed only on a runner. The step takes about 4.5 minutes; a job about 5.5 instead of 1.5. `npm test` 764 pass, `docs:check` 0 errors. Done-when wording not changed.
   - Not checked: no reviewer read it; whether the Linux runner needs `--no-sandbox` was not tried without it; `ubuntu-latest` moving to Ubuntu 26 (the runner's annotation) is left to a later run.
+- [x] C176 Give the three delivery and card promises that have no proof one (D2, D16, D22) (2026-11-18, closed on the user's word without a review)
+  - Filed and done 2026-11-18 in the planning session, without a team. Commit `70fe5af`. No finding: all three promises held.
+  - Changed: `src/shim/shim.test.ts` (D2: the first ack is lost, the re-sent Message is not handed again, a new id is; D22: a 200 ms lease held for five leases with no heartbeat request), `tools/dev/ui-check.mjs` (D16: "Stuck? 2" on `unc.handed`, no chip on `unc.clear`), docs/proofs.md D2, D16, D22.
+  - Done-when line 2 changed while working, by the planning session: "timers mocked" became "a short lease through the Hub's `leaseMs`", since the shim test talks HTTP to a real Hub.
+  - Checked: each proof caught a deliberate break (the shim's `seen` check removed, the Hub's lease renewal while streaming removed, unconfirmed left out of `Stuck?`), restored after each. `npm run typecheck` passes, `npm test` 766 pass, `ui:check` 213 ok, `docs:check` 0 errors.
+  - Not checked: no reviewer read it; the `DEDUPE_SIZE` bound, a shim restart, and the real 2-minute lease are outside the tests (proofs.md "Leaves out").
 - [x] C175 Abandoning unread at attach confirms Messages handed earlier and never confirmed (2026-11-18, closed on the user's word without a review)
   - Found 2026-11-17 by C171's property test. Decided 2026-11-18 by the user, option a of three: write it down as a limit, no code change (b would change the promise, c the Store and the log format). Done 2026-11-18 in the planning session, without a team. Commit `d387f25`.
   - Changed: protocol.md §4 (the limit, next to the one for a session started without the channel), docs/proofs.md D10, the comment in `src/hub/delivery.property.test.ts` (the only edit under `src/`).
@@ -1127,22 +1132,3 @@ Status: held(after C153; decide once a real run shows what is hard to find)
 Raised 2026-11-10 with C153. After a run, what waits for the human is spread over the last report (a Message, deleted after the retention period), the items' sections (the defaults taken, the items left open) and `git log` (unpushed commits). The ledger is the place that lasts (design.md §3.16).
 - Idea: the Items list gets a tier, or a mark, for items whose done-when lines are all checked while the section is still there ("worked, waiting for the close"); the index already has the counts (`conditions.done` / `total`). `team status` (C139) could list the same.
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
-
-### C176. Give the three delivery and card promises that have no proof one (D2, D16, D22)
-Raised 2026-11-18 in the planning session from docs/proofs.md, whose rows read `none` for these three; filed as decided on the user's word (they agreed to bundle them as one item). They are small and independent of each other, and each leaves one `none` in the map.
-- D2 (protocol.md §4, "The receiver processes idempotently by `id`"): the shim keeps recent `id`s in memory (`seen` in `src/shim/hub-client.ts`) and drops a repeat; no test hands it the same `id` twice.
-- D22 (protocol.md §4, lease): the shim keeps the stream open, so the lease is extended by the Hub and the shim sends no `POST /attachments/:id/heartbeat`; no test holds a shim attached past the lease.
-- D16 (design.md §3.15): the count of handed, unconfirmed Messages appears on the card; `ui:check` has scenes for the `Stuck?` badge (unread at an unconnected Mailbox), not for this count.
-- Found, not changed: the proofs rows say what each proof would leave out; read them first. A test that fails here is a finding about the code, not a reason to weaken the test: file it and stop (C175 is the model).
-- Done 2026-11-18 in the planning session, without a team. No finding: all three promises held.
-  - D2 and D22 are in `src/shim/shim.test.ts`, against a real Hub behind a wrapper that can drop acks and records request paths. D2 makes the duplicate the way it happens: the first ack is lost, the shim re-attaches, the Hub sends the Message again from its cursor. D22 runs a 200 ms lease for five leases.
-  - Done-when line 2 changed while working (by the planning session, which writes the wording): "timers mocked, as in `src/hub/delivery.property.test.ts`" became "a short lease". The shim test talks HTTP to a real Hub, and the Hub's `leaseMs` option shortens the lease without mocking the timers the HTTP layer also uses.
-  - Each proof was checked by breaking the code once: the shim handing a repeated `id` again (D2 fails), the Hub not renewing the lease while a stream is open (D22 fails), the page leaving unconfirmed out of `Stuck?` (only the D16 scene fails). Restored after each.
-  - Checked: `npm run typecheck` passes, `npm test` 766 pass, `ui:check` 213 ok, `docs:check` 0 errors.
-
-#### Done when
-- [x] A test in `src/shim/` hands the shim the same Message `id` twice on its stream and shows it is forwarded once; a different `id` still goes through.
-- [x] A test holds a shim's stream open past the Attachment lease (a short lease through the Hub's `leaseMs`) and shows the Attachment still live and no heartbeat request sent.
-- [x] A `ui:check` scene shows the unconfirmed count on the card of a Mailbox that has handed, unconfirmed Messages, and no count on one that has none (the card text the scene expects is named in the scene).
-- [x] docs/proofs.md D2, D16 and D22 name those tests and the scene, and say what each still leaves out; none of the three reads `none`.
-- [x] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
