@@ -455,6 +455,7 @@ But written rules eventually fall apart without something that checks whether th
 | A convention changed (a format or a practice) | — | A line in docs/conventions-log.md, in the same commit as the change, by whoever makes it | This section, "When the conventions change" |
 | Something was decided | — | "Decision (date)" and the reason under the matching item of §9 | This section, "How to write §9" |
 | A guarantee or a card state changed, a test that proves one was added, renamed or removed, or §6 got an incident | The row in docs/proofs.md | The row, with the proof that exists now or `none` | docs/proofs.md, its top; CLAUDE.md, "Updating the docs" |
+| A change is about to be reported or committed, the UI changed, or Claude Code was updated | The table in docs/usage.md, "When to run which check" | Whatever a check there shows, and for a Claude Code update the row in §6.3 | docs/usage.md, that section |
 | Drift between docs and code was found by someone, not by `docs:check` | — | A row in the drift record, by the planning session | This section, "Drift layer 1 missed" |
 | A break (commit, item done) | — | The checkboxes and facts in the item; the close after the review; what was learned to engram / memory | roadmap.md, the rules at its top (the engram and memory part: the global CLAUDE.md [engram] block and the clear-timing skill, outside the repository) |
 

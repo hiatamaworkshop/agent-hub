@@ -441,6 +441,22 @@ npm run hub:dev   # watches for changes and restarts the Hub
 npm run ui:check  # checks the card states scene by scene with a Hub on another port and headless Chrome (needs Chrome; set its location with CHROME, else the usual path on Windows or `google-chrome` on the PATH; `UI_CHECK_NO_SANDBOX=1` adds `--no-sandbox`, which CI sets on Linux)
 ```
 
+### When to run which check
+
+What each command is for is above; this is the moment to reach for it. CI runs `typecheck`, `npm test`, `docs:check`, `test:coverage` and `ui:check` on every push and pull request to `main` (Windows and Linux), so a check skipped here shows up there, later and on a shared branch.
+
+| Moment | Run or read | What it tells you |
+|---|---|---|
+| While changing code under `src/` | `npm test`; one file or test: `node --import tsx --test --test-name-pattern="<part of the name>" <file>` | The unit and integration tests, and the property tests of the card states and of delivery and Attachments |
+| Before you report a change as done, and before a commit | `npm run typecheck`, `npm test`, `npm run docs:check` | The three that decide whether CI passes. `docs:check` also catches the docs falling behind the code: a route, a `kind`, an MCP tool or a `/stream` event name that is not in protocol.md, a heading missing from the CLAUDE.md map |
+| You changed `public/index.html` or `src/shared/card-state.js` | `npm run ui:check` as well; add a scene for a new behaviour | The page against a real Hub in headless Chrome. The card state tests do not load the page, and the page has no unit tests |
+| A property test failed | Replay the printed `{ seed, path }` (see `npm test` above) | Which input broke it, without waiting for the random search to find it again |
+| You changed a delivery guarantee (protocol.md §4) or a card state (design.md §3.15), or added, renamed or removed a test that proves one | Change its row in [docs/proofs.md](proofs.md) in the same commit | `docs:check` warns only when a file named there is gone; the test names and what they assert are read by a person |
+| Choosing what to test next | The `none` rows and the "Leaves out" column of [docs/proofs.md](proofs.md); then `npm run test:coverage` | Which promises have no proof, and which files under `src/hub` and `src/shared` have the thinnest branch coverage. Coverage is a measurement with no threshold; it shows where to look, not what is proven |
+| You rewrote the roadmap ledger | `npm run docs:check -- <ledger>`, then `npm run docs:index -- --project <folder>` | The ledger parses; the Hub's Items match it. Only team starts and the commit hook send the index, so an uncommitted rewrite is not on the cards until you send it |
+| The start prints a version warning, or after updating Claude Code | The steps under "When the version warning shows" (design.md §6.3, `tools/probe/README.md`) | Whether the behaviours delivery depends on still hold on that version. It needs a real `claude` session and you at the keyboard, so it is not part of CI or `npm test` |
+| After you push | The CI run | Those five, on both systems. A `ui:check` scene that fails only on a runner is a finding to record, not a scene to skip |
+
 - **Checking the UI with headless Chrome**: the fixed scenes are in `npm run ui:check` (`tools/dev/ui-check.mjs`). Run it when you change the UI, and add new scenes there. Points for doing it by hand: the UI keeps `/stream` (SSE) open, so `chrome --headless=new --dump-dom` never returns (even with `--virtual-time-budget`). Instead:
   1. Start a Hub separate from the one in use, with `HUB_PORT=7795` and `HUB_DATA_DIR=<a temporary folder>`.
   2. Start Chrome with `--remote-debugging-port` and a temporary `--user-data-dir`, then over CDP `Page.navigate` (`/?token=…`) → wait a few seconds → read the DOM with `Runtime.evaluate` (e.g. `[...document.querySelectorAll('#mailboxes .mb')].map(b=>b.innerText)`; Node's built-in `WebSocket` is enough).
