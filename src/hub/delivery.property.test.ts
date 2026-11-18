@@ -128,10 +128,10 @@ function run(t: TestContext, ops: Op[]): number {
           if (r.skipped > 0) {
             mayConfirm = o.mb
             assert.equal(mb(o.mb).received, mb(o.mb).cursor, `${where}: what is abandoned at attach is not unconfirmed (received moves with cursor)`)
-            // Found by this test (2026-11-17), filed as roadmap C175 (proposed): received moves to the last abandoned seq, so a
-            // Message handed on the channel path before it and never confirmed is counted as confirmed too, and inbox with
-            // unconfirmed=true no longer returns it. protocol.md §4 does not say so. The model follows the Hub here, so the
-            // other invariants are still checked; remove these lines if C175 changes the Hub
+            // Found by this test (2026-11-17), kept as a limit (roadmap C175, protocol.md §4 "abandoned at attach"): received
+            // moves to the last abandoned seq, so a Message handed on the channel path before it and never confirmed is counted
+            // as confirmed too, and inbox with unconfirmed=true no longer returns it. The model follows the Hub here, so the
+            // other invariants are still checked; remove these lines if the Hub stops doing it
             for (const s of m.handed.get(o.mb)!) if (s <= mb(o.mb).received) m.handed.get(o.mb)!.delete(s)
           }
           m.lease.set(o.mb, now + LEASE_MS)

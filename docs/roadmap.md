@@ -24,6 +24,9 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C175
+- [ ] C176
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -1122,14 +1125,29 @@ Raised 2026-11-10 with C153. After a run, what waits for the human is spread ove
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
 
 ### C175. Abandoning unread at attach confirms Messages handed earlier and never confirmed
-Status: proposed
-
 Found 2026-11-17 by C171's property test (`src/hub/delivery.property.test.ts`; filed by the user's word). An attach that abandons unread (the inflow limit, `maxUnread` / `maxAgeMs`) moves `received` to the last abandoned seq (`trimUnread` in `src/hub/hub.ts`). If a Message was handed on the channel path before that and never confirmed, it is counted as confirmed too: it leaves the unconfirmed count on the card, and `inbox` with `unconfirmed=true` no longer returns it, so a Message dropped by a session started without the channel (design.md §6.1k) disappears from view.
 - Smallest case: #1 to `a`; `a` attaches and acks #1 on the channel path (handed, unconfirmed); #2 and #3 to `a`; `a` attaches again with `maxUnread: 1`; #2 is abandoned and `received` becomes 2, past #1.
 - protocol.md §4 says abandoned Messages "were never handed over, so `received` advances together with `cursor` (they do not count as unconfirmed)". It does not say that Messages handed earlier stop counting. The property test follows the Hub with a comment naming this item; docs/proofs.md D10 records the gap.
 - Why it is not a one-line fix: `received` is one high-water mark per Mailbox, so it cannot pass the abandoned Messages and stay below #1 at once.
-- Options, for the human to choose:
-  - a. Write it down as a limit in protocol.md §4, next to the existing limit for a session started without the channel. No code change.
-  - b. Do not move `received` when abandoning if a handed, unconfirmed Message lies below the abandoned range (the same rule as the `inbox` ack). The abandoned ones would then read as unconfirmed until the next confirmation, which the current promise rules out, so the promise changes too.
-  - c. Keep a second mark, or a list of abandoned ranges, so unconfirmed is "handed and not confirmed" exactly. More state in the Store, and a format change of the log (design.md §3.14).
-- How often it matters: it needs a dropped channel notification (a session started without the channel) and then an attach that abandons, so it is rare in practice; whether a/b/c is worth it is the question.
+- Decided 2026-11-18 by the user, from the options the planning session set out: **a**. Write it down as a limit in protocol.md §4, next to the existing limit for a session started without the channel; no code change. b (not moving `received` while a handed, unconfirmed Message lies below the abandoned range) changes the promise, and c (a second mark, or a list of abandoned ranges) changes the Store and the log format (design.md §3.14); both cost more than a case that needs a dropped notification and then an attach that abandons.
+- Done in the planning session on 2026-11-18, without a team: protocol.md §4 has the limit, and docs/proofs.md D10 says so. The close waits for the user's word.
+
+#### Done when
+- [x] protocol.md §4 says that an attach which abandons unread also counts earlier handed, unconfirmed Messages as confirmed, and that it is not fixed on purpose (next to the limit for a session started without the channel).
+- [x] docs/proofs.md D10 points to that limit instead of to this item as proposed.
+- [x] The Hub's behaviour is unchanged: the property test in `src/hub/delivery.property.test.ts` still follows the Hub, and its comment (the only edit under `src/`) points to the limit in protocol.md §4.
+- [x] `npm run docs:check` passes.
+
+### C176. Give the three delivery and card promises that have no proof one (D2, D16, D22)
+Raised 2026-11-18 in the planning session from docs/proofs.md, whose rows read `none` for these three; filed as decided on the user's word (they agreed to bundle them as one item). They are small and independent of each other, and each leaves one `none` in the map.
+- D2 (protocol.md §4, "The receiver processes idempotently by `id`"): the shim keeps recent `id`s in memory (`seen` in `src/shim/hub-client.ts`) and drops a repeat; no test hands it the same `id` twice.
+- D22 (protocol.md §4, lease): the shim keeps the stream open, so the lease is extended by the Hub and the shim sends no `POST /attachments/:id/heartbeat`; no test holds a shim attached past the lease.
+- D16 (design.md §3.15): the count of handed, unconfirmed Messages appears on the card; `ui:check` has scenes for the `Stuck?` badge (unread at an unconnected Mailbox), not for this count.
+- Found, not changed: the proofs rows say what each proof would leave out; read them first. A test that fails here is a finding about the code, not a reason to weaken the test: file it and stop (C175 is the model).
+
+#### Done when
+- [ ] A test in `src/shim/` hands the shim the same Message `id` twice on its stream and shows it is forwarded once; a different `id` still goes through.
+- [ ] A test holds a shim's stream open past the Attachment lease (timers mocked, as in `src/hub/delivery.property.test.ts`) and shows the Attachment still live and no heartbeat request sent.
+- [ ] A `ui:check` scene shows the unconfirmed count on the card of a Mailbox that has handed, unconfirmed Messages, and no count on one that has none (the card text the scene expects is named in the scene).
+- [ ] docs/proofs.md D2, D16 and D22 name those tests and the scene, and say what each still leaves out; none of the three reads `none`.
+- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
