@@ -1134,10 +1134,15 @@ Raised 2026-11-18 in the planning session from docs/proofs.md, whose rows read `
 - D22 (protocol.md §4, lease): the shim keeps the stream open, so the lease is extended by the Hub and the shim sends no `POST /attachments/:id/heartbeat`; no test holds a shim attached past the lease.
 - D16 (design.md §3.15): the count of handed, unconfirmed Messages appears on the card; `ui:check` has scenes for the `Stuck?` badge (unread at an unconnected Mailbox), not for this count.
 - Found, not changed: the proofs rows say what each proof would leave out; read them first. A test that fails here is a finding about the code, not a reason to weaken the test: file it and stop (C175 is the model).
+- Done 2026-11-18 in the planning session, without a team. No finding: all three promises held.
+  - D2 and D22 are in `src/shim/shim.test.ts`, against a real Hub behind a wrapper that can drop acks and records request paths. D2 makes the duplicate the way it happens: the first ack is lost, the shim re-attaches, the Hub sends the Message again from its cursor. D22 runs a 200 ms lease for five leases.
+  - Done-when line 2 changed while working (by the planning session, which writes the wording): "timers mocked, as in `src/hub/delivery.property.test.ts`" became "a short lease". The shim test talks HTTP to a real Hub, and the Hub's `leaseMs` option shortens the lease without mocking the timers the HTTP layer also uses.
+  - Each proof was checked by breaking the code once: the shim handing a repeated `id` again (D2 fails), the Hub not renewing the lease while a stream is open (D22 fails), the page leaving unconfirmed out of `Stuck?` (only the D16 scene fails). Restored after each.
+  - Checked: `npm run typecheck` passes, `npm test` 766 pass, `ui:check` 213 ok, `docs:check` 0 errors.
 
 #### Done when
-- [ ] A test in `src/shim/` hands the shim the same Message `id` twice on its stream and shows it is forwarded once; a different `id` still goes through.
-- [ ] A test holds a shim's stream open past the Attachment lease (timers mocked, as in `src/hub/delivery.property.test.ts`) and shows the Attachment still live and no heartbeat request sent.
-- [ ] A `ui:check` scene shows the unconfirmed count on the card of a Mailbox that has handed, unconfirmed Messages, and no count on one that has none (the card text the scene expects is named in the scene).
-- [ ] docs/proofs.md D2, D16 and D22 name those tests and the scene, and say what each still leaves out; none of the three reads `none`.
-- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass.
+- [x] A test in `src/shim/` hands the shim the same Message `id` twice on its stream and shows it is forwarded once; a different `id` still goes through.
+- [x] A test holds a shim's stream open past the Attachment lease (a short lease through the Hub's `leaseMs`) and shows the Attachment still live and no heartbeat request sent.
+- [x] A `ui:check` scene shows the unconfirmed count on the card of a Mailbox that has handed, unconfirmed Messages, and no count on one that has none (the card text the scene expects is named in the scene).
+- [x] docs/proofs.md D2, D16 and D22 name those tests and the scene, and say what each still leaves out; none of the three reads `none`.
+- [x] `npm test`, `npm run ui:check` and `npm run docs:check` pass.

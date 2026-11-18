@@ -2214,6 +2214,33 @@ try {
       { stoppedAfter },
     )
   }
+  // The count of handed, unconfirmed Messages on a card (C176; docs/proofs.md D16). An ack on the channel path hands without
+  // confirming; an ack with `received` (what inbox sends) confirms. unc.handed keeps two unconfirmed, unc.clear has its one confirmed
+  {
+    const uCwd = join(work, 'demo')
+    const uh = await api('POST', '/mailboxes/unc.handed/attach', { client: 'claude-code', cwd: uCwd, sessionId: 's-unc-h' })
+    const uc = await api('POST', '/mailboxes/unc.clear/attach', { client: 'claude-code', cwd: uCwd, sessionId: 's-unc-c' })
+    const notice = (to, body) => api('POST', '/messages', { kind: 'notice', to: { type: 'mailbox', id: to }, body })
+    await notice('unc.handed', 'UNC-1: handed, not confirmed')
+    const h2 = await notice('unc.handed', 'UNC-2: handed, not confirmed')
+    await api('POST', `/attachments/${uh.attachmentId}/ack`, { upTo: h2.seq })
+    const c1 = await notice('unc.clear', 'UNC-3: handed and confirmed')
+    await api('POST', `/attachments/${uc.attachmentId}/ack`, { upTo: c1.seq, received: { first: c1.seq, last: c1.seq } })
+    await cdp('Runtime.evaluate', { expression: 'resetFilters()', returnByValue: true })
+    const demoKey = await evaluate("[...projects.values()].find((p) => p.label === 'demo').key")
+    await evaluate(`chooseProject(${JSON.stringify(demoKey)})`)
+    await sleep(1500)
+    const hubCounts = Object.fromEntries((await api('GET', '/mailboxes')).mailboxes.filter((m) => m.name.startsWith('unc.')).map((m) => [m.name, m.unconfirmed]))
+    const chips = JSON.parse(await evaluate(`JSON.stringify(Object.fromEntries(['unc.handed', 'unc.clear'].map((name) => {
+      const box = [...document.querySelectorAll('#mailboxes .mb')].find((b) => (b.querySelector('.name') || {}).textContent === name)
+      const chip = box && box.querySelector('.bl[data-layer="stuck"]')
+      return [name, box ? (chip ? { count: chip.dataset.count, text: chip.textContent } : 'no chip') : 'no card']
+    })))`))
+    verify('A card shows its handed, unconfirmed Messages as "Stuck? 2"; a card whose Message was confirmed has no Stuck? chip (C176)',
+      hubCounts['unc.handed'] === 2 && hubCounts['unc.clear'] === 0 &&
+      chips['unc.handed'] && chips['unc.handed'].count === '2' && chips['unc.handed'].text.startsWith('Stuck? 2') && chips['unc.clear'] === 'no chip',
+      { hubCounts, chips })
+  }
   // 接続しているセッションがひとつもない: Your move は出さない (C127)。すべて切り離してから地図を見る
   for (const mb of (await api('GET', '/mailboxes')).mailboxes) if (mb.attachment) await api('DELETE', `/attachments/${mb.attachment.attachmentId}`)
   await mapScene('接続しているセッションがない: Your move は出さない (C127)', 'no move')

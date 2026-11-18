@@ -501,6 +501,96 @@ describe('HubClient: 切断中に後継が attach したとき', () => {
   })
 })
 
+// A Hub that lets a test drop acks and count requests by path, around a real Hub (C176)
+async function serveSpied(hub: Hub) {
+  const app = createApp({ hub, token: TOKEN, uiHtml: async () => null })
+  const spy = { dropAcks: false, paths: [] as string[] }
+  let hubUrl = ''
+  const server = await new Promise<ServerType>((resolve) => {
+    const s = serve(
+      {
+        fetch: (req) => {
+          const path = new URL(req.url).pathname
+          spy.paths.push(`${req.method} ${path}`)
+          if (spy.dropAcks && path.endsWith('/ack')) return new Response('dropped by the test', { status: 500 })
+          return app.fetch(req)
+        },
+        hostname: '127.0.0.1',
+        port: 0,
+      },
+      (info) => {
+        hubUrl = `http://127.0.0.1:${info.port}`
+        resolve(s)
+      },
+    )
+  })
+  return { hubUrl, spy, close: () => new Promise((r) => server.close(r)) }
+}
+const untilTrue = async (f: () => boolean, ms = 10_000) => {
+  const deadline = Date.now() + ms
+  while (!f()) {
+    if (Date.now() > deadline) throw new Error('timeout')
+    await new Promise((r) => setTimeout(r, 30))
+  }
+}
+
+// protocol.md §4: the receiver processes idempotently by id; the shim keeps recent ids in memory (docs/proofs.md D2)
+describe('HubClient: the same Message id arrives twice', () => {
+  it('a Message whose ack was lost is sent again on re-attach and is not handed to Claude a second time; a new id still is (C176)', async () => {
+    const hub = new Hub(new Store(), { disconnectGraceMs: 300 })
+    const { hubUrl, spy, close } = await serveSpied(hub)
+    const got: string[] = []
+    const cfg = { hubUrl, token: TOKEN, mailbox: 'dedupe', role: null, sessionId: undefined, cwd: ROOT, filesDir: tmpdir() }
+    const hc = new HubClient(cfg, async (m) => void got.push(m.body), () => undefined)
+    const browser = { type: 'user', id: 'browser', role: null } as const
+    try {
+      hc.start()
+      await untilTrue(() => hc.state === 'attached')
+      // The ack of A is lost, so the Hub still counts A as unread
+      spy.dropAcks = true
+      hub.postMessage({ kind: 'notice', to: { type: 'mailbox', id: 'dedupe' }, body: 'A' }, browser)
+      await untilTrue(() => got.length === 1)
+      await untilTrue(() => spy.paths.some((p) => p.endsWith('/ack')))
+      assert.equal(hub.store.getMailbox('dedupe')!.cursor, 0)
+      spy.dropAcks = false
+      // The stream ends; the shim attaches again and the Hub sends A again from its cursor. The ack that follows proves it arrived
+      hub.detach(hc.attachment!.attachmentId)
+      await untilTrue(() => hub.store.getMailbox('dedupe')!.cursor >= 1)
+      assert.deepEqual(got, ['A'])
+      hub.postMessage({ kind: 'notice', to: { type: 'mailbox', id: 'dedupe' }, body: 'B' }, browser)
+      await untilTrue(() => got.length === 2)
+      assert.deepEqual(got, ['A', 'B'])
+    } finally {
+      await hc.stop()
+      await close()
+    }
+  })
+})
+
+// protocol.md §4 lease: the shim keeps the stream open, so it sends no heartbeats (docs/proofs.md D22)
+describe('HubClient: past the lease', () => {
+  it('with the stream open the Attachment outlives several leases, and the shim sends no heartbeat (C176)', async () => {
+    const leaseMs = 200
+    const hub = new Hub(new Store(), { leaseMs })
+    const { hubUrl, spy, close } = await serveSpied(hub)
+    const cfg = { hubUrl, token: TOKEN, mailbox: 'lease', role: null, sessionId: undefined, cwd: ROOT, filesDir: tmpdir() }
+    const hc = new HubClient(cfg, async () => undefined, () => undefined)
+    try {
+      hc.start()
+      await untilTrue(() => hc.state === 'attached')
+      const id = hc.attachment!.attachmentId
+      await new Promise((r) => setTimeout(r, leaseMs * 5))
+      assert.equal(hc.state, 'attached')
+      assert.equal(hc.attachment?.attachmentId, id)
+      assert.equal(hub.store.getMailbox('lease')!.attachment, id)
+      assert.deepEqual(spy.paths.filter((p) => p.includes('/heartbeat')), [])
+    } finally {
+      await hc.stop()
+      await close()
+    }
+  })
+})
+
 // stream を開かない (primeAttach だけの) HubClient で、inbox の取り出しを確かめる
 describe('inbox ツール (fetchInbox)', () => {
   it('未読を <hub-message> で包んで返し、返した分を ack する。続きがあれば has_more を案内する', async () => {
