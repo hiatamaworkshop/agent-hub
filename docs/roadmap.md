@@ -24,8 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C177
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -733,6 +731,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Done-when line 2 changed while working, by the planning session: "timers mocked" became "a short lease through the Hub's `leaseMs`", since the shim test talks HTTP to a real Hub.
   - Checked: each proof caught a deliberate break (the shim's `seen` check removed, the Hub's lease renewal while streaming removed, unconfirmed left out of `Stuck?`), restored after each. `npm run typecheck` passes, `npm test` 766 pass, `ui:check` 213 ok, `docs:check` 0 errors.
   - Not checked: no reviewer read it; the `DEDUPE_SIZE` bound, a shim restart, and the real 2-minute lease are outside the tests (proofs.md "Leaves out").
+- [x] C177 Make the delivery-check report read a permission wait by its bounds, and fail plainly without a log (2026-11-19, closed after the review)
+  - Raised 2026-11-18 by the planning session's review of C169-C176 (no team reviewer read those items); filed as decided on the user's word. Done 2026-11-19 by the deployer; the reviewer read the uncommitted change and found no defects. Commit `c266188`.
+  - Changed: `tools/probe/delivery-report.mjs` (`--log <file>`; the B7 permission window runs from the `permission_prompt` to the session's next hook input; the 60 s exclusion covers only prompts after the question; a missing log is one line and exit 1), `tools/probe/README.md`, `src/probe/delivery-report.test.ts` (new, 5 tests run by `npm test`), design.md §6.3 "How", docs/roadmap.md.
+  - Checked: `npm test` 771 pass, 0 fail; `npm run docs:check` 0 errors (before the close its one warning was the C177 close reminder). All six done-when lines met as written. Done-when wording not changed.
+  - Not checked: only synthetic logs were used, not a real probe log. The B7 permission window counts `hello` pushes only, as before this item. `--mark` without an existing `logs/` directory still fails with a stack (not in this item).
 - [x] C175 Abandoning unread at attach confirms Messages handed earlier and never confirmed (2026-11-18, closed on the user's word without a review)
   - Found 2026-11-17 by C171's property test. Decided 2026-11-18 by the user, option a of three: write it down as a limit, no code change (b would change the promise, c the Store and the log format). Done 2026-11-18 in the planning session, without a team. Commit `d387f25`.
   - Changed: protocol.md §4 (the limit, next to the one for a session started without the channel), docs/proofs.md D10, the comment in `src/hub/delivery.property.test.ts` (the only edit under `src/`).
@@ -1133,17 +1136,3 @@ Status: held(after C153; decide once a real run shows what is hard to find)
 Raised 2026-11-10 with C153. After a run, what waits for the human is spread over the last report (a Message, deleted after the retention period), the items' sections (the defaults taken, the items left open) and `git log` (unpushed commits). The ledger is the place that lasts (design.md §3.16).
 - Idea: the Items list gets a tier, or a mark, for items whose done-when lines are all checked while the section is still there ("worked, waiting for the close"); the index already has the counts (`conditions.done` / `total`). `team status` (C139) could list the same.
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
-
-### C177. Make the delivery-check report read a permission wait by its bounds, and fail plainly without a log
-Raised 2026-11-18 by the planning session's review of C169-C176 (no team reviewer read those items); filed as decided on the user's word. Both points are in `tools/probe/delivery-report.mjs` (C172), which reads `logs/probe.jsonl` for the checks of design.md §6.3. Neither gave a wrong verdict in the run of 2026-11-17: B7 is `see screen`, so the person at the terminal decides.
-- B7, the permission part: a `hello` pushed at any time after the first `permission_prompt` counts as "pushed during a permission wait", even one pushed after the wait ended. And every permission prompt earlier than the `AskUserQuestion` is left out (the filter keeps only those more than 60 s after it), so doing the permission step before the question step loses its evidence. The 60 s exclusion is there for the prompt the question itself may raise.
-- Without `logs/probe.jsonl` the script ends with Node's stack for `ENOENT`.
-- The script reads a fixed path and has no test. A test needs the path to be given.
-
-#### Done when
-- [ ] The script takes the log's path from `--log <file>` (default `logs/probe.jsonl` as now), and tools/probe/README.md says so.
-- [ ] B7 counts a pushed notification as during a permission wait only when it was pushed after a `permission_prompt` Notification and before the session's next hook input after that prompt; a `hello` pushed after the wait no longer counts.
-- [ ] B7 considers permission prompts before the question as well; only those within 60 s after the `AskUserQuestion` are left out.
-- [ ] Without the log file, the script prints one line that names the missing file and tools/probe/README.md step 1, and exits 1 without a stack.
-- [ ] A test run by `npm test` feeds the script small logs through `--log` and checks the three cases above (a notification inside the wait, one after it, a prompt before the question) and the missing file.
-- [ ] `npm test` and `npm run docs:check` pass.
