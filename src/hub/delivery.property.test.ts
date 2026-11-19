@@ -14,7 +14,8 @@
 // them). It reads neither from the Hub; after every step the test asserts that the Hub's cursor, received and last seq equal
 // the model's. The model's pending (addressed, neither acked nor abandoned) is the addressed Messages above the cursor, and
 // the Messages handed on the channel path and not yet returned by inbox or confirmed by a conversation Message (`handed`).
-// The one value still read from the Hub: at an attach that abandons, the C175 limit (below) follows the Hub's `received`.
+// Nothing is read from the Hub to build the model. The C175 limit (below) is the model's rule too: at an attach that abandons,
+// the model's received moves to the last abandoned seq, and what was handed before it counts as confirmed.
 //
 // FC_NUM_RUNS (default 300 sequences), FC_SEED and FC_PATH as in src/shared/card-state.property.test.ts.
 import assert from 'node:assert/strict'
@@ -43,7 +44,7 @@ const USER = { type: 'user', id: 'browser', role: null } as const
 type Op =
   | { op: 'post'; to: { type: 'mailbox'; id: Name } | { type: 'role'; id: 'deployer' | 'leader' } | { type: 'topic'; id: 't' }; kind: 'request' | 'notice' }
   | { op: 'attach'; mb: Name; maxUnread?: number; maxAgeMs?: number }
-  | { op: 'ack'; mb: Name; pick: 'pending' | 'last' | 'behind'; index: number }
+  | { op: 'ack'; mb: Name; pick: 'pending' | 'last' | 'behind' | 'beyond'; index: number }
   | { op: 'inbox'; mb: Name; unconfirmed: boolean; limit: number }
   | { op: 'converse'; mb: Name; to: 'user' | Name | 'reply' }
   | { op: 'heartbeat'; mb: Name }
@@ -54,7 +55,7 @@ const name = fc.constantFrom(...NAMES)
 const opArb: fc.Arbitrary<Op> = fc.oneof(
   { weight: 5, arbitrary: fc.record({ op: fc.constant('post' as const), kind: fc.constantFrom('request' as const, 'notice' as const), to: fc.oneof(name.map((id) => ({ type: 'mailbox' as const, id })), fc.constantFrom('deployer' as const, 'leader' as const).map((id) => ({ type: 'role' as const, id })), fc.constant({ type: 'topic' as const, id: 't' as const })) }) },
   { weight: 4, arbitrary: fc.record({ op: fc.constant('attach' as const), mb: name, maxUnread: fc.option(fc.integer({ min: 0, max: 3 }), { nil: undefined }), maxAgeMs: fc.option(fc.constantFrom(0, LEASE_MS, DAY), { nil: undefined }) }, { requiredKeys: ['op', 'mb'] }) },
-  { weight: 3, arbitrary: fc.record({ op: fc.constant('ack' as const), mb: name, pick: fc.constantFrom('pending' as const, 'last' as const, 'behind' as const), index: fc.nat({ max: 5 }) }) },
+  { weight: 3, arbitrary: fc.record({ op: fc.constant('ack' as const), mb: name, pick: fc.constantFrom('pending' as const, 'last' as const, 'behind' as const, 'beyond' as const), index: fc.nat({ max: 5 }) }) },
   { weight: 3, arbitrary: fc.record({ op: fc.constant('inbox' as const), mb: name, unconfirmed: fc.boolean(), limit: fc.integer({ min: 1, max: 3 }) }) },
   { weight: 2, arbitrary: fc.record({ op: fc.constant('converse' as const), mb: name, to: fc.constantFrom('user' as const, 'reply' as const, ...NAMES) }) },
   { weight: 1, arbitrary: fc.record({ op: fc.constant('heartbeat' as const), mb: name }) },
@@ -175,9 +176,9 @@ function run(t: TestContext, ops: Op[]): number {
             assert.equal(mb(o.mb).received, mb(o.mb).cursor, `${where}: what is abandoned at attach is not unconfirmed (received moves with cursor)`)
             // Found by this test (2026-11-17), kept as a limit (roadmap C175, protocol.md §4 "abandoned at attach"): received
             // moves to the last abandoned seq, so a Message handed on the channel path before it and never confirmed is counted
-            // as confirmed too, and inbox with unconfirmed=true no longer returns it. The model follows the Hub's received here,
-            // so the other invariants are still checked; remove these lines if the Hub stops doing it
-            for (const s of m.handed.get(o.mb)!) if (s <= mb(o.mb).received) m.handed.get(o.mb)!.delete(s)
+            // as confirmed too, and inbox with unconfirmed=true no longer returns it. The model applies the same rule with its own
+            // received, so the other invariants are still checked; remove these lines if the Hub stops doing it
+            for (const s of m.handed.get(o.mb)!) if (s <= m.received.get(o.mb)!) m.handed.get(o.mb)!.delete(s)
           }
           m.lease.set(o.mb, now + LEASE_MS)
           if (before) {
@@ -193,7 +194,7 @@ function run(t: TestContext, ops: Op[]): number {
           if (!at) break
           const pending = pendingOf(o.mb)
           const cursor = m.cursor.get(o.mb)!
-          const upTo = o.pick === 'pending' && pending.length ? pending[Math.min(o.index, pending.length - 1)]! : o.pick === 'behind' ? Math.max(0, cursor - 1 - o.index) : m.lastSeq
+          const upTo = o.pick === 'pending' && pending.length ? pending[Math.min(o.index, pending.length - 1)]! : o.pick === 'behind' ? Math.max(0, cursor - 1 - o.index) : o.pick === 'beyond' ? m.lastSeq + 1 + o.index : m.lastSeq
           hub.ack(at, upTo)
           for (const s of modelAck(o.mb, upTo)) m.handed.get(o.mb)!.add(s)
           m.lease.set(o.mb, now + LEASE_MS)
