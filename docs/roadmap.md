@@ -24,6 +24,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C177
 
 (Items with a status line are listed under "Items".)
 
@@ -1132,3 +1133,17 @@ Status: held(after C153; decide once a real run shows what is hard to find)
 Raised 2026-11-10 with C153. After a run, what waits for the human is spread over the last report (a Message, deleted after the retention period), the items' sections (the defaults taken, the items left open) and `git log` (unpushed commits). The ledger is the place that lasts (design.md §3.16).
 - Idea: the Items list gets a tier, or a mark, for items whose done-when lines are all checked while the section is still there ("worked, waiting for the close"); the index already has the counts (`conditions.done` / `total`). `team status` (C139) could list the same.
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
+
+### C177. Make the delivery-check report read a permission wait by its bounds, and fail plainly without a log
+Raised 2026-11-18 by the planning session's review of C169-C176 (no team reviewer read those items); filed as decided on the user's word. Both points are in `tools/probe/delivery-report.mjs` (C172), which reads `logs/probe.jsonl` for the checks of design.md §6.3. Neither gave a wrong verdict in the run of 2026-11-17: B7 is `see screen`, so the person at the terminal decides.
+- B7, the permission part: a `hello` pushed at any time after the first `permission_prompt` counts as "pushed during a permission wait", even one pushed after the wait ended. And every permission prompt earlier than the `AskUserQuestion` is left out (the filter keeps only those more than 60 s after it), so doing the permission step before the question step loses its evidence. The 60 s exclusion is there for the prompt the question itself may raise.
+- Without `logs/probe.jsonl` the script ends with Node's stack for `ENOENT`.
+- The script reads a fixed path and has no test. A test needs the path to be given.
+
+#### Done when
+- [ ] The script takes the log's path from `--log <file>` (default `logs/probe.jsonl` as now), and tools/probe/README.md says so.
+- [ ] B7 counts a pushed notification as during a permission wait only when it was pushed after a `permission_prompt` Notification and before the session's next hook input after that prompt; a `hello` pushed after the wait no longer counts.
+- [ ] B7 considers permission prompts before the question as well; only those within 60 s after the `AskUserQuestion` are left out.
+- [ ] Without the log file, the script prints one line that names the missing file and tools/probe/README.md step 1, and exits 1 without a stack.
+- [ ] A test run by `npm test` feeds the script small logs through `--log` and checks the three cases above (a notification inside the wait, one after it, a prompt before the question) and the missing file.
+- [ ] `npm test` and `npm run docs:check` pass.
