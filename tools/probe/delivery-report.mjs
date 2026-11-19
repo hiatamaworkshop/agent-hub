@@ -1,20 +1,32 @@
 #!/usr/bin/env node
 // Reads logs/probe.jsonl after the last run marker and prints, for each delivery check of design.md §6.3 (B1-B9), what the
 // log shows (C172). The log cannot see the screen: what only the person at the terminal saw is left for them to write down.
-//   node tools/probe/delivery-report.mjs --mark   writes a run marker (do this before starting the first session)
-//   node tools/probe/delivery-report.mjs          the report for the run since the last marker
+//   node tools/probe/delivery-report.mjs --mark            writes a run marker (do this before starting the first session)
+//   node tools/probe/delivery-report.mjs                   the report for the run since the last marker
+//   node tools/probe/delivery-report.mjs --log <file>      the same, for another log file (default logs/probe.jsonl)
 // Sessions are told apart by the probe's `startup` lines: the first is the start with the channel flag, a later one the
 // start without it (B8).
-import { appendFileSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const LOG_FILE = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'logs', 'probe.jsonl')
+const DEFAULT_LOG = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'logs', 'probe.jsonl')
+const logArg = process.argv.indexOf('--log')
+if (logArg >= 0 && (!process.argv[logArg + 1] || process.argv[logArg + 1].startsWith('--'))) {
+  console.log('--log needs a file: node tools/probe/delivery-report.mjs --log <file>')
+  process.exit(1)
+}
+const LOG_FILE = logArg >= 0 ? resolve(process.argv[logArg + 1]) : DEFAULT_LOG
 
 if (process.argv.includes('--mark')) {
   appendFileSync(LOG_FILE, JSON.stringify({ ts: new Date().toISOString(), kind: 'run-marker', data: { for: 'design.md §6.3' } }) + '\n')
   console.log(`marked ${LOG_FILE}`)
   process.exit(0)
+}
+
+if (!existsSync(LOG_FILE)) {
+  console.log(`No probe log at ${LOG_FILE}. Run the probe session first (tools/probe/README.md step 1).`)
+  process.exit(1)
 }
 
 const all = readFileSync(LOG_FILE, 'utf8').split(/\r?\n/).filter(Boolean).map((l) => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
@@ -76,8 +88,14 @@ row('B6', !h.length ? 'not run' : headerOk && env.PROBE_EXPANDED_MAILBOX === env
 
 const ask = hooks(s1, 'PreToolUse').find((e) => e.data?.payload?.tool_name === 'AskUserQuestion')
 const dq = ask && pushes(s1, 'during_question').find((e) => t(e) > t(ask))
-const perm = hooks(s1, 'Notification').filter((e) => e.data?.payload?.notification_type === 'permission_prompt' && (!ask || t(e) - t(ask) > 60_000))
-const helloInPerm = perm.length && s1.events.find((e) => e.kind === 'pushed' && e.data?.meta?.case === 'hello' && t(e) > t(perm[0]))
+// A permission prompt counts unless it is within 60 s after the question (the prompt the question itself may raise)
+const perm = hooks(s1, 'Notification').filter((e) => e.data?.payload?.notification_type === 'permission_prompt' && !(ask && t(e) >= t(ask) && t(e) - t(ask) <= 60_000))
+// A permission wait runs from its prompt to the session's next hook input after it (open-ended if there is none)
+const waitEnd = (p) => hooks(s1).find((x) => t(x) > t(p))
+const helloInPerm = perm.some((p) => {
+  const end = waitEnd(p)
+  return pushes(s1, 'hello').some((x) => t(x) > t(p) && (!end || t(x) < t(end)))
+})
 row('B7', ask && dq ? 'see screen' : 'not run', `question: ${ask && dq ? `notification pushed ${Math.round((t(dq) - t(ask)) / 1000)} s into the wait` : 'step 4 not in the log'}; permission: ${helloInPerm ? 'a notification was pushed during a permission wait' : 'not in the log'}. Whether each was held (not taken as the answer, the dialog stayed, handed over after) is what you saw`)
 
 if (s2) {

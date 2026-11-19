@@ -94,6 +94,19 @@ curl.exe -H "x-probe-token: $t" http://127.0.0.1:7788/case/during_question
 
 SessionStart hook はプローブの HTTP が listen する前に発火しうるので、記録されていなくても異常ではない。
 
+### 読み取りスクリプト (`delivery-report.mjs`)
+
+設計書 §6.3 の B1〜B9 を、ログに見えている範囲で判定する。
+
+```powershell
+node tools/probe/delivery-report.mjs --mark              # 最初のセッションの前に、実行の区切りを書く
+node tools/probe/delivery-report.mjs                     # 区切りの後の実行を判定する
+node tools/probe/delivery-report.mjs --log <file>        # 既定の logs/probe.jsonl の代わりに別のログを読む
+```
+
+- `--log <file>` を省くと `logs/probe.jsonl` を読む。ファイルが無いときは、そのパスと手順 1 を指す 1 行を出して終了コード 1 で止まる。
+- B7 の権限待機は、`permission_prompt` の通知の後、そのセッションで次に hook 入力が届くまでを待機とみなし、その間に push された `hello` を数える。待機の後に push されたものは数えない。質問 (`AskUserQuestion`) の後 60 秒以内の権限プロンプトは、質問自体が起こしうるものとして除く。それより前の権限プロンプトは数える。
+
 ## resources/updated で起きるか (design.md §6.1m、C1)
 
 `resources-probe.mjs` は resource `hub://inbox` (subscribe と listChanged 付き) とツール `read_inbox` を公開し、クライアントからの要求を `logs/resources-probe.log` に記録する。
