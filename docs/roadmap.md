@@ -24,8 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C178
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -733,6 +731,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Done-when line 2 changed while working, by the planning session: "timers mocked" became "a short lease through the Hub's `leaseMs`", since the shim test talks HTTP to a real Hub.
   - Checked: each proof caught a deliberate break (the shim's `seen` check removed, the Hub's lease renewal while streaming removed, unconfirmed left out of `Stuck?`), restored after each. `npm run typecheck` passes, `npm test` 766 pass, `ui:check` 213 ok, `docs:check` 0 errors.
   - Not checked: no reviewer read it; the `DEDUPE_SIZE` bound, a shim restart, and the real 2-minute lease are outside the tests (proofs.md "Leaves out").
+- [x] C178 Let the delivery property test compute the cursor and the number abandoned, instead of reading them from the Hub (2026-11-19, closed after the review)
+  - Raised 2026-11-19 by the team reviewer's review of C169-C176 (Message #667, finding 1); filed as decided on the user's word. Done 2026-11-19 by the deployer; the reviewer read the uncommitted change and found no defects. Commit `164e29b`.
+  - Changed: `src/hub/delivery.property.test.ts` (the model computes cursor, received and the abandoned count from its own record; `passCursor` removed; the C175 limit kept), docs/proofs.md D1 and D18 ("Leaves out" rewritten), docs/roadmap.md.
+  - Checked: `npm test` 771 pass, 0 fail; the property test with `FC_NUM_RUNS=3000` has no failure; `npm run typecheck` clean; `npm run docs:check` 0 errors (before the close its one warning was the C178 close reminder). Both breaks, `advanceCursor` to `Math.floor(upTo) + 1` and `trimUnread` dropping one more, make the property test fail, and both are restored; `git diff` of src/hub/store.ts and src/hub/hub.ts is empty. All five done-when lines met as written. Done-when wording not changed.
+  - Not checked: a rule wrong in both the spec and the model is not caught (stated in proofs.md D1 and D18); the example tests in `src/hub/mailbox.test.ts` and `src/hub/store.test.ts` are the other check.
 - [x] C177 Make the delivery-check report read a permission wait by its bounds, and fail plainly without a log (2026-11-19, closed after the review)
   - Raised 2026-11-18 by the planning session's review of C169-C176 (no team reviewer read those items); filed as decided on the user's word. Done 2026-11-19 by the deployer; the reviewer read the uncommitted change and found no defects. Commit `c266188`.
   - Changed: `tools/probe/delivery-report.mjs` (`--log <file>`; the B7 permission window runs from the `permission_prompt` to the session's next hook input; the 60 s exclusion covers only prompts after the question; a missing log is one line and exit 1), `tools/probe/README.md`, `src/probe/delivery-report.test.ts` (new, 5 tests run by `npm test`), design.md §6.3 "How", docs/roadmap.md.
@@ -1138,16 +1141,3 @@ Status: held(after C153; decide once a real run shows what is hard to find)
 Raised 2026-11-10 with C153. After a run, what waits for the human is spread over the last report (a Message, deleted after the retention period), the items' sections (the defaults taken, the items left open) and `git log` (unpushed commits). The ledger is the place that lasts (design.md §3.16).
 - Idea: the Items list gets a tier, or a mark, for items whose done-when lines are all checked while the section is still there ("worked, waiting for the close"); the index already has the counts (`conditions.done` / `total`). `team status` (C139) could list the same.
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
-
-### C178. Let the delivery property test compute the cursor and the number abandoned, instead of reading them from the Hub
-Raised 2026-11-19 by the team reviewer's review of C169-C176 (Message #667, finding 1); filed as decided on the user's word. In `src/hub/delivery.property.test.ts` (C171) the model takes "acked" from the Hub's own `cursor` (`passCursor`) and "abandoned" from the `skipped` the Hub returns. So a Hub whose cursor passes `upTo`, or whose `trimUnread` abandons one more, is followed by the model and the property test passes; only the example tests in `src/hub/store.test.ts` and `src/hub/mailbox.test.ts` fail. The reviewer checked both breaks. docs/proofs.md D1 and D18 now say so in "Leaves out".
-- The rules to compute from: `advanceCursor` and `advanceReceived` in `src/hub/store.ts` (never back, never past the last seq assigned), `ack` and `trimUnread` in `src/hub/hub.ts`, protocol.md §3 (attach, ack) and §4. The model computes them from what it recorded (the seqs it posted, their times, the options of each attach), not from the Hub.
-- The exception of C175 stays: when an attach abandons, the model still follows the Hub's `received` for Messages handed earlier (the comment names protocol.md §4). That is a documented limit, not a value read to hide a break.
-- A difference the stronger model finds in the Hub is a finding about the Hub: report it and stop, do not weaken the model (C175 is the example).
-
-#### Done when
-- [ ] After every ack (the channel path and the `inbox` path), the model computes the Mailbox's cursor from `upTo`, any `received` range and its own record of the last seq, and the test asserts that the Hub's cursor equals it; `passCursor` no longer reads the Hub's cursor to decide what was acked.
-- [ ] At every attach, the model computes how many unread Messages are abandoned from `maxUnread`, `maxAgeMs` and the post times it recorded, and the test asserts that the Hub's `skipped` equals it.
-- [ ] Each of the reviewer's two breaks makes the property test fail, checked once and restored: `advanceCursor` moving to `Math.floor(upTo) + 1`, and `trimUnread` dropping one more (`unread.length - maxUnread + 1`). The item's record names both.
-- [ ] docs/proofs.md D1 and D18 no longer say that the model follows the Hub's cursor or `skipped`; what the property test still leaves out is stated.
-- [ ] `npm test` passes; one run with `FC_NUM_RUNS=3000` has no failure; `npm run docs:check` passes.
