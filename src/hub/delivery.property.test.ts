@@ -9,10 +9,12 @@
 // Not in scope: the shim's transport (Channels return no ack: design.md §6, C172), the HTTP layer, streams (no sink is
 // opened, so every Attachment lives on its lease), retention and deletion.
 //
-// The model: per Mailbox, the Messages addressed to it that are not yet acked or abandoned (`pending`, by an independent
-// rule of who is addressed: mailbox:X is X, role:R every Mailbox with role R, topic:t its subscribers), the Messages handed
-// on the channel path and not yet returned by inbox or confirmed by a conversation Message (`handed`), and each live
-// Attachment's lease deadline.
+// The model computes the Mailbox's cursor and received by itself (C178), from what it recorded: the seqs it posted and when,
+// the options of each attach, and the rules protocol.md §3-§4 state (the rules as src/hub/store.ts and src/hub/hub.ts apply
+// them). It reads neither from the Hub; after every step the test asserts that the Hub's cursor, received and last seq equal
+// the model's. The model's pending (addressed, neither acked nor abandoned) is the addressed Messages above the cursor, and
+// the Messages handed on the channel path and not yet returned by inbox or confirmed by a conversation Message (`handed`).
+// The one value still read from the Hub: at an attach that abandons, the C175 limit (below) follows the Hub's `received`.
 //
 // FC_NUM_RUNS (default 300 sequences), FC_SEED and FC_PATH as in src/shared/card-state.property.test.ts.
 import assert from 'node:assert/strict'
@@ -29,6 +31,9 @@ const params = { numRuns, ...(seed === undefined ? {} : { seed }), ...(path === 
 
 const LEASE_MS = 1000
 const DAY = 24 * 3600_000
+// The Hub's defaults in this test (the Hub is built with them below); an attach without maxUnread / maxAgeMs gets these
+const UNREAD_MAX = 0
+const UNREAD_MAX_AGE_MS = 0
 // a and b share the role deployer (role: reaches both); c is the leader and the only subscriber of topic t
 const MAILBOXES = { a: 'deployer', b: 'deployer', c: 'leader' } as const
 type Name = keyof typeof MAILBOXES
@@ -62,9 +67,12 @@ const opArb: fc.Arbitrary<Op> = fc.oneof(
 const SEQUENCE_ARB = () => fc.array(opArb, { minLength: 1, maxLength: 80, size: 'max' })
 
 interface Model {
-  pending: Map<Name, number[]> // addressed, not acked, not abandoned (sorted)
+  lastSeq: number // the last seq assigned, as the model saw its own posts
+  posted: Map<number, number> // seq -> the model's clock when it posted it (ms)
+  addressed: Map<Name, Message[]> // every Message addressed to it, in seq order
+  cursor: Map<Name, number>
+  received: Map<Name, number>
   handed: Map<Name, Set<number>> // handed on the channel path, not returned by inbox, not confirmed by a conversation Message
-  received: Map<Name, Message[]> // every Message addressed to it, for picking a reply target
   lease: Map<Name, number> // the live Attachment's lease deadline (ms)
 }
 
@@ -81,32 +89,64 @@ function run(t: TestContext, ops: Op[]): number {
   try {
     let now = Date.parse('2026-11-17T00:00:00.000Z')
     const clock = () => new Date(now)
-    const hub = new Hub(new Store({ now: clock }), { now: clock, leaseMs: LEASE_MS, unreadMax: 0, unreadMaxAgeMs: 0 })
+    const hub = new Hub(new Store({ now: clock }), { now: clock, leaseMs: LEASE_MS, unreadMax: UNREAD_MAX, unreadMaxAgeMs: UNREAD_MAX_AGE_MS })
     const subscribers = new Set<Name>(['c'])
     for (const n of NAMES) {
       const at = hub.attach(n, { client: 'claude-code', role: MAILBOXES[n] })
       if (n === 'c') hub.subscribe('c', 't')
       hub.detach(at.attachmentId)
     }
-    const m: Model = { pending: new Map(NAMES.map((n) => [n, []])), handed: new Map(NAMES.map((n) => [n, new Set()])), received: new Map(NAMES.map((n) => [n, []])), lease: new Map() }
+    const m: Model = {
+      lastSeq: 0,
+      posted: new Map(),
+      addressed: new Map(NAMES.map((n) => [n, []])),
+      cursor: new Map(NAMES.map((n) => [n, 0])),
+      received: new Map(NAMES.map((n) => [n, 0])),
+      handed: new Map(NAMES.map((n) => [n, new Set()])),
+      lease: new Map(),
+    }
     const mb = (n: Name) => hub.store.getMailbox(n)!
     const live = (n: Name) => mb(n).attachment
     const prev = new Map(NAMES.map((n) => [n, { cursor: mb(n).cursor, received: mb(n).received }]))
 
+    // The model's pending: addressed, neither acked nor abandoned (the cursor passes what is acked or abandoned)
+    const pendingOf = (n: Name): number[] => m.addressed.get(n)!.map((x) => x.seq).filter((s) => s > m.cursor.get(n)!)
+    const clampSeq = (upTo: number) => Math.min(Math.floor(upTo), m.lastSeq)
+
     const post = (input: Parameters<Hub['postMessage']>[0], from: Parameters<Hub['postMessage']>[1]) => {
       const msg = hub.postMessage(input, from)
-      for (const n of addressedTo(msg.to, subscribers)) {
-        m.pending.get(n)!.push(msg.seq)
-        m.received.get(n)!.push(msg)
-      }
+      assert.equal(msg.seq, m.lastSeq + 1, `a post takes the seq after the last one`)
+      m.lastSeq = msg.seq
+      m.posted.set(msg.seq, now)
+      for (const n of addressedTo(msg.to, subscribers)) m.addressed.get(n)!.push(msg)
       return msg
     }
-    // An ack moves the cursor: what it passes is no longer pending; on the channel path it is handed and unconfirmed
-    const passCursor = (n: Name, handedOnChannel: boolean) => {
-      const cursor = mb(n).cursor
-      const passed = m.pending.get(n)!.filter((s) => s <= cursor)
-      m.pending.set(n, m.pending.get(n)!.filter((s) => s > cursor))
-      if (handedOnChannel) for (const s of passed) m.handed.get(n)!.add(s)
+
+    // The Hub's ack (src/hub/hub.ts ack, protocol.md §3-§4): the received range first, when it continues directly from received
+    // (store.ts apply moves cursor with received), then the cursor up to upTo. Neither moves back or passes the last seq assigned.
+    // Returns the seqs that the cursor passed (those handed on the channel path become handed)
+    const modelAck = (n: Name, upTo: number, range?: { first: number; last: number }): number[] => {
+      const before = pendingOf(n)
+      let received = m.received.get(n)!
+      if (range) {
+        const next = m.addressed.get(n)!.find((x) => x.seq > received)
+        if (!next || next.seq >= range.first) received = Math.max(received, clampSeq(range.last))
+      }
+      m.received.set(n, received)
+      m.cursor.set(n, Math.max(m.cursor.get(n)!, received, clampSeq(upTo)))
+      return before.filter((s) => s <= m.cursor.get(n)!)
+    }
+
+    // The Hub's trimUnread (src/hub/hub.ts), from the model's record: the oldest unread beyond maxUnread, then the ones
+    // posted before the maxAgeMs cutoff. Returns how many are abandoned at this attach
+    const abandonedAt = (n: Name, maxUnread: number, maxAgeMs: number): number => {
+      const unread = pendingOf(n)
+      let drop = maxUnread > 0 ? Math.max(0, unread.length - maxUnread) : 0
+      if (maxAgeMs > 0) {
+        const cutoff = now - maxAgeMs
+        while (drop < unread.length && m.posted.get(unread[drop]!)! < cutoff) drop++
+      }
+      return drop
     }
 
     let step = 0
@@ -122,16 +162,21 @@ function run(t: TestContext, ops: Op[]): number {
         case 'attach': {
           const before = live(o.mb)
           const subs = [...mb(o.mb).subscriptions]
+          const abandoned = abandonedAt(o.mb, o.maxUnread ?? UNREAD_MAX, o.maxAgeMs ?? UNREAD_MAX_AGE_MS)
+          const unread = pendingOf(o.mb)
           const r = hub.attach(o.mb, { client: 'claude-code', role: MAILBOXES[o.mb], maxUnread: o.maxUnread, maxAgeMs: o.maxAgeMs })
-          // Abandoned at attach: always the oldest of the unread, so the first `skipped` of the pending ones
-          m.pending.set(o.mb, m.pending.get(o.mb)!.slice(r.skipped))
-          if (r.skipped > 0) {
+          assert.equal(r.skipped, abandoned, `${where}: the Hub abandons ${r.skipped} unread at attach; the model counts ${abandoned} from maxUnread, maxAgeMs and the post times`)
+          if (abandoned > 0) {
+            // Abandoning moves received to the last abandoned seq, and the cursor with it (src/hub/hub.ts trimUnread)
+            const last = unread[abandoned - 1]!
+            m.received.set(o.mb, Math.max(m.received.get(o.mb)!, last))
+            m.cursor.set(o.mb, Math.max(m.cursor.get(o.mb)!, m.received.get(o.mb)!))
             mayConfirm = o.mb
             assert.equal(mb(o.mb).received, mb(o.mb).cursor, `${where}: what is abandoned at attach is not unconfirmed (received moves with cursor)`)
             // Found by this test (2026-11-17), kept as a limit (roadmap C175, protocol.md §4 "abandoned at attach"): received
             // moves to the last abandoned seq, so a Message handed on the channel path before it and never confirmed is counted
-            // as confirmed too, and inbox with unconfirmed=true no longer returns it. The model follows the Hub here, so the
-            // other invariants are still checked; remove these lines if the Hub stops doing it
+            // as confirmed too, and inbox with unconfirmed=true no longer returns it. The model follows the Hub's received here,
+            // so the other invariants are still checked; remove these lines if the Hub stops doing it
             for (const s of m.handed.get(o.mb)!) if (s <= mb(o.mb).received) m.handed.get(o.mb)!.delete(s)
           }
           m.lease.set(o.mb, now + LEASE_MS)
@@ -146,24 +191,31 @@ function run(t: TestContext, ops: Op[]): number {
         case 'ack': {
           const at = live(o.mb)
           if (!at) break
-          const pending = m.pending.get(o.mb)!
-          const upTo = o.pick === 'pending' && pending.length ? pending[Math.min(o.index, pending.length - 1)]! : o.pick === 'behind' ? Math.max(0, mb(o.mb).cursor - 1 - o.index) : hub.store.lastSeq
+          const pending = pendingOf(o.mb)
+          const cursor = m.cursor.get(o.mb)!
+          const upTo = o.pick === 'pending' && pending.length ? pending[Math.min(o.index, pending.length - 1)]! : o.pick === 'behind' ? Math.max(0, cursor - 1 - o.index) : m.lastSeq
           hub.ack(at, upTo)
-          passCursor(o.mb, true)
+          for (const s of modelAck(o.mb, upTo)) m.handed.get(o.mb)!.add(s)
           m.lease.set(o.mb, now + LEASE_MS)
           break
         }
         case 'inbox': {
           const at = live(o.mb)
           if (!at) break
+          // What inbox returns, and its cursor (src/hub/hub.ts inbox): unread after the cursor (after received with unconfirmed), in seq order
+          const start = Math.max(0, o.unconfirmed ? m.received.get(o.mb)! : m.cursor.get(o.mb)!)
+          const found = m.addressed.get(o.mb)!.filter((x) => x.seq > start).slice(0, o.limit + 1)
+          const hasMore = found.length > o.limit
+          const expected = found.slice(0, o.limit).map((x) => x.seq)
+          const upTo = hasMore ? expected.at(-1)! : Math.max(start, m.lastSeq)
           const r = hub.inbox(o.mb, 0, o.limit, o.unconfirmed)
-          const seqs = r.messages.map((x) => x.seq)
-          assert.deepEqual(seqs, [...seqs].sort((x, y) => x - y), `${where}: inbox returns seq order`)
-          const received = seqs.length ? { first: seqs[0]!, last: seqs.at(-1)! } : undefined
-          hub.ack(at, r.cursor, received)
+          assert.deepEqual(r.messages.map((x) => x.seq), expected, `${where}: inbox returns the model's unread, in seq order`)
+          assert.equal(r.cursor, upTo, `${where}: inbox's cursor is the model's`)
+          const received = expected.length ? { first: expected[0]!, last: expected.at(-1)! } : undefined
+          hub.ack(at, upTo, received)
+          modelAck(o.mb, upTo, received)
           if (received) mayConfirm = o.mb
-          for (const s of seqs) m.handed.get(o.mb)!.delete(s)
-          passCursor(o.mb, false)
+          for (const s of expected) m.handed.get(o.mb)!.delete(s)
           m.lease.set(o.mb, now + LEASE_MS)
           break
         }
@@ -171,14 +223,16 @@ function run(t: TestContext, ops: Op[]): number {
           const at = live(o.mb)
           if (!at) break
           const from = hub.senderOf(at)
-          const got = m.received.get(o.mb)!.at(-1)
+          const got = m.addressed.get(o.mb)!.at(-1)
           if (o.to === 'reply' && got) post({ kind: 'reply', replyTo: got.id, body: 'r' }, from)
           else if (o.to === 'user' || o.to === 'reply') post({ kind: 'request', to: { type: 'user', id: 'browser' }, body: 'q' }, from)
           else if (o.to !== o.mb) post({ kind: 'request', to: { type: 'mailbox', id: o.to }, body: 'q' }, from)
           else post({ kind: 'notice', to: { type: 'user', id: 'browser' }, body: 'n' }, from)
-          // A conversation Message (a request or a reply, not a notice) confirms everything handed to the sender (up to its cursor)
+          // A conversation Message (a request or a reply, not a notice) confirms everything handed to the sender (up to its cursor):
+          // store.ts appendMessage advances the sender's received to its cursor
           if (o.to !== o.mb) {
             mayConfirm = o.mb
+            m.received.set(o.mb, m.cursor.get(o.mb)!)
             m.handed.get(o.mb)!.clear()
           }
           break
@@ -210,15 +264,19 @@ function run(t: TestContext, ops: Op[]): number {
         }
       }
 
+      assert.equal(hub.store.lastSeq, m.lastSeq, `${where}: the last seq assigned is the model's`)
       for (const n of NAMES) {
         const { cursor, received } = mb(n)
         const p = prev.get(n)!
         assert.ok(received <= cursor && cursor <= hub.store.lastSeq, `${where}: ${n} has received ${received} ≤ cursor ${cursor} ≤ last seq ${hub.store.lastSeq}`)
+        // The model computes the cursor and received from its acks, received ranges, abandons and conversation Messages (C178)
+        assert.equal(cursor, m.cursor.get(n), `${where}: ${n}'s cursor is ${cursor}, the model computes ${m.cursor.get(n)}`)
+        assert.equal(received, m.received.get(n), `${where}: ${n}'s received is ${received}, the model computes ${m.received.get(n)}`)
         assert.ok(cursor >= p.cursor, `${where}: ${n}'s cursor moved back from ${p.cursor} to ${cursor}`)
         assert.ok(received >= p.received, `${where}: ${n}'s received moved back from ${p.received} to ${received}`)
         if (received > p.received) assert.equal(mayConfirm, n, `${where}: ${n}'s received moved from ${p.received} to ${received} by none of the three paths`)
         // At-least-once, in seq order: what is neither acked nor abandoned is the unread the next attach hands over
-        assert.deepEqual(hub.store.unread(n).map((x) => x.seq), m.pending.get(n), `${where}: ${n}'s unread`)
+        assert.deepEqual(hub.store.unread(n).map((x) => x.seq), pendingOf(n), `${where}: ${n}'s unread`)
         // An inbox ack does not jump over Messages handed on the channel path and not confirmed
         for (const s of m.handed.get(n)!) assert.ok(s > received, `${where}: ${n}'s received ${received} passed #${s}, handed and not confirmed`)
         // At most one live Attachment, and it is the one the Mailbox names; live exactly while the model's lease runs
@@ -235,9 +293,8 @@ function run(t: TestContext, ops: Op[]): number {
   }
 }
 
-describe('delivery and Attachments: properties (C171)', () => {
-  it('after every step of a generated sequence: cursor and received in order and never back, at-least-once in seq order, received only by the three paths, one live Attachment, takeover and lease expiry keep the unread', (t) => {
+describe('delivery and Attachments: properties (C171, C178)', () => {
+  it('after every step of a generated sequence: cursor and received in order and never back, computed by the model from its own record (C178), at-least-once in seq order, received only by the three paths, one live Attachment, takeover and lease expiry keep the unread', (t) => {
     fc.assert(fc.property(SEQUENCE_ARB(), (ops) => void run(t, ops)), params)
   })
 })
-
