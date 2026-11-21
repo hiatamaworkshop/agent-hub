@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C185
 - [ ] C182
 
 (Items with a status line are listed under "Items".)
@@ -720,6 +719,13 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: `npm test` 823 pass, 0 fail; `npm run typecheck` 0 errors; `npm run ui:check` 0 NG on three consecutive runs after the C71 `信号` scene was made to wait for `st-flash` to clear (232 ok each, exit 0); `npm run docs:check` 0 errors, 0 warnings. Hand check (done-when 5, commit 41a7eac, done by the user with the planning session watching a running Hub and a client with no hooks): attached, Idle; a request fetched, Working?; the reply, Idle; a second request, Working?; three Messages to another Mailbox, still Working?; a SessionStart Event, Working with the `?` gone.
   - Not checked: the topic path of `personWroteAfter` has no scene (the role path does); a real Antigravity session is in C182 (not run here). The C71 `信号` scene's pulse check is a timing check with a bounded wait (15 s).
   - Follow-ups: C182 (unblocked: decided, no status line), C186 (the map's `?`), C187 (a notice after an open request), C188 (forget a deleted Mailbox's sessions).
+- [x] C185 Stop on an attach refusal that a retry cannot fix (`unknown_role` and the like), and show it (2026-11-21, closed on the user's word without a review)
+  - Raised 2026-11-21 from design.md §6.1ai: an attach refused with 400 `unknown_role` (a `HUB_ROLE` missing from roles.json) was retried with backoff for minutes, and `whoami` only said `connecting`. Decided 2026-11-21 (the user, "as recommended"): the attach's 400 and 401 stop the retries; 404, 409 (`project_mismatch` with C181's one retry, `successor_attached`), 5xx and network errors keep today's behaviour. The Hub records nothing, since `unknown_role` creates no Mailbox.
+  - Changed: `src/shim/hub-client.ts` (`isRefusedForGood`, `terminateRefused`: the refusal ends the shim once, with `terminatedReason` `refused` and `refusal` (status, code, the Hub's message); `run()` stops on a terminated state; `primeAttach` writes no second line for it; `HubHttpError.hubMessage`), `src/shim/main.ts` (`refusedNote`: the cause and the way out; every tool except `whoami` returns it as an error; `whoami` carries `note` and `refusal`), `src/shim/refused-attach.test.ts` (new), `docs/protocol.md` §3 and §5, `docs/design.md` §3.3.
+  - Decided by the user at the close: `terminatedReason` is `refused`, with the code and message in `refusal` (not in the string); and the one-line log for `primeAttach` (a `project_mismatch` refusal seen there now writes only the terminated line).
+  - Checked: `npm test` 829 pass, 0 fail (six new tests: 400 and 401 each make one attach and log once across the backoffs; primeAttach then start makes one attach; a 5xx is still retried; whoami and the tool calls of a real shim with a real Hub name the cause and the way out for unknown_role and for 401); `npm run typecheck` exit 0; `npm run docs:check` 0 errors, with the close reminder gone once the section was closed.
+  - Not checked: a real Claude Code or Antigravity session refused with `unknown_role` or 401 (the tests use a real Hub in a child shim and a stand-in Hub for the status cases); 404, `successor_attached` and a refused connection have no new tests (their code paths are unchanged, and the existing shim tests for them pass).
+  - Follow-ups: none filed.
 - [x] C170 Property-based tests for the card state derivation (2026-11-17, closed on the user's word without a review)
   - Decided 2026-11-15 (from C168). Done 2026-11-17 in the planning session, without a team; `fast-check` 4.10.2 installed by the user. Commit `0e145ec`.
   - Changed: `src/shared/card-state.property.test.ts` (three properties over the Mailbox shapes the Hub has sent over time), design.md §5 (the tool, and the pattern C171 followed), usage.md "Development" (replaying with `FC_SEED` / `FC_PATH`), docs/proofs.md S2, S3, S18, S19.
@@ -1209,28 +1215,6 @@ Raised 2026-11-21 by Antigravity as reviewer (a draft written at the user's requ
 - (3) An optional wait: `inbox(wait_seconds)` (or a separate tool) holds the call on the existing stream, sends `notifications/progress` to stay under client tool timeouts (Antigravity: 180 seconds by default, §6.1ai), and returns the `<hub-message>` on arrival or an empty result at the timeout. Only for a waiting turn the human started (§2); it occupies the conversation while it waits.
 - Out of scope: waking an idle client with no turn running (C179 for the human's word, C12 for opt-in watchers).
 - To decide: which of (1), (2), (3) to take now, and whether to split them into separate items once decided ((2) looks like `held` until a client supports it).
-
-### C185. Stop on an attach refusal that a retry cannot fix (`unknown_role` and the like), and show it
-
-Raised 2026-11-21 from design.md §6.1ai: an attach refused with 400 `unknown_role` (a `HUB_ROLE` missing from `roles.json`) was retried with backoff for minutes, `whoami` said `connecting`, and nothing else showed it. C181 noted it in its body but left it out of its done-when lines, and closed without it.
-
-- The same shape as C181's second refusal: the shim stops retrying, stays unattached, and says why on every tool call and in `whoami`; the Hub could keep the refusal like `attachRefused` so the page shows it without a tool call.
-- To decide: which refusals count as not fixable by a retry (4xx other than 404 and 409? only `unknown_role`?), and whether the Hub records them for a Mailbox that may not exist yet.
-- Decided 2026-11-21 (the user, "as recommended"): the attach's 400 (`unknown_role`, an invalid Mailbox name or body) and 401 (the token) stop the retries; nothing changes them but a change of settings and a restart (`roles.json` is read once at the Hub's start, protocol.md §1). 404, 409 (`project_mismatch` with C181's one retry, `successor_attached`), 5xx and network errors keep today's behaviour. The Hub records nothing: `unknown_role` creates no Mailbox, so there is no card to show it on; the shim's `whoami`, tool errors and log carry it.
-
-Facts found while implementing (2026-11-21, deployer):
-- Code: `src/shim/hub-client.ts` (`isRefusedForGood` and `terminateRefused`: an attach refused with 400 or 401 is terminated once, with `terminatedReason: "refused"` and `refusal` (status, code, the Hub's message; `HubHttpError.hubMessage` is new); `run()` stops on a terminated state; `primeAttach` writes no second line for it), `src/shim/main.ts` (`refusedNote`: the cause, and the way out for `unknown_role` (the role, roles.json, a restart of the Hub, then this session) and for 401 (HUB_TOKEN); every tool except `whoami` returns it as an error; `whoami` carries it as `note` and `refusal`). The Hub and the UI did not change.
-- The shape: `terminatedReason` is `refused` (as C181 uses its own reason), and the code and message are in `refusal`, not in the string. Tests: `src/shim/refused-attach.test.ts` (400 unknown_role and 401 each make one attach and log once across several backoffs; primeAttach then start makes one attach and one line; a 5xx is still retried; the tools and `whoami` name the cause and the way out in a real shim with a real Hub, for unknown_role and for 401).
-- A side effect, kept on purpose: a `project_mismatch` refusal that `primeAttach` saw used to write two lines (`hub:` and `terminated:`); now it writes the terminated line only. The C181 and C103 tests check the terminated line and still pass.
-- Not re-tested by the new tests: 404 (reattach), 409 `successor_attached`, and a refused connection. Their code paths are unchanged (only the 400 and 401 branches are new), and the existing shim tests for them pass.
-- `docs/proofs.md` has no row for the attach's retries (its rows are the delivery guarantees D1–D22 and the card states), so no row changed. protocol.md §3 and §5 and design.md §3.3 describe the change. The change does not alter a convention other projects follow (no ledger or reply-format rule), so `docs/conventions-log.md` is unchanged.
-
-#### Done when
-- [x] An attach refused with 400 or 401 is not retried: the shim stays unattached, `whoami` returns a `terminatedReason` with the Hub's error code and message, and every tool call other than `whoami` fails with a note naming the cause and the way out (for `unknown_role`: the role, `roles.json`, restart the Hub and then this session) (tests in the shim)
-- [x] 404, 409 `project_mismatch` (one retry, C181), 409 `successor_attached`, 5xx and a refused connection behave as before (the existing tests still pass; one new test for 5xx still retrying)
-- [x] The shim logs the refusal once, not once per backoff (test)
-- [x] protocol.md §3 (the attach's refusals and what the shim does with them) and design.md §3.3 describe the change; docs/proofs.md changes a row if one covers the attach's retries
-- [x] `npm test` and `npm run docs:check` pass
 
 ### C186. The map's nodes show the `?` of a guessed Working
 Status: proposed
