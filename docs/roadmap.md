@@ -1237,3 +1237,18 @@ Raised 2026-11-21 from design.md §6.1ai: an attach refused with 400 `unknown_ro
 - [ ] The shim logs the refusal once, not once per backoff (test)
 - [ ] protocol.md §3 (the attach's refusals and what the shim does with them) and design.md §3.3 describe the change; docs/proofs.md changes a row if one covers the attach's retries
 - [ ] `npm test` and `npm run docs:check` pass
+
+### C186. The map's nodes show the `?` of a guessed Working
+Status: proposed
+
+Raised 2026-11-21 in the C183 review (reviewer, out of scope): the cards show `Working?` for a session without Events (design.md §3.15), but the map's nodes render the state's label without the guess mark (`mapNodeOf` in `public/index.html`), so the map says `Working` where the card says `Working?`. The map is a second view of the same model (C78) and should not disagree with the cards.
+
+- Idea: the node takes `st.guess` the way the card does, with the same tooltip; a `ui:check` map scene for a session without Events.
+
+### C187. A notice after an open request turns a session without Events to Stopped, no reply
+Status: proposed
+
+Raised 2026-11-21 in the C183 review (reviewer's note): for a session without Events and an open handed request, a later `notice` handed to it (even in the same `inbox()` batch) becomes `lastHanded` with `open: false`, so the card's no-Events rule no longer sees an open hand-over and falls to `Stopped, no reply`, although no turn ended and the request still awaits its reply (`src/shared/card-state.js`, C183's rule). Clients without Events (Antigravity, design.md §6.1ai) meet this in normal use when the leader follows a request with a notice.
+
+- The reviewer's caution: keeping `Working?` whenever `awaitingReply.count > 0` would instead keep a long-stopped session without Events Working after a Health check notice (the `demo.old` scene), so the rule needs the time of the open request, not only the count.
+- To decide: which fact the rule reads (the open request's handed time from `awaitingReply.seqs`, or a `lastHandedOpen` next to `lastHanded` in the Hub), and whether C182's turn ends make this moot for Antigravity once its hooks are set up.
