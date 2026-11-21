@@ -24,6 +24,9 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C180
+- [ ] C181
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -1156,7 +1159,6 @@ Raised 2026-11-20 from a question about whether a desktop-app agent (for example
 - C3's result for Antigravity (2026-11-21, design.md §6.1ai): it connects the shim, sends `antigravity-client`, and does not fetch while idle; a human's word was enough for it to fetch and answer. One more wake path exists inside it: the App's `agentapi send-message <conversation> <content>` posts into a conversation, but only from processes the App starts (its sidecars); from outside it needs a CSRF token. A sidecar that watches the Hub and calls it would be a level 2 adapter for this client (§3.9), and would also send without a human pressing Send, so it falls under design.md §2 and C12 rather than this item.
 
 ### C180. The shim's project for clients that start it outside the project folder
-Status: proposed
 
 Raised 2026-11-21 from C3's run with Google Antigravity (design.md §6.1ai). The shim takes its project from `CLAUDE_PROJECT_DIR`, else `process.cwd()` (`src/shim/config.ts`). Antigravity sets neither: it starts stdio servers in its own install folder. So the Mailbox's `project` and the reply's `meta.item.project` named `…\AppData\Local\Programs\antigravity`, and without `HUB_MAILBOX` the default Mailbox name would have come from that folder too. Role messages scoped by `project` (protocol.md §3) and the project checks of attach (`project_mismatch`, C103) would then go wrong for such a client.
 
@@ -1164,3 +1166,29 @@ Raised 2026-11-21 from C3's run with Google Antigravity (design.md §6.1ai). The
 - Constraints for (b): the shim attaches before `initialize` to get the role description (design.md §3.7), so the first attach would carry the wrong folder, and the Mailbox name derived from it, before `roots/list` can answer. It would need a correction after `initialize` like the `client` name's (`PATCH /attachments/:id`), and whether the Hub accepts a `cwd` change there is not settled (check protocol.md first). Several roots: which one is the project.
 - To decide: (a), (b), or (a) now and (b) later.
 - Checked the same day (design.md §6.1ai): option (a) works with Antigravity's `cwd` field; a role message scoped to the project then reached the deployer and was answered. But changing the folder in the config and restarting the App within the 15-second grace period left the shim alive and unattached on `project_mismatch` (C103) with no sign in the App, because the App kills the shim and the old Attachment lingers. Either option has to say what the human does then (wait and restart, or the shim retries once after the grace period).
+- Decided 2026-11-21 (the user): the project is decided once, at attach, and given at the points that need it; a later change of the client's roots is reported, not followed. A live Mailbox whose `project` moves would change which role messages it matches (seq 682 in §6.1ai became readable when the folder changed) and would no longer match a Mailbox name derived from the folder, so the human restarts to move. The refused-attach part went to C181.
+- Order of sources: `HUB_PROJECT` (new, explicit) → `CLAUDE_PROJECT_DIR` → the client's single root from `roots/list` (only when the client declares `roots`) → `process.cwd()`. Several roots are not guessed between: the next source is used, with a warning. The role description can come from `GET /roles` without attaching, so when the project comes from roots the shim can attach after `roots/list` answers instead of before `initialize` (design.md §3.7); with `CLAUDE_PROJECT_DIR` (Claude Code) it attaches before `initialize` as today.
+- Unknown before implementing: with Antigravity's global config one shim serves the whole App, so one Mailbox would stand for every workspace; a workspace's `.agents/mcp_config.json` may start one shim per workspace. That decides what the setup docs recommend.
+
+#### Done when
+- [ ] With the Antigravity App, it is checked and recorded in design.md §6 whether a server in a workspace's `.agents/mcp_config.json` starts one shim process per workspace, what `roots/list` returns there, and whether switching workspace sends `notifications/roots/list_changed`
+- [ ] The shim resolves its project in the order `HUB_PROJECT`, `CLAUDE_PROJECT_DIR`, the single root of `roots/list` when the client declares `roots`, `process.cwd()`; with several roots it uses the next source and says so in `whoami`; the default Mailbox name comes from the resolved project. Unit tests cover each source and the several-roots case
+- [ ] When the project comes from roots, the first attach already carries that folder as `cwd` (no attach with `process.cwd()` before it), and the instructions still carry the role description; with `CLAUDE_PROJECT_DIR` set, attach still happens before `initialize` (tests for both orders)
+- [ ] When `notifications/roots/list_changed` brings a single root different from the attached project, the shim does not re-attach or change `cwd`; `whoami` shows both folders, and the next tool result starts with a one-line note saying to restart the client to move (test)
+- [ ] With Antigravity and no `cwd` in its MCP config, a real run attaches with `project` the workspace folder, recorded in design.md §6.1ai or a new §6 entry
+- [ ] protocol.md (if the attach order or `whoami` changes) and design.md §3.3 / §3.7 describe the sources and the order; docs/usage.md says how to register the shim in a client other than Claude Code (`HUB_PROJECT`, `HUB_MAILBOX`, `HUB_ROLE`, the tool allow rule)
+- [ ] `npm test` and `npm run docs:check` pass
+
+### C181. Retry an attach refused with `project_mismatch`, and show the refusal without a tool call
+
+Raised 2026-11-21 from §6.1ai: after a restart that changed the folder, the old Attachment was a leftover inside its 15-second grace period (the client killed the shim, so its `DELETE` did not run), the attach got 409 `project_mismatch` (C103), and the shim stayed alive and unattached. The tool errors carry a note (`src/shim/main.ts`, `PROJECT_MISMATCH_NOTE`), but nobody calls a tool while waiting, the page shows nothing, and the note's advice (start under another Mailbox name) is wrong when the other Attachment was only a leftover. The user's direction: retry, and when the retry fails, show the way out; avoid states that stop silently.
+
+- The C103 rule stays: an attach from another folder never takes over a live Attachment. The retry only waits out a leftover.
+- The refusal record is delivery state held in the Hub's memory like `projectChanged` (design.md §3.14), not knowledge.
+
+#### Done when
+- [ ] On 409 `project_mismatch`, the shim retries the attach once after the Hub's grace period plus a margin; when the old Attachment has expired by then, it attaches and runs as usual (test with the grace period shortened)
+- [ ] When the retry is refused too, the shim stays unattached and says so on every tool call and in `whoami`: the Mailbox, the folder holding it, the refused folder, and the two ways out (close the other session, or use another Mailbox name); the note no longer says only the second (test)
+- [ ] The Hub keeps the last refused attach per Mailbox (time, refused folder, client) in memory, returns it in `GET /mailboxes`, and clears it on the next successful attach (test); the page shows it on the Mailbox's card until then (`ui:check` scene)
+- [ ] protocol.md §3 (attach, `GET /mailboxes`) and design.md §3.3 describe the retry and the record; docs/proofs.md is updated if a card state changes
+- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass
