@@ -6,18 +6,22 @@ import {
   CallToolRequestSchema,
   InitializeRequestSchema,
   LATEST_PROTOCOL_VERSION,
+  ListRootsResultSchema,
   ListToolsRequestSchema,
+  RootsListChangedNotificationSchema,
   SUPPORTED_PROTOCOL_VERSIONS,
+  type CallToolRequest,
   type CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { ADDRESS_TYPES, MESSAGE_KINDS, normalizeProjectPath, type Address, type Mailbox, type Message } from '../shared/types.js'
 import { CHANNEL_CAPABILITY, pushSkippedNotice, pushToChannel } from './channel.js'
 import { instructionsFor, routeFor, type Route } from './instructions.js'
-import { loadConfig } from './config.js'
+import { envDecidesProject, loadConfig, setProject } from './config.js'
+import { chooseRoot, movedNote, rootFolders, withTimeout, type Root } from './project.js'
 import { SHIM_TOOLS } from './tools.js'
 import { resolveFiles, sweepFiles } from './files.js'
-import { HubClient } from './hub-client.js'
+import { HubClient, type AttachInfo } from './hub-client.js'
 import { fetchInbox } from './inbox.js'
 import { messageLookup, openRequestsText } from '../shared/open-requests.js'
 
@@ -26,8 +30,16 @@ const log = (msg: string) => process.stderr.write(`[agent-hub shim] ${msg}\n`)
 const cfg = loadConfig()
 if (!cfg.token) log('HUB_TOKEN is not set. Set it in the .env of agent-hub or in the environment')
 
-// 添付画像は配信の直前に取得し、path / error を足す (元のメッセージは書き換えない)
-const fileCtx = { hubUrl: cfg.hubUrl, token: cfg.token, baseDir: cfg.filesDir, mailbox: cfg.mailbox, log }
+// 添付画像は配信の直前に取得し、path / error を足す (元のメッセージは書き換えない)。mailbox は roots で変わりうるので、読むたびに取る
+const fileCtx = {
+  hubUrl: cfg.hubUrl,
+  token: cfg.token,
+  baseDir: cfg.filesDir,
+  get mailbox() {
+    return cfg.mailbox
+  },
+  log,
+}
 const hub = new HubClient(
   cfg,
   async (m: Message): Promise<void> => pushToChannel(server, await resolveFiles(m, fileCtx), cfg.mailbox),
@@ -35,10 +47,79 @@ const hub = new HubClient(
   async (skipped: number): Promise<void> => pushSkippedNotice(server, skipped, cfg.mailbox),
 )
 
-// role の説明は instructions (initialize の応答) に入るので、それより前に attach して取る。待ちは上限付きで、
-// 過ぎたら説明なしで起動する (Hub が止まっていても shim は立ち上がる)。design.md §3.7
+// C180: the project. The environment decides it (envDecided): then the attach is made before the client sends initialize, as before C180,
+// and roots are not asked. Otherwise, when the client declares roots, roots/list is asked during initialize, its single root decides the
+// project, and the attach follows it. Later changes are reported (rootsMovedNote), not followed. ROOTS_WAIT_MS bounds each wait for the answer
+const ROOTS_WAIT_MS = 3000
+const envDecided = envDecidesProject(cfg)
+let clientRoots = false
+// why the roots did not decide the project (several roots, none, not a folder, no answer); whoami shows it
+let projectNote: string | null = null
+// the last roots/list answer that was applied. null: not asked, or none has been applied. A failed or timed-out refresh keeps the previous one
+let rootsNow: Root[] | null = null
+// refreshes that are still waiting for the client, and the numbers of the last one issued and of the last one applied. An answer
+// older than the applied one is stale and is dropped, so two notifications back to back cannot leave the older answer in place
+const rootsInFlight = new Set<Promise<Root[] | null>>()
+let rootsIssued = 0
+let rootsApplied = 0
+
+// initialize の応答に入る role の説明と言語は attach の応答から取る (design.md §3.7)。待ちは上限付きで、過ぎたら説明なしで起動する
+// (Hub が止まっていても shim は立ち上がる)。環境で決まるときは接続の前に attach し、roots で決まるときは roots の後に attach する
 const PRIME_ATTACH_MS = 3000
-const primed = cfg.token ? await hub.primeAttach(PRIME_ATTACH_MS) : undefined
+let primed: AttachInfo | undefined
+let initializing: Promise<void> | undefined
+
+// roots/list を client に問う。server.listRoots は SDK の client capability を見るが、initialize は自前で答えるのでそこが埋まらない。直接 request する
+async function listRoots(): Promise<Root[] | null> {
+  try {
+    const r = await withTimeout(server.request({ method: 'roots/list' }, ListRootsResultSchema), ROOTS_WAIT_MS, 'roots/list')
+    return r.roots
+  } catch (e) {
+    log(`roots/list: ${e instanceof Error ? e.message : String(e)}`)
+    return null
+  }
+}
+
+// roots/list を問い、答えを applied にする (新しい答えが先に applied になっていなければ)。答えを返す (失敗は null)。
+// 同期で開始するので、呼んだ直後の tool 呼び出しは、この問い合わせの終わりを待てる
+function refreshRoots(): Promise<Root[] | null> {
+  const gen = ++rootsIssued
+  const p = listRoots().then((roots) => {
+    if (roots !== null && gen > rootsApplied) {
+      rootsApplied = gen
+      rootsNow = roots
+    }
+    return roots
+  })
+  rootsInFlight.add(p)
+  void p.finally(() => rootsInFlight.delete(p))
+  return p
+}
+
+async function decideFromRoots(): Promise<void> {
+  const roots = await refreshRoots()
+  if (roots === null) {
+    projectNote = `roots/list did not answer, so the next source, the process folder (${cfg.cwd}), is used`
+    return
+  }
+  const c = chooseRoot(roots)
+  if ('dir' in c) {
+    setProject(cfg, c.dir, 'roots')
+    log(`project from roots: ${c.dir} (Mailbox ${cfg.mailbox})`)
+  } else {
+    projectNote = `${c.reason}; the next source, the process folder (${cfg.cwd}), is used`
+    log(projectNote)
+  }
+}
+
+// initialize の前にやること。環境で決まらず roots を持つ client なら、roots を見てから attach する (環境で決まるときは接続の前に済んでいる)。
+// roots で決まったかに関わらず、トークンがなければ attach はしない
+function prepare(): Promise<void> {
+  return (async () => {
+    if (!envDecided && clientRoots) await decideFromRoots()
+    if (!envDecided && cfg.token) primed = await hub.primeAttach(PRIME_ATTACH_MS)
+  })()
+}
 
 const SERVER_INFO = { name: 'agent-hub', version: '0.0.1' }
 const CAPABILITIES = { experimental: CHANNEL_CAPABILITY, tools: {} }
@@ -47,11 +128,14 @@ const server = new Server(SERVER_INFO, { capabilities: CAPABILITIES })
 // 経路 (channel / inbox) は clientInfo.name で決まり、instructions は initialize の応答に入るので、initialize を自前で答える。
 // SDK の既定の処理 (_oninitialize、private) と同じ版の取り決めをし、instructions だけを経路ごとに変える (design.md §3.7)。
 // SDK の getClientVersion / getClientCapabilities は埋まらないが、shim はどちらも使わない
-server.setRequestHandler(InitializeRequestSchema, (req) => {
+server.setRequestHandler(InitializeRequestSchema, async (req) => {
   const route: Route = routeFor(req.params.clientInfo?.name)
   hub.setPush(route === 'channel')
   if (req.params.clientInfo?.name) hub.setClient(req.params.clientInfo.name)
+  clientRoots = req.params.capabilities?.roots !== undefined
   log(`client=${req.params.clientInfo?.name ?? '?'} route=${route}`)
+  initializing ??= prepare()
+  await initializing
   const requested = req.params.protocolVersion
   return {
     protocolVersion: SUPPORTED_PROTOCOL_VERSIONS.includes(requested) ? requested : LATEST_PROTOCOL_VERSION,
@@ -60,6 +144,17 @@ server.setRequestHandler(InitializeRequestSchema, (req) => {
     instructions: instructionsFor(route, cfg.mailbox, cfg.role, primed?.roleDescription ?? null, primed?.language ?? null),
   }
 })
+
+// 単独の root が接続中のプロジェクトと違うときは、追わずに知らせる (C180)。whoami は両方のフォルダを出す
+server.setNotificationHandler(RootsListChangedNotificationSchema, async () => {
+  if (!clientRoots) return
+  void refreshRoots()
+})
+
+// 環境が決めたプロジェクトには、roots の変化を知らせない (環境が優先)
+function rootsMovedNote(): string | null {
+  return envDecided ? null : movedNote(cfg.cwd, rootsNow)
+}
 
 // "mailbox:rev-a" のような表記 (channel の from / to と同じ) を Address にする
 function parseAddress(s: string): Address {
@@ -115,21 +210,27 @@ const lookupMessage = messageLookup((path) => hub.request<unknown>('GET', path))
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: SHIM_TOOLS }))
 
 // 切り離された shim は attach し直さない。「新しい方を閉じればこちらが戻る」とモデルが案内したので (2026-10-19、C21)、
-// 戻らないことと、使い続けるときの手順を書く
+// 戻らないことと、使い続けるときの手順を書く。Mailbox 名は呼ぶときの cfg.mailbox を読む (C180: roots で決まると、起動時の名前と違う)
 // C103: the Mailbox is connected from another folder, so this session is refused and does not retry
-const PROJECT_MISMATCH_NOTE =
-  `Mailbox ${cfg.mailbox} is connected, and a project in another folder is using it (project_mismatch). This session will not connect to the Hub. ` +
-  'Start again under another Mailbox name (for team, --mailbox <name>; when started by hand, change HUB_MAILBOX)'
-const SUPERSEDED_NOTE =
-  `Mailbox ${cfg.mailbox} was taken over by another session (superseded). This session will not reconnect (closing the newer session does not bring it back). ` +
-  'This session no longer sends, receives or changes subscriptions. To keep using this session, start Claude Code again (the one connected now is detached)'
+function projectMismatchNote(): string {
+  return (
+    `Mailbox ${cfg.mailbox} is connected, and a project in another folder is using it (project_mismatch). This session will not connect to the Hub. ` +
+    'Start again under another Mailbox name (for team, --mailbox <name>; when started by hand, change HUB_MAILBOX)'
+  )
+}
+function supersededNote(): string {
+  return (
+    `Mailbox ${cfg.mailbox} was taken over by another session (superseded). This session will not reconnect (closing the newer session does not bring it back). ` +
+    'This session no longer sends, receives or changes subscriptions. To keep using this session, start Claude Code again (the one connected now is detached)'
+  )
+}
 
-server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolResult> => {
+async function callTool(req: CallToolRequest): Promise<CallToolResult> {
   const args = req.params.arguments ?? {}
   try {
     // 引き継がれた後は、送信も購読の変更もしない (購読は Mailbox に保存されるので、後継の購読を変えてしまう)
-    if (hub.terminatedReason === 'superseded' && req.params.name !== 'whoami') throw new Error(SUPERSEDED_NOTE)
-    if (hub.terminatedReason === 'project_mismatch' && req.params.name !== 'whoami') throw new Error(`${PROJECT_MISMATCH_NOTE} (${hub.lastError ?? ''})`)
+    if (hub.terminatedReason === 'superseded' && req.params.name !== 'whoami') throw new Error(supersededNote())
+    if (hub.terminatedReason === 'project_mismatch' && req.params.name !== 'whoami') throw new Error(`${projectMismatchNote()} (${hub.lastError ?? ''})`)
     switch (req.params.name) {
       case 'post_message': {
         if (!hub.attachment) throw new Error(`Not connected to the Hub (${hub.state}${hub.lastError ? `: ${hub.lastError}` : ''})`)
@@ -191,11 +292,18 @@ server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolRes
         return text({
           mailbox: cfg.mailbox,
           role: mailbox?.role ?? cfg.role,
+          // The project this session is attached with, where it came from (C180), and what the client's roots say now.
+          // Both folders are shown, so a difference between them is visible
+          project: cfg.cwd,
+          projectSource: cfg.projectSource,
+          projectNote,
+          roots: rootsNow ? rootFolders(rootsNow) : null,
+          ...(rootsMovedNote() ? { rootsNote: rootsMovedNote() } : {}),
           state: hub.state,
           attachmentId: hub.attachment?.attachmentId ?? null,
           terminatedReason: hub.terminatedReason ?? null,
-          ...(hub.terminatedReason === 'superseded' ? { note: SUPERSEDED_NOTE } : {}),
-          ...(hub.terminatedReason === 'project_mismatch' ? { note: PROJECT_MISMATCH_NOTE } : {}),
+          ...(hub.terminatedReason === 'superseded' ? { note: supersededNote() } : {}),
+          ...(hub.terminatedReason === 'project_mismatch' ? { note: projectMismatchNote() } : {}),
           lastError: hub.lastError ?? null,
           subscriptions: mailbox?.subscriptions ?? null,
           effectiveSubscriptions: mailbox?.effectiveSubscriptions ?? null,
@@ -209,6 +317,18 @@ server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolRes
     const msg = e instanceof z.ZodError ? e.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') : e instanceof Error ? e.message : String(e)
     return { isError: true, content: [{ type: 'text', text: msg }] }
   }
+}
+
+// 結果の先頭に一行の注意を足す (C180)。whoami は JSON なので rootsNote の欄で出す
+server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolResult> => {
+  // A roots refresh asked for by a notification just before this call is awaited, so the note is the current one (not the previous answer)
+  await Promise.all([...rootsInFlight])
+  const r = await callTool(req)
+  const moved = req.params.name === 'whoami' ? null : rootsMovedNote()
+  if (!moved) return r
+  const [first, ...rest] = r.content
+  const body = first?.type === 'text' ? first.text : ''
+  return { ...r, content: [{ type: 'text', text: `${moved}\n${body}` }, ...(first?.type === 'text' ? rest : r.content)] }
 })
 
 // 初期化が済む前の通知は捨てられうるので、Hub への接続は initialized の後に始める
@@ -232,5 +352,8 @@ process.on('SIGTERM', () => void shutdown())
 // 古い添付画像の掃除は起動時だけ。失敗しても起動は妨げない
 void sweepFiles(cfg.filesDir).then((n) => { if (n > 0) log(`expired files removed: ${n}`) })
 
+// 環境で決まるプロジェクトは、initialize を受ける前に attach する (C180 の前と同じ。roots は問わない)
+if (envDecided && cfg.token) primed = await hub.primeAttach(PRIME_ATTACH_MS)
+
 await server.connect(new StdioServerTransport())
-log(`started mailbox=${cfg.mailbox}${cfg.role ? ` role=${cfg.role}` : ''} hub=${cfg.hubUrl}`)
+log(`started mailbox=${cfg.mailbox}${cfg.role ? ` role=${cfg.role}` : ''} project=${cfg.cwd} (${cfg.projectSource}) hub=${cfg.hubUrl}`)

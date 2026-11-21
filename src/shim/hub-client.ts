@@ -223,7 +223,7 @@ export class HubClient {
     this.delivered = r.cursor
     // 古い Hub は truncated / skipped を返さない
     if (r.truncated && r.skipped > 0) this.pendingSkipped += r.skipped
-    this.log(`attached mailbox=${this.cfg.mailbox} attachment=${r.attachmentId} cursor=${r.cursor}${r.superseded ? ` superseded=${r.superseded}` : ''}${r.skipped ? ` skipped=${r.skipped}` : ''}`)
+    this.log(`attached mailbox=${this.cfg.mailbox} cwd=${this.cfg.cwd} attachment=${r.attachmentId} cursor=${r.cursor}${r.superseded ? ` superseded=${r.superseded}` : ''}${r.skipped ? ` skipped=${r.skipped}` : ''}`)
   }
 
   private async streamOnce(onData: () => void): Promise<void> {

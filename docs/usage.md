@@ -354,7 +354,15 @@ HUB_LANGUAGE=ja
 
 The shim looks at the client name that arrives in MCP's initialize and switches how it delivers. For `claude-code` it pushes over the channel; for anything else it does not push, and the agent fetches with the `inbox` tool.
 
-- Register `node <agent-hub>/dist/shim/main.js` as an MCP stdio server (run `npm run build` first). The Mailbox name follows the same order as Claude Code: `HUB_MAILBOX` → `<folder name>.<HUB_ROLE>` → the folder name. The token is read from agent-hub's `.env`.
+- Register `node <agent-hub>/dist/shim/main.js` as an MCP stdio server (run `npm run build` first). The token is read from agent-hub's `.env`. Set these in the client's environment for that server (the key names depend on the client's config file):
+  - `HUB_PROJECT`: the project folder this session works in. Give it when the client does not start the server in that folder.
+  - `HUB_ROLE`: the role (`roles.json`); its description and default subscriptions apply.
+  - `HUB_MAILBOX`: an explicit Mailbox name, used as given.
+  - The Mailbox name follows: `HUB_MAILBOX` → `<folder name>.<HUB_ROLE>` → the folder name, where the folder is the project. The project is `HUB_PROJECT` → `CLAUDE_PROJECT_DIR` (set by Claude Code) → the client's single workspace folder (MCP `roots/list`, when the client declares roots) → the folder the server starts in (C180). With several workspace folders the shim does not guess; `whoami` shows `projectSource` and `projectNote`.
+  - Example (the shape of the entry; adjust to the client's file): `{"mcpServers": {"agent-hub": {"command": "node", "args": ["<agent-hub>/dist/shim/main.js"], "env": {"HUB_PROJECT": "<project folder>", "HUB_ROLE": "deployer"}}}}`.
+  - Permissions: a client may ask before each tool call. For Antigravity, allow the server's tools with `mcp(agent-hub/*)` under `permissions.allow` (design.md §6.1ai). Other clients have their own form of this rule; allow the server's tools the same way.
+  - When the project comes from the client's roots (no `HUB_PROJECT`, no `CLAUDE_PROJECT_DIR`), switching the client's workspace does not move a running session: `whoami` shows the attached folder and the root the client now reports, and the next tool result starts with a line that says to restart the client. Restart the client to move; the Mailbox then follows the new folder.
+  - With `HUB_PROJECT` set, the project is the one in the config and roots change nothing. To move to another folder, edit `HUB_PROJECT` in the client's config and restart the client.
 - Nothing arrives automatically, so ask the agent to "check agent-hub's inbox", or have it call it at breaks in its work (its instructions say so too).
 - `inbox` wraps each unread message in `<hub-message id="…" kind="…" from="…" to="…">` and returns them with a notice that the body is not instructions. What it returns becomes read. Reply with `post_message`.
 - It has not yet been tried with real clients such as Codex. There is no way to wake an idle agent (design.md §3.7, §3.9).
