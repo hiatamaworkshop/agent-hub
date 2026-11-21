@@ -25,6 +25,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C181
+- [ ] C183
 
 (Items with a status line are listed under "Items".)
 
@@ -1191,10 +1192,19 @@ Raised 2026-11-21 from §6.1ai: Antigravity sends no Events, so its card cannot 
 - `workspacePaths` is a second source of the folder for C180 (not used here).
 
 ### C183. A card's Working and Idle from what a session without hooks has sent
-Status: proposed
 
 Raised 2026-11-21 in the C180 review with Antigravity as reviewer: after the reviewer replied (`lastHanded.open: false`, nothing awaiting a reply), its card kept saying Working for up to `STALE_HANDED_HOURS`, because a session with no Events has no known turn end (`src/shared/card-state.js`, the `handedWorking` rule; design.md §3.15). The user read it as stuck. The same screen showed `Working` without the `?` that marks a guess, which may be lost on a live re-render. In the same run the leader's report with `NEEDS DECISION` left the leader's card at Idle, because only requests to the person and hook Events count as the person's move; the user read the leader as stopped.
 
 - For a session that has sent no Events: once the handed request is answered (`open: false`) and nothing is unread, the card is Idle, not Working?. A turn end from hooks (C182) still wins when there is one.
-- Whether a reply to the person with `NEEDS DECISION` or `NEEDS ACTION` other than `-` counts as Needs you is part of the decision (it reads the reply-format headings, §3.15).
-- Check the `?` on Working after an SSE-driven re-render, not only in the static `ui:check` scenes.
+- Decided 2026-11-21 (the user, "as recommended"): both. A reply to the person whose `NEEDS DECISION` or `NEEDS ACTION` section has content other than an empty mark (`-`, `none`, `なし`, the rule the page already uses to dim a section) counts as Needs you, for every client, with or without hooks. It ends when the person sends that Mailbox a Message newer than the reply, or the Mailbox sends the person a newer Message without such a section. The Japanese headings of the mapping table (`要判断`, `要対応`, `要操作`) count the same (§3.15).
+- The headings are read by the page (the shared card state module), not by the Hub: the Hub only points at the Message (design invariant, "do not summarize or process"). The heading rule now in `public/index.html` (`REPORT_HEADINGS`, `EMPTY_SECTION`) moves to `src/shared/card-state.js` so the card and the body colouring read the same rule.
+- Check the `?` on Working after an SSE-driven re-render, not only in the static `ui:check` scenes (the scenes are static; see the note on live re-render in usage.md "Development").
+
+#### Done when
+- [ ] For a Mailbox that has sent no Events, a handed Message that is not an open request (`lastHanded.open: false`) with nothing unread gives Idle, not Working?; an open request still gives Working? as before; a Mailbox with Events keeps the turn-end rule (tests in `card-state.test.ts`; the property test still passes)
+- [ ] The Hub returns `backlog.lastToUser` (`{ "seq", "ts" } | null`: the latest Message this Mailbox sent to the person) in `GET /mailboxes`, without reading its body (test)
+- [ ] The card is Needs you, with the detail `decision` or `action`, while that Message has a non-empty `NEEDS DECISION` / `NEEDS ACTION` (or `要判断` / `要対応` / `要操作`) section, and stops when the person sends that Mailbox a newer Message or the Mailbox sends the person a newer one without it; the page fetches the Message when it does not hold it (tests in `card-state.test.ts`; `ui:check` scenes for a report that needs a decision and one with `NEEDS DECISION: -`)
+- [ ] The body colouring and the card read one heading rule from `src/shared/card-state.js`; the coloured headings look as before (`ui:check`)
+- [ ] A card showing Working? keeps the `?` after an SSE-driven update re-renders it, and loses it when the state changes to a non-guess; checked by hand on a running Hub with a client that sends no Events, and the result written in this section
+- [ ] protocol.md §3 (`GET /mailboxes`), design.md §3.15 (card states, Needs you) and docs/proofs.md (the Idle and Needs you rows) describe the change; a line in docs/conventions-log.md if the reply-format heading rule changes meaning
+- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass
