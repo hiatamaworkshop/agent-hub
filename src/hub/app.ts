@@ -101,7 +101,7 @@ export function createApp(opts: AppOptions) {
   const app = new Hono<AuthEnv>()
 
   app.onError((err, c) => {
-    if (err instanceof HubError) return c.json({ error: err.code, message: err.message }, err.status)
+    if (err instanceof HubError) return c.json({ error: err.code, message: err.message, ...err.details }, err.status)
     if (err instanceof SettingsError) return c.json({ error: err.code, message: err.message }, err.status)
     if (err instanceof FileError) return c.json({ error: err.code, message: err.message }, err.status)
     console.error('[hub]', err)

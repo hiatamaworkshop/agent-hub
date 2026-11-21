@@ -2026,6 +2026,7 @@ function mailboxModelOf(mb, bySeq) {
     attachment: mb.attachment || null, // 接続 (今の Attachment)
     detached: mb.detached || null, // 最後に切れた Attachment (この Hub の起動中だけ)
     projectChanged: mb.projectChanged || null,
+    attachRefused: mb.attachRefused || null, // 最後の attach の refusal (project_mismatch、C181)。古い Hub は返さない
     takeover: mb.attachment && mb.takeover ? mb.takeover : null,
     unread: typeof mb.unread === 'number' ? mb.unread : null, // 古い Hub は null
     unconfirmed: typeof mb.unconfirmed === 'number' ? mb.unconfirmed : null, // 古い Hub は null
@@ -2804,6 +2805,12 @@ function renderMailboxes() {
       w.title = 'The newest session started in a different folder than the previous one. If that was a mistake, restart it in the project root.'
       box.append(w)
     }
+    // 最後の attach が project_mismatch で断られ、そのあと成功した attach がない (C181)。Hub はメモリに持ち、次の attach か削除で外す。古い Hub は返さない
+    if (mb.attachRefused) {
+      const r = el('div', 'meta warn refusal', `Attach refused ${time(mb.attachRefused.at)}: from ${folderName(mb.attachRefused.folder)}, held by ${folderName(mb.attachRefused.holder)}`)
+      r.title = `${mb.attachRefused.folder} was refused; ${mb.attachRefused.holder} holds this Mailbox (client ${mb.attachRefused.client}). Close the other session, or start under another Mailbox name.`
+      box.append(r)
+    }
     // detached は最後に切れた Attachment (この Hub の起動中だけ)。古い Hub は返さないので Disconnected のまま
     const meta = [mb.attachment ? `Connected (${mb.attachment.client})` : mb.detached ? `Detached ${time(mb.detached.detachedAt)} (${DETACH_LABEL[mb.detached.reason] || mb.detached.reason})` : 'Disconnected']
     // takeover は今の Attachment が旧セッションを切り離して始まったとき (古い Hub は返さない)
@@ -3431,7 +3438,7 @@ function connect() {
   es.addEventListener('index.updated', () => loadIndexes())
   es.addEventListener('index.deleted', () => loadIndexes())
   // mailbox.acked は未読数が減ったときに届く (古い Hub は送らないので、その場合は何も起きない)
-  for (const ev of ['mailbox.created', 'mailbox.deleted', 'mailbox.acked', 'attachment.attached', 'attachment.updated', 'attachment.detached', 'attachment.superseded', 'subscription.changed']) {
+  for (const ev of ['mailbox.created', 'mailbox.deleted', 'mailbox.acked', 'attachment.attached', 'attachment.updated', 'attachment.detached', 'attachment.superseded', 'attachment.refused', 'subscription.changed']) {
     es.addEventListener(ev, () => refreshMailboxes())
   }
   return es

@@ -6,11 +6,14 @@ import type { ShimConfig } from './config.js'
 export class HubHttpError extends Error {
   readonly status: number
   readonly code: string
+  // the fields the Hub adds to the error body (C181: holder, refused and graceMs for project_mismatch)
+  readonly details: Record<string, unknown>
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, details: Record<string, unknown> = {}) {
     super(message)
     this.status = status
     this.code = code
+    this.details = details
   }
 }
 
@@ -36,6 +39,15 @@ const HEARTBEAT_TIMEOUT_MS = 60_000
 const BACKOFF_MIN_MS = 1_000
 const BACKOFF_MAX_MS = 30_000
 const DEDUPE_SIZE = 1000
+// A 409 project_mismatch: the Mailbox is connected from another folder (C103)
+function isMismatch(e: unknown): e is HubHttpError {
+  return e instanceof HubHttpError && e.status === 409 && e.code === 'project_mismatch'
+}
+
+// C181: a refusal with project_mismatch is retried once, after the Hub's grace period (graceMs in the 409; the Hub's default when it does not say)
+// plus this margin, so that a leftover Attachment of the old session has ended by then
+const DEFAULT_GRACE_MS = 15_000
+const MISMATCH_MARGIN_MS = 2_000
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -53,6 +65,9 @@ export class HubClient {
   private push = true
   // Attachment を失った (404) ときの ID。attach し直しで Hub に示し、後継がいれば取り返さない (design.md §3.3)
   private previousAttachment: string | undefined
+  // C181: the retry after a project_mismatch refusal has been used (until an attach succeeds), and the folder that holds the Mailbox as the Hub said
+  private mismatchRetried = false
+  mismatchHolder: string | null = null
   // attach で名乗るクライアント名。initialize の clientInfo.name が分かるまでは claude-code とする
   // (role の説明を取るため initialize より前に attach するので。setClient で直す)
   private client = 'claude-code'
@@ -85,10 +100,12 @@ export class HubClient {
     if (body !== undefined) headers['content-type'] = 'application/json'
     if (this.attachment) headers['x-hub-attachment'] = this.attachment.attachmentId
     const res = await fetch(this.cfg.hubUrl + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
-    const json = (await res.json().catch(() => ({}))) as { error?: string; message?: string; issues?: unknown }
+    const json = (await res.json().catch(() => ({}))) as { error?: string; message?: string; issues?: unknown; [key: string]: unknown }
     if (!res.ok) {
       const detail = json.message ?? (json.issues ? JSON.stringify(json.issues) : '')
-      throw new HubHttpError(res.status, json.error ?? 'http_error', `${method} ${path} → ${res.status} ${json.error ?? ''} ${detail}`.trim())
+      // the other keys of the body are its details (C181); error, message and issues are already in the error
+      const { error: _error, message: _message, issues: _issues, ...details } = json
+      throw new HubHttpError(res.status, json.error ?? 'http_error', `${method} ${path} → ${res.status} ${json.error ?? ''} ${detail}`.trim(), details)
     }
     return json as T
   }
@@ -181,11 +198,8 @@ export class HubClient {
           break
         }
         // 接続中の Mailbox を別のフォルダのプロジェクトが使っている。attach し直しても同じ結果なので止め、理由を見せる (C103)
-        if (e instanceof HubHttpError && e.status === 409 && e.code === 'project_mismatch') {
-          this.state = 'terminated'
-          this.terminatedReason = 'project_mismatch'
-          this.lastError = e.message
-          this.log(`terminated: project_mismatch (${e.message})`)
+        if (isMismatch(e)) {
+          this.terminateOnMismatch(e)
           break
         }
         this.lastError = e instanceof Error ? e.message : String(e)
@@ -200,8 +214,50 @@ export class HubClient {
 
   // 進行中の attach があれば、それを待つ (primeAttach の時間切れの後に run が二重に attach しないように)
   private attach(): Promise<void> {
-    this.inflight ??= this.doAttach().finally(() => (this.inflight = undefined))
+    this.inflight ??= this.attachRetryingMismatch().finally(() => (this.inflight = undefined))
     return this.inflight
+  }
+
+  // C181: a refusal with project_mismatch is retried once, after the grace period the Hub names plus a margin. A leftover Attachment
+  // of the old session is gone by then; a live one from another folder refuses again. That second refusal terminates the shim here,
+  // before the error is thrown, so run() (started after initialized) sees finished() and makes no third attempt
+  private async attachRetryingMismatch(): Promise<void> {
+    try {
+      await this.doAttach()
+    } catch (e) {
+      if (!isMismatch(e)) throw e
+      if (this.mismatchRetried) {
+        this.terminateOnMismatch(e)
+        throw e
+      }
+      this.mismatchRetried = true
+      this.noteMismatch(e)
+      const graceMs = typeof e.details.graceMs === 'number' ? e.details.graceMs : DEFAULT_GRACE_MS
+      const wait = graceMs + MISMATCH_MARGIN_MS
+      this.lastError = e.message
+      this.log(`refused: project_mismatch (${e.message}). Retrying once in ${wait} ms, after the grace period`)
+      await sleep(wait)
+      if (this.stopped) return
+      await this.doAttach().catch((retryError: unknown) => {
+        if (isMismatch(retryError)) this.terminateOnMismatch(retryError)
+        throw retryError
+      })
+    }
+  }
+
+  // The folder the Hub names as the holder of the Mailbox, kept from the latest refusal that named one
+  private noteMismatch(e: HubHttpError): void {
+    this.mismatchHolder = typeof e.details.holder === 'string' ? e.details.holder : this.mismatchHolder
+  }
+
+  // The refusal that the retry did not clear (C181): the shim stays unattached and says so (whoami, tool errors). Idempotent
+  private terminateOnMismatch(e: HubHttpError): void {
+    this.noteMismatch(e)
+    if (this.terminatedReason === 'project_mismatch') return
+    this.state = 'terminated'
+    this.terminatedReason = 'project_mismatch'
+    this.lastError = e.message
+    this.log(`terminated: project_mismatch (${e.message})`)
   }
 
   private async doAttach(): Promise<void> {
@@ -216,6 +272,8 @@ export class HubClient {
     })
     this.attachment = r
     this.previousAttachment = undefined
+    this.mismatchRetried = false
+    this.mismatchHolder = null
     // attach の途中で initialize が来て名前が変わっていたら直す
     if (client !== this.client) void this.sendClient()
     // stream の after は Hub の cursor から数え直す。Hub の data/ を消して再起動すると seq が 1 から振り直されるため、

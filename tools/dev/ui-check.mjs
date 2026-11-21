@@ -155,6 +155,7 @@ async function screen() {
       cls: b.className,
       state: (b.querySelector('.state') || {}).textContent || '',
       doing: (b.querySelector('.doing') || {}).textContent || '',
+      refusal: (b.querySelector('.refusal') || {}).textContent || '', // the attach refusal line (C181), '' when none
     })),
   })`
   const r = await cdp('Runtime.evaluate', { expression: expr, returnByValue: true })
@@ -196,6 +197,18 @@ async function scene(label, expect, title = 'agent-hub') {
   if (problems.length) failed++
   console.log(`${problems.length ? 'NG' : 'ok'}  ${label}`)
   for (const p of problems) console.log(`      ${p}`)
+}
+
+// 一覧のカードの、断られた attach の行 (C181). needles は行に含まれる語 (すべて)。null なら行はない
+async function refusalScene(label, name, needles) {
+  const s = await screen()
+  const card = s.cards.find((c) => c.name === name)
+  const got = card ? card.refusal : ''
+  // a missing card is a failure, not an empty line: the null case would pass on a card that is not shown
+  const ok = !!card && (needles === null ? got === '' : got !== '' && needles.every((n) => got.includes(n)))
+  if (!ok) failed++
+  console.log(`${ok ? 'ok' : 'NG'}  ${label}`)
+  if (!ok) console.log(`      「${got}」 (期待は ${needles === null ? 'なし' : JSON.stringify(needles)}; カード ${card ? 'あり' : 'なし'}; 見えているカード ${JSON.stringify(s.cards.map((c) => c.name))})`)
 }
 
 // 本文が text の Message で、節ごとの行の数 (sec-decide など) と見出しの数を照らす。中身が「なし」の節は目立たせない
@@ -2240,6 +2253,32 @@ try {
       hubCounts['unc.handed'] === 2 && hubCounts['unc.clear'] === 0 &&
       chips['unc.handed'] && chips['unc.handed'].count === '2' && chips['unc.handed'].text.startsWith('Stuck? 2') && chips['unc.clear'] === 'no chip',
       { hubCounts, chips })
+  }
+  // 断られた attach (C181). 持っているフォルダの session がいる Mailbox に、別のフォルダから attach して断られる。
+  // カードに行が出る (SSE で届いた分)、描き直しても残る、次の成功した attach で消える
+  {
+    // the holder is in the demo project's folder: the page shows one project at a time, and this card has to be in it
+    const holderFolder = cwd
+    const refusedFolder = join(work, 'ref-refused')
+    const holder = await api('POST', '/mailboxes/refm.deployer/attach', { client: 'claude-code', cwd: holderFolder, sessionId: 's-ref-a' })
+    // a turn end, so that the card is shown (the page hides a connected Mailbox with nothing to show, as the other scenes' cards have)
+    await hook('refm.deployer', { hook_event_name: 'Stop', session_id: 's-ref-a' })
+    await refusalScene('持っている session がいるので、カードに断られた行は出ない (C181)', 'refm.deployer', null)
+    let refused = ''
+    try {
+      await api('POST', '/mailboxes/refm.deployer/attach', { client: 'antigravity-client', cwd: refusedFolder, sessionId: 's-ref-b' })
+    } catch (e) {
+      refused = String(e.message)
+    }
+    if (!refused.includes('project_mismatch')) { failed++; console.log(`NG  attach from another folder was not refused: ${refused}`) }
+    await refusalScene('別のフォルダからの attach が断られ、カードに出る (C181)', 'refm.deployer', ['Attach refused', 'ref-refused', 'demo'])
+    // 描き直し: 別の Mailbox への Stop で一覧を取り直しても、断られた行は残る
+    await hook('refm.other', { hook_event_name: 'Stop', session_id: 's-ref-other' })
+    await refusalScene('一覧を描き直しても、断られた行は残る (C181)', 'refm.deployer', ['Attach refused', 'ref-refused'])
+    // 持ち主が切り離され、持ち主のフォルダから attach が通る。Hub の記録が消え、行も消える (カードは同じプロジェクトに残す)
+    await api('DELETE', `/attachments/${holder.attachmentId}`)
+    await api('POST', '/mailboxes/refm.deployer/attach', { client: 'claude-code', cwd: holderFolder, sessionId: 's-ref-a2' })
+    await refusalScene('次の成功した attach で、断られた行は消える (C181)', 'refm.deployer', null)
   }
   // 接続しているセッションがひとつもない: Your move は出さない (C127)。すべて切り離してから地図を見る
   for (const mb of (await api('GET', '/mailboxes')).mailboxes) if (mb.attachment) await api('DELETE', `/attachments/${mb.attachment.attachmentId}`)

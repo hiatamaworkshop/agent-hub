@@ -5,14 +5,17 @@ import { newId } from './ids.js'
 import type { Roles } from './roles.js'
 import type { Store } from './store.js'
 
+// details は本文に足す項目 (C181: 409 project_mismatch の holder / refused / graceMs)。code と message は変えない
 export class HubError extends Error {
   readonly status: 400 | 404 | 409
   readonly code: string
+  readonly details: Record<string, unknown>
 
-  constructor(status: 400 | 404 | 409, code: string, message: string) {
+  constructor(status: 400 | 404 | 409, code: string, message: string, details: Record<string, unknown> = {}) {
     super(message)
     this.status = status
     this.code = code
+    this.details = details
   }
 }
 
@@ -46,6 +49,15 @@ export interface Takeover {
 export interface ProjectChange {
   at: string
   from: string
+}
+
+// 最後に project_mismatch で refuse された attach (C181): いつ、どのフォルダから、どのフォルダが持っているか、どの client か。
+// 次の成功した attach か Mailbox の削除まで GET /mailboxes に出す (メモリのみ。protocol.md §3)
+export interface AttachRefusal {
+  at: string
+  folder: string
+  holder: string
+  client: string
 }
 
 // Attachment の stream 1 本ぶん (protocol.md §3 shim 向け SSE)
@@ -126,6 +138,8 @@ export class Hub {
   private readonly takeovers = new Map<string, Takeover>()
   // Mailbox 名 → 前と違うフォルダからの attach。起動の間違いに気づけるよう警告するだけで、拒まない (design.md §3.3)
   private readonly projectChanges = new Map<string, ProjectChange>()
+  // Mailbox 名 → 最後に project_mismatch で refuse された attach (C181)。次の成功した attach・削除で消す
+  private readonly attachRefusals = new Map<string, AttachRefusal>()
   // takeover で切り離された Attachment の sessionId。そのセッションの Event に superseded を付ける。
   // 同じセッションが attach し直したら外す。永続化はしない
   private readonly supersededSessions = new Set<string>()
@@ -331,6 +345,7 @@ export class Hub {
     this.store.deleteMailbox(name)
     this.lastDetached.delete(name)
     this.projectChanges.delete(name)
+    this.attachRefusals.delete(name)
     this.emitUi('mailbox.deleted', { name })
   }
 
@@ -376,10 +391,15 @@ export class Hub {
     // (移動したフォルダ。projectChanged の警告つき)、cwd のない attach は今のとおり
     const owner = current ? this.store.getMailbox(name) : undefined
     if (owner?.project && input.cwd && normalizeProjectPath(owner.project) !== normalizeProjectPath(input.cwd)) {
+      // C181: the refusal is kept (and shown) until the next successful attach; the 409 says what the shim needs to retry (graceMs)
+      const refusal: AttachRefusal = { at: this.now().toISOString(), folder: input.cwd, holder: owner.project, client: input.client }
+      this.attachRefusals.set(name, refusal)
+      this.emitUi('attachment.refused', { mailbox: name, ...refusal })
       throw new HubError(
         409,
         'project_mismatch',
         `mailbox ${name} is connected, and a session in ${owner.project} is using it. It cannot be attached from ${input.cwd}. Start under another Mailbox name (for team, pass --mailbox <name>)`,
+        { holder: owner.project, refused: input.cwd, graceMs: this.disconnectGraceMs },
       )
     }
     const { mailbox, created } = this.store.ensureMailbox(name, input.role)
@@ -407,6 +427,7 @@ export class Hub {
     if (previous && !(previous.sessionId && previous.sessionId === input.sessionId)) this.takeovers.set(at.attachmentId, { at: at.attachedAt, previous })
     this.store.setAttachment(name, at.attachmentId)
     this.lastDetached.delete(name)
+    this.attachRefusals.delete(name)
     this.recordProject(name, mailbox.project, input.cwd, at.attachedAt)
     // attach ツールで Mailbox を切り替えても、session の対応は最新の attach に追従する
     if (input.sessionId) this.sessionMailbox.set(input.sessionId, name)
@@ -632,6 +653,7 @@ export class Hub {
         detached: attachment ? null : (this.lastDetached.get(mb.name) ?? null),
         takeover: attachment ? (this.takeovers.get(attachment.attachmentId) ?? null) : null,
         projectChanged: this.projectChanges.get(mb.name) ?? null,
+        attachRefused: this.attachRefusals.get(mb.name) ?? null,
       }
     })
   }

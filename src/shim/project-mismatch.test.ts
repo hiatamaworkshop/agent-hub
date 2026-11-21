@@ -12,8 +12,9 @@ import { HubClient } from './hub-client.js'
 const TOKEN = 'test-token-0123456789'
 
 describe('HubClient: refused because the Mailbox is connected from another folder (C103)', () => {
-  it('stops at once with terminatedReason project_mismatch, logs the Hub message, and leaves the first session connected', async () => {
-    const hub = new Hub(new Store())
+  it('stops after one retry with terminatedReason project_mismatch, logs the Hub message, and leaves the first session connected', async () => {
+    // the grace period is short, so the one retry the shim makes (C181) after it does not slow the test
+    const hub = new Hub(new Store(), { disconnectGraceMs: 300 })
     const app = createApp({ hub, token: TOKEN, uiHtml: async () => null })
     let hubUrl = ''
     const server: ServerType = await new Promise((resolve) => {

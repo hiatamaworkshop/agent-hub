@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C181
 - [ ] C183
 
 (Items with a status line are listed under "Items".)
@@ -707,6 +706,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - Checked: `npm test` 796 pass, 0 fail; `npm run docs:check` 0 errors, 0 warnings, at commit `2fbd9fc`. The Antigravity run: the App declares no roots and starts every server in its install folder, so the roots path does not run for it; `HUB_PROJECT` set in the project's `.agents/mcp_config.json` attaches the Mailbox named after that folder, and the server is enabled only in that project (design.md §6.1ai). Done-when line 5 was reworded to that setup (option A).
   - Not checked: a live Claude Code session with the attach before initialize (tests only); the `project_mismatch` note with a roots Mailbox (the same function as superseded, which is tested); the `agy` CLI on the roots path (not run against the shim); a second project in the App (whether it starts a second process was left untried).
   - Follow-ups: C181 (retry an attach refused with `project_mismatch`, and the `unknown_role` retry loop noted in design.md §6.1ai).
+- [x] C181 Retry an attach refused with `project_mismatch`, and show the refusal without a tool call (2026-11-21, closed after the review)
+  - Raised 2026-11-21 in the C180 review: a restart that changed the folder left the old Attachment alive inside its grace period, so the attach was refused and the shim stayed unattached with no sign. Decided by the user (2026-11-21) to retry, and to show the refusal.
+  - Changed: `src/hub/hub.ts` (the refusal record per Mailbox, cleared by the next successful attach and by the Mailbox's deletion; `attachRefused` in `GET /mailboxes`; the `attachment.refused` event; the 409 details `holder`, `refused`, `graceMs`), `src/hub/app.ts`, `src/shared/types.ts`, `src/shim/hub-client.ts` (one retry after `graceMs` plus 2 s; the second refusal terminates the shim before run() starts), `src/shim/main.ts` (the note names the Mailbox, the holder, the refused folder and both ways out; `whoami` `mismatch`), `public/index.html` (the card line "Attach refused"), `tools/dev/ui-check.mjs` (the card line scenes), the tests `src/hub/attach-refusal.test.ts`, `src/shim/mismatch-retry.test.ts` (new), `src/shim/project-mismatch.test.ts`; docs/protocol.md §3, §5, §7, docs/design.md §3.3 and §3.14.
+  - Review: the reviewer found one thing, fixed: a third attach POST after the retry was refused. The second refusal now terminates the shim inside `attachRetryingMismatch`, and the test counts two attach requests at the Hub.
+  - Checked: `npm test` 801 pass, 0 fail; `npm run ui:check` exit 0 with 0 NG on the final run (the new scenes: the line on a live update, kept after a rebuild, cleared by the next successful attach); `npm run docs:check` 0 errors.
+  - Not checked: a real Claude Code or Antigravity session with the retry (tests only); a grace period of 1 s or more (the retry then runs after primeAttach returns; not tested). The C71 `信号` ui:check scene is intermittent (failed in 4 of 8 runs during this item), in code this item did not change; it is not part of C181.
 - [x] C170 Property-based tests for the card state derivation (2026-11-17, closed on the user's word without a review)
   - Decided 2026-11-15 (from C168). Done 2026-11-17 in the planning session, without a team; `fast-check` 4.10.2 installed by the user. Commit `0e145ec`.
   - Changed: `src/shared/card-state.property.test.ts` (three properties over the Mailbox shapes the Hub has sent over time), design.md §5 (the tool, and the pattern C171 followed), usage.md "Development" (replaying with `FC_SEED` / `FC_PATH`), docs/proofs.md S2, S3, S18, S19.
@@ -1165,21 +1170,6 @@ Raised 2026-11-20 from a question about whether a desktop-app agent (for example
 - Constraints: the last-fetch time is delivery state, so it fits §3.14. A client that cannot call `inbox()` while idle will show an old time as its normal state, so the wording must not read as a fault. This is not integration by operating a desktop app's screen (out of scope, see the top of "Items"); it goes only through MCP and the Hub's API.
 - To decide: whether (3) alone is enough, or (1) and (2) are needed too. Decide after C3 shows how a real non-Claude client behaves (whether it connects the shim, what `clientInfo.name` it sends, whether it can fetch while idle). If C3 resumes first, its result decides this item.
 - C3's result for Antigravity (2026-11-21, design.md §6.1ai): it connects the shim, sends `antigravity-client`, and does not fetch while idle; a human's word was enough for it to fetch and answer. One more wake path exists inside it: the App's `agentapi send-message <conversation> <content>` posts into a conversation, but only from processes the App starts (its sidecars); from outside it needs a CSRF token. A sidecar that watches the Hub and calls it would be a level 2 adapter for this client (§3.9), and would also send without a human pressing Send, so it falls under design.md §2 and C12 rather than this item.
-
-### C181. Retry an attach refused with `project_mismatch`, and show the refusal without a tool call
-
-Raised 2026-11-21 from §6.1ai: after a restart that changed the folder, the old Attachment was a leftover inside its 15-second grace period (the client killed the shim, so its `DELETE` did not run), the attach got 409 `project_mismatch` (C103), and the shim stayed alive and unattached. The tool errors carry a note (`src/shim/main.ts`, `PROJECT_MISMATCH_NOTE`), but nobody calls a tool while waiting, the page shows nothing, and the note's advice (start under another Mailbox name) is wrong when the other Attachment was only a leftover. The user's direction: retry, and when the retry fails, show the way out; avoid states that stop silently.
-
-- The C103 rule stays: an attach from another folder never takes over a live Attachment. The retry only waits out a leftover.
-- The refusal record is delivery state held in the Hub's memory like `projectChanged` (design.md §3.14), not knowledge.
-- The same silent state with another cause (2026-11-21, §6.1ai): an attach refused with 400 `unknown_role` (a `HUB_ROLE` missing from `roles.json`) was retried with backoff for minutes, `whoami` said `connecting`, and nothing else showed it. A refusal that a retry cannot fix belongs to the same decision (not in the done-when lines yet).
-
-#### Done when
-- [ ] On 409 `project_mismatch`, the shim retries the attach once after the Hub's grace period plus a margin; when the old Attachment has expired by then, it attaches and runs as usual (test with the grace period shortened)
-- [ ] When the retry is refused too, the shim stays unattached and says so on every tool call and in `whoami`: the Mailbox, the folder holding it, the refused folder, and the two ways out (close the other session, or use another Mailbox name); the note no longer says only the second (test)
-- [ ] The Hub keeps the last refused attach per Mailbox (time, refused folder, client) in memory, returns it in `GET /mailboxes`, and clears it on the next successful attach (test); the page shows it on the Mailbox's card until then (`ui:check` scene)
-- [ ] protocol.md §3 (attach, `GET /mailboxes`) and design.md §3.3 describe the retry and the record; docs/proofs.md is updated if a card state changes
-- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
 ### C182. Antigravity hooks as Hub Events, and the model on the card
 Status: proposed

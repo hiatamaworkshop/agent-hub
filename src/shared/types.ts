@@ -82,6 +82,7 @@ export const UI_EVENT_NAMES = [
   'attachment.updated',
   'attachment.detached',
   'attachment.superseded',
+  'attachment.refused',
   'subscription.changed',
   'index.updated',
   'index.deleted',

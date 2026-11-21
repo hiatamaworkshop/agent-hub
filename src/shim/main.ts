@@ -212,10 +212,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: SHIM_TOOL
 // 切り離された shim は attach し直さない。「新しい方を閉じればこちらが戻る」とモデルが案内したので (2026-10-19、C21)、
 // 戻らないことと、使い続けるときの手順を書く。Mailbox 名は呼ぶときの cfg.mailbox を読む (C180: roots で決まると、起動時の名前と違う)
 // C103: the Mailbox is connected from another folder, so this session is refused and does not retry
+// C181: the refusal survived the one retry. Names the Mailbox, the folder that holds it, this folder, and both ways out
 function projectMismatchNote(): string {
+  const holder = hub.mismatchHolder ?? 'another folder'
   return (
-    `Mailbox ${cfg.mailbox} is connected, and a project in another folder is using it (project_mismatch). This session will not connect to the Hub. ` +
-    'Start again under another Mailbox name (for team, --mailbox <name>; when started by hand, change HUB_MAILBOX)'
+    `Mailbox ${cfg.mailbox} is connected from ${holder}, and this session (${cfg.cwd}) was refused twice (project_mismatch), ` +
+    `the second time after waiting for the old session's leftover to end. This session stays unattached and will not connect to the Hub. ` +
+    `Two ways out: close the other session (the one in ${holder}), or start this one under another Mailbox name ` +
+    '(for team, --mailbox <name>; when started by hand, change HUB_MAILBOX)'
   )
 }
 function supersededNote(): string {
@@ -303,7 +307,9 @@ async function callTool(req: CallToolRequest): Promise<CallToolResult> {
           attachmentId: hub.attachment?.attachmentId ?? null,
           terminatedReason: hub.terminatedReason ?? null,
           ...(hub.terminatedReason === 'superseded' ? { note: supersededNote() } : {}),
-          ...(hub.terminatedReason === 'project_mismatch' ? { note: projectMismatchNote() } : {}),
+          ...(hub.terminatedReason === 'project_mismatch'
+            ? { note: projectMismatchNote(), mismatch: { mailbox: cfg.mailbox, holder: hub.mismatchHolder, refused: cfg.cwd } }
+            : {}),
           lastError: hub.lastError ?? null,
           subscriptions: mailbox?.subscriptions ?? null,
           effectiveSubscriptions: mailbox?.effectiveSubscriptions ?? null,
