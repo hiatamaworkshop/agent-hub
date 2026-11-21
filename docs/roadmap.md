@@ -24,6 +24,9 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C193
+- [ ] C179
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -1204,7 +1207,6 @@ Raised 2026-11-10 with C153. After a run, what waits for the human is spread ove
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
 
 ### C179. A "check your inbox" nudge as one health-check concept, for clients that cannot be woken
-Status: held(after running Antigravity with C182's hooks for a while; decide (1) and (2) from how its cards read then)
 
 Raised 2026-11-20 from a question about whether a desktop-app agent (for example Google Antigravity) can join a team. Joining needs only an MCP client that can reach the shim and call `inbox()`; how the app is started does not matter (design.md §3.7). What such a client lacks is a wake (level 3 of §3.9), so a human has to say "look at your inbox". That is close to what exists, and the idea is to give it one shape instead of a new mechanism.
 
@@ -1215,6 +1217,16 @@ Raised 2026-11-20 from a question about whether a desktop-app agent (for example
 - C3's result for Antigravity (2026-11-21, design.md §6.1ai): it connects the shim, sends `antigravity-client`, and does not fetch while idle; a human's word was enough for it to fetch and answer. One more wake path exists inside it: the App's `agentapi send-message <conversation> <content>` posts into a conversation, but only from processes the App starts (its sidecars); from outside it needs a CSRF token. A sidecar that watches the Hub and calls it would be a level 2 adapter for this client (§3.9), and would also send without a human pressing Send, so it falls under design.md §2 and C12 rather than this item.
 - Re-check of (3) (2026-11-21, by Antigravity as reviewer, at the user's request): a Hub Message ("check your inbox") sent from the page to a client that cannot be woken only adds one more unread Message; nothing reaches its conversation, so it wakes nothing. What works for such a client is (1) and (2) (the last `inbox()` time on the Attachment, shown on the card as waiting for the human's word, not as stopped), and at most a helper that copies a fixed text for the human to paste into the client. Picking up during a turn that is already running is C184.
 - Held (2026-11-21, the user's decision): (1) and (2) change the Attachment and the card's derivation, where C187 and C183's rule also are, and C182 now gives Antigravity Events. Run it with those hooks first; if its cards read right, (2) and C187 shrink or go. (3) as a Hub Message is dropped (see the re-check above). C190 (the unread hint) goes first.
+- Re-check after C182, C187 and C190 (2026-11-22, the planning session, from the code, not watched on a page): hooks give Antigravity its turn end, so its card reads Idle or Stopped after a turn (design.md §6.1aj). A request that arrives after that turn stays unread until the human says "check your inbox", and the card reads `Working` (quiet), because unread while connected is the agent's move (S10, `stateOf` in `src/shared/card-state.js`). For a client on the inbox route that is wrong: the next move is the human's. C187 does not touch this (it is about handed requests). The card can tell the route without a Hub change: the shim picks it from `clientInfo.name` (`routeFor` in `src/shim/instructions.ts`: `claude-code` is the channel route, anything else the inbox route), and the Attachment carries that name as `client` (protocol.md §3, `PATCH /attachments/:id`, C180).
+- Decided (2026-11-22, the user chose this among three options the planning session offered): (2) only, on the page. (1), the last `inbox()` time on the Attachment, stays an idea for later and is not part of this item; (3) stays dropped.
+
+#### Done when
+- [ ] `src/shared/card-state.js`: for a connected Mailbox whose Attachment `client` is not `claude-code` (the shim's inbox route), unread Messages with no turn known to be running read `Needs you` with detail `check inbox`, instead of `Working` (quiet). A turn is known to be running when the Mailbox's latest Event of this Attachment is newer than its latest turn end, or when the hand-over rule already reads `Working` / `Working?` (those keep their result). A `claude-code` Attachment keeps S10.
+- [ ] The route test in the card matches the shim's `routeFor` (one comment in each file names the other, so a change to one is seen in the other).
+- [ ] Tests in `src/shared/card-state.test.ts`: an `antigravity-client` Attachment with a turn end and then an unread request → `Needs you` (`check inbox`); the same with a `session.start` Event after the turn end → `Working` (quiet); a session without Events on the inbox route with unread only → `Needs you` (`check inbox`); a `claude-code` Attachment with unread → `Working` (quiet), as before. The property test still passes.
+- [ ] `npm run ui:check`: a scene for an inbox-route Mailbox with an unread request after its turn end → `Needs you (check inbox)`; the existing scenes keep their states.
+- [ ] design.md §3.15 (the card states and the order), docs/proofs.md (S10 and a row for the new Needs you case) and usage.md (what the human does on `check inbox`: tell the client to check its inbox) say the new rule.
+- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C184. Vendor-neutral pickup in the shim: an unread hint, standard MCP signals, an optional wait
 Status: held(until a client supports resources subscribe or MCP Events, or a waiting turn shows a need for (3))
@@ -1261,3 +1273,13 @@ Raised 2026-11-21 in C191's run (design.md §6.1ak): the model replied with `to`
 - Seen with a light model that ignored the instruction to omit `to`; a client that follows the instructions does not do it. A Mailbox sending a note to itself is not otherwise a use the docs describe.
 - Ideas: (a) refuse a `post_message` whose only recipient is the sender, with an error that says to omit `to` to answer the sender; (b) keep accepting it, but leave the sender out of the recipients so it is not unread for itself; (c) keep it as is and say so in protocol.md.
 - To decide: which of these, and whether a role or topic address that includes the sender among other recipients should also leave the sender out.
+
+### C193. A card-state test for a no-Events session that answers a later request and still owes an earlier one
+
+Raised 2026-11-22 from C187's close (its "Not checked" line): a session with no Events that owes R1, is handed R2 and replies to R2 now reads `Working?` since R1's time for up to `staleHandedHours` (before C187: `Stopped, no reply`). C187's decided rule covers this (`lastHanded` is R2 with `open: false`, `awaitingReply.newestAt` is R1's time), but no test pins it. Decided 2026-11-22 (the user asked for it, written by the planning session): a test only; the rule does not change.
+
+#### Done when
+- [ ] `src/shared/card-state.test.ts` has a case for a session with no Events, `lastHanded` an answered request (`open: false`), `awaitingReply.count` 1 with `newestAt` inside the `staleHandedHours` window: `working` with `guess` and `since` equal to `newestAt`.
+- [ ] The same case with `newestAt` past the window reads `stopped` (`Stopped, no reply`).
+- [ ] docs/proofs.md S11 names the new test.
+- [ ] `npm test` and `npm run docs:check` pass.
