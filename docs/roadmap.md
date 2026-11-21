@@ -1217,14 +1217,21 @@ Facts found while implementing (2026-11-21, deployer):
   - `ui:check`: the `Your move` check after the leader's Working → Idle redraw is back (after the person's Message).
   - design.md §3.15: the report rule and the `humanTurnOf` description match C183; the earlier-Attachment rules for the turn end and `staleEvent` are written down.
 - `npm run ui:check` (2026-11-21): the C71 `信号` check of the Idle → Working flash read `anim` 2.5 s after the state change (`st-flash` still on, `ring-pulse` expected) in 2 of 3 runs earlier (the user decided on it, seq 726). The scene now waits, up to 15 s, until the card is Working and `st-flash` has cleared, then checks the same assertions (ring-pulse, the 1.5 s flash in the working colour). Three runs in a row after the change: 0 NG each (232 ok, exit 0). The state derivation was not changed.
-- Not checked here: the hand check on a running Hub with a client that sends no Events (done-when line 5, left unchecked).
+- Hand check (done-when line 5, 2026-11-21, the planning session with the user watching the page): the Hub on 7777 ran from source (the page and `src/shared/card-state.js` are read from disk, so the rules of `c151036` were live; the Hub process predated `lastToUser`, which this check does not use). The client was the real shim (`src/shim/main.ts`) driven by a scratch MCP client named `probe-nohooks`, with no `CLAUDE_CODE_SESSION_ID` and no hooks (`sessionId: null`, no Events). Steps and what `GET /mailboxes` said / what the card showed (Mailbox `probe.nohooks2`, then `probe.nohooks3` for the last step):
+  - attached: no hand-over, no Events / Idle
+  - a request from the person fetched with `inbox()`: `lastHanded.open: true`, awaiting reply 1 / Working?
+  - the client's `reply`: `open: false`, awaiting 0, unread 0 / Idle
+  - a second request fetched: `open: true` / Working?
+  - three Messages to another Mailbox (SSE re-renders): unchanged / still Working?
+  - a `SessionStart` Event for the Mailbox (a new `session_id`; the Hub tied it to the Attachment): `lastEvent: session.start` / Working, the `?` gone
+  - The first attempt at the last step reused a `session_id` from an earlier probe Mailbox, and the Event went to that deleted Mailbox: the Hub's session map wins over `X-Hub-Mailbox` (protocol.md §2 Event) and is not cleared on deletion (C188).
 
 #### Done when
 - [x] For a Mailbox that has sent no Events, a handed Message that is not an open request (`lastHanded.open: false`) with nothing unread gives Idle, not Working?; an open request still gives Working? as before; a Mailbox with Events keeps the turn-end rule (tests in `card-state.test.ts`; the property test still passes)
 - [x] The Hub returns `backlog.lastToUser` (`{ "seq", "ts" } | null`: the latest Message this Mailbox sent to the person) in `GET /mailboxes`, without reading its body (test)
 - [x] The card is Needs you, with the detail `decision` or `action`, while that Message has a non-empty `NEEDS DECISION` / `NEEDS ACTION` (or `要判断` / `要対応` / `要操作`) section, and stops when the person sends that Mailbox a newer Message or the Mailbox sends the person a newer one without it; the page fetches the Message when it does not hold it (tests in `card-state.test.ts`; `ui:check` scenes for a report that needs a decision and one with `NEEDS DECISION: -`)
 - [x] The body colouring and the card read one heading rule from `src/shared/card-state.js`; the coloured headings look as before (`ui:check`)
-- [ ] A card showing Working? keeps the `?` after an SSE-driven update re-renders it, and loses it when the state changes to a non-guess; checked by hand on a running Hub with a client that sends no Events, and the result written in this section
+- [x] A card showing Working? keeps the `?` after an SSE-driven update re-renders it, and loses it when the state changes to a non-guess; checked by hand on a running Hub with a client that sends no Events, and the result written in this section
 - [x] protocol.md §3 (`GET /mailboxes`), design.md §3.15 (card states, Needs you) and docs/proofs.md (the Idle and Needs you rows) describe the change; a line in docs/conventions-log.md if the reply-format heading rule changes meaning
 - [x] `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
@@ -1269,3 +1276,12 @@ Raised 2026-11-21 in the C183 review (reviewer's note): for a session without Ev
 
 - The reviewer's caution: keeping `Working?` whenever `awaitingReply.count > 0` would instead keep a long-stopped session without Events Working after a Health check notice (the `demo.old` scene), so the rule needs the time of the open request, not only the count.
 - To decide: which fact the rule reads (the open request's handed time from `awaitingReply.seqs`, or a `lastHandedOpen` next to `lastHanded` in the Hub), and whether C182's turn ends make this moot for Antigravity once its hooks are set up.
+
+### C188. Forget a deleted Mailbox's sessions, so their Events do not resolve to it
+Status: proposed
+
+Raised 2026-11-21 in C183's hand check: an Event whose `session_id` the Hub had learned for a Mailbox (`sessionMailbox` in `src/hub/hub.ts`, from an attach or an Event resolved by `X-Hub-Mailbox`) still resolved to that Mailbox after it was deleted, ahead of the `X-Hub-Mailbox` header naming a live one (protocol.md §2 Event, the resolution order). `deleteMailbox` clears the detach, project-change and refusal records but not the session map. The map is in memory only, so a Hub restart clears it.
+
+- Seen only with a probe that reused a `session_id`; a real session keeps its id per conversation, so it would need a Mailbox deleted while the session that used it goes on (for example a session moved to another `HUB_MAILBOX` after its old Mailbox was deleted).
+- Idea: `deleteMailbox` drops the map entries that point at the deleted name; `GET /mailboxes/resolve` follows.
+- To decide: whether this is worth an item, or a line under "Known issues".
