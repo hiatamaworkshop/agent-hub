@@ -25,6 +25,8 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
 - [ ] C183
+- [ ] C185
+- [ ] C182
 
 (Items with a status line are listed under "Items".)
 
@@ -1173,7 +1175,7 @@ Raised 2026-11-20 from a question about whether a desktop-app agent (for example
 - Re-check of (3) (2026-11-21, by Antigravity as reviewer, at the user's request): a Hub Message ("check your inbox") sent from the page to a client that cannot be woken only adds one more unread Message; nothing reaches its conversation, so it wakes nothing. What works for such a client is (1) and (2) (the last `inbox()` time on the Attachment, shown on the card as waiting for the human's word, not as stopped), and at most a helper that copies a fixed text for the human to paste into the client. Picking up during a turn that is already running is C184.
 
 ### C182. Antigravity hooks as Hub Events, and the model on the card
-Status: proposed
+Status: blocked(after C183)
 
 Raised 2026-11-21 from §6.1ai: Antigravity sends no Events, so its card cannot tell a turn's end (C183) and the page cannot say which agent and model sit behind a Mailbox (the user asked for the identity on the card). Its hooks (`.agents/hooks.json`, command type only, JSON on stdin) carry what is needed: `SessionStart`, `PreInvocation` and `Stop` all have `modelName` (seen: `gemini-3.8-flash-low`), `conversationId`, `cwd` and `workspacePaths`; `Stop` has `terminationReason` (seen: `NO_TOOL_CALL`), `fullyIdle`, `error` and `continuationActive`, but not the final answer's text.
 
@@ -1181,6 +1183,15 @@ Raised 2026-11-21 from §6.1ai: Antigravity sends no Events, so its card cannot 
 - Command hooks cannot send HTTP themselves, so a small script in this repository reads stdin and posts it, with the Mailbox name as an argument; a `hooks.json` template is handed out like the Claude Code hook settings.
 - The card shows the client (`attachment.client`) and the last `modelName` seen; for Claude Code, whatever its hook payloads offer. Showing it is delivery state about the session, not knowledge (§3.14).
 - `workspacePaths` is a second source of the folder for C180 (not used here).
+- Decided 2026-11-21 (the user, "as recommended"), after C183 because both change `src/shared/card-state.js`. The card already shows the client (`Connected (<client>)`) and reads the model from `session.start` / `model.switch` (C61), so the card part is only reading Antigravity's `modelName`. There is no turn-start `kind`, and the card's Working comes from handed Messages (C183), so `PreInvocation` is not converted (ignored as `unsupported_hook`); adding a `kind` is a separate decision. The poster reuses `tools/hooks/post-event.mjs` (a source option with `--no-git`) rather than a second script, if it fits.
+
+#### Done when
+- [ ] `POST /events/antigravity` takes Antigravity's hook input as is: `SessionStart` → `session.start`, `Stop` → `turn.end`, or `turn.failed` when `error` is set; other hooks are ignored with `unsupported_hook`; the Mailbox comes from `X-Hub-Mailbox` (tests in `events.test.ts` with the payloads seen in design.md §6.1ai)
+- [ ] A command hook posts stdin to that path with `HUB_TOKEN`, `HUB_MAILBOX` and `HUB_PORT`, always exits 0 and prints nothing; a `hooks.json` template sits in `tools/hooks/` (test of the poster, or of its source option)
+- [ ] The card of a Mailbox with Antigravity Events shows the last `modelName` seen in its `session.start` or `turn.end` (the tooltip as for C61), and its Working ends by the turn-end rule instead of C183's no-Events rule (tests in `card-state.test.ts`; a `ui:check` scene for the model)
+- [ ] Checked once with a real Antigravity session on a running Hub (the card's model and a turn end), and the result written in design.md §6
+- [ ] protocol.md §3 (the `antigravity` source and its mapping), usage.md (the `inbox` section: how to set up the hooks) and docs/proofs.md (the rows the turn-end rule touches) describe the change
+- [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
 ### C183. A card's Working and Idle from what a session without hooks has sent
 
@@ -1213,9 +1224,16 @@ Raised 2026-11-21 by Antigravity as reviewer (a draft written at the user's requ
 - To decide: which of (1), (2), (3) to take now, and whether to split them into separate items once decided ((2) looks like `held` until a client supports it).
 
 ### C185. Stop on an attach refusal that a retry cannot fix (`unknown_role` and the like), and show it
-Status: proposed
 
 Raised 2026-11-21 from design.md §6.1ai: an attach refused with 400 `unknown_role` (a `HUB_ROLE` missing from `roles.json`) was retried with backoff for minutes, `whoami` said `connecting`, and nothing else showed it. C181 noted it in its body but left it out of its done-when lines, and closed without it.
 
 - The same shape as C181's second refusal: the shim stops retrying, stays unattached, and says why on every tool call and in `whoami`; the Hub could keep the refusal like `attachRefused` so the page shows it without a tool call.
 - To decide: which refusals count as not fixable by a retry (4xx other than 404 and 409? only `unknown_role`?), and whether the Hub records them for a Mailbox that may not exist yet.
+- Decided 2026-11-21 (the user, "as recommended"): the attach's 400 (`unknown_role`, an invalid Mailbox name or body) and 401 (the token) stop the retries; nothing changes them but a change of settings and a restart (`roles.json` is read once at the Hub's start, protocol.md §1). 404, 409 (`project_mismatch` with C181's one retry, `successor_attached`), 5xx and network errors keep today's behaviour. The Hub records nothing: `unknown_role` creates no Mailbox, so there is no card to show it on; the shim's `whoami`, tool errors and log carry it.
+
+#### Done when
+- [ ] An attach refused with 400 or 401 is not retried: the shim stays unattached, `whoami` returns a `terminatedReason` with the Hub's error code and message, and every tool call other than `whoami` fails with a note naming the cause and the way out (for `unknown_role`: the role, `roles.json`, restart the Hub and then this session) (tests in the shim)
+- [ ] 404, 409 `project_mismatch` (one retry, C181), 409 `successor_attached`, 5xx and a refused connection behave as before (the existing tests still pass; one new test for 5xx still retrying)
+- [ ] The shim logs the refusal once, not once per backoff (test)
+- [ ] protocol.md §3 (the attach's refusals and what the shim does with them) and design.md §3.3 describe the change; docs/proofs.md changes a row if one covers the attach's retries
+- [ ] `npm test` and `npm run docs:check` pass
