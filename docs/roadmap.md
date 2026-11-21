@@ -1183,12 +1183,16 @@ Decisions (2026-11-21, the user, seq 697; each taken at its default):
 - (2) A client that answers `roots/list` only after `initialized` is not supported. If one needs it, it is a separate item.
 - (3) The roots-moved note stays on every tool result until the client restarts, not only the first one. Done-when line 4 says "next tool result", and the first one is covered.
 
+The Antigravity run (2026-11-21, planning session with the user; design.md §6.1ai, "The App and the project folder"):
+- The App 2.34.0 does not declare `roots` (only the CLI does), sends no folder anywhere in MCP, and starts every server, also a project's, in its install folder. So the roots path never runs for the App: `roots/list` is not asked, and switching project sends no `roots/list_changed`. Whether a second project starts a second process does not change that, so it was left untried.
+- Done-when line 5 first said "no `cwd` in its MCP config, attaches with the workspace folder", which the App cannot meet. The user chose (option A) to reword it to the setup that works: `HUB_PROJECT` in the project's `.agents/mcp_config.json`. The roots path stays for clients that declare roots (the `agy` CLI does; not run against the shim).
+
 #### Done when
-- [ ] With the Antigravity App, it is checked and recorded in design.md §6 whether a server in a workspace's `.agents/mcp_config.json` starts one shim process per workspace, what `roots/list` returns there, and whether switching workspace sends `notifications/roots/list_changed`
+- [x] With the Antigravity App, it is checked and recorded in design.md §6 whether a server in a workspace's `.agents/mcp_config.json` starts one shim process per workspace, what `roots/list` returns there, and whether switching workspace sends `notifications/roots/list_changed`
 - [x] The shim resolves its project in the order `HUB_PROJECT`, `CLAUDE_PROJECT_DIR`, the single root of `roots/list` when the client declares `roots`, `process.cwd()`; with several roots it uses the next source and says so in `whoami`; the default Mailbox name comes from the resolved project. Unit tests cover each source and the several-roots case
 - [x] When the project comes from roots, the first attach already carries that folder as `cwd` (no attach with `process.cwd()` before it), and the instructions still carry the role description; with `CLAUDE_PROJECT_DIR` set, attach still happens before `initialize` (tests for both orders)
 - [x] When `notifications/roots/list_changed` brings a single root different from the attached project, the shim does not re-attach or change `cwd`; `whoami` shows both folders, and the next tool result starts with a one-line note saying to restart the client to move (test)
-- [ ] With Antigravity and no `cwd` in its MCP config, a real run attaches with `project` the workspace folder, recorded in design.md §6.1ai or a new §6 entry
+- [x] With the Antigravity App, a project's `.agents/mcp_config.json` that sets `HUB_PROJECT` (no `cwd`, no `HUB_MAILBOX`) attaches the Mailbox named after that folder with `project` that folder, and the server is enabled only in that project; recorded in design.md §6.1ai, and docs/usage.md recommends this setup
 - [x] protocol.md (if the attach order or `whoami` changes) and design.md §3.3 / §3.7 describe the sources and the order; docs/usage.md says how to register the shim in a client other than Claude Code (`HUB_PROJECT`, `HUB_MAILBOX`, `HUB_ROLE`, the tool allow rule)
 - [x] `npm test` and `npm run docs:check` pass
 
@@ -1198,6 +1202,7 @@ Raised 2026-11-21 from §6.1ai: after a restart that changed the folder, the old
 
 - The C103 rule stays: an attach from another folder never takes over a live Attachment. The retry only waits out a leftover.
 - The refusal record is delivery state held in the Hub's memory like `projectChanged` (design.md §3.14), not knowledge.
+- The same silent state with another cause (2026-11-21, §6.1ai): an attach refused with 400 `unknown_role` (a `HUB_ROLE` missing from `roles.json`) was retried with backoff for minutes, `whoami` said `connecting`, and nothing else showed it. A refusal that a retry cannot fix belongs to the same decision (not in the done-when lines yet).
 
 #### Done when
 - [ ] On 409 `project_mismatch`, the shim retries the attach once after the Hub's grace period plus a margin; when the old Attachment has expired by then, it attaches and runs as usual (test with the grace period shortened)
