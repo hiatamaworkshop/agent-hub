@@ -24,8 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C190
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -698,6 +696,13 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: docs/proofs.md (D1-D22 for protocol.md §4, S1-S23 for the card states, each with its proof or `none` and what it leaves out), `checkProofs` in `src/docs-check/repo.ts` (a warning for a named file that does not exist) with tests, CLAUDE.md (the map's line; "Updating the docs" says when a row changes), design.md §1.2 (the incidents row points to the map; Status stays Partly) and §3.12.
   - Checked: `npm test` 757 pass; `docs:check` 0 errors; the 71 quoted test names matched against the test files by a throwaway script. Done-when wording not changed.
   - Not checked: no reviewer read it; `docs:check` does not read test names, so a renamed test is caught only by reading.
+- [x] C190 An unread hint on the shim's tool results, for clients on the inbox path (2026-11-21, closed after the review)
+  - Raised 2026-11-21 by the planning session, split from C184 (1) on the user's decision (C184, C179). Done by the deployer; commit `f97aab3`.
+  - Decided 2026-11-21 by the user: done-when item 2 reworded by the planning session, and `whoami` excluded from it (`whoami` carries `unread` on both paths, as item 3 asks).
+  - Changed: `src/shim/main.ts` (`unreadHint()`, the unread line in front of tool results on the inbox path, `unread` in `whoami`), `src/shim/instructions.ts` (`unreadHintText`), `src/shim/unread-hint.test.ts` (new, 8 tests), docs/protocol.md §5, docs/design.md §3.9.
+  - Review: findings fixed. A channel-path test with a dropped ack (`unread` 1, no line; it fails without the route guard), and protocol.md §5 now says `whoami.unread` is `null` also when GET /mailboxes has no entry for this Mailbox.
+  - Checked: `npm test` 852 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 0 errors. All seven done-when lines met as written (item 2 as reworded).
+  - Not checked: a real non-Claude client on the inbox path (C191 holds that check). The channel path with unread Messages is covered only by the dropped-ack test.
 - [x] C180 The shim's project for clients that start it outside the project folder (2026-11-21, closed on the user's word after the review)
   - Raised 2026-11-21 from C3's run with Google Antigravity (design.md §6.1ai). The shim took its project from `CLAUDE_PROJECT_DIR` or the process folder, and the App starts servers in its install folder. Decided 2026-11-21 by the user (seq 697 and 701): the decisions below, each at its default, and the App setup is `HUB_PROJECT` in the project's `.agents/mcp_config.json` (option A).
   - Decisions (seq 697, each at its default): `roots/list` is asked during `initialize`, before the answer, bounded at 3 seconds, then the next source (the MCP SHOULD NOT is accepted so that `HUB_LANGUAGE` stays in the instructions); a client that answers `roots/list` only after `initialized` is not supported; the roots-moved note stays on every tool result until the restart.
@@ -1238,27 +1243,6 @@ Raised 2026-11-21 in C182's real check (design.md §6.1aj): usage.md tells Antig
 
 - Idea: the poster takes `--mailbox <name>` and, without `HUB_TOKEN`, reads agent-hub's `.env` as the shim does (§3.8); the `hooks.json` template then names the Mailbox in the command, and usage.md drops the environment step.
 - To decide: whether the token may be read from `.env` by the poster (the shim already does), and whether the template should carry the Mailbox name or the role.
-
-### C190. An unread hint on the shim's tool results, for clients on the inbox path
-Split from C184 (1) on 2026-11-21 (the user's decision; reasons in C184 and C179). On the inbox path (any client but Claude Code, design.md §3.7) the shim keeps the Hub's stream open for liveness but hands nothing over (`hub-client.ts`, `push = false`), so a Message that arrives during a running turn is seen only if the model happens to call `inbox()`. A one-line count on the results of the tools it already calls makes the arrival hard to miss, with no vendor-specific code and no change to the Hub.
-
-- Invariant (§3.9): the hint carries no body and moves no cursor; only `inbox()` hands content over and confirms receipt (protocol.md §4).
-- The count may come from the stream's arrivals or from the Hub's `unread`; whichever is used, a Message already fetched by `inbox()` is not counted again.
-- On the channel path (Claude Code) Messages are pushed, so no hint is added there.
-
-Built (2026-11-21): the count is read with `GET /mailboxes` (read-only) in `unreadHint()` in `src/shim/main.ts`, only while attached on the inbox path, with a one-second bound; the line text is `unreadHintText()` in `src/shim/instructions.ts`. The unread line is put first, then C180's roots line, then the tool's text (protocol.md §5). `whoami` gives `unread` on both paths. The hint is not listed under a guarantee (protocol.md §4), so docs/proofs.md has no row for it.
-Tests: `src/shim/unread-hint.test.ts` (8 tests: the line and the rest of the text unchanged, error results, cursor and unread count unchanged over calls, a Message fetched by `inbox` not counted again and a limited `inbox`, the channel path, a channel path with a Message unread because its ack was dropped (the route guard in `unreadHint()` is what keeps the line off; the test fails without it), the unread and roots lines in order).
-Checked: `npm test` 852/852 pass; `npx tsc --noEmit` clean; `npm run docs:check` 35 items, 0 errors, 0 warnings.
-Decided 2026-11-21 (the user's decision): `whoami` is excluded from item 2; item 3 asks for `unread`, so `whoami` changing on both paths is expected.
-
-#### Done when
-- [x] On the inbox path, while the Mailbox has unread Messages, the result of every tool except `inbox` and `whoami` starts with one line giving the count and naming `inbox()`, and carries no body, sender or seq of those Messages.
-- [x] With no unread Messages the results are unchanged, except `whoami`, which carries `unread` (item 3); on the channel path they are unchanged, with the same exception.
-- [x] `whoami` has an `unread` field with the same count.
-- [x] Adding the hint changes neither the cursor nor the unread count on the Hub (a test reads both before and after).
-- [x] When C180's moved-roots note is also present, both lines show, in a fixed order.
-- [x] Tests in `src/shim/` cover the lines above; protocol.md §5 and design.md §3.9 say what the hint is and that it never carries content; docs/proofs.md is updated if the hint is listed under a guarantee.
-- [x] `npm test` and `npm run docs:check` pass.
 
 ### C191. A local Ollama model as a check client for the vendor-neutral path
 Status: proposed
