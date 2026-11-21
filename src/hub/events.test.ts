@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import type { HubEvent } from '../shared/types.js'
 import { createApp } from './app.js'
-import { fromClaudeCodeHook } from './events.js'
+import { fromAntigravityHook, fromClaudeCodeHook } from './events.js'
 import { Hub, type UiEvent } from './hub.js'
 import { Store } from './store.js'
 
@@ -335,5 +335,73 @@ describe('HTTP /events', () => {
     const { app } = setup()
     assert.equal((await app.request('/events?limit=0', { headers: bearer })).status, 400)
     assert.equal((await app.request('/events?limit=1001', { headers: bearer })).status, 400)
+  })
+})
+
+// C182: Antigravity's hook input (the payload seen in design.md §6.1ai, camelCase)
+const agHook = (hookEventName: string, extra: Record<string, unknown> = {}) => ({
+  conversationId: 'conv-1',
+  workspacePaths: ['C:\work\agent-hub'],
+  transcriptPath: 'C:\work\agent-hub\.gemini\antigravity\transcript.jsonl',
+  artifactDirectoryPath: 'C:\work\agent-hub\.gemini\antigravity\artifacts',
+  modelName: 'gemini-3.8-flash-low',
+  lastUserInput: 'look at the inbox',
+  hookEventName,
+  cwd: 'C:\work\agent-hub',
+  ...extra,
+})
+
+describe('fromAntigravityHook (C182)', () => {
+  const now = new Date('2026-11-21T10:00:00Z')
+
+  it('SessionStart → session.start; Stop with an empty error → turn.end; the conversation is the session', () => {
+    assert.deepEqual(fromAntigravityHook(agHook('SessionStart'), undefined, now), {
+      event: { source: 'antigravity', sessionId: 'conv-1', cwd: 'C:\work\agent-hub', kind: 'session.start' },
+    })
+    const stop = agHook('Stop', { executionNum: 1, terminationReason: 'NO_TOOL_CALL', error: '', fullyIdle: true, continuationActive: false })
+    assert.deepEqual(fromAntigravityHook(stop, undefined, now), {
+      event: { source: 'antigravity', sessionId: 'conv-1', cwd: 'C:\work\agent-hub', kind: 'turn.end' },
+    })
+  })
+
+  it('Stop with an error set → turn.failed', () => {
+    const r = fromAntigravityHook(agHook('Stop', { terminationReason: 'ERROR', error: 'quota exceeded' }), undefined, now)
+    assert.ok('event' in r)
+    assert.equal(r.event.kind, 'turn.failed')
+  })
+
+  it('PreInvocation and the other hooks are not taken in (unsupported_hook); a body with no hookEventName is refused as such', () => {
+    for (const name of ['PreInvocation', 'PostInvocation', 'PreToolUse', 'PostToolUse', 'Unknown']) {
+      assert.deepEqual(fromAntigravityHook(agHook(name), undefined, now), { ignored: 'unsupported_hook' }, name)
+    }
+    assert.deepEqual(fromAntigravityHook({ conversationId: 'conv-1' }, undefined, now), { ignored: 'no_hook_event_name' })
+  })
+
+  it('a Claude Code hook name in hook_event_name is not read as Antigravity\'s hookEventName', () => {
+    assert.deepEqual(fromAntigravityHook({ conversationId: 'c', hook_event_name: 'Stop' }, undefined, now), { ignored: 'no_hook_event_name' })
+  })
+})
+
+describe('HTTP /events/antigravity (C182)', () => {
+  it('takes SessionStart and Stop from the path, the Mailbox from X-Hub-Mailbox, keeps each payload as is, and names an ignored hook', async () => {
+    const hub = new Hub(new Store())
+    const app = createApp({ hub, token: TOKEN, uiHtml: async () => null })
+    const postTo = (body: unknown, headers: Record<string, string> = {}) =>
+      app.request('/events/antigravity', { method: 'POST', headers: { 'content-type': 'application/json', ...bearer, ...headers }, body: JSON.stringify(body) })
+    const start = agHook('SessionStart')
+    const stop = agHook('Stop', { error: '', terminationReason: 'NO_TOOL_CALL' })
+    const pre = agHook('PreInvocation', { invocationNum: 1 })
+    assert.equal(((await (await postTo(start, { 'x-hub-mailbox': 'ag.deployer' })).json()) as { kind: string }).kind, 'session.start')
+    assert.equal(((await (await postTo(stop, { 'x-hub-mailbox': 'ag.deployer' })).json()) as { kind: string }).kind, 'turn.end')
+    assert.deepEqual(await (await postTo(pre, { 'x-hub-mailbox': 'ag.deployer' })).json(), { ignored: 'unsupported_hook' })
+    const events = ((await (await app.request('/events', { headers: bearer })).json()) as { events: HubEvent[] }).events
+    assert.deepEqual(events.map((e) => e.kind), ['session.start', 'turn.end'])
+    for (const e of events) {
+      assert.equal(e.source, 'antigravity')
+      assert.equal(e.mailbox, 'ag.deployer')
+      assert.equal(e.sessionId, 'conv-1')
+    }
+    assert.deepEqual(events[0]!.payload, start)
+    assert.deepEqual(events[1]!.payload, stop)
   })
 })

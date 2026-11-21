@@ -107,8 +107,28 @@ export const fromClaudeCodeHook: EventConverter = (input, previous, now) => {
   }
 }
 
+// Antigravity の hook 入力 (design.md §6.1ai、同梱の hooks.md)。camelCase で、hookEventName が hook の名、conversationId が会話 (session)、
+// modelName がモデル。Stop は error が空でなければ失敗 (turn.failed)。payload は入力のまま、transcript は読まない (§3.8)。
+// PreInvocation は取り込まない (C182): ターンの始まりは渡された Message で決まる (C183)
+export const fromAntigravityHook: EventConverter = (input) => {
+  const hook = str(input.hookEventName)
+  if (!hook) return { ignored: 'no_hook_event_name' }
+  const base = { source: 'antigravity', sessionId: str(input.conversationId), cwd: str(input.cwd) }
+  switch (hook) {
+    case 'SessionStart':
+      return { event: { ...base, kind: 'session.start' } }
+    case 'Stop':
+      return { event: { ...base, kind: str(input.error) ? 'turn.failed' : 'turn.end' } }
+    default:
+      return { ignored: 'unsupported_hook' }
+  }
+}
+
 // source (POST /events/:source) ごとの変換。クライアントを足すときは変換を書いてここに 1 行足す (design.md §3.7)
-export const CONVERTERS: ReadonlyMap<string, EventConverter> = new Map([['claude-code', fromClaudeCodeHook]])
+export const CONVERTERS: ReadonlyMap<string, EventConverter> = new Map([
+  ['claude-code', fromClaudeCodeHook],
+  ['antigravity', fromAntigravityHook],
+])
 
 // source を名乗らない POST /events の扱い。名乗る前に配った hook の設定を動かし続けるため
 export const DEFAULT_SOURCE = 'claude-code'

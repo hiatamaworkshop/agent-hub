@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -14,6 +14,8 @@ const TOKEN = 'test-token-0123456789'
 interface Received {
   headers: IncomingHttpHeaders
   body: Record<string, unknown>
+  // the request path (C182: /events/claude-code or /events/antigravity)
+  path: string
 }
 
 let server: Server
@@ -26,7 +28,7 @@ before(async () => {
     let text = ''
     req.on('data', (c) => (text += c))
     req.on('end', () => {
-      received.push({ headers: req.headers, body: JSON.parse(text) })
+      received.push({ headers: req.headers, body: JSON.parse(text), path: req.url ?? '' })
       res.writeHead(200, { 'content-type': 'application/json' }).end('{"id":"e_x","kind":"turn.end","mailbox":null,"duplicate":false}')
     })
   })
@@ -192,5 +194,50 @@ describe('tools/hooks/post-event.mjs', () => {
     assert.ok('event' in withGit)
     assert.equal(withGit.event.kind, 'session.start')
     assert.equal(withGit.event.changes?.untracked.includes('sub/new.md'), true)
+  })
+})
+
+// C182: Antigravity's hooks run the same poster with --source antigravity (no git), and tools/hooks/hooks.json is its template
+describe('tools/hooks/post-event.mjs --source antigravity (C182)', () => {
+  const agStart = { conversationId: 'conv-1', modelName: 'gemini-3.8-flash-low', hookEventName: 'SessionStart', cwd: 'C:\work\agent-hub', workspacePaths: ['C:\work\agent-hub'] }
+
+  it('posts the input as is to /events/antigravity with the Mailbox header and the token, exits 0 and prints nothing', async () => {
+    received = []
+    const r = await runHook(JSON.stringify(agStart), {}, ['--no-git', '--source', 'antigravity'])
+    assert.equal(r.code, 0)
+    assert.equal(r.stdout + r.stderr, '')
+    assert.equal(received.length, 1)
+    assert.equal(received[0]!.path, '/events/antigravity')
+    assert.deepEqual(received[0]!.body, agStart)
+    assert.equal(received[0]!.headers['x-hub-mailbox'], 'deployer')
+    assert.equal(received[0]!.headers.authorization, `Bearer ${TOKEN}`)
+  })
+
+  it('without --source the path is still /events/claude-code', async () => {
+    received = []
+    await runHook(JSON.stringify(agStart), {}, ['--no-git'])
+    assert.equal(received[0]!.path, '/events/claude-code')
+  })
+
+  it('a --source that is not a plain name falls back to claude-code; a Hub that is down still exits 0 with no output', async () => {
+    received = []
+    await runHook(JSON.stringify(agStart), {}, ['--no-git', '--source', '../x'])
+    assert.equal(received[0]!.path, '/events/claude-code')
+    const down = await runHook(JSON.stringify(agStart), { HUB_PORT: '1' }, ['--no-git', '--source', 'antigravity'])
+    assert.equal(down.code, 0)
+    assert.equal(down.stdout + down.stderr, '')
+  })
+
+  it('tools/hooks/hooks.json: the handlers are command hooks that run the poster for Antigravity at SessionStart and Stop, with no git', async () => {
+    const template = JSON.parse(await readFile(resolve(import.meta.dirname, '../../tools/hooks/hooks.json'), 'utf8')) as Record<string, Record<string, { type: string; command: string; timeout: number }[]>>
+    const hooks = Object.values(template)[0]!
+    assert.deepEqual(Object.keys(hooks).sort(), ['SessionStart', 'Stop'])
+    for (const name of ['SessionStart', 'Stop']) {
+      const handlers = hooks[name]!
+      assert.equal(handlers.length, 1)
+      assert.equal(handlers[0]!.type, 'command')
+      assert.match(handlers[0]!.command, /post-event\.mjs" --source antigravity --no-git$/)
+      assert.ok(handlers[0]!.timeout > 0)
+    }
   })
 })

@@ -141,6 +141,37 @@ export function eventDetailOf(ev) {
   return typeof v === 'string' ? v : ''
 }
 
+/** The effort levels the card shows (C61). */
+export const EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max'])
+
+/**
+ * The last model and effort seen in a Mailbox's Events, for the card's line (C61, C182). The model comes from session.start (`model`;
+ * Antigravity's `modelName`), model.switch (`to_model`), and, for Antigravity only, turn.end (`modelName`). A superseded Event does not
+ * count. Values only: the card says they were seen, not that they are the current setting.
+ * @param {Iterable<any>} events the Events the caller holds (any Mailbox; the name selects)
+ * @param {string} name the Mailbox
+ * @returns {{ model: string | null, effort: string | null }}
+ */
+export function lastSeenOf(events, name) {
+  /** @type {{ ts: string, id: string } | null} */
+  let model = null
+  /** @type {{ ts: string, level: string } | null} */
+  let effort = null
+  for (const ev of events) {
+    if (ev.mailbox !== name || ev.superseded) continue
+    const p = ev.payload && typeof ev.payload === 'object' ? ev.payload : {}
+    const antigravity = ev.source === 'antigravity'
+    let value = null
+    if (ev.kind === 'session.start') value = p.model ?? (antigravity ? p.modelName : null)
+    else if (ev.kind === 'turn.end' && antigravity) value = p.modelName
+    else if (ev.kind === 'model.switch') value = p.to_model
+    if (typeof value === 'string' && value !== '' && (!model || model.ts < ev.ts)) model = { ts: ev.ts, id: value }
+    const level = p.effort && typeof p.effort === 'object' ? p.effort.level : null
+    if (typeof level === 'string' && EFFORT_LEVELS.has(level) && (!effort || effort.ts < ev.ts)) effort = { ts: ev.ts, level }
+  }
+  return { model: model ? model.id : null, effort: effort ? effort.level : null }
+}
+
 /**
  * Background tasks still running when a turn ended (Stop's background_tasks). The Hub gives it as lastTurnEnd.running;
  * an Event from SSE carries it in its payload.

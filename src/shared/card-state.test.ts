@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   BACKGROUND_MAX_MINUTES, EVENT_LABEL, NONE, STALE_HANDED_HOURS, absentTargets, addTally, eventDetailOf, humanTurnOf,
-  needsOf, outgoingTargets, runningOf, sectionsOf, staleEvent, staleHandedHours, stateOf, summaryOf,
+  lastSeenOf, needsOf, outgoingTargets, runningOf, sectionsOf, staleEvent, staleHandedHours, stateOf, summaryOf,
 } from './card-state.js'
 import type { CardContext } from './card-state.js'
 
@@ -431,5 +431,66 @@ describe('humanTurnOf, tallies and helpers', () => {
   it('outgoingTargets: the distinct targets, without the person', () => {
     const outgoing = { to: [{ type: 'role', id: 'deployer' }, { type: 'user', id: 'browser' }, { type: 'role', id: 'deployer' }] }
     assert.equal(outgoingTargets(outgoing), 'deployer')
+  })
+})
+
+// C182: Antigravity's Events (source antigravity, sessionId = its conversation). Its Stop is the turn end, so Working ends there
+const agEvent = (kind: string, ts: string, extra: Record<string, unknown> = {}) => ({
+  id: `ag_${kind}_${ts}`,
+  kind,
+  ts,
+  source: 'antigravity',
+  sessionId: 'conv-1',
+  mailbox: 'demo.leader',
+  ...extra,
+})
+
+describe('lastSeenOf: the model and effort on the card (C61, C182)', () => {
+  it('Antigravity: modelName from session.start and turn.end, the newer one wins', () => {
+    const events = [
+      agEvent('session.start', at(-30), { payload: { modelName: 'gemini-a' } }),
+      agEvent('turn.end', at(-5), { payload: { modelName: 'gemini-b', error: '' } }),
+    ]
+    assert.deepEqual(lastSeenOf(events, 'demo.leader'), { model: 'gemini-b', effort: null })
+  })
+
+  it('a turn end of Claude Code is not a model; the Claude session start keeps its model field; effort is read when valid', () => {
+    const events = [
+      ev('turn.end', at(-9), { payload: { modelName: 'not-for-claude' } }),
+      ev('session.start', at(-8), { payload: { model: 'claude-opus-5', effort: { level: 'high' } } }),
+      ev('model.switch', at(-7), { payload: { to_model: 'claude-sonnet-5-5', effort: { level: 'turbo' } } }),
+    ]
+    assert.deepEqual(lastSeenOf(events, 'demo.leader'), { model: 'claude-sonnet-5-5', effort: 'high' })
+  })
+
+  it('other Mailboxes and superseded Events do not count', () => {
+    const events = [
+      agEvent('turn.end', at(-1), { mailbox: 'other.deployer', payload: { modelName: 'gemini-x' } }),
+      agEvent('turn.end', at(-2), { superseded: true, payload: { modelName: 'gemini-y' } }),
+      agEvent('turn.end', at(-3), { payload: { modelName: 'gemini-z' } }),
+    ]
+    assert.deepEqual(lastSeenOf(events, 'demo.leader'), { model: 'gemini-z', effort: null })
+    assert.deepEqual(lastSeenOf([], 'demo.leader'), { model: null, effort: null })
+  })
+})
+
+describe('stateOf: an Antigravity session with Events ends Working at its turn end (C182)', () => {
+  // attached as conversation conv-1 at minute -60; its Events carry the same session, so they are not stale
+  const agMb = (backlog: Record<string, unknown>) => mb(backlog, { id: 'a3', sessionId: 'conv-1', attachedAt: at(-60) })
+  const turnEnd = agEvent('turn.end', at(-5), { payload: { modelName: 'gemini-3.8-flash-low', error: '' } })
+
+  it('a request answered before the turn end is Idle once the turn ends, not Working? (the turn end wins)', () => {
+    const m = agMb({ lastHanded: { ts: at(-9), seq: 7, open: false } })
+    assert.deepEqual(stateOf(m, ctx({ lastEvent: turnEnd, lastTurnEnd: turnEnd })), { key: 'idle', since: at(-5) })
+  })
+
+  it('a request handed after the turn end is Working, not a guess, because the session has Events', () => {
+    const m = agMb({ lastHanded: { ts: at(-1), seq: 8, open: true } })
+    assert.deepEqual(stateOf(m, ctx({ lastEvent: turnEnd, lastTurnEnd: turnEnd })), { key: 'working', since: at(-1), guess: false, detail: '' })
+  })
+
+  it('a reply sent during the turn (after the last turn end) reads Working until the turn\'s Stop arrives', () => {
+    const m = agMb({ lastHanded: { ts: at(-1), seq: 8, open: false } })
+    assert.deepEqual(stateOf(m, ctx({ lastEvent: turnEnd, lastTurnEnd: turnEnd })), { key: 'working', since: at(-1), guess: false, detail: '' })
   })
 })

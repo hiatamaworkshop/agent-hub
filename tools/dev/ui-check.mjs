@@ -2361,6 +2361,24 @@ try {
     await api('POST', '/messages', { kind: 'notice', to: { type: 'role', id: 'leader' }, body: 'C' })
     await stateScene('人が role:leader に送ったら、その Mailbox の報告の Needs you は終わる (C183)', 'rolep.leader', 'Working')
   }
+  // C182: Antigravity's hooks as Events (POST /events/antigravity). Its card shows the model it saw (modelName from session.start and turn.end),
+  // and its Working ends at the turn's Stop (Idle after it), with no `?`, since the session has Events
+  {
+    const agAttach = await api('POST', '/mailboxes/ag.deployer/attach', { client: 'antigravity-client', cwd })
+    const agHook = (hookEventName, extra = {}) =>
+      api('POST', '/events/antigravity', { conversationId: 'conv-ag', modelName: 'gemini-3.8-flash-low', hookEventName, cwd, workspacePaths: [cwd], ...extra }, { 'x-hub-mailbox': 'ag.deployer' })
+    await agHook('SessionStart')
+    const agReq = await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'ag.deployer' }, body: 'GOAL: C182 model and turn end' })
+    await ackAll(agAttach.attachmentId)
+    await stateScene('Antigravity: 依頼が渡った。Events があるので Working (推測の Working? ではない) (C182)', 'ag.deployer', 'Working')
+    const agWorking = (await screen()).cards.find((c) => c.name === 'ag.deployer')
+    verify('Antigravity: Events があれば Working に ? は付かない (C182)', !!agWorking && agWorking.state.startsWith('Working') && !agWorking.state.includes('?'), agWorking)
+    await api('POST', '/messages', { kind: 'reply', replyTo: agReq.id, body: 'done' }, { 'x-hub-attachment': agAttach.attachmentId })
+    await agHook('Stop', { terminationReason: 'NO_TOOL_CALL', error: '', fullyIdle: true, executionNum: 0, continuationActive: false })
+    await stateScene('Antigravity: ターン終了の Stop で Idle (C182)', 'ag.deployer', 'Idle')
+    const agModel = await evaluate(`(() => { const b = [...document.querySelectorAll('#mailboxes .mb')].find((x) => (x.querySelector('.name') || {}).textContent === 'ag.deployer'); const m = b && b.querySelector('.modeleff'); return m ? m.textContent : null })()`)
+    verify('Antigravity: カードに modelName の値が出る (session.start と turn.end から、C61 の表示)', typeof agModel === 'string' && agModel.includes('gemini-3.8-flash-low'), { agModel })
+  }
   // 接続しているセッションがひとつもない: Your move は出さない (C127)。すべて切り離してから地図を見る
   for (const mb of (await api('GET', '/mailboxes')).mailboxes) if (mb.attachment) await api('DELETE', `/attachments/${mb.attachment.attachmentId}`)
   await mapScene('接続しているセッションがない: Your move は出さない (C127)', 'no move')

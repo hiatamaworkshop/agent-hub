@@ -1894,21 +1894,12 @@ function sumLayers(entries) {
 }
 // --- 最後に見えたモデルと effort (C61) ---
 // 手元にある Event (最近の 200 件と SSE の新着) から、その Mailbox の新しい方を取る。値は表示だけ。今の設定の保証ではない
-const EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max'])
 // claude-opus-5 → opus-5、末尾の日付 (-20250929 など) は落とす。表示だけ。完全な ID は tooltip に出す
 const shortModel = (id) => id.replace(/^claude-/, '').replace(/-\d{8}$/, '')
+// 読むのは card-state.js の lastSeenOf (C61、C182: Antigravity の modelName を session.start と turn.end から読む)。
+// モジュールがなければ何も出さない (stateOf と同じ扱い)
 function lastSeenOf(mb) {
-  let model = null
-  let effort = null
-  for (const ev of evtData.values()) {
-    if (ev.mailbox !== mb.name || ev.superseded) continue
-    const p = ev.payload && typeof ev.payload === 'object' ? ev.payload : {}
-    const modelValue = ev.kind === 'session.start' ? p.model : ev.kind === 'model.switch' ? p.to_model : null
-    if (typeof modelValue === 'string' && modelValue !== '' && (!model || model.ts < ev.ts)) model = { ts: ev.ts, id: modelValue }
-    const level = p.effort && typeof p.effort === 'object' ? p.effort.level : null
-    if (EFFORT_LEVELS.has(level) && (!effort || effort.ts < ev.ts)) effort = { ts: ev.ts, level }
-  }
-  return { model: model ? model.id : null, effort: effort ? effort.level : null }
+  return CS ? CS.lastSeenOf(evtData.values(), mb.name) : { model: null, effort: null }
 }
 
 // --- カードの状態 (design.md §3.15) ---
@@ -2813,7 +2804,7 @@ function renderMailboxes() {
     const shown = [seen.model && shortModel(seen.model), seen.effort].filter(Boolean)
     if (shown.length) {
       const me = el('div', 'meta modeleff', shown.join(' · '))
-      me.title = `${seen.model ? `Model: ${seen.model}. ` : ''}${seen.effort ? `Effort: ${seen.effort}. ` : ''}Last seen value, not a guarantee of the current setting. From recent Events only: the model may disappear when its session start or model switch Event ages out.`
+      me.title = `${seen.model ? `Model: ${seen.model}. ` : ''}${seen.effort ? `Effort: ${seen.effort}. ` : ''}Last seen value, not a guarantee of the current setting. From recent Events only: the model may disappear when its session start, model switch or (Antigravity) turn end Event ages out.`
       box.append(me)
     }
     box.append(backlogChips(el('div', 'backlog'), mb.layers, true))

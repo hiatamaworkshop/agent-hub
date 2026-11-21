@@ -17,6 +17,13 @@ import { promisify } from 'node:util'
 const FIELD = 'agent_hub_git'
 const MAX_ITEMS = 1000
 const NO_GIT = process.argv.includes('--no-git')
+// --source <name>: the client whose converter the Hub uses (POST /events/<name>). Default claude-code. Antigravity's hooks use
+// `--source antigravity` (C182, tools/hooks/hooks.json). A name that is not a plain word falls back to the default
+const SOURCE = (() => {
+  const i = process.argv.indexOf('--source')
+  const v = i >= 0 ? process.argv[i + 1] : undefined
+  return typeof v === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(v) ? v : 'claude-code'
+})()
 // hook 全体の上限。settings 側の timeout (6 秒) より先にこちらで終わらせる
 const BUDGET_MS = NO_GIT ? 2000 : 5000
 
@@ -61,7 +68,7 @@ async function gitFacts(cwd) {
 
 async function send(body, headers) {
   const port = process.env.HUB_PORT || '7777'
-  await fetch(`http://127.0.0.1:${port}/events/claude-code`, {
+  await fetch(`http://127.0.0.1:${port}/events/${SOURCE}`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
