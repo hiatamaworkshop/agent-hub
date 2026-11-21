@@ -1201,7 +1201,7 @@ Facts found while implementing (2026-11-21, deployer):
 - `PreInvocation` is not taken in, as this section says (`unsupported_hook`). The leader request of this item asked for it as a turn start; it is not converted here, since a turn start needs a `kind` decision (separate).
 - Working ends at the turn end with no change to the derivation: an Antigravity session with Events is `hasEvents`, so the C183 window rule applies with its `turn.end` (tests: a request answered before the turn end is Idle; a request handed after it is Working with no `?`; a reply sent during the turn stays Working until its Stop).
 - Tests: `src/hub/events.test.ts` (converter and `POST /events/antigravity`), `src/hooks/post-event.test.ts` (`--source antigravity`, the default, a bad name, a Hub that is down, and the template), `src/shared/card-state.test.ts` (`lastSeenOf`, the turn-end rule). `npm test` 844 pass, 0 fail; `npm run typecheck` exit 0. The `ui:check` scene `ag.deployer` (Working with no `?`, Idle after the Stop, the model line) is run separately (see done-when 3).
-- Not checked: a real Antigravity session (done-when 4). The procedure is in usage.md (the inbox section) and design.md §6.1aj, which also lists the three points the check must settle: an empty `Stop` stdout lets the agent stop; the App passes `HUB_TOKEN` to its hooks; `SessionStart` and `Stop` fire in the App.
+- Real Antigravity session (done-when 4, 2026-11-21, the user with the planning session; design.md §6.1aj): `session.start` and `turn.end` arrived with source `antigravity` and `modelName` `gemini-4-neon-high`; after the reply and the turn's Stop the card read Idle with the model under the name; the empty `Stop` stdout let the agent stop. The hooks ran through a local wrapper that supplied `HUB_TOKEN` and `HUB_MAILBOX`, so whether the App passes its environment to hooks is not settled (C189).
 
 - `npm run ui:check` (2026-11-21, one run): exit 0, 236 ok, 0 NG; the four C182 scenes pass (`ag.deployer`: Working with no `?` after the request, the model line `gemini-3.8-flash-low`, Idle after the Stop). `npm test` 844 pass, 0 fail; `npm run typecheck` exit 0.
 
@@ -1209,7 +1209,7 @@ Facts found while implementing (2026-11-21, deployer):
 - [x] `POST /events/antigravity` takes Antigravity's hook input as is: `SessionStart` → `session.start`, `Stop` → `turn.end`, or `turn.failed` when `error` is set; other hooks are ignored with `unsupported_hook`; the Mailbox comes from `X-Hub-Mailbox` (tests in `events.test.ts` with the payloads seen in design.md §6.1ai)
 - [x] A command hook posts stdin to that path with `HUB_TOKEN`, `HUB_MAILBOX` and `HUB_PORT`, always exits 0 and prints nothing; a `hooks.json` template sits in `tools/hooks/` (test of the poster, or of its source option)
 - [x] The card of a Mailbox with Antigravity Events shows the last `modelName` seen in its `session.start` or `turn.end` (the tooltip as for C61), and its Working ends by the turn-end rule instead of C183's no-Events rule (tests in `card-state.test.ts`; a `ui:check` scene for the model)
-- [ ] Checked once with a real Antigravity session on a running Hub (the card's model and a turn end), and the result written in design.md §6
+- [x] Checked once with a real Antigravity session on a running Hub (the card's model and a turn end), and the result written in design.md §6
 - [x] protocol.md §3 (the `antigravity` source and its mapping), usage.md (the `inbox` section: how to set up the hooks) and docs/proofs.md (the rows the turn-end rule touches) describe the change
 - [x] `npm test`, `npm run ui:check` and `npm run docs:check` pass
 
@@ -1248,3 +1248,11 @@ Raised 2026-11-21 in C183's hand check: an Event whose `session_id` the Hub had 
 - Seen only with a probe that reused a `session_id`; a real session keeps its id per conversation, so it would need a Mailbox deleted while the session that used it goes on (for example a session moved to another `HUB_MAILBOX` after its old Mailbox was deleted).
 - Idea: `deleteMailbox` drops the map entries that point at the deleted name; `GET /mailboxes/resolve` follows.
 - To decide: whether this is worth an item, or a line under "Known issues".
+
+### C189. Name the Mailbox and the token for command hooks without the user's environment
+Status: proposed
+
+Raised 2026-11-21 in C182's real check (design.md §6.1aj): usage.md tells Antigravity users to set `HUB_TOKEN` and `HUB_MAILBOX` in the environment the App starts with, because `tools/hooks/post-event.mjs` reads only the environment. A `HUB_MAILBOX` there also reaches every shim started by hand from that environment (the shim takes `HUB_MAILBOX` first, design.md §3.3), so a Claude Code session would attach as the reviewer. The check used a gitignored wrapper in `.agents/` instead.
+
+- Idea: the poster takes `--mailbox <name>` and, without `HUB_TOKEN`, reads agent-hub's `.env` as the shim does (§3.8); the `hooks.json` template then names the Mailbox in the command, and usage.md drops the environment step.
+- To decide: whether the token may be read from `.env` by the poster (the shim already does), and whether the template should carry the Mailbox name or the role.
