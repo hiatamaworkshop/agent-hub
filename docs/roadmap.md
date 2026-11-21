@@ -24,6 +24,8 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C187
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -1229,13 +1231,21 @@ Raised 2026-11-21 in the C183 review (reviewer, out of scope): the cards show `W
 - Idea: the node takes `st.guess` the way the card does, with the same tooltip; a `ui:check` map scene for a session without Events.
 
 ### C187. A notice after an open request turns a session without Events to Stopped, no reply
-Status: proposed
 
 Raised 2026-11-21 in the C183 review (reviewer's note): for a session without Events and an open handed request, a later `notice` handed to it (even in the same `inbox()` batch) becomes `lastHanded` with `open: false`, so the card's no-Events rule no longer sees an open hand-over and falls to `Stopped, no reply`, although no turn ended and the request still awaits its reply (`src/shared/card-state.js`, C183's rule). Clients without Events (Antigravity, design.md §6.1ai) meet this in normal use when the leader follows a request with a notice.
 
 - The reviewer's caution: keeping `Working?` whenever `awaitingReply.count > 0` would instead keep a long-stopped session without Events Working after a Health check notice (the `demo.old` scene), so the rule needs the time of the open request, not only the count.
 - To decide: which fact the rule reads (the open request's handed time from `awaitingReply.seqs`, or a `lastHandedOpen` next to `lastHanded` in the Hub), and whether C182's turn ends make this moot for Antigravity once its hooks are set up.
 - Reproduced 2026-11-21 in C191's run on the inbox path (design.md §6.1ak): a browser request handed by `inbox()` and left open, then a browser `notice` handed by the next `inbox()`; the card went from `working` with `guess` to `stopped` (`Stopped, no reply`) while `awaitingReply` still counted the request. So the case is not only the reviewer's reading of the rule: a client without Events meets it with one request and one notice. C182's turn ends do not help such a client (a host or app without hooks).
+- Decided (2026-11-22, the user chose this among three options the planning session offered): the rule reads the time of the newest open request, given by the Hub. `backlog.awaitingReply` gains `newestAt` and `newestSeq` (the newest request this Mailbox owes a reply to, by `seq`, counted by the same rule as `count`; `null` when none), next to `oldestAt` and `oldestSeq`. For a session without Events, the card is `Working?` while `lastHanded` is open and in the window (as now), or else while `awaitingReply.newestAt` is in the same window (`staleHandedHours`). Past the window it stays `Stopped, no reply`, so the reviewer's `demo.old` case (an old request, then a Health check notice) is unchanged. Sessions with Events keep their rule. C142's restart rule (a request handed before the Hub started reads `Stopped`, `Hub restarted after the hand-over`) applies to the newest open request's time on this path too.
+- Not chosen: reading the open request's time on the page from `awaitingReply.seqs` and `messageOf` (the Message may not be held yet, so the state would change once it is fetched); a `lastHandedOpen` beside `lastHanded` (the same fact under a second name, with a cache of its own in `lastHandedOf`).
+
+#### Done when
+- [ ] `GET /mailboxes` returns `backlog.awaitingReply.newestAt` and `newestSeq` (the newest by `seq` among the requests counted in `count`; both `null` when `count` is 0), with a Hub test: an open request, then a later answered one and a notice handed after it, gives the open request's `seq` and `ts`; a reply to it sets both to `null`.
+- [ ] `src/shared/card-state.js`: for a session without Events whose `lastHanded` is not open, the card is `Working` with `guess` and `since` the newest open request's `newestAt` while that time is in the `staleHandedHours` window; past the window it is `Stopped, no reply`. A Hub without `newestAt` gives the current result. C142's restart rule applies to that time. Tests in `card-state.test.ts`: C191's sequence (open request, then a handed notice → `Working?`), the same with the request older than the window (→ `Stopped, no reply`), the request handed before the Hub's start (→ `Stopped`, `Hub restarted after the hand-over`), and a session with Events unchanged; the property test still passes.
+- [ ] `npm run ui:check`: a scene for a session without Events with an open request and a later notice handed → `Working?`; `demo.old` still reads `Stopped, no reply`.
+- [ ] protocol.md §3 (the `backlog` fields), design.md §3.15 (the no-Events rule) and docs/proofs.md (S11, and S15 if its scene list changes) say the new rule.
+- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C188. Forget a deleted Mailbox's sessions, so their Events do not resolve to it
 Status: proposed
