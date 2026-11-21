@@ -355,9 +355,9 @@ describe('GET /mailboxes: awaitingReply.seqs (C129)', () => {
       const body = (await (await app.request('/mailboxes', { headers: bearer })).json()) as { mailboxes: { name: string; backlog: { awaitingReply: unknown } }[] }
       return body.mailboxes.find((m) => m.name === 'x')!.backlog.awaitingReply
     }
-    assert.deepEqual(await owed(), { count: 2, oldestAt: a.ts, oldestSeq: a.seq, seqs: [a.seq, b.seq] })
+    assert.deepEqual(await owed(), { count: 2, oldestAt: a.ts, oldestSeq: a.seq, seqs: [a.seq, b.seq], newestAt: b.ts, newestSeq: b.seq })
     hub.postMessage({ kind: 'reply', replyTo: a.id, body: 'done' }, hub.senderOf(x.attachmentId))
-    assert.deepEqual(await owed(), { count: 1, oldestAt: b.ts, oldestSeq: b.seq, seqs: [b.seq] })
+    assert.deepEqual(await owed(), { count: 1, oldestAt: b.ts, oldestSeq: b.seq, seqs: [b.seq], newestAt: b.ts, newestSeq: b.seq })
   })
 })
 

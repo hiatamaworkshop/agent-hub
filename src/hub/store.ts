@@ -99,6 +99,9 @@ export const AWAITING_SEQS_MAX = 100
 
 export interface AwaitingReply extends Tally {
   seqs: number[]
+  // C187: the newest request counted here, by seq, with its ts. A session with no Events reads its time (card-state.js). null when count is 0
+  newestAt: string | null
+  newestSeq: number | null
 }
 
 export interface Outgoing extends Tally {
@@ -591,7 +594,7 @@ export class Store {
     const mb = this.must(name)
     const backlog: Backlog = {
       unread: { count: 0, oldestAt: null, oldestSeq: null },
-      awaitingReply: { count: 0, oldestAt: null, oldestSeq: null, seqs: [] },
+      awaitingReply: { count: 0, oldestAt: null, oldestSeq: null, seqs: [], newestAt: null, newestSeq: null },
       unconfirmed: { count: 0, oldestAt: null, oldestSeq: null },
       outgoing: { count: 0, oldestAt: null, oldestSeq: null, to: [] },
       lastHanded: null,
@@ -619,6 +622,11 @@ export class Store {
       if (m.seq <= mb.cursor && this.isRecipient(name, m)) {
         add(backlog.awaitingReply, m)
         if (backlog.awaitingReply.seqs.length < AWAITING_SEQS_MAX) backlog.awaitingReply.seqs.push(m.seq)
+        // 走査は順不同 (Map の挿入順) なので、seq の大きいほうを新しいとして覚える (C187)
+        if (backlog.awaitingReply.newestSeq === null || m.seq > backlog.awaitingReply.newestSeq) {
+          backlog.awaitingReply.newestSeq = m.seq
+          backlog.awaitingReply.newestAt = m.ts
+        }
       }
     }
     const handed = this.lastHandedOf(mb)

@@ -193,7 +193,7 @@ describe('Store: 溜まりの材料 (summary)', () => {
     const outgoing = { ...tally(), to: [] as Array<{ type: Address['type']; id: string; recipients: string[]; seqs: number[] } & ReturnType<typeof tally>> }
     const backlog = {
       unread: tally(),
-      awaitingReply: { ...tally(), seqs: [] as number[] },
+      awaitingReply: { ...tally(), seqs: [] as number[], newestAt: null as string | null, newestSeq: null as number | null },
       unconfirmed: tally(),
       outgoing,
       lastHanded: null as { seq: number; ts: string; open: boolean } | null,
@@ -234,6 +234,10 @@ describe('Store: 溜まりの材料 (summary)', () => {
       t.oldestAt ??= m.ts
       t.oldestSeq ??= m.seq
       if (t === backlog.awaitingReply && backlog.awaitingReply.seqs.length < AWAITING_SEQS_MAX) backlog.awaitingReply.seqs.push(m.seq)
+      if (t === backlog.awaitingReply && (backlog.awaitingReply.newestSeq === null || m.seq > backlog.awaitingReply.newestSeq)) {
+        backlog.awaitingReply.newestSeq = m.seq
+        backlog.awaitingReply.newestAt = m.ts
+      }
     }
     return { unread: s.unread(name).length, unconfirmed: s.unconfirmed(name).length, backlog }
   }

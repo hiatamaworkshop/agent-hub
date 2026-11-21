@@ -473,6 +473,12 @@ try {
   // 溜まりのバッジから最も古いものへ飛ぶ (C44)。古い依頼は止まった Event と違って、畳んだ分の中にあることもある
   // タブは leader の質問の 1 件 (deployer の許可待ちは上の C43 の場面で解いた)
   await scene('5 日前の返信待ちの依頼が残っている', { 'demo.old': 'Stopped, no reply' }, '1 waiting')
+  // C187: a notice handed after the 5-day-old request. Its time is outside the window, so the card stays Stopped, no reply
+  {
+    const oldNotice = await api('POST', '/messages', { kind: 'notice', to: { type: 'mailbox', id: 'demo.old' }, body: 'C187 check: a notice after the old request' })
+    await api('POST', `/attachments/${old.attachmentId}/ack`, { upTo: oldNotice.seq })
+    await stateScene('5 日前の依頼のあとに通知が渡った: 窓の外なので Stopped, no reply のまま (C187)', 'demo.old', 'Stopped, no reply')
+  }
   const jump = await cdp('Runtime.evaluate', {
     expression: `(async () => {
       const card = [...document.querySelectorAll('#mailboxes .mb')].find((b) => (b.querySelector('.name') || {}).textContent === 'demo.old')
@@ -2328,6 +2334,19 @@ try {
     const nevCard = after.cards.find((c) => c.name === 'nev.deployer')
     if (nevCard && nevCard.state.includes('Working?')) { failed++; console.log('NG  Event が届いたあとも Working? の印が残っている') }
     await api('POST', '/messages', { kind: 'reply', replyTo: r2.id, body: 'done again' }, asNev)
+    // C187: a session with no Events has an open request, and then a notice is handed after it (lastHanded is not open). Its card reads the
+    // open request's time, so it is still Working? (before C187 it read Stopped, no reply). demo.old, a request 5 days old, stays Stopped
+    {
+      const nevn = await api('POST', '/mailboxes/nev.notice/attach', { client: 'antigravity-client', cwd: nevFolder, sessionId: 's-nevn' })
+      const rq = await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'nev.notice' }, body: 'GOAL: C187 open request' })
+      await ackAll(nevn.attachmentId)
+      await stateScene('Events のない session に開いた依頼が渡った (C187 の前置き)', 'nev.notice', 'Working?')
+      await api('POST', '/messages', { kind: 'notice', to: { type: 'mailbox', id: 'nev.notice' }, body: 'C187: a notice after the open request' })
+      await ackAll(nevn.attachmentId)
+      await stateScene('開いた依頼のあとに通知が渡った: 依頼の時刻で推測の Working? (C187)', 'nev.notice', 'Working?')
+      await api('POST', '/messages', { kind: 'reply', replyTo: rq.id, body: 'done' }, { 'x-hub-attachment': nevn.attachmentId })
+      await stateScene('依頼に返信すると、通知だけが残っても Idle (C187)', 'nev.notice', 'Idle')
+    }
     // 報告: 人への報告に決めてほしい節があれば Needs you (decision)。「-」なら Needs you ではない
     const rpt = await api('POST', '/mailboxes/rpt.leader/attach', { client: 'claude-code', cwd: nevFolder, sessionId: 's-rpt' })
     const asRpt = { 'x-hub-attachment': rpt.attachmentId }

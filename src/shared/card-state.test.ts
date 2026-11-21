@@ -93,6 +93,49 @@ describe('stateOf: a session with no Events (C183)', () => {
   })
 })
 
+// C187: a notice handed after an open request makes lastHanded not open. A session with no Events then reads the newest open request's
+// time (awaitingReply.newestAt): Working? while it is in the window, Stopped, no reply past it, and Stopped for a request from before the
+// Hub's start (C142). Sessions with Events keep their rule, and a Hub without newestAt gives the same result as before
+describe('stateOf: a session with no Events and a notice handed after an open request (C187)', () => {
+  // The request at minute -5 is still open, and a notice at minute -1 was handed after it (open: false)
+  const awaiting = (ts: string, seq: number) => ({ count: 1, oldestAt: ts, oldestSeq: seq, newestAt: ts, newestSeq: seq })
+  const notice = { ts: at(-1), seq: 8, open: false }
+
+  it('the C191 sequence: an open request, then a notice handed → Working? since the request, the guess', () => {
+    const m = mb({ awaitingReply: awaiting(at(-5), 7), lastHanded: notice })
+    assert.deepEqual(stateOf(m, ctx({ messageOf: () => null })), { key: 'working', since: at(-5), guess: true, detail: '' })
+  })
+
+  it('the same with the request older than the window (12 hours by default) → Stopped, no reply', () => {
+    const old = at(-(12 * 60 + 1))
+    const m = mb({ awaitingReply: awaiting(old, 7), lastHanded: notice })
+    const s = stateOf(m, ctx())
+    assert.equal(s.key, 'stopped')
+    assert.equal(s.since, old)
+  })
+
+  it('the request handed before this Hub started, and in the window → Stopped, Hub restarted after the hand-over (C142)', () => {
+    const m = mb({ awaitingReply: awaiting(at(-5), 7), lastHanded: notice })
+    assert.deepEqual(stateOf(m, ctx({ hubStartedAt: T0 })), { key: 'stopped', since: at(-5), detail: 'Hub restarted after the hand-over' })
+  })
+
+  it('a Hub without newestAt gives the result it gave before C187 (Stopped, since the oldest request)', () => {
+    const m = mb({ awaitingReply: { count: 1, oldestAt: at(-5), oldestSeq: 7 }, lastHanded: notice })
+    assert.deepEqual(stateOf(m, ctx()), { key: 'stopped', since: at(-5), detail: undefined })
+  })
+
+  it('a session with Events keeps its rule: the hand-over after the window is not Working? and nothing is read from newestAt', () => {
+    const start = ev('session.start', at(-40))
+    const m = mb({ awaitingReply: awaiting(at(-5), 7), lastHanded: { ts: at(-1), seq: 8, open: false } })
+    assert.deepEqual(stateOf(m, ctx({ lastEvent: start })), { key: 'working', since: at(-1), guess: false, detail: '' })
+  })
+
+  it('the open hand-over itself still reads Working? (the guess) as before, even with a newestAt that is older', () => {
+    const m = mb({ awaitingReply: awaiting(at(-5), 7), lastHanded: { ts: at(-1), seq: 8, open: true } })
+    assert.deepEqual(stateOf(m, ctx({ messageOf: () => null })), { key: 'working', since: at(-1), guess: true, detail: '' })
+  })
+})
+
 // C183: a report to the person that asks for a decision or an action is Needs you, until the person writes to the Mailbox or the Mailbox
 // sends a report without such a section. Its body is read by the page (messageOf); a body the page does not hold counts for nothing
 describe('stateOf: Needs you from a report (C183)', () => {

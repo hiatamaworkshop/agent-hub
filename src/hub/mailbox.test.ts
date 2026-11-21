@@ -593,26 +593,26 @@ describe('溜まりの材料 (backlog。design.md §3.15)', () => {
       return { unread, awaitingReply, unconfirmed }
     }
     const empty = { count: 0, oldestAt: null, oldestSeq: null }
-    assert.deepEqual(backlog(), { unread: empty, awaitingReply: { ...empty, seqs: [] }, unconfirmed: empty })
+    assert.deepEqual(backlog(), { unread: empty, awaitingReply: { ...empty, seqs: [], newestAt: null, newestSeq: null }, unconfirmed: empty })
 
     const req = hub.postMessage({ kind: 'request', to: toX, body: 'do it' }, user)
     const notice = hub.postMessage({ kind: 'notice', to: toX, body: 'fyi' }, user)
     hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'y' }, body: 'not for x' }, user)
-    assert.deepEqual(backlog(), { unread: { count: 2, oldestAt: req.ts, oldestSeq: req.seq }, awaitingReply: { ...empty, seqs: [] }, unconfirmed: empty })
+    assert.deepEqual(backlog(), { unread: { count: 2, oldestAt: req.ts, oldestSeq: req.seq }, awaitingReply: { ...empty, seqs: [], newestAt: null, newestSeq: null }, unconfirmed: empty })
 
     // 渡しただけ (Channels): request は返信待ち、notice は確認待ち。request を確認待ちに重ねない
     hub.ack(a.attachmentId, notice.seq)
     const late = hub.postMessage({ kind: 'notice', to: toX, body: 'later' }, user)
     assert.deepEqual(backlog(), {
       unread: { count: 1, oldestAt: late.ts, oldestSeq: late.seq },
-      awaitingReply: { count: 1, oldestAt: req.ts, oldestSeq: req.seq, seqs: [req.seq] },
+      awaitingReply: { count: 1, oldestAt: req.ts, oldestSeq: req.seq, seqs: [req.seq], newestAt: req.ts, newestSeq: req.seq },
       unconfirmed: { count: 1, oldestAt: notice.ts, oldestSeq: notice.seq },
     })
     assert.equal(hub.describeMailboxes().find((d) => d.name === 'x')!.unconfirmed, 2, 'unconfirmed の件数は今までどおり request も含む')
 
     // 返信すると返信待ちから外れ、渡してあった分 (notice まで) が受領の確認になる。渡す前の late は未読のまま (C39)
     hub.postMessage({ kind: 'reply', replyTo: req.id, body: 'done' }, hub.senderOf(a.attachmentId))
-    assert.deepEqual(backlog(), { unread: { count: 1, oldestAt: late.ts, oldestSeq: late.seq }, awaitingReply: { ...empty, seqs: [] }, unconfirmed: empty })
+    assert.deepEqual(backlog(), { unread: { count: 1, oldestAt: late.ts, oldestSeq: late.seq }, awaitingReply: { ...empty, seqs: [], newestAt: null, newestSeq: null }, unconfirmed: empty })
   })
 
   it('返信待ちが 2 件あるとき oldestSeq は古い方の seq で、消した後は次に古いもの (C44)', () => {
@@ -625,6 +625,24 @@ describe('溜まりの材料 (backlog。design.md §3.15)', () => {
     assert.equal(oldest(), first.seq)
     hub.deleteMessage(first.id)
     assert.equal(oldest(), second.seq, '消した後は次に古いもの')
+  })
+
+  // C187: the newest open request by seq, and its time; null when none. A session with no Events reads its time (card-state.js)
+  it('C187: awaitingReply.newestAt and newestSeq are the newest open request by seq, and both are null once it is answered', () => {
+    const hub = new Hub(new Store())
+    const a = hub.attach('x', { client: 'claude-code' })
+    const open = hub.postMessage({ kind: 'request', to: toX, body: 'open' }, user)
+    const answered = hub.postMessage({ kind: 'request', to: toX, body: 'answered' }, user)
+    const notice = hub.postMessage({ kind: 'notice', to: toX, body: 'after' }, user)
+    hub.ack(a.attachmentId, notice.seq)
+    const asX = hub.senderOf(a.attachmentId)
+    const ar = () => hub.describeMailboxes().find((d) => d.name === 'x')!.backlog.awaitingReply
+    const newest = () => ({ count: ar().count, newestAt: ar().newestAt, newestSeq: ar().newestSeq })
+    assert.deepEqual(newest(), { count: 2, newestAt: answered.ts, newestSeq: answered.seq }, 'the newer of the two open requests')
+    hub.postMessage({ kind: 'reply', replyTo: answered.id, body: 'done' }, asX)
+    assert.deepEqual(newest(), { count: 1, newestAt: open.ts, newestSeq: open.seq }, 'the older open one remains; the notice after it does not count')
+    hub.postMessage({ kind: 'reply', replyTo: open.id, body: 'done' }, asX)
+    assert.deepEqual(ar(), { count: 0, oldestAt: null, oldestSeq: null, seqs: [], newestAt: null, newestSeq: null })
   })
 
   // 閉じ方は送り手ごとに違う (protocol.md §2・C28)。古い依頼は y が出し、新しい依頼は人が出す。
@@ -643,9 +661,9 @@ describe('溜まりの材料 (backlog。design.md §3.15)', () => {
 
     it('返信で閉じると、残った新しい方の seq になる', () => {
       const { hub, older, newer, oldest, asX } = setup()
-      assert.deepEqual(oldest(), { count: 2, oldestAt: older.ts, oldestSeq: older.seq, seqs: [older.seq, newer.seq] })
+      assert.deepEqual(oldest(), { count: 2, oldestAt: older.ts, oldestSeq: older.seq, seqs: [older.seq, newer.seq], newestAt: newer.ts, newestSeq: newer.seq })
       hub.postMessage({ kind: 'reply', replyTo: older.id, body: 'done' }, asX)
-      assert.deepEqual(oldest(), { count: 1, oldestAt: newer.ts, oldestSeq: newer.seq, seqs: [newer.seq] })
+      assert.deepEqual(oldest(), { count: 1, oldestAt: newer.ts, oldestSeq: newer.seq, seqs: [newer.seq], newestAt: newer.ts, newestSeq: newer.seq })
     })
 
     it('後の依頼で閉じても、残った新しい方の seq になる', () => {
@@ -663,7 +681,7 @@ describe('溜まりの材料 (backlog。design.md §3.15)', () => {
     const r = hub.inbox('x', 0, 20)
     hub.ack(a.attachmentId, r.cursor, { first: req.seq, last: req.seq })
     const b = hub.describeMailboxes().find((d) => d.name === 'x')!.backlog
-    assert.deepEqual(b.awaitingReply, { count: 1, oldestAt: req.ts, oldestSeq: req.seq, seqs: [req.seq] })
+    assert.deepEqual(b.awaitingReply, { count: 1, oldestAt: req.ts, oldestSeq: req.seq, seqs: [req.seq], newestAt: req.ts, newestSeq: req.seq })
     assert.equal(b.unconfirmed.count, 0)
   })
 
@@ -715,7 +733,7 @@ describe('やりとりの Message で request を閉じ、受領の確認にす�
     const answer = hub.postMessage({ kind: 'request', to: toLead, body: 'A' }, { type: 'user', id: 'cli', role: null })
     assert.equal(of('lead').backlog.outgoing.count, 0, '人の後の依頼で質問が閉じる')
     hub.ack(lead.attachmentId, answer.seq)
-    assert.deepEqual(of('lead').backlog.awaitingReply, { count: 1, oldestAt: answer.ts, oldestSeq: answer.seq, seqs: [answer.seq] })
+    assert.deepEqual(of('lead').backlog.awaitingReply, { count: 1, oldestAt: answer.ts, oldestSeq: answer.seq, seqs: [answer.seq], newestAt: answer.ts, newestSeq: answer.seq })
 
     hub.postMessage({ kind: 'reply', replyTo: answer.id, body: 'done' }, asLead)
     assert.equal(of('lead').backlog.awaitingReply.count, 0)

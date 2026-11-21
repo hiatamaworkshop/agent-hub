@@ -337,6 +337,20 @@ export function stateOf(mb, ctx) {
       const more = bg.count > 1 ? ` (+${bg.count - 1})` : ''
       return { key: 'working', since: end.ts, until, detail: `background: ${bg.description || 'task'}${more}` }
     }
+    // C187: a session with no Events whose last hand-over is not open (a notice, or an answered request, was handed after the request it
+    // still owes a reply to). With no turn end to say the turn is over, the newest open request's time decides, as the open hand-over
+    // did: Working? (a guess) while that time is in the window. A request handed before this Hub started is Stopped (C142). Past the
+    // window it is Stopped, no reply, as before. An older Hub gives no newestAt, and then nothing here changes
+    const newest = b.awaitingReply.newestAt
+    if (!hasEvents && handed && handed.open === false && !absent && typeof newest === 'string') {
+      const t = Date.parse(newest)
+      if (ctx.now - t < staleHandedHours(ctx.readRetentionHours) * 3600000) {
+        if (ctx.hubStartedAt !== null && t < ctx.hubStartedAt && !(end && Date.parse(end.ts) >= ctx.hubStartedAt)) {
+          return { key: 'stopped', since: newest, detail: 'Hub restarted after the hand-over' }
+        }
+        return { key: 'working', since: newest, guess: true, detail: summaryOf(ctx.messageOf(b.awaitingReply.newestSeq)) }
+      }
+    }
     return { key: 'stopped', since: end ? end.ts : b.awaitingReply.oldestAt, detail: absent ? `${absent} not connected` : undefined }
   }
   return { key: 'idle', since: end ? end.ts : null }
