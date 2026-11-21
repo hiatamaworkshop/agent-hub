@@ -24,6 +24,8 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C191
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -1245,7 +1247,6 @@ Raised 2026-11-21 in C182's real check (design.md §6.1aj): usage.md tells Antig
 - To decide: whether the token may be read from `.env` by the poster (the shim already does), and whether the template should carry the Mailbox name or the role.
 
 ### C191. A local Ollama model as a check client for the vendor-neutral path
-Status: proposed
 
 Raised 2026-11-21 by the user: an Ollama install on this machine, strong enough only for a light model's short replies, should be used to check the general mechanism (the inbox path) rather than one vendor's app. Antigravity (C3, design.md §6.1ai) is one real client but changes on its own schedule and needs a human in its app; a light local model is the floor case: weaker tool calling, no Channels, no hooks, no Events.
 
@@ -1253,3 +1254,12 @@ Raised 2026-11-21 by the user: an Ollama install on this machine, strong enough 
 - What it would check: the route chosen by `clientInfo.name` (anything but `claude-code` gets the inbox path), the instructions in `initialize`, `inbox()` returning `<hub-message>` and confirming receipt, `post_message` replies reaching the UI, C190's hint, and the card of a session without Events (C183, C187).
 - Constraints: the host takes a turn only on the human's word (a prompt typed into it), never on its own timer (design.md §2, C12). Not in CI (it needs a local Ollama and a model); a manual check, recorded in design.md §6 like §6.1ai. The model name and version go into the record, since a light model's failures may be the model's, not the shim's.
 - To decide: a host of our own in `tools/` or an existing one (our own keeps `clientInfo.name` and the loop under control; an existing one is what an adopter would use); which model; whether this becomes C3's next run or stays its own item.
+- Decided (2026-11-21, the user's decision): a host of our own in `tools/` (Node, `@modelcontextprotocol/sdk` `Client` over stdio to the shim, Ollama `/api/chat` with `tools`); its own item, not C3's next run, so a light model's failures are not read as a client's. Model: `qwen2.5:3b` (the strongest tool caller installed here; Ollama 0.40.16), with a `--model` option for others.
+
+#### Done when
+- [ ] A host in `tools/` starts the shim over stdio with a `clientInfo.name` other than `claude-code`, passes the shim's tool list to Ollama as `tools`, runs the model's tool calls through the shim, and takes a turn only when the human types a prompt (no timer, no loop of its own; design.md §2).
+- [ ] The host takes the model (`--model`, default `qwen2.5:3b`), the Mailbox and the Ollama URL as options, and reads the token as the shim does; it is not run by `npm test` or CI.
+- [ ] A manual run is recorded in design.md §6 with the model name and version and the Ollama version, saying for each what was seen: the inbox route chosen by `clientInfo.name`, the `initialize` instructions, `inbox()` returning `<hub-message>` and confirming receipt, a `post_message` reply shown in the UI, C190's unread hint, and the card of a session without Events (C183, C187). A failure is recorded with whether it was the model's or the shim's.
+- [ ] Findings about the shim or the Hub from the run are filed as `C<n>` items or recorded under an existing one.
+- [ ] usage.md says how to run the host, in a short paragraph next to the Antigravity notes.
+- [ ] `npm run docs:check` passes.
