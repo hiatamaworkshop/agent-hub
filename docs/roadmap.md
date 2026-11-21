@@ -1170,6 +1170,7 @@ Raised 2026-11-20 from a question about whether a desktop-app agent (for example
 - Constraints: the last-fetch time is delivery state, so it fits §3.14. A client that cannot call `inbox()` while idle will show an old time as its normal state, so the wording must not read as a fault. This is not integration by operating a desktop app's screen (out of scope, see the top of "Items"); it goes only through MCP and the Hub's API.
 - To decide: whether (3) alone is enough, or (1) and (2) are needed too. Decide after C3 shows how a real non-Claude client behaves (whether it connects the shim, what `clientInfo.name` it sends, whether it can fetch while idle). If C3 resumes first, its result decides this item.
 - C3's result for Antigravity (2026-11-21, design.md §6.1ai): it connects the shim, sends `antigravity-client`, and does not fetch while idle; a human's word was enough for it to fetch and answer. One more wake path exists inside it: the App's `agentapi send-message <conversation> <content>` posts into a conversation, but only from processes the App starts (its sidecars); from outside it needs a CSRF token. A sidecar that watches the Hub and calls it would be a level 2 adapter for this client (§3.9), and would also send without a human pressing Send, so it falls under design.md §2 and C12 rather than this item.
+- Re-check of (3) (2026-11-21, by Antigravity as reviewer, at the user's request): a Hub Message ("check your inbox") sent from the page to a client that cannot be woken only adds one more unread Message; nothing reaches its conversation, so it wakes nothing. What works for such a client is (1) and (2) (the last `inbox()` time on the Attachment, shown on the card as waiting for the human's word, not as stopped), and at most a helper that copies a fixed text for the human to paste into the client. Picking up during a turn that is already running is C184.
 
 ### C182. Antigravity hooks as Hub Events, and the model on the card
 Status: proposed
@@ -1198,3 +1199,23 @@ Raised 2026-11-21 in the C180 review with Antigravity as reviewer: after the rev
 - [ ] A card showing Working? keeps the `?` after an SSE-driven update re-renders it, and loses it when the state changes to a non-guess; checked by hand on a running Hub with a client that sends no Events, and the result written in this section
 - [ ] protocol.md §3 (`GET /mailboxes`), design.md §3.15 (card states, Needs you) and docs/proofs.md (the Idle and Needs you rows) describe the change; a line in docs/conventions-log.md if the reply-format heading rule changes meaning
 - [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass
+
+### C184. Vendor-neutral pickup in the shim: an unread hint, standard MCP signals, an optional wait
+Status: proposed
+
+Raised 2026-11-21 by Antigravity as reviewer (a draft written at the user's request, filed here by the planning session), from C3 / design.md §6.1ai: clients other than Claude Code cannot be woken by Channels, and standard MCP, including SEP-3415 (`io.modelcontextprotocol/events`), leaves waking an idle model turn out of scope (§3.9, §7). With `inbox()` kept as the one path for content (`<hub-message>`, received confirmed only by a fetch, protocol.md §4), the shim can make arrivals harder to miss during a running turn, without vendor-specific code.
+
+- Invariant (§3.9): a signal never carries a body and never moves the cursor; only `inbox()` hands content over.
+- (1) An unread hint on tool results: the shim keeps the Hub's stream open for liveness (§3.3), so it knows when unread Messages arrive. While unread > 0, other tool results (`post_message`, `open_requests` and so on) carry one line with the count (not the body), and `whoami` a field, like C180's note on moved roots.
+- (2) Standard MCP signals by capability: declare `resources: { subscribe: true }` and send `notifications/resources/updated` only to a client that subscribes; negotiate `io.modelcontextprotocol/events` by capability once a client supports it, instead of choosing by `clientInfo.name` (§3.7). No client that would use either is known today.
+- (3) An optional wait: `inbox(wait_seconds)` (or a separate tool) holds the call on the existing stream, sends `notifications/progress` to stay under client tool timeouts (Antigravity: 180 seconds by default, §6.1ai), and returns the `<hub-message>` on arrival or an empty result at the timeout. Only for a waiting turn the human started (§2); it occupies the conversation while it waits.
+- Out of scope: waking an idle client with no turn running (C179 for the human's word, C12 for opt-in watchers).
+- To decide: which of (1), (2), (3) to take now, and whether to split them into separate items once decided ((2) looks like `held` until a client supports it).
+
+### C185. Stop on an attach refusal that a retry cannot fix (`unknown_role` and the like), and show it
+Status: proposed
+
+Raised 2026-11-21 from design.md §6.1ai: an attach refused with 400 `unknown_role` (a `HUB_ROLE` missing from `roles.json`) was retried with backoff for minutes, `whoami` said `connecting`, and nothing else showed it. C181 noted it in its body but left it out of its done-when lines, and closed without it.
+
+- The same shape as C181's second refusal: the shim stops retrying, stays unattached, and says why on every tool call and in `whoami`; the Hub could keep the refusal like `attachRefused` so the page shows it without a tool call.
+- To decide: which refusals count as not fixable by a retry (4xx other than 404 and 409? only `unknown_role`?), and whether the Hub records them for a Mailbox that may not exist yet.
