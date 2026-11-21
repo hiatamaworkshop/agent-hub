@@ -1205,3 +1205,22 @@ Raised 2026-11-21 from §6.1ai: after a restart that changed the folder, the old
 - [ ] The Hub keeps the last refused attach per Mailbox (time, refused folder, client) in memory, returns it in `GET /mailboxes`, and clears it on the next successful attach (test); the page shows it on the Mailbox's card until then (`ui:check` scene)
 - [ ] protocol.md §3 (attach, `GET /mailboxes`) and design.md §3.3 describe the retry and the record; docs/proofs.md is updated if a card state changes
 - [ ] `npm test`, `npm run ui:check` and `npm run docs:check` pass
+
+### C182. Antigravity hooks as Hub Events, and the model on the card
+Status: proposed
+
+Raised 2026-11-21 from §6.1ai: Antigravity sends no Events, so its card cannot tell a turn's end (C183) and the page cannot say which agent and model sit behind a Mailbox (the user asked for the identity on the card). Its hooks (`.agents/hooks.json`, command type only, JSON on stdin) carry what is needed: `SessionStart`, `PreInvocation` and `Stop` all have `modelName` (seen: `gemini-3.8-flash-low`), `conversationId`, `cwd` and `workspacePaths`; `Stop` has `terminationReason` (seen: `NO_TOOL_CALL`), `fullyIdle`, `error` and `continuationActive`, but not the final answer's text.
+
+- A converter `antigravity` behind `POST /events/antigravity` (protocol.md §2, the `<source>` rule): `SessionStart` → `session.start`, `Stop` → `turn.end` (or `turn.failed` when `error` is set), `PreInvocation` as the start of a turn. The Hub stores the payload as is; it does not read the transcript (§3.8).
+- Command hooks cannot send HTTP themselves, so a small script in this repository reads stdin and posts it, with the Mailbox name as an argument; a `hooks.json` template is handed out like the Claude Code hook settings.
+- The card shows the client (`attachment.client`) and the last `modelName` seen; for Claude Code, whatever its hook payloads offer. Showing it is delivery state about the session, not knowledge (§3.14).
+- `workspacePaths` is a second source of the folder for C180 (not used here).
+
+### C183. A card's Working and Idle from what a session without hooks has sent
+Status: proposed
+
+Raised 2026-11-21 in the C180 review with Antigravity as reviewer: after the reviewer replied (`lastHanded.open: false`, nothing awaiting a reply), its card kept saying Working for up to `STALE_HANDED_HOURS`, because a session with no Events has no known turn end (`src/shared/card-state.js`, the `handedWorking` rule; design.md §3.15). The user read it as stuck. The same screen showed `Working` without the `?` that marks a guess, which may be lost on a live re-render. In the same run the leader's report with `NEEDS DECISION` left the leader's card at Idle, because only requests to the person and hook Events count as the person's move; the user read the leader as stopped.
+
+- For a session that has sent no Events: once the handed request is answered (`open: false`) and nothing is unread, the card is Idle, not Working?. A turn end from hooks (C182) still wins when there is one.
+- Whether a reply to the person with `NEEDS DECISION` or `NEEDS ACTION` other than `-` counts as Needs you is part of the decision (it reads the reply-format headings, §3.15).
+- Check the `?` on Working after an SSE-driven re-render, not only in the static `ui:check` scenes.
