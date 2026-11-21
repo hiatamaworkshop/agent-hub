@@ -197,6 +197,7 @@ describe('Store: 溜まりの材料 (summary)', () => {
       unconfirmed: tally(),
       outgoing,
       lastHanded: null as { seq: number; ts: string; open: boolean } | null,
+      lastToUser: null as { seq: number; ts: string } | null,
       lastEvent: null as { id: string; kind: string; ts: string; sessionId?: string; detail?: string } | null,
       lastTurnEnd: null as { id: string; ts: string; running?: { count: number; description: string } } | null,
     }
@@ -226,6 +227,7 @@ describe('Store: 溜まりの材料 (summary)', () => {
         to.oldestSeq ??= m.seq
       }
       if (m.seq <= mb.cursor && s.isRecipient(name, m)) backlog.lastHanded = { seq: m.seq, ts: m.ts, open: s.isAwaitingReply(m) }
+      if (m.from.type === 'mailbox' && m.from.id === name && m.to.type === 'user') backlog.lastToUser = { seq: m.seq, ts: m.ts }
       const t = m.seq > mb.cursor ? backlog.unread : s.isAwaitingReply(m) ? backlog.awaitingReply : m.seq > mb.received ? backlog.unconfirmed : null
       if (!t || !s.isRecipient(name, m)) continue
       t.count++

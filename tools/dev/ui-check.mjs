@@ -211,6 +211,17 @@ async function refusalScene(label, name, needles) {
   if (!ok) console.log(`      「${got}」 (期待は ${needles === null ? 'なし' : JSON.stringify(needles)}; カード ${card ? 'あり' : 'なし'}; 見えているカード ${JSON.stringify(s.cards.map((c) => c.name))})`)
 }
 
+// 一覧のカードの状態の行。want は 'Working?' (推測の印あり) / 'Working' (印なし: 信号) など、状態の行の先頭 (印を含む)
+async function stateScene(label, name, want) {
+  const s = await screen()
+  const card = s.cards.find((c) => c.name === name)
+  const got = card ? card.state : ''
+  const ok = !!card && got.startsWith(want)
+  if (!ok) failed++
+  console.log(`${ok ? 'ok' : 'NG'}  ${label}`)
+  if (!ok) console.log(`      「${got}」 (期待は「${want}」で始まる; カード ${card ? 'あり' : 'なし'})`)
+}
+
 // 本文が text の Message で、節ごとの行の数 (sec-decide など) と見出しの数を照らす。中身が「なし」の節は目立たせない
 async function sections(label, text, expect) {
   const expr = `(() => {
@@ -291,11 +302,19 @@ try {
   const reportEnAction = ['RESULT: C2 ができた', 'NEEDS ACTION: push の指示'].join('\n')
   await api('POST', '/messages', { kind: 'reply', replyTo: order.id, body: reportEnAction }, asLead)
   await turnEnd('demo.leader', 's-lead')
-  await scene('報告が戻り、leader が人に返した', { 'demo.leader': 'Idle', 'demo.deployer': 'Idle' })
-  await mapScene('作業が終わって Idle に戻った (SSE で再描画): 地図に Your move が出る (C127)', 'Your move')
+  // 報告が人へ返った。決めごと・行動の節に中身があるので、人の番 (C183)。人が返すまでこの状態が続く (下の人の返信)
+  await scene('報告が戻り、leader が人に返した (要操作の節があるので Needs you。C183)', { 'demo.leader': 'Needs you (action)', 'demo.deployer': 'Idle' }, '1 waiting')
+  // 報告に要操作の節があるので、人の番は Needs you (C183)。Your move は出さない (C127: Needs you が 1 件あるうちは出さない)
+  await mapScene('作業が終わって Idle に戻った (SSE で再描画): 報告の要操作で地図は Needs you (C183)', 'Needs you')
   await sections('leader の返事の見出しを節ごとに色分けする (C42)', report, { decide: 2, op: 0, unverified: 1, hd: 5 })
   await sections('英語の見出しの返事も日本語と同じに色分けする (C64)', reportEn, { decide: 2, op: 0, unverified: 1, hd: 6 })
   await sections('英語の NEEDS ACTION に中身があれば見出しの色を付ける (C64)', reportEnAction, { decide: 0, op: 1, unverified: 0, hd: 2 })
+  // 人が返した: この Mailbox への新しい Message。報告の Needs you は終わり、leader は返したあとの Idle に戻る (C183)
+  await api('POST', '/messages', { kind: 'notice', to: { type: 'mailbox', id: 'demo.leader' }, body: '了解。A で進めてよい' })
+  await ackAll(lead.attachmentId)
+  await turnEnd('demo.leader', 's-lead')
+  // 人が返し、leader が Idle に戻った (SSE で再描画・再読み込みなし): 地図は Your move に戻る (C127)
+  await mapScene('人が返したあと leader が Idle に戻った: 地図は Your move (C127)', 'Your move')
 
   // 未接続の reviewer に依頼して待つ (C49)。Mailbox はあるがセッションが起動していない
   const rev = await api('POST', '/mailboxes/demo.reviewer/attach', { client: 'claude-code', role: 'reviewer', cwd, sessionId: 's-rev' })
@@ -514,7 +533,11 @@ try {
       const png = (n) => new File([new Uint8Array(n)], 'a.png', { type: 'image/png' })
       const tryAdd = (files) => { attachments = []; $('err').textContent = ''; addFiles(files); const r = { n: attachments.length, err: $('err').textContent }; attachments = []; renderTray(); $('err').textContent = ''; return r }
       // 保存期間の未読だけの mailbox は使わず、渡して 8 時間たち、ターン終了の Event がない Mailbox を作る
-      const fake = () => ({ name: 'fake.stale', attachment: { id: 'a' }, backlog: { unread: { count: 0 }, outgoing: { count: 0 }, awaitingReply: { count: 0 }, lastHanded: { ts: new Date(Date.now() - 8 * 3600000).toISOString(), seq: 1 } } })
+      // 8 時間前に渡して、答えは返っていない (open は false)。Event は 8 時間前の session start だけ (ターン終了は知らない)。Events があるので、窓の規則が効く (C183)
+      const fake = () => {
+        const at8 = new Date(Date.now() - 8 * 3600000).toISOString()
+        return { name: 'fake.stale', attachment: { id: 'a' }, backlog: { unread: { count: 0 }, outgoing: { count: 0 }, awaitingReply: { count: 0 }, lastHanded: { ts: at8, seq: 1, open: false }, lastEvent: { id: 'fake-e', kind: 'session.start', ts: at8 } } }
+      }
       const out = {}
       await withLimits({ maxUploadBytes: 1000, maxFilesPerMessage: 1, readRetentionHours: 6 })
       out.set = { limits: hubLimits, big: tryAdd([png(2000)]), two: tryAdd([png(10), png(10)]), ok: tryAdd([png(10)]) }
@@ -1178,7 +1201,8 @@ try {
   // 渡す (shim が受け取る) まで、未読だけ。信号は渡したあとの Working (ackAll で渡したことにする)
   await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'demo.sig' }, body: 'SIG-1: 作業を頼む' })
   await ackAll(sig.attachmentId)
-  await sleep(2500)
+  // 光り (st-flash、1.5 秒) が終わって枠が脈打ち始めるまで待つ。固定の待ち時間だと、光りが残っている所を読んで ring-pulse にならない (C71)。上限 15 秒
+  await until(async () => { const c = await sigCard(); return !!c && c.state.startsWith('Working') && !c.cls.includes('st-flash') }, 'working flash ended', 60)
   const working = await sigCard()
   const workFlash = await flashes()
   // 脈打っている最中の色は混ざった値なので、色は見ず、脈打つ動きがあることと枠があることを見る
@@ -2279,6 +2303,63 @@ try {
     await api('DELETE', `/attachments/${holder.attachmentId}`)
     await api('POST', '/mailboxes/refm.deployer/attach', { client: 'claude-code', cwd: holderFolder, sessionId: 's-ref-a2' })
     await refusalScene('次の成功した attach で、断られた行は消える (C181)', 'refm.deployer', null)
+  }
+  // C183: a session with no Events. An answered hand-over is Idle; an open request reads Working? (a guess), and that stays after an SSE re-render;
+  // a session Event (no guess any more) takes the ? away. A report to the person that asks for a decision is Needs you until the person writes
+  {
+    const nevFolder = cwd
+    const nev = await api('POST', '/mailboxes/nev.deployer/attach', { client: 'antigravity-client', cwd: nevFolder, sessionId: 's-nev' })
+    const asNev = { 'x-hub-attachment': nev.attachmentId }
+    const ping = () => api('POST', '/messages', { kind: 'notice', to: { type: 'mailbox', id: 'demo.old' }, body: 'sse ping' })
+    const r1 = await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'nev.deployer' }, body: 'GOAL: C183 no-Events check' })
+    await ackAll(nev.attachmentId)
+    await stateScene('Events のない session に開いた依頼が渡った: 推測の Working? (C183)', 'nev.deployer', 'Working?')
+    await ping()
+    await stateScene('SSE で一覧を描き直しても、Working? の印は残る (C183)', 'nev.deployer', 'Working?')
+    await api('POST', '/messages', { kind: 'reply', replyTo: r1.id, body: 'done' }, asNev)
+    await stateScene('返信した依頼は Events がなくても Idle (C183)', 'nev.deployer', 'Idle')
+    const r2 = await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'nev.deployer' }, body: 'GOAL: C183 second request' })
+    await ackAll(nev.attachmentId)
+    await ping()
+    await stateScene('次の依頼がまた推測の Working? (C183)', 'nev.deployer', 'Working?')
+    await hook('nev.deployer', { hook_event_name: 'SessionStart', session_id: 's-nev', source: 'startup' })
+    await stateScene('Event が届くと推測ではなくなり、印が消える (C183)', 'nev.deployer', 'Working')
+    const after = await screen()
+    const nevCard = after.cards.find((c) => c.name === 'nev.deployer')
+    if (nevCard && nevCard.state.includes('Working?')) { failed++; console.log('NG  Event が届いたあとも Working? の印が残っている') }
+    await api('POST', '/messages', { kind: 'reply', replyTo: r2.id, body: 'done again' }, asNev)
+    // 報告: 人への報告に決めてほしい節があれば Needs you (decision)。「-」なら Needs you ではない
+    const rpt = await api('POST', '/mailboxes/rpt.leader/attach', { client: 'claude-code', cwd: nevFolder, sessionId: 's-rpt' })
+    const asRpt = { 'x-hub-attachment': rpt.attachmentId }
+    const rptBody = 'RESULT: 3 checks\nNEEDS DECISION: pick A or B\nNOTES: -'
+    await api('POST', '/messages', { kind: 'notice', to: { type: 'user', id: 'browser' }, body: rptBody }, asRpt)
+    await stateScene('報告に NEEDS DECISION の節があり、Needs you (decision) (C183)', 'rpt.leader', 'Needs you (decision)')
+    // 手元にない報告 (Done when 3 の取り直し): 本文を page の手元から外す (removeMessages: 行と seen から消す。Hub には残る) と、
+    // ensureReports が /messages?after=seq-1&limit=1 で取り直し、同じく Needs you (decision) になる。取り直しの回数は page の fetch を数える
+    const rptSeq = await seqOf(rptBody)
+    const held = await evaluate(`window.__repFetch = { match: '/messages?after=${rptSeq - 1}&limit=1', calls: 0 }; if (!window.__repFetchWrapped) { const f = window.fetch; window.fetch = (u, i) => { if (window.__repFetch && String(u) === window.__repFetch.match) window.__repFetch.calls++; return f(u, i) }; window.__repFetchWrapped = true }; const h = [...seen.values()].find((m) => m.seq === ${rptSeq}); if (h) removeMessages([h.id]); !!h`)
+    verify('場面の前に、page は報告の本文を手元に持っていた (これから外す)', held === true, { held })
+    await ping()
+    await stateScene('手元にない報告: 取り直して、Needs you (decision) のまま (C183)', 'rpt.leader', 'Needs you (decision)')
+    const refetched = await evaluate('window.__repFetch.calls')
+    verify('手元にない報告の本文を page が取り直した (ensureReports、1 回以上)', refetched >= 1, { refetched, rptSeq })
+    const rptDash = await api('POST', '/mailboxes/rpt2.leader/attach', { client: 'claude-code', cwd: nevFolder, sessionId: 's-rpt2' })
+    await hook('rpt2.leader', { hook_event_name: 'Stop', session_id: 's-rpt2' })
+    await api('POST', '/messages', { kind: 'notice', to: { type: 'user', id: 'browser' }, body: 'RESULT: ok\nNEEDS DECISION: -' }, { 'x-hub-attachment': rptDash.attachmentId })
+    await stateScene('報告の NEEDS DECISION が「-」なら Needs you ではない (C183)', 'rpt2.leader', 'Idle')
+    // 人が返したら (この Mailbox への新しい Message)、報告は Needs you でなくなる
+    await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'rpt.leader' }, body: 'A' })
+    await ackAll(rpt.attachmentId)
+    await stateScene('人が Mailbox に新しい Message を送ったら、報告の Needs you は終わる (C183)', 'rpt.leader', 'Working')
+    // 再読み込み: 報告の後に人が返している。履歴を読み終えるまで報告は数えないので、読んだあとも Needs you にならない (C183)
+    await reload()
+    await stateScene('再読み込みしても、人が返した報告は Needs you にならない (C183)', 'rpt.leader', 'Working')
+    // 人が role:leader に送った場合も、その role の Mailbox の報告の Needs you は終わる (C183: 宛先は Mailbox 名に限らない)
+    const rolep = await api('POST', '/mailboxes/rolep.leader/attach', { client: 'claude-code', role: 'leader', cwd: nevFolder, sessionId: 's-rolep' })
+    await api('POST', '/messages', { kind: 'notice', to: { type: 'user', id: 'browser' }, body: 'RESULT: ok\nNEEDS ACTION: push' }, { 'x-hub-attachment': rolep.attachmentId })
+    await stateScene('role の Mailbox の報告に NEEDS ACTION (C183)', 'rolep.leader', 'Needs you (action)')
+    await api('POST', '/messages', { kind: 'notice', to: { type: 'role', id: 'leader' }, body: 'C' })
+    await stateScene('人が role:leader に送ったら、その Mailbox の報告の Needs you は終わる (C183)', 'rolep.leader', 'Working')
   }
   // 接続しているセッションがひとつもない: Your move は出さない (C127)。すべて切り離してから地図を見る
   for (const mb of (await api('GET', '/mailboxes')).mailboxes) if (mb.attachment) await api('DELETE', `/attachments/${mb.attachment.attachmentId}`)

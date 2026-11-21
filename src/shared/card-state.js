@@ -14,7 +14,9 @@
  * @property {any[]} mailboxes the Mailboxes the caller has, used to tell whether a request's target is connected
  * @property {any} lastEvent the newest Event of the Mailbox the caller knows (its own list, and the Hub's backlog.lastEvent), or null
  * @property {any} lastTurnEnd the newest turn end of the Mailbox the caller knows (the same two sources), or null
- * @property {(seq: number) => any} messageOf the stored Message with this seq, or null
+ * @property {(seq: number) => any} messageOf the stored Message with this seq, or null (not held: the page fetches it, C183)
+ * @property {((name: string, seq: number) => boolean) | undefined} [personWroteAfter] whether the person has sent this Mailbox a Message newer than seq (C183); absent means no
+ * @property {boolean | undefined} [historyReady] false while the page has not read the history yet: a report to the person is then not counted, because the person's later Messages are not all held (C183). Absent means ready
  */
 
 /** How long a hand-over counts as Working when its turn end is not known (the Event log may have dropped it), in hours. */
@@ -41,6 +43,56 @@ export const QUOTA_NEEDS_YOU = new Map([
   ['quota_auto_resume_disabled', 'usage limit, auto-resume off'],
 ])
 
+// The reply-format headings (tools/dev/roles's leader.md and deployer.md; design.md §3.15). A line that starts with a heading and a
+// colon begins a section, which runs to the next heading. The kind sets how the section is coloured ('' for none) (C183: this rule is
+// read by the page's colouring and by the card, from here, so they cannot drift). The leader's type reads both the English headings
+// and the Japanese ones before them (the mapping table of design.md §3.15)
+export const REPORT_HEADINGS = new Map([
+  ['NEEDS DECISION', 'decide'], ['NEEDS ACTION', 'op'], ['NOT VERIFIED', 'unverified'],
+  ['RESULT', ''], ['SKIPPED', ''],
+  ['要判断', 'decide'], ['要対応', 'decide'], ['要操作', 'op'], ['未確認', 'unverified'],
+  ['結果', ''], ['確認', ''], ['見送り', ''],
+  ['GOAL', ''], ['SCOPE', ''], ['SPEC', ''], ['DONE WHEN', ''], ['REPORT FORMAT', ''], ['CHANGED', ''], ['VERIFIED', ''], ['NOTES', ''],
+])
+export const HEADING_RE = new RegExp(`^(\\s*)(${[...REPORT_HEADINGS.keys()].join('|')})([:：])(.*)$`)
+/** A section whose heading is followed by nothing but an empty mark (なし, -, —, none): it is not coloured and does not count (C183). */
+export const EMPTY_SECTION = /^\s*(なし|-|—|none)?\s*[。.]?\s*$/i
+
+/**
+ * The sections of a body, split at its reply-format headings. Each section has its kind, whether it begins with a heading, whether
+ * it is empty (its heading is followed by an empty mark only, and nothing else), and its lines. A heading line has pre, hd (the
+ * heading and its colon) and rest; any other line has rest only. A body with no heading gives one section with kind ''.
+ * @param {string} text
+ * @returns {{ kind: string, heading: boolean, empty: boolean, lines: { pre?: string, hd?: string, rest: string }[] }[]}
+ */
+export function sectionsOf(text) {
+  /** @type {{ kind: string, heading: boolean, empty: boolean, lines: { pre?: string, hd?: string, rest: string }[] }[]} */
+  const sections = []
+  for (const line of String(text).split('\n')) {
+    const m = HEADING_RE.exec(line)
+    const [pre = '', name = '', colon = '', rest = ''] = m ? [m[1], m[2], m[3], m[4]] : []
+    if (m || sections.length === 0) sections.push({ kind: m ? (REPORT_HEADINGS.get(name) ?? '') : '', heading: !!m, empty: false, lines: [] })
+    const current = sections[sections.length - 1]
+    if (current) current.lines.push(m ? { pre, hd: name + colon, rest } : { rest: line })
+  }
+  for (const s of sections) s.empty = s.lines.every((l) => (l.hd ? EMPTY_SECTION.test(l.rest ?? '') : (l.rest ?? '').trim() === ''))
+  return sections
+}
+
+/** What a report asks of the person, by its section kind: a decision or an action (C183). */
+export const NEEDS_LABEL = { decide: 'decision', op: 'action' }
+
+/**
+ * The parts of a report that need the person: 'decide' (NEEDS DECISION, 要判断, 要対応) and/or 'op' (NEEDS ACTION, 要操作), when the
+ * section has content other than an empty mark. Empty when the report asks for nothing (C183).
+ * @param {string} text the body of the report
+ * @returns {string[]}
+ */
+export function needsOf(text) {
+  const kinds = new Set(sectionsOf(text).filter((s) => s.heading && !s.empty && (s.kind === 'decide' || s.kind === 'op')).map((s) => s.kind))
+  return ['decide', 'op'].filter((k) => kinds.has(k))
+}
+
 /** An empty tally: a count, and the oldest item it is about (where a badge click goes, C44). */
 export const NONE = { count: 0, oldestAt: null, oldestSeq: null, eventId: null }
 
@@ -63,12 +115,17 @@ export function addTally(a, b) {
  * Whether an Event belongs to an earlier Attachment (a session that is no longer connected). Such an Event is not counted
  * as waiting now: the terminal may be gone (after a restart of the terminal, or a takeover). An Event from after the current
  * attach counts even if its session_id differs (/clear changes it, design.md §6.2).
+ * An Attachment with no session_id (a client that sends none, C183) has no session to compare with, so any Event that has a
+ * session_id and is older than the attach is an earlier Attachment's: otherwise an earlier Claude Code session's Events would count for it.
  * @param {any} mb
  * @param {any} ev
  */
 export function staleEvent(mb, ev) {
   const at = mb.attachment
-  return !!(at && at.sessionId && ev && ev.sessionId && ev.sessionId !== at.sessionId && Date.parse(ev.ts) < Date.parse(at.attachedAt))
+  if (!at || !ev || !ev.sessionId) return false
+  const before = Date.parse(ev.ts) < Date.parse(at.attachedAt)
+  if (at.sessionId) return ev.sessionId !== at.sessionId && before
+  return before
 }
 
 /**
@@ -175,6 +232,19 @@ export function humanTurnOf(mb, ctx) {
   // A Hub without a count per target (before C40) counts one request to the person as one
   for (const a of asks) t = addTally(t, { count: a.count ?? 1, oldestAt: a.oldestAt ?? out.oldestAt, oldestSeq: a.oldestSeq ?? null })
   if (asks.length) why.push('request')
+  // A report to the person that asks for a decision or an action (C183): the Mailbox's latest Message to the person, while it has such a
+  // section with content, and the person has not written to this Mailbox since. The Hub gives only its seq and time; the page holds (or
+  // fetches) the body. Until the body is held nothing counts, so the card waits for the page
+  const report = mb.backlog && mb.backlog.lastToUser
+  if (report && ctx.historyReady !== false) {
+    const body = ctx.messageOf(report.seq)
+    const newer = typeof ctx.personWroteAfter === 'function' && ctx.personWroteAfter(mb.name, report.seq)
+    const needs = body && !newer ? needsOf(body.body || '') : []
+    if (needs.length) {
+      t = addTally(t, { count: 1, oldestAt: report.ts, oldestSeq: report.seq })
+      for (const k of needs) why.push(/** @type {Record<string, string>} */ (NEEDS_LABEL)[k] ?? k)
+    }
+  }
   return { ...t, detail: why.join(', ') }
 }
 
@@ -200,7 +270,12 @@ export function stateOf(mb, ctx) {
   const end = ctx.lastTurnEnd
   const handed = b.lastHanded
   const fresh = handed && ctx.now - Date.parse(handed.ts) < staleHandedHours(ctx.readRetentionHours) * 3600000
-  const handedWorking = handed && (end ? Date.parse(handed.ts) > Date.parse(end.ts) : fresh)
+  // With no turn end to compare with, a hand-over is Working only while it is in the window and its request is still open (C183):
+  // a session that has sent no Events, and has answered (open: false), is Idle. A Mailbox with Events keeps the window rule as before
+  // "Events" here are this attachment's: an Event of an earlier Attachment does not count (staleEvent, as for the waiting rules)
+  const hasEvents = !!ev && !staleEvent(mb, ev)
+  // Older Hubs omit `open`: only an explicit open: false is answered (C183, a missing flag is not an answer)
+  const handedWorking = handed && (hasEvents && end ? Date.parse(handed.ts) > Date.parse(end.ts) : fresh && (hasEvents || handed.open !== false))
   // A request handed before this Hub started, with no reply and no turn end since the start: the turn was lost with the
   // restart, so it is shown as Stopped (Health check counts it), not as Working (C142). Only where the rule above
   // would say Working; a hand-over after a turn end is left to the rules below
@@ -212,7 +287,7 @@ export function stateOf(mb, ctx) {
   if (b.unread.count && !handedWorking) return { key: 'working', since: b.unread.oldestAt, quiet: true }
   if (handedWorking) {
     // A session with no Events has no hooks, so its turn end is not known: a guess, and the card says so
-    return { key: 'working', since: handed.ts, guess: !ev, detail: summaryOf(ctx.messageOf(handed.seq)) }
+    return { key: 'working', since: handed.ts, guess: !hasEvents, detail: summaryOf(ctx.messageOf(handed.seq)) }
   }
   // If every target of an open request is not connected, nobody will read it and it stops there. The person starts the
   // session, so this is Needs you (C49). But a turn that ended with no reply is Stopped first, and the absent targets are

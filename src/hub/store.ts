@@ -117,6 +117,8 @@ export interface Backlog {
   // この Mailbox 宛てで最後に渡した (seq ≤ cursor) Message。UI が最後のターン終了と比べて作業中かを導く (design.md §3.15)
   // open: the Message is a request that still has no reply (C142). The UI reads it with ts and the Hub's start to tell a hand-over lost in a restart
   lastHanded: { seq: number; ts: string; open: boolean } | null
+  // この Mailbox が人に送った最新の Message の seq と時刻 (C183)。本文は読まない: 人の番の報告 (要判断・要対応) は UI が本文を取って見る
+  lastToUser: { seq: number; ts: string } | null
   // この Mailbox の最新の Event と最新のターン終了 (takeover で切り離されたセッションの分を除く)。UI が読むのは最近の Event だけ
   // なので、静かな Mailbox の分も Hub から渡す。作業中と人が動く番を導く材料 (design.md §3.15)
   // sessionId は、今つながっているのと別のセッションの質問待ちを UI が数えないため
@@ -155,6 +157,8 @@ export class Store {
   // Mailbox 名 → 最後に渡した Message と、それを求めた時点の cursor (Backlog の lastHanded)。
   // cursor が進んだ分だけ見直し、GET /mailboxes のたびにログ全体を走査しない
   private readonly handedCache = new Map<string, { cursor: number; last: Message | null }>()
+  // Mailbox 名 → その Mailbox が人に送った最新の Message (C183)。適用のたびに更新し、消えたら捨てて次に探し直す
+  private readonly toUserCache = new Map<string, Message | null>()
   // この seq までの Message からは閉じる request を導かない (詰め直しが replied の行に書いた分。LogRecord の seq)
   private answeredUpTo = 0
   // 閉じ方の規則 (C157)。true なら、この時点より後の Message は replyTo が指す request だけを閉じる。印 (closing) を読むと true になる
@@ -239,6 +243,7 @@ export class Store {
         if (rec.message.seq > this.answeredUpTo) for (const r of this.closedBy(rec.message)) this.markReplied(r.id)
         this.messages.push(rec.message)
         this.byId.set(rec.message.id, rec.message)
+        if (rec.message.from.type === 'mailbox' && rec.message.to.type === 'user') this.toUserCache.set(rec.message.from.id, rec.message)
         this.seq = Math.max(this.seq, rec.message.seq)
         if (rec.message.replyTo) this.markReplied(rec.message.replyTo)
         if (rec.message.kind === 'request' && !this.repliedTo.has(rec.message.id)) this.openRequests.set(rec.message.id, rec.message)
@@ -590,6 +595,7 @@ export class Store {
       unconfirmed: { count: 0, oldestAt: null, oldestSeq: null },
       outgoing: { count: 0, oldestAt: null, oldestSeq: null, to: [] },
       lastHanded: null,
+      lastToUser: null,
       lastEvent: null,
       lastTurnEnd: null,
     }
@@ -617,6 +623,8 @@ export class Store {
     }
     const handed = this.lastHandedOf(mb)
     if (handed) backlog.lastHanded = { seq: handed.seq, ts: handed.ts, open: this.openRequests.has(handed.id) }
+    const toUser = this.lastToUserOf(name)
+    if (toUser) backlog.lastToUser = { seq: toUser.seq, ts: toUser.ts }
     const ev = this.lastEventByMailbox.get(name)
     if (ev) {
       const detail = eventDetail(ev)
@@ -658,6 +666,21 @@ export class Store {
     return last
   }
 
+  // この Mailbox が人に送った最新の Message (C183)。本文は読まない (seq と ts だけを使う)。見つからなければ null。結果は cache に残す
+  private lastToUserOf(name: string): Message | null {
+    if (this.toUserCache.has(name)) return this.toUserCache.get(name) ?? null
+    let found: Message | null = null
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const m = this.messages[i]!
+      if (m.from.type === 'mailbox' && m.from.id === name && m.to.type === 'user') {
+        found = m
+        break
+      }
+    }
+    this.toUserCache.set(name, found)
+    return found
+  }
+
   // --- 削除と保存期間 (design.md §3.14) ---
 
   // 消した Message の返信先は返信済みのまま残す (request は返信がついた時点で返信待ちではなくなる)
@@ -666,6 +689,8 @@ export class Store {
     for (let i = this.messages.length - 1; i >= 0; i--) {
       const m = this.messages[i]!
       if (!ids.has(m.id)) continue
+      // 消えた Message が人への最新の報告なら、次に求めたとき探し直す (C183)
+      if (m.from.type === 'mailbox' && this.toUserCache.get(m.from.id)?.id === m.id) this.toUserCache.delete(m.from.id)
       this.messages.splice(i, 1)
       this.byId.delete(m.id)
       this.sentTo.delete(m.id)

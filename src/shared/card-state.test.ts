@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   BACKGROUND_MAX_MINUTES, EVENT_LABEL, NONE, STALE_HANDED_HOURS, absentTargets, addTally, eventDetailOf, humanTurnOf,
-  outgoingTargets, runningOf, staleEvent, staleHandedHours, stateOf, summaryOf,
+  needsOf, outgoingTargets, runningOf, sectionsOf, staleEvent, staleHandedHours, stateOf, summaryOf,
 } from './card-state.js'
 import type { CardContext } from './card-state.js'
 
@@ -47,6 +47,125 @@ function ctx(over: Partial<CardContext> = {}): CardContext {
 
 // A request to the person, as the Hub counts it in outgoing.to
 const toPerson = { type: 'user', id: 'browser', count: 1, oldestAt: at(0), oldestSeq: 5 }
+
+// C183: a session that sent no Events, and whose hand-over was answered, is Idle; an open request is still Working? (a guess)
+describe('stateOf: a session with no Events (C183)', () => {
+  it('Idle, not Working?: a handed Message that is not open, nothing unread and no Events', () => {
+    const m = mb({ lastHanded: { ts: at(-1), seq: 7, open: false } })
+    assert.deepEqual(stateOf(m, ctx()), { key: 'idle', since: null })
+  })
+
+  it('an open request still reads Working? (the guess), as before', () => {
+    const m = mb({ lastHanded: { ts: at(-1), seq: 7, open: true } })
+    assert.deepEqual(stateOf(m, ctx({ messageOf: () => null })), { key: 'working', since: at(-1), guess: true, detail: '' })
+  })
+
+  it('a Mailbox with Events keeps the window rule: a hand-over that is not open still reads Working, and it is not a guess', () => {
+    const start = ev('session.start', at(-5))
+    const m = mb({ lastHanded: { ts: at(-1), seq: 7, open: false } })
+    assert.deepEqual(stateOf(m, ctx({ lastEvent: start })), { key: 'working', since: at(-1), guess: false, detail: '' })
+  })
+
+  it('with a turn end from hooks, a hand-over after it is Working, and one before it is Idle, whatever open says', () => {
+    const end = ev('turn.end', at(-5))
+    assert.equal(stateOf(mb({ lastHanded: { ts: at(-1), seq: 7, open: false } }), ctx({ lastEvent: end, lastTurnEnd: end })).key, 'working')
+    assert.equal(stateOf(mb({ lastHanded: { ts: at(-9), seq: 7, open: false } }), ctx({ lastEvent: end, lastTurnEnd: end })).key, 'idle')
+  })
+
+  // The Mailbox's newest turn end is from an earlier Attachment (s0, minute -50). A client with no session_id attaches at minute -20
+  // (no Events of its own), gets a request at -1 and replies. Its Events are none, so the earlier turn end must not hold it Working
+  const oldEnd = ev('turn.end', at(-50), { sessionId: 's0' })
+  const hookless = { id: 'a2', attachedAt: at(-20) }
+
+  it('an earlier Attachment\'s turn end does not hold a session with no Events Working: answered, it is Idle', () => {
+    const m = mb({ lastHanded: { ts: at(-1), seq: 7, open: false } }, hookless)
+    assert.deepEqual(stateOf(m, ctx({ lastEvent: oldEnd, lastTurnEnd: oldEnd })), { key: 'idle', since: at(-50) })
+  })
+
+  it('the same Mailbox with the request still open reads Working? (the guess)', () => {
+    const m = mb({ lastHanded: { ts: at(-1), seq: 7, open: true } }, hookless)
+    assert.deepEqual(stateOf(m, ctx({ lastEvent: oldEnd, lastTurnEnd: oldEnd })), { key: 'working', since: at(-1), guess: true, detail: '' })
+  })
+
+  it('an older Hub that omits open: a fresh hand-over with no Events reads Working? (a missing flag is not an answer)', () => {
+    const m = mb({ lastHanded: { ts: at(-1), seq: 7 } })
+    assert.deepEqual(stateOf(m, ctx()), { key: 'working', since: at(-1), guess: true, detail: '' })
+  })
+})
+
+// C183: a report to the person that asks for a decision or an action is Needs you, until the person writes to the Mailbox or the Mailbox
+// sends a report without such a section. Its body is read by the page (messageOf); a body the page does not hold counts for nothing
+describe('stateOf: Needs you from a report (C183)', () => {
+  const report = (body: string) => ({ kind: 'reply', from: { type: 'mailbox', id: 'demo.leader' }, body })
+  const withReport = (seq = 9, ts = at(-2)) => mb({ lastToUser: { seq, ts } })
+
+  it('Needs you (decision): the report has a NEEDS DECISION section with content', () => {
+    const got = stateOf(withReport(), ctx({ messageOf: () => report('RESULT: done\nNEEDS DECISION: pick A or B\nNOTES: -') }))
+    assert.deepEqual(got, { key: 'you', since: at(-2), detail: 'decision' })
+  })
+
+  it('Needs you (action): NEEDS ACTION, and the Japanese heading 要操作 counts the same', () => {
+    assert.deepEqual(stateOf(withReport(), ctx({ messageOf: () => report('NEEDS ACTION: run the migration') })), { key: 'you', since: at(-2), detail: 'action' })
+    assert.deepEqual(stateOf(withReport(), ctx({ messageOf: () => report('要操作: 移行を流す') })), { key: 'you', since: at(-2), detail: 'action' })
+    assert.deepEqual(stateOf(withReport(), ctx({ messageOf: () => report('要判断: A か B か') })), { key: 'you', since: at(-2), detail: 'decision' })
+  })
+
+  it('both sections with content give both details', () => {
+    const got = stateOf(withReport(), ctx({ messageOf: () => report('NEEDS DECISION: A\nNEEDS ACTION: run it') }))
+    assert.deepEqual(got, { key: 'you', since: at(-2), detail: 'decision, action' })
+  })
+
+  it('an empty mark does not count: NEEDS DECISION: -, none, なし, and a heading with no content', () => {
+    for (const body of ['NEEDS DECISION: -', 'NEEDS DECISION: none', 'NEEDS DECISION: なし', 'NEEDS ACTION:', 'NEEDS DECISION: -\nNEEDS ACTION: none']) {
+      assert.notEqual(stateOf(withReport(), ctx({ messageOf: () => report(body) })).key, 'you', body)
+    }
+  })
+
+  it('a body without such a section is not Needs you, and nor is a section that is not a decision or an action', () => {
+    assert.notEqual(stateOf(withReport(), ctx({ messageOf: () => report('just a status line') })).key, 'you')
+    assert.notEqual(stateOf(withReport(), ctx({ messageOf: () => report('NOT VERIFIED: the browser check') })).key, 'you')
+  })
+
+  it('ends when the person writes to the Mailbox after the report', () => {
+    const c = ctx({ messageOf: () => report('NEEDS DECISION: A'), personWroteAfter: (name, seq) => name === 'demo.leader' && seq === 9 })
+    assert.notEqual(stateOf(withReport(), c).key, 'you')
+  })
+
+  it('a report that is not held yet counts for nothing; the page fetches it', () => {
+    assert.notEqual(stateOf(withReport(), ctx({ messageOf: () => null })).key, 'you')
+  })
+
+  it('a Mailbox with no report to the person is unchanged', () => {
+    assert.equal(stateOf(mb({}), ctx({ messageOf: () => report('NEEDS DECISION: A') })).key, 'idle')
+  })
+
+  // On a reload the page holds the report but not the person's later Messages until the history is read: nothing counts before that
+  it('before the history is read (historyReady false) a report is not counted; once it is read it is', () => {
+    const c = ctx({ messageOf: () => report('NEEDS DECISION: A') })
+    assert.equal(stateOf(withReport(), { ...c, historyReady: false }).key, 'idle')
+    assert.equal(stateOf(withReport(), { ...c, historyReady: true }).key, 'you')
+    assert.equal(stateOf(withReport(), c).key, 'you') // absent means ready (the command's context)
+  })
+})
+
+describe('needsOf and sectionsOf: the one heading rule (C183)', () => {
+  it('needsOf lists the decision and action sections with content, in that order', () => {
+    assert.deepEqual(needsOf('NEEDS ACTION: x\nNEEDS DECISION: y'), ['decide', 'op'])
+    assert.deepEqual(needsOf('NEEDS DECISION: -\nNEEDS ACTION: none'), [])
+    assert.deepEqual(needsOf('RESULT: ok'), [])
+  })
+
+  it('sectionsOf splits at the headings: kind, heading, empty, and the lines; a body without headings is one section', () => {
+    const [head, decide, notes] = sectionsOf('intro\nNEEDS DECISION: A\nmore\nNOTES: -')
+    assert.deepEqual([head!.kind, head!.heading, head!.empty], ['', false, false])
+    assert.deepEqual([decide!.kind, decide!.heading, decide!.empty], ['decide', true, false])
+    assert.deepEqual(decide!.lines[0], { pre: '', hd: 'NEEDS DECISION:', rest: ' A' })
+    assert.equal(notes!.empty, true)
+    const plain = sectionsOf('just text')
+    assert.equal(plain.length, 1)
+    assert.equal(plain[0]!.heading, false)
+  })
+})
 
 describe('stateOf: Offline and Idle', () => {
   it('Offline: no session is attached', () => {
@@ -272,6 +391,13 @@ describe('humanTurnOf, tallies and helpers', () => {
     assert.equal(staleEvent({ attachment }, ev('question', at(-120), { sessionId: 's0' })), true)
     assert.equal(staleEvent({ attachment }, ev('question', at(-30), { sessionId: 's0' })), false)
     assert.equal(staleEvent({ attachment: null }, ev('question', at(-120), { sessionId: 's0' })), false)
+  })
+
+  it('staleEvent: an Attachment with no session_id (C183) treats an older session\'s Event as an earlier Attachment\'s; an Event with no session_id is not', () => {
+    const attachment = { attachedAt: at(-60) }
+    assert.equal(staleEvent({ attachment }, ev('turn.end', at(-120), { sessionId: 's0' })), true)
+    assert.equal(staleEvent({ attachment }, ev('turn.end', at(-30), { sessionId: 's0' })), false)
+    assert.equal(staleEvent({ attachment }, { id: 'x', kind: 'turn.end', ts: at(-120) }), false)
   })
 
   it('eventDetailOf reads the Hub\'s detail first, then the payload field of the kind', () => {
