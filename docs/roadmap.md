@@ -1221,9 +1221,9 @@ Raised 2026-11-20 from a question about whether a desktop-app agent (for example
 - Decided (2026-11-22, the user chose this among three options the planning session offered): (2) only, on the page. (1), the last `inbox()` time on the Attachment, stays an idea for later and is not part of this item; (3) stays dropped.
 
 #### Done when
-- [ ] `src/shared/card-state.js`: for a connected Mailbox whose Attachment `client` is not `claude-code` (the shim's inbox route), unread Messages with no turn known to be running read `Needs you` with detail `check inbox`, instead of `Working` (quiet). A turn is known to be running when the Mailbox's latest Event of this Attachment is newer than its latest turn end, or when the hand-over rule already reads `Working` / `Working?` (those keep their result). A `claude-code` Attachment keeps S10.
+- [ ] `src/shared/card-state.js`: for a connected Mailbox whose Attachment `client` is not `claude-code` (the shim's inbox route), unread Messages with no turn known to be running read `Needs you` with detail `check inbox`, instead of `Working` (quiet). A turn is known to be running when the Mailbox has an Event of this Attachment and its latest one is newer than its latest turn end (or there is no turn end for this Attachment yet), or when the hand-over rule, including C187's no-Events `awaitingReply.newestAt` branch, already reads `Working` / `Working?` (those keep their result, and C142's restart `Stopped` on that branch stays ahead of unread). A `claude-code` Attachment keeps S10.
 - [ ] The route test in the card matches the shim's `routeFor` (one comment in each file names the other, so a change to one is seen in the other).
-- [ ] Tests in `src/shared/card-state.test.ts`: an `antigravity-client` Attachment with a turn end and then an unread request → `Needs you` (`check inbox`); the same with a `session.start` Event after the turn end → `Working` (quiet); a session without Events on the inbox route with unread only → `Needs you` (`check inbox`); a `claude-code` Attachment with unread → `Working` (quiet), as before. The property test still passes.
+- [ ] Tests in `src/shared/card-state.test.ts`: an `antigravity-client` Attachment with a turn end and then an unread request → `Needs you` (`check inbox`); the same with a `session.start` Event after the turn end → `Working` (quiet); a session without Events on the inbox route with unread only → `Needs you` (`check inbox`); a session without Events on the inbox route with an open request, a later handed notice (C187) and an unread Message → `Working?` (not `Needs you`); a `claude-code` Attachment with unread → `Working` (quiet), as before. The property test still passes.
 - [ ] `npm run ui:check`: a scene for an inbox-route Mailbox with an unread request after its turn end → `Needs you (check inbox)`; the existing scenes keep their states.
 - [ ] design.md §3.15 (the card states and the order), docs/proofs.md (S10 and a row for the new Needs you case) and usage.md (what the human does on `check inbox`: tell the client to check its inbox) say the new rule.
 - [ ] `npm test` and `npm run docs:check` pass.
@@ -1283,3 +1283,9 @@ Raised 2026-11-22 from C187's close (its "Not checked" line): a session with no 
 - [ ] The same case with `newestAt` past the window reads `stopped` (`Stopped, no reply`).
 - [ ] docs/proofs.md S11 names the new test.
 - [ ] `npm test` and `npm run docs:check` pass.
+
+### C194. C142's restart check uses a turn end of an earlier Attachment
+Status: proposed
+
+Raised 2026-11-22 while checking C179's done-when against the code (out of scope for C179). In `stateOf` (`src/shared/card-state.js`), both C142 checks (the hand-over rule and C187's no-Events branch) test `!(end && Date.parse(end.ts) >= ctx.hubStartedAt)` without filtering `end` (`ctx.lastTurnEnd`) through `staleEvent(mb, end)`, while `hasEvents` does filter its Event. If an earlier Attachment ended a turn after the Hub started, and a new Attachment with no Events then took over an open request handed before the start, the stale turn end hides `Hub restarted after the hand-over`.
+- To decide: require `!staleEvent(mb, end)` in both checks (with a card-state test for the case), or record it as a known edge case.
