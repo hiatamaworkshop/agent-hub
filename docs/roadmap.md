@@ -24,8 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C191
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -698,6 +696,15 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: docs/proofs.md (D1-D22 for protocol.md §4, S1-S23 for the card states, each with its proof or `none` and what it leaves out), `checkProofs` in `src/docs-check/repo.ts` (a warning for a named file that does not exist) with tests, CLAUDE.md (the map's line; "Updating the docs" says when a row changes), design.md §1.2 (the incidents row points to the map; Status stays Partly) and §3.12.
   - Checked: `npm test` 757 pass; `docs:check` 0 errors; the 71 quoted test names matched against the test files by a throwaway script. Done-when wording not changed.
   - Not checked: no reviewer read it; `docs:check` does not read test names, so a renamed test is caught only by reading.
+- [x] C191 A local Ollama model as a check client for the vendor-neutral path (2026-11-21, closed after the review)
+  - Raised 2026-11-21 by the user: an Ollama install on this machine should check the general inbox path, not one vendor app. Decided 2026-11-21 by the user: a host of our own in `tools/` (Node, `@modelcontextprotocol/sdk` `Client` over stdio to the shim, Ollama `/api/chat` with `tools`); its own item; model `qwen2.5:3b`.
+  - Changed: `tools/dev/ollama-host.mjs` (new; `--mailbox`, `--model`, `--ollama`, `--hub`), `docs/usage.md` (a paragraph next to the Antigravity notes), `docs/design.md` §6.1ak (the manual run), `docs/roadmap.md`.
+  - Run: design.md §6.1ak. Ollama 0.40.16, `qwen2.5:3b` (digest `357c53fb659c`); the deployer as the check, with each prompt sent as one line through a relay in the deployer's scratchpad (not in the repo); a separate Hub on port 7791, the Hub on 7777 not touched. Seen: the inbox route by `clientInfo.name`; the initialize instructions as the system message; `inbox()` returning `<hub-message>` and confirming receipt; a reply to `user:browser`; C190's hint; the card values for C183 and C187, where C187's case reproduced.
+  - Findings, recorded and not fixed: (1) a Mailbox can reply to itself, and the Message counts as unread for it, filed as C192 (proposed). (2) C187's case reproduces on the inbox path, noted under C187.
+  - Done-when items 2 and 3 were reworded by the planning session (2026-11-21, the user's decision); both hold under the current wording. Item 3's page eye-check stays under Not run.
+  - Review: the reviewer pass was clean (no findings). The close-time warning on the Checked line of the section was expected.
+  - Checked: `npm test` 852 pass, 0 fail; `npx tsc --noEmit` clean; `npm run docs:check` 0 errors.
+  - Not checked: the page's eye-check (the reply in the thread, the card's colour); Antigravity and Claude Code (not part of this check); a second model.
 - [x] C190 An unread hint on the shim's tool results, for clients on the inbox path (2026-11-21, closed after the review)
   - Raised 2026-11-21 by the planning session, split from C184 (1) on the user's decision (C184, C179). Done by the deployer; commit `f97aab3`.
   - Decided 2026-11-21 by the user: done-when item 2 reworded by the planning session, and `whoami` excluded from it (`whoami` carries `unread` on both paths, as item 3 asks).
@@ -1228,6 +1235,7 @@ Raised 2026-11-21 in the C183 review (reviewer's note): for a session without Ev
 
 - The reviewer's caution: keeping `Working?` whenever `awaitingReply.count > 0` would instead keep a long-stopped session without Events Working after a Health check notice (the `demo.old` scene), so the rule needs the time of the open request, not only the count.
 - To decide: which fact the rule reads (the open request's handed time from `awaitingReply.seqs`, or a `lastHandedOpen` next to `lastHanded` in the Hub), and whether C182's turn ends make this moot for Antigravity once its hooks are set up.
+- Reproduced 2026-11-21 in C191's run on the inbox path (design.md §6.1ak): a browser request handed by `inbox()` and left open, then a browser `notice` handed by the next `inbox()`; the card went from `working` with `guess` to `stopped` (`Stopped, no reply`) while `awaitingReply` still counted the request. So the case is not only the reviewer's reading of the rule: a client without Events meets it with one request and one notice. C182's turn ends do not help such a client (a host or app without hooks).
 
 ### C188. Forget a deleted Mailbox's sessions, so their Events do not resolve to it
 Status: proposed
@@ -1246,20 +1254,11 @@ Raised 2026-11-21 in C182's real check (design.md §6.1aj): usage.md tells Antig
 - Idea: the poster takes `--mailbox <name>` and, without `HUB_TOKEN`, reads agent-hub's `.env` as the shim does (§3.8); the `hooks.json` template then names the Mailbox in the command, and usage.md drops the environment step.
 - To decide: whether the token may be read from `.env` by the poster (the shim already does), and whether the template should carry the Mailbox name or the role.
 
-### C191. A local Ollama model as a check client for the vendor-neutral path
+### C192. A Message a Mailbox sends to itself
+Status: proposed
 
-Raised 2026-11-21 by the user: an Ollama install on this machine, strong enough only for a light model's short replies, should be used to check the general mechanism (the inbox path) rather than one vendor's app. Antigravity (C3, design.md §6.1ai) is one real client but changes on its own schedule and needs a human in its app; a light local model is the floor case: weaker tool calling, no Channels, no hooks, no Events.
+Raised 2026-11-21 in C191's run (design.md §6.1ak): the model replied with `to` set to its own Mailbox (`mailbox:ollama-check`) and `reply_to` set to the browser's request. The Hub accepted it (`recipients` `ollama-check`), the Message counted as unread for the sender, and the card read `working` with `quiet` until the model read its own reply. The browser's request stayed open, since the Message was not to its sender (protocol.md §2 "Awaiting reply"). The Hub records every Mailbox that matches `to` as a recipient, the sender included, and nothing checks for the sender (`appendMessage` in `src/hub/store.ts`).
 
-- Ollama is a model runtime, not an MCP client, so it needs a host that starts the shim over stdio and passes its tools to the model (the shim's tool list as Ollama `tools`, `/api/chat`). Either a small host in `tools/` on `@modelcontextprotocol/sdk`'s `Client`, or an existing third-party MCP host for Ollama.
-- What it would check: the route chosen by `clientInfo.name` (anything but `claude-code` gets the inbox path), the instructions in `initialize`, `inbox()` returning `<hub-message>` and confirming receipt, `post_message` replies reaching the UI, C190's hint, and the card of a session without Events (C183, C187).
-- Constraints: the host takes a turn only on the human's word (a prompt typed into it), never on its own timer (design.md §2, C12). Not in CI (it needs a local Ollama and a model); a manual check, recorded in design.md §6 like §6.1ai. The model name and version go into the record, since a light model's failures may be the model's, not the shim's.
-- To decide: a host of our own in `tools/` or an existing one (our own keeps `clientInfo.name` and the loop under control; an existing one is what an adopter would use); which model; whether this becomes C3's next run or stays its own item.
-- Decided (2026-11-21, the user's decision): a host of our own in `tools/` (Node, `@modelcontextprotocol/sdk` `Client` over stdio to the shim, Ollama `/api/chat` with `tools`); its own item, not C3's next run, so a light model's failures are not read as a client's. Model: `qwen2.5:3b` (the strongest tool caller installed here; Ollama 0.40.16), with a `--model` option for others.
-
-#### Done when
-- [ ] A host in `tools/` starts the shim over stdio with a `clientInfo.name` other than `claude-code`, passes the shim's tool list to Ollama as `tools`, runs the model's tool calls through the shim, and takes a turn only when the human types a prompt (no timer, no loop of its own; design.md §2).
-- [ ] The host takes the model (`--model`, default `qwen2.5:3b`), the Mailbox and the Ollama URL as options, and reads the token as the shim does; it is not run by `npm test` or CI.
-- [ ] A manual run is recorded in design.md §6 with the model name and version and the Ollama version, saying for each what was seen: the inbox route chosen by `clientInfo.name`, the `initialize` instructions, `inbox()` returning `<hub-message>` and confirming receipt, a `post_message` reply shown in the UI, C190's unread hint, and the card of a session without Events (C183, C187). A failure is recorded with whether it was the model's or the shim's.
-- [ ] Findings about the shim or the Hub from the run are filed as `C<n>` items or recorded under an existing one.
-- [ ] usage.md says how to run the host, in a short paragraph next to the Antigravity notes.
-- [ ] `npm run docs:check` passes.
+- Seen with a light model that ignored the instruction to omit `to`; a client that follows the instructions does not do it. A Mailbox sending a note to itself is not otherwise a use the docs describe.
+- Ideas: (a) refuse a `post_message` whose only recipient is the sender, with an error that says to omit `to` to answer the sender; (b) keep accepting it, but leave the sender out of the recipients so it is not unread for itself; (c) keep it as is and say so in protocol.md.
+- To decide: which of these, and whether a role or topic address that includes the sender among other recipients should also leave the sender out.
