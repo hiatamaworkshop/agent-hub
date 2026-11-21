@@ -24,6 +24,7 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C190
 
 (Items with a status line are listed under "Items".)
 
@@ -1181,7 +1182,7 @@ Raised 2026-11-10 with C153. After a run, what waits for the human is spread ove
 - To decide: whether a default taken without an answer needs a form the index can read (today it is a sentence in the item's body), which would change the ledger's format (conventions-log.md); whether unpushed commits are shown, and by whom (the Hub does not read the working tree; design.md §3.8).
 
 ### C179. A "check your inbox" nudge as one health-check concept, for clients that cannot be woken
-Status: proposed
+Status: held(after running Antigravity with C182's hooks for a while; decide (1) and (2) from how its cards read then)
 
 Raised 2026-11-20 from a question about whether a desktop-app agent (for example Google Antigravity) can join a team. Joining needs only an MCP client that can reach the shim and call `inbox()`; how the app is started does not matter (design.md §3.7). What such a client lacks is a wake (level 3 of §3.9), so a human has to say "look at your inbox". That is close to what exists, and the idea is to give it one shape instead of a new mechanism.
 
@@ -1191,9 +1192,10 @@ Raised 2026-11-20 from a question about whether a desktop-app agent (for example
 - To decide: whether (3) alone is enough, or (1) and (2) are needed too. Decide after C3 shows how a real non-Claude client behaves (whether it connects the shim, what `clientInfo.name` it sends, whether it can fetch while idle). If C3 resumes first, its result decides this item.
 - C3's result for Antigravity (2026-11-21, design.md §6.1ai): it connects the shim, sends `antigravity-client`, and does not fetch while idle; a human's word was enough for it to fetch and answer. One more wake path exists inside it: the App's `agentapi send-message <conversation> <content>` posts into a conversation, but only from processes the App starts (its sidecars); from outside it needs a CSRF token. A sidecar that watches the Hub and calls it would be a level 2 adapter for this client (§3.9), and would also send without a human pressing Send, so it falls under design.md §2 and C12 rather than this item.
 - Re-check of (3) (2026-11-21, by Antigravity as reviewer, at the user's request): a Hub Message ("check your inbox") sent from the page to a client that cannot be woken only adds one more unread Message; nothing reaches its conversation, so it wakes nothing. What works for such a client is (1) and (2) (the last `inbox()` time on the Attachment, shown on the card as waiting for the human's word, not as stopped), and at most a helper that copies a fixed text for the human to paste into the client. Picking up during a turn that is already running is C184.
+- Held (2026-11-21, the user's decision): (1) and (2) change the Attachment and the card's derivation, where C187 and C183's rule also are, and C182 now gives Antigravity Events. Run it with those hooks first; if its cards read right, (2) and C187 shrink or go. (3) as a Hub Message is dropped (see the re-check above). C190 (the unread hint) goes first.
 
 ### C184. Vendor-neutral pickup in the shim: an unread hint, standard MCP signals, an optional wait
-Status: proposed
+Status: held(until a client supports resources subscribe or MCP Events, or a waiting turn shows a need for (3))
 
 Raised 2026-11-21 by Antigravity as reviewer (a draft written at the user's request, filed here by the planning session), from C3 / design.md §6.1ai: clients other than Claude Code cannot be woken by Channels, and standard MCP, including SEP-3415 (`io.modelcontextprotocol/events`), leaves waking an idle model turn out of scope (§3.9, §7). With `inbox()` kept as the one path for content (`<hub-message>`, received confirmed only by a fetch, protocol.md §4), the shim can make arrivals harder to miss during a running turn, without vendor-specific code.
 
@@ -1203,6 +1205,7 @@ Raised 2026-11-21 by Antigravity as reviewer (a draft written at the user's requ
 - (3) An optional wait: `inbox(wait_seconds)` (or a separate tool) holds the call on the existing stream, sends `notifications/progress` to stay under client tool timeouts (Antigravity: 180 seconds by default, §6.1ai), and returns the `<hub-message>` on arrival or an empty result at the timeout. Only for a waiting turn the human started (§2); it occupies the conversation while it waits.
 - Out of scope: waking an idle client with no turn running (C179 for the human's word, C12 for opt-in watchers).
 - To decide: which of (1), (2), (3) to take now, and whether to split them into separate items once decided ((2) looks like `held` until a client supports it).
+- Split (2026-11-21, the user's decision): (1) is C190, decided. (2) waits for a client that supports either signal; (3) occupies the conversation while it waits, so it waits until a real waiting turn shows the need.
 
 ### C186. The map's nodes show the `?` of a guessed Working
 Status: proposed
@@ -1235,3 +1238,29 @@ Raised 2026-11-21 in C182's real check (design.md §6.1aj): usage.md tells Antig
 
 - Idea: the poster takes `--mailbox <name>` and, without `HUB_TOKEN`, reads agent-hub's `.env` as the shim does (§3.8); the `hooks.json` template then names the Mailbox in the command, and usage.md drops the environment step.
 - To decide: whether the token may be read from `.env` by the poster (the shim already does), and whether the template should carry the Mailbox name or the role.
+
+### C190. An unread hint on the shim's tool results, for clients on the inbox path
+Split from C184 (1) on 2026-11-21 (the user's decision; reasons in C184 and C179). On the inbox path (any client but Claude Code, design.md §3.7) the shim keeps the Hub's stream open for liveness but hands nothing over (`hub-client.ts`, `push = false`), so a Message that arrives during a running turn is seen only if the model happens to call `inbox()`. A one-line count on the results of the tools it already calls makes the arrival hard to miss, with no vendor-specific code and no change to the Hub.
+
+- Invariant (§3.9): the hint carries no body and moves no cursor; only `inbox()` hands content over and confirms receipt (protocol.md §4).
+- The count may come from the stream's arrivals or from the Hub's `unread`; whichever is used, a Message already fetched by `inbox()` is not counted again.
+- On the channel path (Claude Code) Messages are pushed, so no hint is added there.
+
+#### Done when
+- [ ] On the inbox path, while the Mailbox has unread Messages, the result of every tool except `inbox` and `whoami` starts with one line giving the count and naming `inbox()`, and carries no body, sender or seq of those Messages.
+- [ ] With no unread Messages the results are unchanged; on the channel path they are unchanged.
+- [ ] `whoami` has an `unread` field with the same count.
+- [ ] Adding the hint changes neither the cursor nor the unread count on the Hub (a test reads both before and after).
+- [ ] When C180's moved-roots note is also present, both lines show, in a fixed order.
+- [ ] Tests in `src/shim/` cover the lines above; protocol.md §5 and design.md §3.9 say what the hint is and that it never carries content; docs/proofs.md is updated if the hint is listed under a guarantee.
+- [ ] `npm test` and `npm run docs:check` pass.
+
+### C191. A local Ollama model as a check client for the vendor-neutral path
+Status: proposed
+
+Raised 2026-11-21 by the user: an Ollama install on this machine, strong enough only for a light model's short replies, should be used to check the general mechanism (the inbox path) rather than one vendor's app. Antigravity (C3, design.md §6.1ai) is one real client but changes on its own schedule and needs a human in its app; a light local model is the floor case: weaker tool calling, no Channels, no hooks, no Events.
+
+- Ollama is a model runtime, not an MCP client, so it needs a host that starts the shim over stdio and passes its tools to the model (the shim's tool list as Ollama `tools`, `/api/chat`). Either a small host in `tools/` on `@modelcontextprotocol/sdk`'s `Client`, or an existing third-party MCP host for Ollama.
+- What it would check: the route chosen by `clientInfo.name` (anything but `claude-code` gets the inbox path), the instructions in `initialize`, `inbox()` returning `<hub-message>` and confirming receipt, `post_message` replies reaching the UI, C190's hint, and the card of a session without Events (C183, C187).
+- Constraints: the host takes a turn only on the human's word (a prompt typed into it), never on its own timer (design.md §2, C12). Not in CI (it needs a local Ollama and a model); a manual check, recorded in design.md §6 like §6.1ai. The model name and version go into the record, since a light model's failures may be the model's, not the shim's.
+- To decide: a host of our own in `tools/` or an existing one (our own keeps `clientInfo.name` and the loop under control; an existing one is what an adopter would use); which model; whether this becomes C3's next run or stays its own item.
