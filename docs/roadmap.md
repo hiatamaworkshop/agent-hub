@@ -953,10 +953,12 @@ In C2 on 2026-10-19, when two of the deployer's replies were forwarded to the le
 
 Once a real client is installed, also check with `tools/probe/resources-probe.mjs` whether `resources/updated` starts a turn (C1 checked only Claude Code and closed; design.md §6.1m).
 
+2026-11-21, Google Antigravity (design.md §6.1ai): it connects as `antigravity-client` and takes the `inbox()` path; after the human's word it fetched a request, answered it with a `reply`, and ignored a forged `</hub-message>` and `SYSTEM:` line in the body. It cannot be woken while idle. It does not call `resources/subscribe`, so the `resources/updated` check was not run with it. The shim recorded the wrong project for it (C180). The second condition is about the Channels path, which only Claude Code takes, so a non-Claude client cannot check it.
+
 #### Done when
-- [ ] Whether a client other than Claude Code, such as Codex, calls `inbox` and treats the body as data, as the notice says
+- [x] Whether a client other than Claude Code, such as Codex, calls `inbox` and treats the body as data, as the notice says
 - [ ] Whether the receiving agent reads `forwarded_sender` as the author of the body (Channels path)
-- [ ] The results are recorded in design.md §6
+- [x] The results are recorded in design.md §6
 
 ### C4. Connecting the storage of what was learned at breaks to engram
 Status: proposed
@@ -1151,3 +1153,13 @@ Raised 2026-11-20 from a question about whether a desktop-app agent (for example
 - Idea: treat the `inbox()` call itself as the heartbeat. (1) The Attachment records the time of the last `inbox()`. (2) For a client that cannot be woken, the card shows "unread, last fetched N minutes ago" as waiting for the human's word, not as stopped. (3) The UI gets a "check your inbox" button whose Message has a fixed body; the human still presses Send (design.md §2). (4) The delivery adapters (§3.9) and the promise that `inbox()` can always fetch the content do not change.
 - Constraints: the last-fetch time is delivery state, so it fits §3.14. A client that cannot call `inbox()` while idle will show an old time as its normal state, so the wording must not read as a fault. This is not integration by operating a desktop app's screen (out of scope, see the top of "Items"); it goes only through MCP and the Hub's API.
 - To decide: whether (3) alone is enough, or (1) and (2) are needed too. Decide after C3 shows how a real non-Claude client behaves (whether it connects the shim, what `clientInfo.name` it sends, whether it can fetch while idle). If C3 resumes first, its result decides this item.
+- C3's result for Antigravity (2026-11-21, design.md §6.1ai): it connects the shim, sends `antigravity-client`, and does not fetch while idle; a human's word was enough for it to fetch and answer. One more wake path exists inside it: the App's `agentapi send-message <conversation> <content>` posts into a conversation, but only from processes the App starts (its sidecars); from outside it needs a CSRF token. A sidecar that watches the Hub and calls it would be a level 2 adapter for this client (§3.9), and would also send without a human pressing Send, so it falls under design.md §2 and C12 rather than this item.
+
+### C180. The shim's project for clients that start it outside the project folder
+Status: proposed
+
+Raised 2026-11-21 from C3's run with Google Antigravity (design.md §6.1ai). The shim takes its project from `CLAUDE_PROJECT_DIR`, else `process.cwd()` (`src/shim/config.ts`). Antigravity sets neither: it starts stdio servers in its own install folder. So the Mailbox's `project` and the reply's `meta.item.project` named `…\AppData\Local\Programs\antigravity`, and without `HUB_MAILBOX` the default Mailbox name would have come from that folder too. Role messages scoped by `project` (protocol.md §3) and the project checks of attach (`project_mismatch`, C103) would then go wrong for such a client.
+
+- Options: (a) document it only: per-client setup passes the folder (Antigravity's `cwd` field in `mcp_config.json`, or a workspace `.agents/mcp_config.json`), or sets `HUB_MAILBOX` and a new `HUB_PROJECT`; (b) the shim asks the client with MCP `roots/list` when the client declares `roots` (Antigravity does) and no `CLAUDE_PROJECT_DIR` is set, which is vendor-neutral and needs no setup.
+- Constraints for (b): the shim attaches before `initialize` to get the role description (design.md §3.7), so the first attach would carry the wrong folder, and the Mailbox name derived from it, before `roots/list` can answer. It would need a correction after `initialize` like the `client` name's (`PATCH /attachments/:id`), and whether the Hub accepts a `cwd` change there is not settled (check protocol.md first). Several roots: which one is the project.
+- To decide: (a), (b), or (a) now and (b) later.
