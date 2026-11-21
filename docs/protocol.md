@@ -343,6 +343,14 @@ For the background of the terms and the model, see design.md §3.3 (Mailbox and 
 
 C180: while the client's roots name a single folder other than the attached one (`rootsNote`), every tool result except `whoami` starts with one line of that note, which says to restart the client to move. Nothing re-attaches (design.md §3.3). Not when `HUB_PROJECT` or `CLAUDE_PROJECT_DIR` decided the project: then the roots change nothing, and no line is added.
 
+C190: on the inbox path (any client but Claude Code; design.md §3.9), while the Mailbox has unread Messages, every tool result except `inbox` and `whoami` starts with one line:
+
+```
+agent-hub: Mailbox "<name>" has <n> unread message(s). Call inbox() to read them.
+```
+
+The line is a count and the name of the tool that reads the Messages, and nothing else: no body, sender, id or seq. It moves neither the cursor nor the unread count (the shim reads `GET /mailboxes`, which is read-only), and a Message that `inbox` has returned is no longer counted. It is given only while the shim is attached, and not when the count is 0 or the Hub does not answer within a second. Error results get it too. When a C180 roots line is also given, the unread line comes first and the roots line second, then the tool's own text. The channel path gets no line. `whoami` carries the same count as `unread` on both paths: a number when `GET /mailboxes` answers with an entry for this Mailbox, and `null` when it does not answer or has no entry for this Mailbox (for example before the Mailbox is first attached, or after a refusal).
+
 After a `project_mismatch` refusal that the one retry did not clear (C181), the shim is unattached for good: every tool except `whoami` returns the same note as an error (with the Hub's message after it), and `whoami` carries it as `note` and `mismatch` (§5, above). It makes no further attach.
 
 After a refusal that a retry cannot fix (C185: 400 or 401 on the attach), the shim is unattached for good, as after `project_mismatch`: every tool except `whoami` returns the note as an error, and `whoami` carries `terminatedReason: "refused"`, `refusal` and `note`. The note names the status and the Hub's code and message, and the way out: for `unknown_role`, the role, `roles.json`, a restart of the Hub, and then this session again; for 401, `HUB_TOKEN`. It makes no further attach.

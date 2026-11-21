@@ -16,6 +16,12 @@ export function skippedText(skipped: number, mailbox: string): string {
   return `Omitted ${skipped} old unread message(s) that had piled up in Mailbox ${mailbox} (because of the Hub's cap on what is handed over at attach). The omitted ones remain in the agent-hub UI's history. Ask the user if needed.`
 }
 
+// C190: the line that the inbox path puts first on a tool result while the Mailbox has unread Messages. It is a count and the tool that
+// reads them, and nothing else: no body, sender or seq, so it hands over no content and moves neither the cursor nor the unread count
+export function unreadHintText(unread: number, mailbox: string): string {
+  return `agent-hub: Mailbox "${mailbox}" has ${unread} unread message(s). Call inbox() to read them.`
+}
+
 // One line with agent-hub's folder and the command that checks another project's roadmap with agent-hub's checker (C146).
 // The folder is the one the shim runs from, as an absolute path with no trailing slash and forward slashes, so the command works in any shell.
 export function agentHubFolderLine(folder: string): string {

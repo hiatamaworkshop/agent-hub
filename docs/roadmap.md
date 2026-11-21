@@ -1246,14 +1246,19 @@ Split from C184 (1) on 2026-11-21 (the user's decision; reasons in C184 and C179
 - The count may come from the stream's arrivals or from the Hub's `unread`; whichever is used, a Message already fetched by `inbox()` is not counted again.
 - On the channel path (Claude Code) Messages are pushed, so no hint is added there.
 
+Built (2026-11-21): the count is read with `GET /mailboxes` (read-only) in `unreadHint()` in `src/shim/main.ts`, only while attached on the inbox path, with a one-second bound; the line text is `unreadHintText()` in `src/shim/instructions.ts`. The unread line is put first, then C180's roots line, then the tool's text (protocol.md §5). `whoami` gives `unread` on both paths. The hint is not listed under a guarantee (protocol.md §4), so docs/proofs.md has no row for it.
+Tests: `src/shim/unread-hint.test.ts` (8 tests: the line and the rest of the text unchanged, error results, cursor and unread count unchanged over calls, a Message fetched by `inbox` not counted again and a limited `inbox`, the channel path, a channel path with a Message unread because its ack was dropped (the route guard in `unreadHint()` is what keeps the line off; the test fails without it), the unread and roots lines in order).
+Checked: `npm test` 852/852 pass; `npx tsc --noEmit` clean; `npm run docs:check` 35 items, 0 errors, 0 warnings.
+Decided 2026-11-21 (the user's decision): `whoami` is excluded from item 2; item 3 asks for `unread`, so `whoami` changing on both paths is expected.
+
 #### Done when
-- [ ] On the inbox path, while the Mailbox has unread Messages, the result of every tool except `inbox` and `whoami` starts with one line giving the count and naming `inbox()`, and carries no body, sender or seq of those Messages.
-- [ ] With no unread Messages the results are unchanged; on the channel path they are unchanged.
-- [ ] `whoami` has an `unread` field with the same count.
-- [ ] Adding the hint changes neither the cursor nor the unread count on the Hub (a test reads both before and after).
-- [ ] When C180's moved-roots note is also present, both lines show, in a fixed order.
-- [ ] Tests in `src/shim/` cover the lines above; protocol.md §5 and design.md §3.9 say what the hint is and that it never carries content; docs/proofs.md is updated if the hint is listed under a guarantee.
-- [ ] `npm test` and `npm run docs:check` pass.
+- [x] On the inbox path, while the Mailbox has unread Messages, the result of every tool except `inbox` and `whoami` starts with one line giving the count and naming `inbox()`, and carries no body, sender or seq of those Messages.
+- [x] With no unread Messages the results are unchanged, except `whoami`, which carries `unread` (item 3); on the channel path they are unchanged, with the same exception.
+- [x] `whoami` has an `unread` field with the same count.
+- [x] Adding the hint changes neither the cursor nor the unread count on the Hub (a test reads both before and after).
+- [x] When C180's moved-roots note is also present, both lines show, in a fixed order.
+- [x] Tests in `src/shim/` cover the lines above; protocol.md §5 and design.md §3.9 say what the hint is and that it never carries content; docs/proofs.md is updated if the hint is listed under a guarantee.
+- [x] `npm test` and `npm run docs:check` pass.
 
 ### C191. A local Ollama model as a check client for the vendor-neutral path
 Status: proposed

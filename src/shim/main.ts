@@ -16,7 +16,7 @@ import {
 import { z } from 'zod'
 import { ADDRESS_TYPES, MESSAGE_KINDS, normalizeProjectPath, type Address, type Mailbox, type Message } from '../shared/types.js'
 import { CHANNEL_CAPABILITY, pushSkippedNotice, pushToChannel } from './channel.js'
-import { instructionsFor, routeFor, type Route } from './instructions.js'
+import { instructionsFor, routeFor, unreadHintText, type Route } from './instructions.js'
 import { envDecidesProject, loadConfig, setProject } from './config.js'
 import { chooseRoot, movedNote, rootFolders, withTimeout, type Root } from './project.js'
 import { SHIM_TOOLS } from './tools.js'
@@ -131,6 +131,7 @@ const server = new Server(SERVER_INFO, { capabilities: CAPABILITIES })
 server.setRequestHandler(InitializeRequestSchema, async (req) => {
   const route: Route = routeFor(req.params.clientInfo?.name)
   hub.setPush(route === 'channel')
+  inboxRoute = route === 'inbox'
   if (req.params.clientInfo?.name) hub.setClient(req.params.clientInfo.name)
   clientRoots = req.params.capabilities?.roots !== undefined
   log(`client=${req.params.clientInfo?.name ?? '?'} route=${route}`)
@@ -154,6 +155,21 @@ server.setNotificationHandler(RootsListChangedNotificationSchema, async () => {
 // 環境が決めたプロジェクトには、roots の変化を知らせない (環境が優先)
 function rootsMovedNote(): string | null {
   return envDecided ? null : movedNote(cfg.cwd, rootsNow)
+}
+
+// C190: on the inbox path (the client gets no pushes), the unread count of this Mailbox, from GET /mailboxes, which is read-only.
+// Only while attached, since inbox() cannot read otherwise. A count the Hub does not give in time, or no unread, gives no line
+const UNREAD_WAIT_MS = 1000
+let inboxRoute = false
+async function unreadHint(): Promise<string | null> {
+  if (!inboxRoute || !hub.attachment) return null
+  try {
+    const r = await withTimeout(hub.request<{ mailboxes: { name: string; unread: number }[] }>('GET', '/mailboxes'), UNREAD_WAIT_MS, 'GET /mailboxes')
+    const unread = r.mailboxes.find((mb) => mb.name === cfg.mailbox)?.unread ?? 0
+    return unread > 0 ? unreadHintText(unread, cfg.mailbox) : null
+  } catch {
+    return null
+  }
 }
 
 // "mailbox:rev-a" のような表記 (channel の from / to と同じ) を Address にする
@@ -309,6 +325,8 @@ async function callTool(req: CallToolRequest): Promise<CallToolResult> {
         return text({
           mailbox: cfg.mailbox,
           role: mailbox?.role ?? cfg.role,
+          // C190: the Mailbox's unread count, the same one the inbox path's hint reads (null when the Hub does not answer)
+          unread: mailbox?.unread ?? null,
           // The project this session is attached with, where it came from (C180), and what the client's roots say now.
           // Both folders are shown, so a difference between them is visible
           project: cfg.cwd,
@@ -339,16 +357,24 @@ async function callTool(req: CallToolRequest): Promise<CallToolResult> {
   }
 }
 
-// 結果の先頭に一行の注意を足す (C180)。whoami は JSON なので rootsNote の欄で出す
+// 結果の先頭に注意の行を足す。whoami は JSON なので rootsNote の欄で出す。
+// 足す順は決まっている: 先頭が C190 の未読の行 (inbox 経路で未読があるときだけ)、次が C180 の roots の行。
+// 未読の行を先頭にするので、inbox 経路の結果は未読があれば必ず未読の行で始まる
 server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolResult> => {
   // A roots refresh asked for by a notification just before this call is awaited, so the note is the current one (not the previous answer)
   await Promise.all([...rootsInFlight])
   const r = await callTool(req)
-  const moved = req.params.name === 'whoami' ? null : rootsMovedNote()
-  if (!moved) return r
+  const name = req.params.name
+  const lines: string[] = []
+  // inbox は未読を取り出すものなので、その結果に出さない。whoami は unread の欄で答える
+  const hint = name === 'inbox' || name === 'whoami' ? null : await unreadHint()
+  if (hint) lines.push(hint)
+  const moved = name === 'whoami' ? null : rootsMovedNote()
+  if (moved) lines.push(moved)
+  if (lines.length === 0) return r
   const [first, ...rest] = r.content
   const body = first?.type === 'text' ? first.text : ''
-  return { ...r, content: [{ type: 'text', text: `${moved}\n${body}` }, ...(first?.type === 'text' ? rest : r.content)] }
+  return { ...r, content: [{ type: 'text', text: `${lines.join('\n')}\n${body}` }, ...(first?.type === 'text' ? rest : r.content)] }
 })
 
 // 初期化が済む前の通知は捨てられうるので、Hub への接続は initialized の後に始める
