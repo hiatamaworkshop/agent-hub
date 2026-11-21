@@ -8,12 +8,15 @@ export class HubHttpError extends Error {
   readonly code: string
   // the fields the Hub adds to the error body (C181: holder, refused and graceMs for project_mismatch)
   readonly details: Record<string, unknown>
+  // the Hub's own message (the body's `message`, e.g. unknown_role's "role x is not in roles.json"); '' when the Hub sends none (C185)
+  readonly hubMessage: string
 
-  constructor(status: number, code: string, message: string, details: Record<string, unknown> = {}) {
+  constructor(status: number, code: string, message: string, details: Record<string, unknown> = {}, hubMessage = '') {
     super(message)
     this.status = status
     this.code = code
     this.details = details
+    this.hubMessage = hubMessage
   }
 }
 
@@ -44,6 +47,12 @@ function isMismatch(e: unknown): e is HubHttpError {
   return e instanceof HubHttpError && e.status === 409 && e.code === 'project_mismatch'
 }
 
+// C185: an attach refused with 400 (an invalid Mailbox name or body, or a role that roles.json does not define) or 401 (the token) is
+// not retried: nothing changes it but the settings and a restart of the Hub, so a retry gets the same answer
+function isRefusedForGood(e: unknown): e is HubHttpError {
+  return e instanceof HubHttpError && (e.status === 400 || e.status === 401)
+}
+
 // C181: a refusal with project_mismatch is retried once, after the Hub's grace period (graceMs in the 409; the Hub's default when it does not say)
 // plus this margin, so that a leftover Attachment of the old session has ended by then
 const DEFAULT_GRACE_MS = 15_000
@@ -56,6 +65,8 @@ export class HubClient {
   attachment: AttachInfo | undefined
   terminatedReason: string | undefined
   lastError: string | undefined
+  // C185: the attach refusal that a retry cannot fix (terminatedReason 'refused'): the Hub's status, error code and message
+  refusal: { status: number; code: string; message: string } | undefined
   private delivered = 0
   // attach で古い未読が省略された件数。stream を開いたら 1 度だけ伝える (initialize 前の通知は捨てられうるため)。
   // push しないとき (inbox 経路) は takeSkipped で inbox の結果に載せる
@@ -105,7 +116,13 @@ export class HubClient {
       const detail = json.message ?? (json.issues ? JSON.stringify(json.issues) : '')
       // the other keys of the body are its details (C181); error, message and issues are already in the error
       const { error: _error, message: _message, issues: _issues, ...details } = json
-      throw new HubHttpError(res.status, json.error ?? 'http_error', `${method} ${path} → ${res.status} ${json.error ?? ''} ${detail}`.trim(), details)
+      throw new HubHttpError(
+        res.status,
+        json.error ?? 'http_error',
+        `${method} ${path} → ${res.status} ${json.error ?? ''} ${detail}`.trim(),
+        details,
+        typeof json.message === 'string' ? json.message : '',
+      )
     }
     return json as T
   }
@@ -164,6 +181,8 @@ export class HubClient {
       await Promise.race([this.attach(), timeout])
       return this.attachment
     } catch (e) {
+      // a refusal that ended the shim has its own log line, written where it happened (C185): no second line here
+      if (this.state === 'terminated') return undefined
       this.lastError = e instanceof Error ? e.message : String(e)
       this.log(`hub: ${this.lastError}${this.cfg.role ? ' (starting without the role description)' : ''}`)
       return undefined
@@ -185,6 +204,8 @@ export class HubClient {
         await this.streamOnce(() => (backoff = BACKOFF_MIN_MS))
       } catch (e) {
         if (this.stopped) break
+        // a refusal that ended the shim (C185, C181, C103, superseded) is already recorded and logged where it happened
+        if (this.state === 'terminated') break
         // Hub の再起動などで Attachment が消えたら attach し直す (protocol.md §3)
         if (e instanceof HubHttpError && e.status === 404 && this.attachment) {
           this.previousAttachment = this.attachment.attachmentId
@@ -225,6 +246,10 @@ export class HubClient {
     try {
       await this.doAttach()
     } catch (e) {
+      if (isRefusedForGood(e)) {
+        this.terminateRefused(e)
+        throw e
+      }
       if (!isMismatch(e)) throw e
       if (this.mismatchRetried) {
         this.terminateOnMismatch(e)
@@ -240,9 +265,21 @@ export class HubClient {
       if (this.stopped) return
       await this.doAttach().catch((retryError: unknown) => {
         if (isMismatch(retryError)) this.terminateOnMismatch(retryError)
+        if (isRefusedForGood(retryError)) this.terminateRefused(retryError)
         throw retryError
       })
     }
+  }
+
+  // C185: the attach was refused with a status that a retry cannot fix. The shim stays unattached and says why (whoami, tool errors).
+  // Written once: the refusal is not retried, so this runs once per shim (the guard only keeps it idempotent)
+  private terminateRefused(e: HubHttpError): void {
+    if (this.terminatedReason === 'refused') return
+    this.state = 'terminated'
+    this.terminatedReason = 'refused'
+    this.refusal = { status: e.status, code: e.code, message: e.hubMessage }
+    this.lastError = e.message
+    this.log(`terminated: refused (${e.status} ${e.code}${e.hubMessage ? `: ${e.hubMessage}` : ''}). Not retried`)
   }
 
   // The folder the Hub names as the holder of the Mailbox, kept from the latest refusal that named one

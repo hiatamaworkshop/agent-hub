@@ -222,6 +222,18 @@ function projectMismatchNote(): string {
     '(for team, --mailbox <name>; when started by hand, change HUB_MAILBOX)'
   )
 }
+// C185: an attach the Hub refused with a status that a retry cannot fix (400, 401). Names the cause (the Hub's code and message) and the way out
+function refusedNote(): string {
+  const r = hub.refusal
+  const cause = r ? `${r.status} ${r.code}${r.message ? `: ${r.message}` : ''}` : (hub.lastError ?? 'refused')
+  const way =
+    r?.code === 'unknown_role'
+      ? `The role ${cfg.role} is not in roles.json on the Hub. Add it there, restart the Hub, and then start this session again`
+      : r?.status === 401
+        ? "The Hub did not accept the token (HUB_TOKEN). Check it against the Hub's token, and then start this session again"
+        : 'Fix what the Hub named, and then start this session again'
+  return `Mailbox ${cfg.mailbox} could not be attached: the Hub refused it (${cause}). A retry gets the same answer, so this session stopped and stays unattached. ${way}.`
+}
 function supersededNote(): string {
   return (
     `Mailbox ${cfg.mailbox} was taken over by another session (superseded). This session will not reconnect (closing the newer session does not bring it back). ` +
@@ -234,6 +246,7 @@ async function callTool(req: CallToolRequest): Promise<CallToolResult> {
   try {
     // 引き継がれた後は、送信も購読の変更もしない (購読は Mailbox に保存されるので、後継の購読を変えてしまう)
     if (hub.terminatedReason === 'superseded' && req.params.name !== 'whoami') throw new Error(supersededNote())
+    if (hub.terminatedReason === 'refused' && req.params.name !== 'whoami') throw new Error(refusedNote())
     if (hub.terminatedReason === 'project_mismatch' && req.params.name !== 'whoami') throw new Error(`${projectMismatchNote()} (${hub.lastError ?? ''})`)
     switch (req.params.name) {
       case 'post_message': {
@@ -307,6 +320,7 @@ async function callTool(req: CallToolRequest): Promise<CallToolResult> {
           attachmentId: hub.attachment?.attachmentId ?? null,
           terminatedReason: hub.terminatedReason ?? null,
           ...(hub.terminatedReason === 'superseded' ? { note: supersededNote() } : {}),
+          ...(hub.terminatedReason === 'refused' ? { note: refusedNote(), refusal: hub.refusal } : {}),
           ...(hub.terminatedReason === 'project_mismatch'
             ? { note: projectMismatchNote(), mismatch: { mailbox: cfg.mailbox, holder: hub.mismatchHolder, refused: cfg.cwd } }
             : {}),
