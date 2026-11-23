@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C193
 - [ ] C179
 
 (Items with a status line are listed under "Items".)
@@ -699,6 +698,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: docs/proofs.md (D1-D22 for protocol.md §4, S1-S23 for the card states, each with its proof or `none` and what it leaves out), `checkProofs` in `src/docs-check/repo.ts` (a warning for a named file that does not exist) with tests, CLAUDE.md (the map's line; "Updating the docs" says when a row changes), design.md §1.2 (the incidents row points to the map; Status stays Partly) and §3.12.
   - Checked: `npm test` 757 pass; `docs:check` 0 errors; the 71 quoted test names matched against the test files by a throwaway script. Done-when wording not changed.
   - Not checked: no reviewer read it; `docs:check` does not read test names, so a renamed test is caught only by reading.
+- [x] C193 A card-state test for a no-Events session that answers a later request and still owes an earlier one (2026-11-23, closed on the user's word; no reviewer connected)
+  - Raised 2026-11-22 from C187's close. Decided 2026-11-22 (the user asked for it, written by the planning session): a test only; the rule does not change.
+  - Changed: `src/shared/card-state.test.ts` (two cases in the C187 describe: an answered R2 with R1 still owed inside the window reads `working`, guess, since `newestAt`; the same past the window reads `stopped`, Stopped, no reply), docs/proofs.md S11 names both. `src/shared/card-state.js` is unchanged.
+  - Checked: `npm test` 861 pass, 0 fail (both cases pass); `npm run docs:check` exit 0, no errors, no warnings.
+  - Not checked: no reviewer read it (none connected).
 - [x] C187 A notice after an open request turns a session without Events to Stopped, no reply (2026-11-22, closed after the review)
   - Raised 2026-11-21 in the C183 review, and reproduced in C191's run on the inbox path (design.md §6.1ak): a notice handed while a request was still open made `lastHanded` not open, so a session with no Events read `Stopped, no reply`.
   - Decided 2026-11-22 (the user chose this among three options the planning session offered): the rule reads the newest open request's time, `backlog.awaitingReply.newestAt`. Absent targets keep C109's result (the user's decision, 2026-11-22).
@@ -1273,16 +1277,6 @@ Raised 2026-11-21 in C191's run (design.md §6.1ak): the model replied with `to`
 - Seen with a light model that ignored the instruction to omit `to`; a client that follows the instructions does not do it. A Mailbox sending a note to itself is not otherwise a use the docs describe.
 - Ideas: (a) refuse a `post_message` whose only recipient is the sender, with an error that says to omit `to` to answer the sender; (b) keep accepting it, but leave the sender out of the recipients so it is not unread for itself; (c) keep it as is and say so in protocol.md.
 - To decide: which of these, and whether a role or topic address that includes the sender among other recipients should also leave the sender out.
-
-### C193. A card-state test for a no-Events session that answers a later request and still owes an earlier one
-
-Raised 2026-11-22 from C187's close (its "Not checked" line): a session with no Events that owes R1, is handed R2 and replies to R2 now reads `Working?` since R1's time for up to `staleHandedHours` (before C187: `Stopped, no reply`). C187's decided rule covers this (`lastHanded` is R2 with `open: false`, `awaitingReply.newestAt` is R1's time), but no test pins it. Decided 2026-11-22 (the user asked for it, written by the planning session): a test only; the rule does not change.
-
-#### Done when
-- [ ] `src/shared/card-state.test.ts` has a case for a session with no Events, `lastHanded` an answered request (`open: false`), `awaitingReply.count` 1 with `newestAt` inside the `staleHandedHours` window: `working` with `guess` and `since` equal to `newestAt`.
-- [ ] The same case with `newestAt` past the window reads `stopped` (`Stopped, no reply`).
-- [ ] docs/proofs.md S11 names the new test.
-- [ ] `npm test` and `npm run docs:check` pass.
 
 ### C194. C142's restart check uses a turn end of an earlier Attachment
 Status: proposed

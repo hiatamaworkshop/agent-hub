@@ -134,6 +134,18 @@ describe('stateOf: a session with no Events and a notice handed after an open re
     const m = mb({ awaitingReply: awaiting(at(-5), 7), lastHanded: { ts: at(-1), seq: 8, open: true } })
     assert.deepEqual(stateOf(m, ctx({ messageOf: () => null })), { key: 'working', since: at(-1), guess: true, detail: '' })
   })
+
+  // C193: the session answered a later request R2 (lastHanded open: false) and still owes an earlier one R1 (awaitingReply, at minute -5)
+  it('C193: answered R2, still owing R1 inside the window → Working? since R1 (newestAt), the guess', () => {
+    const m = mb({ awaitingReply: awaiting(at(-5), 7), lastHanded: { ts: at(-2), seq: 8, open: false } })
+    assert.deepEqual(stateOf(m, ctx({ messageOf: () => null })), { key: 'working', since: at(-5), guess: true, detail: '' })
+  })
+
+  it('C193: the same with R1 (newestAt) past the window (12 hours by default) → Stopped, no reply', () => {
+    const old = at(-(12 * 60 + 1))
+    const m = mb({ awaitingReply: awaiting(old, 7), lastHanded: { ts: at(-2), seq: 8, open: false } })
+    assert.deepEqual(stateOf(m, ctx()), { key: 'stopped', since: old, detail: undefined })
+  })
 })
 
 // C183: a report to the person that asks for a decision or an action is Needs you, until the person writes to the Mailbox or the Mailbox
