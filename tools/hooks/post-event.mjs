@@ -11,12 +11,26 @@
 //   --no-git: git を一切呼ばず、入力をそのまま送る (SessionStart など、git の事実が要らない Event 用の速い道)。上限は 2 秒
 //
 // 環境変数 (HTTP hook と同じもの): HUB_TOKEN (Bearer)、HUB_MAILBOX (X-Hub-Mailbox、空なら省く)、HUB_PORT (既定 7777)
+// --mailbox <name> (C189): the Mailbox for X-Hub-Mailbox. It wins over HUB_MAILBOX, so a command hook can name its Mailbox without
+// the App's environment. Without HUB_TOKEN in the environment, the token is read from agent-hub's .env (HUB_TOKEN only, as the shim
+// reads it; HUB_MAILBOX in .env is not read, so a hook without --mailbox does not pick a Mailbox from there)
 import { execFile } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
 const FIELD = 'agent_hub_git'
 const MAX_ITEMS = 1000
 const NO_GIT = process.argv.includes('--no-git')
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+const NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,63}$/
+// --mailbox <name>; a value that is not a Mailbox name is ignored, and HUB_MAILBOX is used as before (C189)
+const MAILBOX = (() => {
+  const i = process.argv.indexOf('--mailbox')
+  const v = i >= 0 ? process.argv[i + 1] : undefined
+  return typeof v === 'string' && NAME_RE.test(v) ? v : undefined
+})()
 // --source <name>: the client whose converter the Hub uses (POST /events/<name>). Default claude-code. Antigravity's hooks use
 // `--source antigravity` (C182, tools/hooks/hooks.json). A name that is not a plain word falls back to the default
 const SOURCE = (() => {
@@ -66,6 +80,33 @@ async function gitFacts(cwd) {
   }
 }
 
+// The token: HUB_TOKEN from the environment, else HUB_TOKEN from agent-hub's .env (C189). The .env file is read only when the environment has
+// no HUB_TOKEN, as the shim's loadConfig does. Lines are read the way env-override.ts parses them (the last line of a name wins)
+function tokenOf() {
+  if (process.env.HUB_TOKEN) return process.env.HUB_TOKEN
+  const file = join(ROOT, '.env')
+  try {
+    if (!existsSync(file)) return undefined
+    let token
+    for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+      const m = /^\s*(?:export\s+)?HUB_TOKEN\s*=\s*(.*)$/.exec(line)
+      if (m) token = unquote(m[1].trim())
+    }
+    return token || undefined
+  } catch {
+    return undefined
+  }
+}
+
+function unquote(raw) {
+  const q = raw[0]
+  if (q === '"' || q === "'") {
+    const end = raw.indexOf(q, 1)
+    return end > 0 ? raw.slice(1, end) : raw.slice(1)
+  }
+  return raw.replace(/\s+#.*$/, '').trim()
+}
+
 async function send(body, headers) {
   const port = process.env.HUB_PORT || '7777'
   await fetch(`http://127.0.0.1:${port}/events/${SOURCE}`, {
@@ -84,8 +125,10 @@ async function main() {
   const body = facts ? { ...input, [FIELD]: facts } : input
 
   const headers = { 'content-type': 'application/json' }
-  if (process.env.HUB_TOKEN) headers.authorization = `Bearer ${process.env.HUB_TOKEN}`
-  if (process.env.HUB_MAILBOX) headers['x-hub-mailbox'] = process.env.HUB_MAILBOX
+  const token = tokenOf()
+  if (token) headers.authorization = `Bearer ${token}`
+  const mailbox = MAILBOX ?? process.env.HUB_MAILBOX
+  if (mailbox) headers['x-hub-mailbox'] = mailbox
   await send(body, headers)
 }
 

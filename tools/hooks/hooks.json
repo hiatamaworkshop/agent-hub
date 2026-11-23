@@ -3,14 +3,14 @@
     "SessionStart": [
       {
         "type": "command",
-        "command": "node \"<agent-hub>/tools/hooks/post-event.mjs\" --source antigravity --no-git",
+        "command": "node \"<agent-hub>/tools/hooks/post-event.mjs\" --source antigravity --mailbox <mailbox> --no-git",
         "timeout": 6
       }
     ],
     "Stop": [
       {
         "type": "command",
-        "command": "node \"<agent-hub>/tools/hooks/post-event.mjs\" --source antigravity --no-git",
+        "command": "node \"<agent-hub>/tools/hooks/post-event.mjs\" --source antigravity --mailbox <mailbox> --no-git",
         "timeout": 6
       }
     ]

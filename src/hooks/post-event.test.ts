@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -42,9 +42,9 @@ after(async () => {
 })
 
 // hook を起動する。env は HUB_* だけを上書きし、PATH はそのまま (git を探せるように)
-function runHook(stdin: string, env: Record<string, string | undefined> = {}, args: string[] = []) {
+function runHook(stdin: string, env: Record<string, string | undefined> = {}, args: string[] = [], script = SCRIPT) {
   return new Promise<{ code: number | null; stdout: string; stderr: string }>((ok, fail) => {
-    const child = spawn(process.execPath, [SCRIPT, ...args], {
+    const child = spawn(process.execPath, [script, ...args], {
       env: { ...process.env, HUB_PORT: String(port), HUB_TOKEN: TOKEN, HUB_MAILBOX: 'deployer', ...env },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
@@ -197,6 +197,63 @@ describe('tools/hooks/post-event.mjs', () => {
   })
 })
 
+// C189: the Mailbox is named with --mailbox, and the token comes from agent-hub's .env when the environment has none. The .env cases run a copy
+// of the poster in a temp tree that has its own .env (the poster reads .env from the tree it is in, so the real .env is not touched)
+describe('tools/hooks/post-event.mjs: --mailbox and the .env token (C189)', () => {
+  const agStart = { conversationId: 'conv-2', hookEventName: 'Stop', cwd: 'C:\\work\\agent-hub', workspacePaths: ['C:\\work\\agent-hub'] }
+  const args = ['--no-git', '--source', 'antigravity']
+
+  // A copy of the poster in its own tree with a .env, and the path of the copy
+  async function treeWithEnv(dotEnv: string): Promise<string> {
+    const root = await tempDir()
+    await mkdir(join(root, 'tools', 'hooks'), { recursive: true })
+    await copyFile(SCRIPT, join(root, 'tools', 'hooks', 'post-event.mjs'))
+    await writeFile(join(root, '.env'), dotEnv)
+    return join(root, 'tools', 'hooks', 'post-event.mjs')
+  }
+
+  it('--mailbox sends its name as X-Hub-Mailbox, and wins over HUB_MAILBOX', async () => {
+    received = []
+    await runHook(JSON.stringify(agStart), {}, [...args, '--mailbox', 'flagged'])
+    assert.equal(received[0]!.headers['x-hub-mailbox'], 'flagged', 'the flag wins over HUB_MAILBOX=deployer')
+    received = []
+    await runHook(JSON.stringify(agStart), { HUB_MAILBOX: undefined }, [...args, '--mailbox', 'flagged'])
+    assert.equal(received[0]!.headers['x-hub-mailbox'], 'flagged')
+  })
+
+  it('a --mailbox value that is not a Mailbox name is ignored: HUB_MAILBOX is used as before', async () => {
+    received = []
+    await runHook(JSON.stringify(agStart), {}, [...args, '--mailbox', '<mailbox>'])
+    assert.equal(received[0]!.headers['x-hub-mailbox'], 'deployer')
+    received = []
+    await runHook(JSON.stringify(agStart), {}, [...args])
+    assert.equal(received[0]!.headers['x-hub-mailbox'], 'deployer')
+  })
+
+  it('without HUB_TOKEN in the environment, the token is read from agent-hub\'s .env (the copy\'s own .env here)', async () => {
+    received = []
+    const script = await treeWithEnv('# comment\nHUB_TOKEN="dotenv-token-0123456789"  # the token\nHUB_MAILBOX=wrong\n')
+    await runHook(JSON.stringify(agStart), { HUB_TOKEN: undefined, HUB_MAILBOX: undefined }, [...args, '--mailbox', 'rev-a'], script)
+    assert.equal(received[0]!.headers.authorization, 'Bearer dotenv-token-0123456789')
+    assert.equal(received[0]!.headers['x-hub-mailbox'], 'rev-a', 'the flag names the Mailbox; HUB_MAILBOX in .env is not read')
+  })
+
+  it('with no --mailbox and no HUB_MAILBOX, .env\'s HUB_MAILBOX is not used: the header is left out', async () => {
+    received = []
+    const script = await treeWithEnv('HUB_TOKEN=dotenv-token-0123456789\nHUB_MAILBOX=wrong\n')
+    await runHook(JSON.stringify(agStart), { HUB_TOKEN: undefined, HUB_MAILBOX: undefined }, [...args], script)
+    assert.equal(received[0]!.headers.authorization, 'Bearer dotenv-token-0123456789')
+    assert.equal(received[0]!.headers['x-hub-mailbox'], undefined)
+  })
+
+  it('with HUB_TOKEN set, .env is not read: the environment\'s token is sent', async () => {
+    received = []
+    const script = await treeWithEnv('HUB_TOKEN=dotenv-token-0123456789\n')
+    await runHook(JSON.stringify(agStart), {}, [...args, '--mailbox', 'rev-a'], script)
+    assert.equal(received[0]!.headers.authorization, `Bearer ${TOKEN}`)
+  })
+})
+
 // C182: Antigravity's hooks run the same poster with --source antigravity (no git), and tools/hooks/hooks.json is its template
 describe('tools/hooks/post-event.mjs --source antigravity (C182)', () => {
   const agStart = { conversationId: 'conv-1', modelName: 'gemini-3.8-flash-low', hookEventName: 'SessionStart', cwd: 'C:\work\agent-hub', workspacePaths: ['C:\work\agent-hub'] }
@@ -236,8 +293,11 @@ describe('tools/hooks/post-event.mjs --source antigravity (C182)', () => {
       const handlers = hooks[name]!
       assert.equal(handlers.length, 1)
       assert.equal(handlers[0]!.type, 'command')
-      assert.match(handlers[0]!.command, /post-event\.mjs" --source antigravity --no-git$/)
+      assert.match(handlers[0]!.command, /post-event\.mjs" --source antigravity --mailbox <mailbox> --no-git$/)
       assert.ok(handlers[0]!.timeout > 0)
     }
+    // C189: the template names the Mailbox and carries no token (the token comes from agent-hub's .env)
+    const text = await readFile(resolve(import.meta.dirname, '../../tools/hooks/hooks.json'), 'utf8')
+    assert.doesNotMatch(text, /HUB_TOKEN|Bearer|authorization/i)
   })
 })

@@ -1267,12 +1267,16 @@ Raised 2026-11-21 in C182's real check (design.md §6.1aj): usage.md tells Antig
 - Decided 2026-11-23 (the user asked the planning session for the safer choice): the poster reads agent-hub's `.env` only when `HUB_TOKEN` is not set, as the shim's `loadConfig` does, so the token is in neither `hooks.json` nor the App's environment. The template names the Mailbox (`--mailbox <name>`), not the role: a name resolves to one Mailbox, and nothing is set in an environment other shims inherit.
 
 #### Done when
-- [ ] `tools/hooks/post-event.mjs` takes `--mailbox <name>` and sends it as `X-Hub-Mailbox`; with both the flag and `HUB_MAILBOX` set, the flag wins.
-- [ ] Without `HUB_TOKEN` in the environment, the poster reads the token from agent-hub's `.env` (the same file the shim reads); with `HUB_TOKEN` set, it does not read `.env`.
-- [ ] `src/hooks/post-event.test.ts` covers the flag, the flag over `HUB_MAILBOX`, and the `.env` fallback with `HUB_TOKEN` unset.
-- [ ] `tools/hooks/hooks.json` carries `--mailbox <mailbox>` in each command, and contains no token.
-- [ ] docs/usage.md's Antigravity steps drop setting `HUB_TOKEN` and `HUB_MAILBOX` in the App's environment, and say to put the Mailbox name in the command.
-- [ ] `npm test` passes with 0 fail and `npm run docs:check` shows 0 errors.
+- [x] `tools/hooks/post-event.mjs` takes `--mailbox <name>` and sends it as `X-Hub-Mailbox`; with both the flag and `HUB_MAILBOX` set, the flag wins.
+- [x] Without `HUB_TOKEN` in the environment, the poster reads the token from agent-hub's `.env` (the same file the shim reads); with `HUB_TOKEN` set, it does not read `.env`.
+- [x] `src/hooks/post-event.test.ts` covers the flag, the flag over `HUB_MAILBOX`, and the `.env` fallback with `HUB_TOKEN` unset.
+- [x] `tools/hooks/hooks.json` carries `--mailbox <mailbox>` in each command, and contains no token.
+- [x] docs/usage.md's Antigravity steps drop setting `HUB_TOKEN` and `HUB_MAILBOX` in the App's environment, and say to put the Mailbox name in the command.
+- [x] `npm test` passes with 0 fail and `npm run docs:check` shows 0 errors.
+
+Facts (deployer, 2026-11-23): `tools/hooks/post-event.mjs` takes `--mailbox <name>` (a value that is not a Mailbox name, such as `<mailbox>`, is ignored) and sends it as `X-Hub-Mailbox`; it wins over `HUB_MAILBOX`, which is still the fallback. The token is `HUB_TOKEN` from the environment, else `HUB_TOKEN` from agent-hub's `.env`, read only when the environment has no `HUB_TOKEN` (the shim's `loadConfig` rule; the file is the root's `.env`, found from the script's own folder). One deliberate narrowing against the shim: the poster takes only `HUB_TOKEN` from `.env`, not the whole file, so a `HUB_MAILBOX` in `.env` cannot pick a Mailbox for a hook that names none (the shim loads the whole file with `process.loadEnvFile`). `HUB_PORT` is still read from the environment only. Tests: `src/hooks/post-event.test.ts`, describe "tools/hooks/post-event.mjs: --mailbox and the .env token (C189)": the flag, the flag over `HUB_MAILBOX`, an invalid flag value, the `.env` fallback (run from a temp copy of the script with its own `.env`), `.env`'s `HUB_MAILBOX` not used, and `.env` not read when `HUB_TOKEN` is set; the hooks.json test checks `--mailbox <mailbox>` and no token. `tools/hooks/hooks.json` has `--mailbox <mailbox>` in both commands. `docs/usage.md` Antigravity paragraph: the environment step is replaced by the command's `--mailbox`, and the token comes from `.env`.
+Checked: `npm test` 883 pass, 0 fail (the 5 new poster cases among them); `npm run typecheck` 0 errors; `npm run docs:check` 31 items, 0 errors; its one warning is the close reminder for C189 (all done-when boxes checked; the section stays until the close request).
+Not checked: no reviewer read it; no real Antigravity run with the new hooks.json; the real `agent-hub/.env` was not read by the tests (the .env cases use a temp copy).
 
 ### C195. An unedited forward a Mailbox sends to itself
 Status: proposed
