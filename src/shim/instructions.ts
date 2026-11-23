@@ -7,6 +7,7 @@ export type Route = 'channel' | 'inbox'
 
 // Claude Code は initialize の clientInfo.name に "claude-code" を送る (design.md §6.1c)。
 // channel に対応するかは capabilities に出ないので、名前で決める。ほかのクライアントは push を受けないので inbox にする
+// C179: the Hub's card reads the same test (isInboxRoute in src/shared/card-state.js, from the Attachment's client). Change both together
 export function routeFor(clientName: string | undefined): Route {
   return clientName === 'claude-code' ? 'channel' : 'inbox'
 }

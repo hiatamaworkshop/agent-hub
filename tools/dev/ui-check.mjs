@@ -2398,6 +2398,21 @@ try {
     const agModel = await evaluate(`(() => { const b = [...document.querySelectorAll('#mailboxes .mb')].find((x) => (x.querySelector('.name') || {}).textContent === 'ag.deployer'); const m = b && b.querySelector('.modeleff'); return m ? m.textContent : null })()`)
     verify('Antigravity: カードに modelName の値が出る (session.start と turn.end から、C61 の表示)', typeof agModel === 'string' && agModel.includes('gemini-3.8-flash-low'), { agModel })
   }
+  // C179: an inbox-route session (its client is not claude-code, so no Message is pushed to it). After its turn ends, an unread request
+  // is the human's move: Needs you, check inbox. A session Event after the turn end means a turn is running, so it is Working (quiet)
+  {
+    const ib = await api('POST', '/mailboxes/ib.deployer/attach', { client: 'antigravity-client', cwd })
+    const ibHook = (hookEventName, extra = {}) =>
+      api('POST', '/events/antigravity', { conversationId: 'conv-ib', modelName: 'gemini-3.8-flash-low', hookEventName, cwd, workspacePaths: [cwd], ...extra }, { 'x-hub-mailbox': 'ib.deployer' })
+    await ibHook('SessionStart')
+    await ibHook('Stop', { terminationReason: 'NO_TOOL_CALL', error: '', fullyIdle: true, executionNum: 0, continuationActive: false })
+    await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'ib.deployer' }, body: 'GOAL: C179 an unread request after the turn end' })
+    await stateScene('inbox 経路: ターンが終わったあとに未読の依頼。人の番として check inbox (C179)', 'ib.deployer', 'Needs you (check inbox)')
+    await ibHook('SessionStart')
+    const ibRunning = (await screen()).cards.find((c) => c.name === 'ib.deployer')
+    verify('inbox 経路: ターンが走り出したあと (Event が届いた) は Working (静か。信号なし) (C179)', !!ibRunning && ibRunning.state.startsWith('Working') && !ibRunning.state.includes('?'), ibRunning)
+    await ackAll(ib.attachmentId)
+  }
   // 接続しているセッションがひとつもない: Your move は出さない (C127)。すべて切り離してから地図を見る
   for (const mb of (await api('GET', '/mailboxes')).mailboxes) if (mb.attachment) await api('DELETE', `/attachments/${mb.attachment.attachmentId}`)
   await mapScene('接続しているセッションがない: Your move は出さない (C127)', 'no move')

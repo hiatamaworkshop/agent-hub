@@ -13,7 +13,8 @@ const at = (minutes: number) => new Date(T0 + minutes * 60000).toISOString()
 const NOW = T0 + 10 * 60000 // ten minutes after T0
 
 // A Mailbox as the Hub describes it. Attached by session s1 at minute -60, unless an attachment is given
-function mb(backlog: Record<string, unknown> = {}, attachment: unknown = { id: 'a1', sessionId: 's1', attachedAt: at(-60) }) {
+// The default Attachment is a claude-code one (C179: the unread rule depends on the client; the Hub always sends one)
+function mb(backlog: Record<string, unknown> = {}, attachment: unknown = { id: 'a1', sessionId: 's1', attachedAt: at(-60), client: 'claude-code' }) {
   return {
     name: 'demo.leader',
     attachment,
@@ -145,6 +146,57 @@ describe('stateOf: a session with no Events and a notice handed after an open re
     const old = at(-(12 * 60 + 1))
     const m = mb({ awaitingReply: awaiting(old, 7), lastHanded: { ts: at(-2), seq: 8, open: false } })
     assert.deepEqual(stateOf(m, ctx()), { key: 'stopped', since: old, detail: undefined })
+  })
+})
+
+// C179: on the inbox route (a client other than claude-code, which is pushed its Messages), unread Messages are the human's move unless a turn
+// is known to be running. The claude-code case keeps S10 (quiet Working). The route is the Attachment's client, as the shim's routeFor decides it
+describe('stateOf: unread Messages on the inbox route (C179)', () => {
+  const inbox = { id: 'a3', sessionId: 's1', attachedAt: at(-60), client: 'antigravity-client' }
+  // A session with no Events on the inbox route: its Attachment has no session_id and no hooks (C183)
+  const noEvents = { id: 'a4', attachedAt: at(-60), client: 'antigravity-client' }
+  // The request at minute -5 is still open, and a notice at minute -1 was handed after it (open: false), as in C187
+  const awaiting = (ts: string, seq: number) => ({ count: 1, oldestAt: ts, oldestSeq: seq, newestAt: ts, newestSeq: seq })
+  const notice = { ts: at(-1), seq: 8, open: false }
+
+  it('(a) inbox route: a turn end, then an unread request → Needs you, check inbox (the human tells the client to check its inbox)', () => {
+    const end = ev('turn.end', at(-5))
+    const m = mb({ unread: { count: 1, oldestAt: at(-2) } }, inbox)
+    assert.deepEqual(stateOf(m, ctx({ lastEvent: end, lastTurnEnd: end })), { key: 'you', since: at(-2), detail: 'check inbox' })
+  })
+
+  it('(b) inbox route: the same with a session.start Event after the turn end → a turn is running: Working (quiet)', () => {
+    const end = ev('turn.end', at(-5))
+    const start = ev('session.start', at(-3))
+    const m = mb({ unread: { count: 1, oldestAt: at(-2) } }, inbox)
+    assert.deepEqual(stateOf(m, ctx({ lastEvent: start, lastTurnEnd: end })), { key: 'working', since: at(-2), quiet: true })
+  })
+
+  it('(c) inbox route, no Events: unread only → Needs you, check inbox', () => {
+    const m = mb({ unread: { count: 1, oldestAt: at(-2) } }, noEvents)
+    assert.deepEqual(stateOf(m, ctx()), { key: 'you', since: at(-2), detail: 'check inbox' })
+  })
+
+  it('(d) inbox route, no Events: an open request, a later notice handed (C187) and an unread Message → Working? since the request, not Needs you', () => {
+    const m = mb({ awaitingReply: awaiting(at(-5), 7), lastHanded: notice, unread: { count: 1, oldestAt: at(-2) } }, noEvents)
+    assert.deepEqual(stateOf(m, ctx({ messageOf: () => null })), { key: 'working', since: at(-5), guess: true, detail: '' })
+  })
+
+  it('(d2) the same with the Hub restarted after that request (C142): Stopped stays ahead of unread', () => {
+    const m = mb({ awaitingReply: awaiting(at(-5), 7), lastHanded: notice, unread: { count: 1, oldestAt: at(-2) } }, noEvents)
+    assert.deepEqual(stateOf(m, ctx({ hubStartedAt: T0 })), { key: 'stopped', since: at(-5), detail: 'Hub restarted after the hand-over' })
+  })
+
+  it('(e) claude-code Attachment with unread, no Events: Working (quiet), as before (S10)', () => {
+    const claude = { id: 'a5', attachedAt: at(-60), client: 'claude-code' }
+    const m = mb({ unread: { count: 1, oldestAt: at(-2) } }, claude)
+    assert.deepEqual(stateOf(m, ctx()), { key: 'working', since: at(-2), quiet: true })
+  })
+
+  it('an Event of an earlier Attachment does not make a turn running: a session.start from before the attach (s0) → Needs you', () => {
+    const oldStart = ev('session.start', at(-50), { sessionId: 's0' })
+    const m = mb({ unread: { count: 1, oldestAt: at(-2) } }, { ...inbox, sessionId: 's2', attachedAt: at(-40) })
+    assert.deepEqual(stateOf(m, ctx({ lastEvent: oldStart })), { key: 'you', since: at(-2), detail: 'check inbox' })
   })
 })
 

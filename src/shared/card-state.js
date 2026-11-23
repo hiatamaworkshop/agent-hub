@@ -279,16 +279,57 @@ export function humanTurnOf(mb, ctx) {
   return { ...t, detail: why.join(', ') }
 }
 
+/** The detail of a Stopped whose request was handed before this Hub started (C142). */
+const RESTART_DETAIL = 'Hub restarted after the hand-over'
+
+/**
+ * The inbox route (C179): a Mailbox whose Attachment's client is not claude-code gets its Messages through the inbox tool, not pushed.
+ * The shim decides the route the same way, from clientInfo.name (routeFor in src/shim/instructions.ts): keep the two in step. An
+ * Attachment with no client counts as the inbox route, as the Hub's own default ('other') does.
+ * @param {any} mb
+ * @returns {boolean}
+ */
+export function isInboxRoute(mb) {
+  return !!mb.attachment && mb.attachment.client !== 'claude-code'
+}
+
+/**
+ * Whether a turn is known to be running for this Attachment (C179): its latest Event is not a turn end, and it is newer than this
+ * Attachment's latest turn end, or this Attachment has no turn end yet. An Event of an earlier Attachment does not count (staleEvent).
+ * @param {any} mb
+ * @param {any} ev the latest Event (ctx.lastEvent), or null
+ * @param {CardContext} ctx
+ * @returns {boolean}
+ */
+function turnRunningOf(mb, ev, ctx) {
+  if (!ev || staleEvent(mb, ev) || ev.kind === 'turn.end') return false
+  const end = ctx.lastTurnEnd && !staleEvent(mb, ctx.lastTurnEnd) ? ctx.lastTurnEnd : null
+  return !end || Date.parse(ev.ts) > Date.parse(end.ts)
+}
+
 /**
  * The state of a card (design.md §3.15): Needs you, Paused, Working, Stopped, Waiting on others, Idle, Offline.
  * Returns null for a Hub that sends no backlog (no state is shown). `since` is the time the state began; `until` (ms) is
- * when a Working that waits for background tasks stops being Working; `quiet` marks Working that is not a signal (only unread
- * messages); `guess` marks Working when the session has sent no Events, so its turn end is not known.
+ * when a Working that waits for background tasks stops being Working; `quiet` marks Working that is not a signal (unread
+ * messages on a claude-code Attachment, S10); `guess` marks Working when the session has sent no Events, so its turn end is not known.
+ * Unread Messages on the inbox route with no turn known to be running read Needs you, detail `check inbox` (C179).
  * @param {any} mb a Mailbox as the Hub describes it (attachment, backlog)
  * @param {CardContext} ctx
  * @returns {{ key: string, since?: string | null, until?: number | null, detail?: string, quiet?: boolean, guess?: boolean } | null}
  */
 export function stateOf(mb, ctx) {
+  return deriveState(mb, ctx, true)
+}
+
+/**
+ * The state with or without the unread rule. Without it (`withUnread` false) the rest says what the hand-over rule owes, which the
+ * unread rule (C179) asks for an inbox-route Mailbox.
+ * @param {any} mb
+ * @param {CardContext} ctx
+ * @param {boolean} withUnread
+ * @returns {{ key: string, since?: string | null, until?: number | null, detail?: string, quiet?: boolean, guess?: boolean } | null}
+ */
+function deriveState(mb, ctx, withUnread) {
   if (!mb.attachment) return { key: 'offline' }
   const human = humanTurnOf(mb, ctx)
   if (human.count) return { key: 'you', since: human.oldestAt, detail: human.detail }
@@ -311,11 +352,20 @@ export function stateOf(mb, ctx) {
   // restart, so it is shown as Stopped (Health check counts it), not as Working (C142). Only where the rule above
   // would say Working; a hand-over after a turn end is left to the rules below
   if (handedWorking && handed.open && ctx.hubStartedAt !== null && Date.parse(handed.ts) < ctx.hubStartedAt && !(end && Date.parse(end.ts) >= ctx.hubStartedAt)) {
-    return { key: 'stopped', since: handed.ts, detail: 'Hub restarted after the hand-over' }
+    return { key: 'stopped', since: handed.ts, detail: RESTART_DETAIL }
   }
   // Unread messages in a connected session are the agent's move, either just before they are handed over, or waiting for
-  // inbox. The signal is for the person's move only (C71), so this is Working without the frame or the pulse (quiet)
-  if (b.unread.count && !handedWorking) return { key: 'working', since: b.unread.oldestAt, quiet: true }
+  // inbox. The signal is for the person's move only (C71), so this is Working without the frame or the pulse (quiet).
+  // C179: that holds for a claude-code Attachment, which is pushed its Messages and whose turn Events show when it works (S10). On the
+  // inbox route nothing fetches the Messages unless the human asks, so they are the human's move: Needs you, check inbox, unless a
+  // turn is known to be running. Then what the hand-over rule already says is kept: Working (C187's Working?, a background task) and
+  // the C142 restart Stopped, which stays ahead of unread
+  if (withUnread && b.unread.count && !handedWorking) {
+    if (!isInboxRoute(mb) || turnRunningOf(mb, ev, ctx)) return { key: 'working', since: b.unread.oldestAt, quiet: true }
+    const owed = deriveState(mb, ctx, false)
+    if (owed && (owed.key === 'working' || (owed.key === 'stopped' && owed.detail === RESTART_DETAIL))) return owed
+    return { key: 'you', since: b.unread.oldestAt, detail: 'check inbox' }
+  }
   if (handedWorking) {
     // A session with no Events has no hooks, so its turn end is not known: a guess, and the card says so
     return { key: 'working', since: handed.ts, guess: !hasEvents, detail: summaryOf(ctx.messageOf(handed.seq)) }
@@ -346,7 +396,7 @@ export function stateOf(mb, ctx) {
       const t = Date.parse(newest)
       if (ctx.now - t < staleHandedHours(ctx.readRetentionHours) * 3600000) {
         if (ctx.hubStartedAt !== null && t < ctx.hubStartedAt && !(end && Date.parse(end.ts) >= ctx.hubStartedAt)) {
-          return { key: 'stopped', since: newest, detail: 'Hub restarted after the hand-over' }
+          return { key: 'stopped', since: newest, detail: RESTART_DETAIL }
         }
         return { key: 'working', since: newest, guess: true, detail: summaryOf(ctx.messageOf(b.awaitingReply.newestSeq)) }
       }
