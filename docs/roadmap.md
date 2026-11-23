@@ -24,6 +24,8 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C194
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -1261,7 +1263,12 @@ Raised 2026-11-21 in C191's run (design.md §6.1ak): the model replied with `to`
 - To decide: which of these, and whether a role or topic address that includes the sender among other recipients should also leave the sender out.
 
 ### C194. C142's restart check uses a turn end of an earlier Attachment
-Status: proposed
 
 Raised 2026-11-22 while checking C179's done-when against the code (out of scope for C179). In `stateOf` (`src/shared/card-state.js`), both C142 checks (the hand-over rule and C187's no-Events branch) test `!(end && Date.parse(end.ts) >= ctx.hubStartedAt)` without filtering `end` (`ctx.lastTurnEnd`) through `staleEvent(mb, end)`, while `hasEvents` does filter its Event. If an earlier Attachment ended a turn after the Hub started, and a new Attachment with no Events then took over an open request handed before the start, the stale turn end hides `Hub restarted after the hand-over`.
-- To decide: require `!staleEvent(mb, end)` in both checks (with a card-state test for the case), or record it as a known edge case.
+- Decided 2026-11-23 by the user: fix it (require a turn end of the current Attachment in both checks), not record it as an edge case. Other uses of the unfiltered `end` in `stateOf` (the hand-over rule's `hasEvents && end` comparison, background tasks) are out of scope; a finding there is filed separately.
+
+#### Done when
+- [ ] In `stateOf` (`src/shared/card-state.js`), both C142 restart checks (the hand-over rule and C187's no-Events branch) count a turn end since the Hub start only when `staleEvent(mb, end)` is false.
+- [ ] `src/shared/card-state.test.ts` has a test per check: a turn end of an earlier Attachment after the Hub start, a new Attachment with no Events, and an open request handed before the start read `Stopped`, detail `Hub restarted after the hand-over`; the same case with a turn end of the current Attachment after the start keeps the state it had before this change.
+- [ ] `npm test` and `npm run ui:check` pass, and `npm run docs:check` reports 0 errors and 0 warnings.
+- [ ] docs/proofs.md row S16 names the new tests, and design.md §3.15 says the turn end that ends the restart Stopped is the current Attachment's.
