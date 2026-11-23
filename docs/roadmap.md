@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C192
 - [ ] C189
 - [ ] C186
 
@@ -700,6 +699,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: docs/proofs.md (D1-D22 for protocol.md §4, S1-S23 for the card states, each with its proof or `none` and what it leaves out), `checkProofs` in `src/docs-check/repo.ts` (a warning for a named file that does not exist) with tests, CLAUDE.md (the map's line; "Updating the docs" says when a row changes), design.md §1.2 (the incidents row points to the map; Status stays Partly) and §3.12.
   - Checked: `npm test` 757 pass; `docs:check` 0 errors; the 71 quoted test names matched against the test files by a throwaway script. Done-when wording not changed.
   - Not checked: no reviewer read it; `docs:check` does not read test names, so a renamed test is caught only by reading.
+- [x] C192 A Message a Mailbox sends to itself (2026-11-23, closed after the review)
+  - Raised 2026-11-21 in C191's run (design.md §6.1ak): a light model replied with `to` set to its own Mailbox, so the Message was unread for itself and the browser's request stayed open. Decided 2026-11-23 (the user asked the planning session for the safer choice): (a), refuse it; roles and topics that include the sender are out of scope.
+  - Changed: `src/hub/hub.ts` (`postMessage` refuses a resolved `mailbox:<sender>` with 400 `self_address`, before anything is stored or acked), `src/hub/self-address.test.ts` (new, four cases), `src/hub/reply-target.test.ts` and `src/shim/shim.test.ts` (setups that sent to themselves), docs/protocol.md §1, §3 and §5. Commit `c21ac35`.
+  - Review: the reviewer pass was clean (no findings; Hub #866, on commit `c21ac35`). Out of scope: the unedited forward (`forwardMessage`) has no such check (filed as C195).
+  - Checked: `npm test` 878 pass, 0 fail; `npm run typecheck` 0 errors; `npm run docs:check` 0 errors.
+  - Not checked: a real client's reaction to the refusal text; the new tests were not run against the code without the fix; no run on a live Hub.
 - [x] C188 Forget a deleted Mailbox's sessions, so their Events do not resolve to it (2026-11-23, closed after the review)
   - Raised 2026-11-21 in C183's hand check: an Event whose `session_id` the Hub had learned for a Mailbox still resolved to that Mailbox after it was deleted, ahead of a live `X-Hub-Mailbox` (protocol.md §2 Event). Decided 2026-11-23 (the planning session, with no open question): `deleteMailbox` drops the session-map entries that point at the deleted name, and `GET /mailboxes/resolve` follows, since it reads the same map.
   - Changed: `src/hub/hub.ts` (`deleteMailbox`), `src/hub/events.test.ts` and `src/hub/app.test.ts` (one case each, C188), `docs/protocol.md` §2 Event (the forgetting).
@@ -1269,20 +1274,11 @@ Raised 2026-11-21 in C182's real check (design.md §6.1aj): usage.md tells Antig
 - [ ] docs/usage.md's Antigravity steps drop setting `HUB_TOKEN` and `HUB_MAILBOX` in the App's environment, and say to put the Mailbox name in the command.
 - [ ] `npm test` passes with 0 fail and `npm run docs:check` shows 0 errors.
 
-### C192. A Message a Mailbox sends to itself
+### C195. An unedited forward a Mailbox sends to itself
+Status: proposed
 
-Raised 2026-11-21 in C191's run (design.md §6.1ak): the model replied with `to` set to its own Mailbox (`mailbox:ollama-check`) and `reply_to` set to the browser's request. The Hub accepted it (`recipients` `ollama-check`), the Message counted as unread for the sender, and the card read `working` with `quiet` until the model read its own reply. The browser's request stayed open, since the Message was not to its sender (protocol.md §2 "Awaiting reply"). The Hub records every Mailbox that matches `to` as a recipient, the sender included, and nothing checks for the sender (`appendMessage` in `src/hub/store.ts`).
+Raised 2026-11-23 in the C192 review (reviewer, out of scope; Hub #866): C192 refuses a `POST /messages` whose resolved address is the sending Mailbox, but `forwardMessage` in `src/hub/hub.ts` (`POST /messages/:id/forward`, protocol.md §3) has no such check. A Mailbox that forwards with `X-Hub-Attachment` and `to: mailbox:<itself>` is accepted, and the copy is unread for itself.
 
-- Seen with a light model that ignored the instruction to omit `to`; a client that follows the instructions does not do it. A Mailbox sending a note to itself is not otherwise a use the docs describe.
-- Ideas: (a) refuse a `post_message` whose only recipient is the sender, with an error that says to omit `to` to answer the sender; (b) keep accepting it, but leave the sender out of the recipients so it is not unread for itself; (c) keep it as is and say so in protocol.md.
-- Decided 2026-11-23 (the user asked the planning session for the safer choice): (a). A refusal tells the sender, stores nothing and changes no other address, where (b) would quietly rewrite a Message's recipients. The check is on the resolved address, so a reply to one's own Message with `to` omitted (C86 allows the reply target) is refused too. Role and topic addresses that include the sender stay as they are; that is out of scope.
-
-#### Done when
-- [x] `postMessage` in `src/hub/hub.ts` refuses, with 400 and a code of its own, a Message from a Mailbox whose resolved address is `mailbox:<the sender>`; the error says to omit `to` to answer the request's sender, or to name another address. Nothing is stored or delivered.
-- [x] Tests: `to` set to the sender's own Mailbox is refused; a reply to the sender's own Message with `to` omitted is refused; a Message to a role that includes the sender is still accepted; a human sender is not affected.
-- [x] protocol.md §3 (the post route and its errors) and §5 (`post_message`) name the refusal and its code.
-- [x] `npm test` passes with 0 fail and `npm run docs:check` shows 0 errors.
-
-Facts (deployer, 2026-11-23): `src/hub/hub.ts` `postMessage` refuses a Message from a Mailbox whose resolved `to` is itself, after `to` is filled in (so a reply to its own Message with `to` omitted is refused too) and before anything is stored or acked: 400 `self_address`, with the text "… cannot send a Message to itself. To answer a request, omit to (the reply goes to the request's sender); otherwise name another address in to". Roles and topics that include the sender, and a `user` sender, are not refused. Tests: `src/hub/self-address.test.ts` (new): `to` set to the sender's own Mailbox refused, nothing stored, nothing received; a reply to its own request with `to` omitted refused and not stored; a role that includes the sender accepted; the person's Message to a Mailbox of the same name accepted. Three existing tests changed because they relied on a self-send in their setup: `src/hub/reply-target.test.ts` (the request to `other` is now sent by the person), and `src/shim/shim.test.ts` "post_message は受け取る Mailbox がない宛先に警告を添える" (the self-send becomes a refusal check through the shim, and the no-warning check uses a second attached Mailbox `peer`, detached again). The shim passes the Hub's message through unchanged, so `src/shim` has no code change. `docs/protocol.md` §1 (error codes), §3 (`POST /messages`) and §5 (`post_message`) name the refusal.
-Checked: `npm test` 878 pass, 0 fail; `npm run typecheck` 0 errors; `npm run docs:check` 31 items, 0 errors, 0 warnings.
-Not checked: no reviewer read it; no live Hub run; a real client's reaction to the refusal text (the `post_message` tool error) is not observed.
+- The shim has no forward tool (forwards come from the page, where the sender is the person, who is not affected), so only a client calling the HTTP route directly as a Mailbox can do it. Not seen in a run.
+- Idea: the same refusal as C192 (400 `self_address`, nothing stored or delivered) on the resolved address of a forward from a Mailbox; roles and topics stay out of scope, as in C192.
+- To decide: whether this is worth an item, or a line in protocol.md §3 saying the forward route does not check it.
