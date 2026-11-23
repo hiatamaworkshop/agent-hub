@@ -24,8 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C186
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -698,15 +696,22 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: docs/proofs.md (D1-D22 for protocol.md §4, S1-S23 for the card states, each with its proof or `none` and what it leaves out), `checkProofs` in `src/docs-check/repo.ts` (a warning for a named file that does not exist) with tests, CLAUDE.md (the map's line; "Updating the docs" says when a row changes), design.md §1.2 (the incidents row points to the map; Status stays Partly) and §3.12.
   - Checked: `npm test` 757 pass; `docs:check` 0 errors; the 71 quoted test names matched against the test files by a throwaway script. Done-when wording not changed.
   - Not checked: no reviewer read it; `docs:check` does not read test names, so a renamed test is caught only by reading.
+- [x] C186 The map's nodes show the `?` of a guessed Working (2026-11-23, closed after the review)
+  - Raised 2026-11-21 in the C183 review: the map's nodes said `Working` where the card said `Working?` for a session without Events. Decided 2026-11-23 (the planning session, no open question): the node takes `st.guess` the way the card does.
+  - Changed: `public/index.html` (`stateTitleOf`, shared by `stateLine` and `mapNodeOf`; the node adds `?` and the guess tooltip when `guess`), `tools/dev/ui-check.mjs` (map scenes `nevmap.deployer` and `ag.deployer`), docs/proofs.md S11. Commit `823dcab`.
+  - Review: the reviewer pass was clean (no findings; Hub #882, on commit `823dcab`).
+  - Checked: `npm test` 883 pass, 0 fail; `npm run ui:check` 0 NG (the 3 C186 checks ok); `npm run docs:check` 0 errors.
+  - Not checked: the `?` on a map node after an SSE re-render (the scenes are static; `mapNodeOf` rebuilds the node from the state on every render); only one guessed node is checked.
 - [x] C192 A Message a Mailbox sends to itself (2026-11-23, closed after the review)
   - Raised 2026-11-21 in C191's run (design.md §6.1ak): a light model replied with `to` set to its own Mailbox, so the Message was unread for itself and the browser's request stayed open. Decided 2026-11-23 (the user asked the planning session for the safer choice): (a), refuse it; roles and topics that include the sender are out of scope.
   - Changed: `src/hub/hub.ts` (`postMessage` refuses a resolved `mailbox:<sender>` with 400 `self_address`, before anything is stored or acked), `src/hub/self-address.test.ts` (new, four cases), `src/hub/reply-target.test.ts` and `src/shim/shim.test.ts` (setups that sent to themselves), docs/protocol.md §1, §3 and §5. Commit `c21ac35`.
   - Review: the reviewer pass was clean (no findings; Hub #866, on commit `c21ac35`). Out of scope: the unedited forward (`forwardMessage`) has no such check (filed as C195).
   - Checked: `npm test` 878 pass, 0 fail; `npm run typecheck` 0 errors; `npm run docs:check` 0 errors.
   - Not checked: a real client's reaction to the refusal text; the new tests were not run against the code without the fix; no run on a live Hub.
-- [x] C189 Name the Mailbox and the token for command hooks without the user's environment (2026-11-23, closed on the user's word; no reviewer connected)
+- [x] C189 Name the Mailbox and the token for command hooks without the user's environment (2026-11-23, closed after the review)
   - Raised 2026-11-21 in C182's real check: Antigravity's hooks read only the App's environment, so `HUB_TOKEN` and `HUB_MAILBOX` had to be set there, and a `HUB_MAILBOX` there reaches every shim started from it. Decided 2026-11-23 (the planning session, the user's choice): `--mailbox <name>` in the command; the token from agent-hub's `.env` when the environment has no `HUB_TOKEN`.
   - Changed: `tools/hooks/post-event.mjs` (`--mailbox`, the `.env` token), `tools/hooks/hooks.json` (`--mailbox <mailbox>` in both commands, no token), `src/hooks/post-event.test.ts` (describe "--mailbox and the .env token (C189)"), `docs/usage.md` (the Antigravity paragraph).
+  - Review: the reviewer pass was clean (no findings; Hub #881, on commit `ea383ff`; the close itself went in with `823dcab` before the review). Note: a `HUB_TOKEN` of only spaces counts as set in the poster and sends an empty Bearer, where the shim's `envValue` treats it as unset and reads `.env`.
   - Checked: `npm test` 883 pass, 0 fail; `npm run typecheck` 0 errors; `npm run docs:check` 0 errors.
   - Took the default without an answer: the poster reads only `HUB_TOKEN` from `.env`, narrower than the shim, which loads the whole file (so a `HUB_MAILBOX` in `.env` is not used).
   - Not checked: a real Antigravity run with the new `hooks.json`; the real `.env` (the tests use a temp copy of the poster).
@@ -1251,23 +1256,6 @@ Raised 2026-11-21 by Antigravity as reviewer (a draft written at the user's requ
 - Out of scope: waking an idle client with no turn running (C179 for the human's word, C12 for opt-in watchers).
 - To decide: which of (1), (2), (3) to take now, and whether to split them into separate items once decided ((2) looks like `held` until a client supports it).
 - Split (2026-11-21, the user's decision): (1) is C190, decided. (2) waits for a client that supports either signal; (3) occupies the conversation while it waits, so it waits until a real waiting turn shows the need.
-
-### C186. The map's nodes show the `?` of a guessed Working
-
-Raised 2026-11-21 in the C183 review (reviewer, out of scope): the cards show `Working?` for a session without Events (design.md §3.15), but the map's nodes render the state's label without the guess mark (`mapNodeOf` in `public/index.html`), so the map says `Working` where the card says `Working?`. The map is a second view of the same model (C78) and should not disagree with the cards.
-
-- Decided 2026-11-23 (the user asked the planning session to plan the items with no open question): the node takes `st.guess` the way the card does, with the same tooltip.
-
-#### Done when
-- [x] A map node whose state has `guess` shows the label with `?` (e.g. `Working?`), and a node without `guess` shows the label as before.
-- [x] The node's state label carries the same guess sentence in its tooltip as the card's state line.
-- [x] `npm run ui:check` has a map scene for a session without Events that checks the `?` on the node, and passes with 0 NG.
-- [x] docs/proofs.md names the new scene in the row for the guessed Working state.
-
-Facts (deployer, 2026-11-23): `public/index.html` has `stateTitleOf(st)`, the state's tooltip sentence (the definition's title, plus the guess sentence when `guess`, plus the quiet sentence when `quiet`); `stateLine` (the card's state line) and `mapNodeOf` (the map node's label) both use it, so the two read the same. `mapNodeOf` adds `?` to the label of a state with `guess` (`Working?`) and sets the label's tooltip to `stateTitleOf(st)` only for a guessed state; a node without `guess` is unchanged (its label, and no tooltip as before). `src/shared/card-state.js` is unchanged. `tools/dev/ui-check.mjs`: a block after the C179 scenes: `nevmap.deployer` (a session with no Events, its request handed → `Working?` on the card; the map node reads `Working?` with the guess sentence as its tooltip), and `ag.deployer` (with Events) reads `Idle` with no guess sentence. The map is opened for the read and closed again, as `mapScene` does. `docs/proofs.md` S11 names the new scene. design.md and usage.md do not say the map omits the `?`, so they are unchanged.
-Checked: `npm test` 883 pass, 0 fail; `npm run typecheck` 0 errors; `npm run ui:check` 245 ok, 0 NG (the 3 new C186 checks among them); `npm run docs:check` 30 items, 0 errors; its one warning is the close reminder for C186 (all done-when boxes checked; the section stays until the close request).
-Not checked: no reviewer read it; the map's `?` is checked on a single node (`nevmap.deployer`), not on the other map states.
-
 
 ### C195. An unedited forward a Mailbox sends to itself
 Status: proposed
