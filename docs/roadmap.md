@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C189
 - [ ] C186
 
 (Items with a status line are listed under "Items".)
@@ -705,6 +704,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - Review: the reviewer pass was clean (no findings; Hub #866, on commit `c21ac35`). Out of scope: the unedited forward (`forwardMessage`) has no such check (filed as C195).
   - Checked: `npm test` 878 pass, 0 fail; `npm run typecheck` 0 errors; `npm run docs:check` 0 errors.
   - Not checked: a real client's reaction to the refusal text; the new tests were not run against the code without the fix; no run on a live Hub.
+- [x] C189 Name the Mailbox and the token for command hooks without the user's environment (2026-11-23, closed on the user's word; no reviewer connected)
+  - Raised 2026-11-21 in C182's real check: Antigravity's hooks read only the App's environment, so `HUB_TOKEN` and `HUB_MAILBOX` had to be set there, and a `HUB_MAILBOX` there reaches every shim started from it. Decided 2026-11-23 (the planning session, the user's choice): `--mailbox <name>` in the command; the token from agent-hub's `.env` when the environment has no `HUB_TOKEN`.
+  - Changed: `tools/hooks/post-event.mjs` (`--mailbox`, the `.env` token), `tools/hooks/hooks.json` (`--mailbox <mailbox>` in both commands, no token), `src/hooks/post-event.test.ts` (describe "--mailbox and the .env token (C189)"), `docs/usage.md` (the Antigravity paragraph).
+  - Checked: `npm test` 883 pass, 0 fail; `npm run typecheck` 0 errors; `npm run docs:check` 0 errors.
+  - Took the default without an answer: the poster reads only `HUB_TOKEN` from `.env`, narrower than the shim, which loads the whole file (so a `HUB_MAILBOX` in `.env` is not used).
+  - Not checked: a real Antigravity run with the new `hooks.json`; the real `.env` (the tests use a temp copy of the poster).
 - [x] C188 Forget a deleted Mailbox's sessions, so their Events do not resolve to it (2026-11-23, closed after the review)
   - Raised 2026-11-21 in C183's hand check: an Event whose `session_id` the Hub had learned for a Mailbox still resolved to that Mailbox after it was deleted, ahead of a live `X-Hub-Mailbox` (protocol.md §2 Event). Decided 2026-11-23 (the planning session, with no open question): `deleteMailbox` drops the session-map entries that point at the deleted name, and `GET /mailboxes/resolve` follows, since it reads the same map.
   - Changed: `src/hub/hub.ts` (`deleteMailbox`), `src/hub/events.test.ts` and `src/hub/app.test.ts` (one case each, C188), `docs/protocol.md` §2 Event (the forgetting).
@@ -1254,29 +1259,15 @@ Raised 2026-11-21 in the C183 review (reviewer, out of scope): the cards show `W
 - Decided 2026-11-23 (the user asked the planning session to plan the items with no open question): the node takes `st.guess` the way the card does, with the same tooltip.
 
 #### Done when
-- [ ] A map node whose state has `guess` shows the label with `?` (e.g. `Working?`), and a node without `guess` shows the label as before.
-- [ ] The node's state label carries the same guess sentence in its tooltip as the card's state line.
-- [ ] `npm run ui:check` has a map scene for a session without Events that checks the `?` on the node, and passes with 0 NG.
-- [ ] docs/proofs.md names the new scene in the row for the guessed Working state.
+- [x] A map node whose state has `guess` shows the label with `?` (e.g. `Working?`), and a node without `guess` shows the label as before.
+- [x] The node's state label carries the same guess sentence in its tooltip as the card's state line.
+- [x] `npm run ui:check` has a map scene for a session without Events that checks the `?` on the node, and passes with 0 NG.
+- [x] docs/proofs.md names the new scene in the row for the guessed Working state.
 
-### C189. Name the Mailbox and the token for command hooks without the user's environment
+Facts (deployer, 2026-11-23): `public/index.html` has `stateTitleOf(st)`, the state's tooltip sentence (the definition's title, plus the guess sentence when `guess`, plus the quiet sentence when `quiet`); `stateLine` (the card's state line) and `mapNodeOf` (the map node's label) both use it, so the two read the same. `mapNodeOf` adds `?` to the label of a state with `guess` (`Working?`) and sets the label's tooltip to `stateTitleOf(st)` only for a guessed state; a node without `guess` is unchanged (its label, and no tooltip as before). `src/shared/card-state.js` is unchanged. `tools/dev/ui-check.mjs`: a block after the C179 scenes: `nevmap.deployer` (a session with no Events, its request handed → `Working?` on the card; the map node reads `Working?` with the guess sentence as its tooltip), and `ag.deployer` (with Events) reads `Idle` with no guess sentence. The map is opened for the read and closed again, as `mapScene` does. `docs/proofs.md` S11 names the new scene. design.md and usage.md do not say the map omits the `?`, so they are unchanged.
+Checked: `npm test` 883 pass, 0 fail; `npm run typecheck` 0 errors; `npm run ui:check` 245 ok, 0 NG (the 3 new C186 checks among them); `npm run docs:check` 30 items, 0 errors; its one warning is the close reminder for C186 (all done-when boxes checked; the section stays until the close request).
+Not checked: no reviewer read it; the map's `?` is checked on a single node (`nevmap.deployer`), not on the other map states.
 
-Raised 2026-11-21 in C182's real check (design.md §6.1aj): usage.md tells Antigravity users to set `HUB_TOKEN` and `HUB_MAILBOX` in the environment the App starts with, because `tools/hooks/post-event.mjs` reads only the environment. A `HUB_MAILBOX` there also reaches every shim started by hand from that environment (the shim takes `HUB_MAILBOX` first, design.md §3.3), so a Claude Code session would attach as the reviewer. The check used a gitignored wrapper in `.agents/` instead.
-
-- Idea: the poster takes `--mailbox <name>` and, without `HUB_TOKEN`, reads agent-hub's `.env` as the shim does (§3.8); the `hooks.json` template then names the Mailbox in the command, and usage.md drops the environment step.
-- Decided 2026-11-23 (the user asked the planning session for the safer choice): the poster reads agent-hub's `.env` only when `HUB_TOKEN` is not set, as the shim's `loadConfig` does, so the token is in neither `hooks.json` nor the App's environment. The template names the Mailbox (`--mailbox <name>`), not the role: a name resolves to one Mailbox, and nothing is set in an environment other shims inherit.
-
-#### Done when
-- [x] `tools/hooks/post-event.mjs` takes `--mailbox <name>` and sends it as `X-Hub-Mailbox`; with both the flag and `HUB_MAILBOX` set, the flag wins.
-- [x] Without `HUB_TOKEN` in the environment, the poster reads the token from agent-hub's `.env` (the same file the shim reads); with `HUB_TOKEN` set, it does not read `.env`.
-- [x] `src/hooks/post-event.test.ts` covers the flag, the flag over `HUB_MAILBOX`, and the `.env` fallback with `HUB_TOKEN` unset.
-- [x] `tools/hooks/hooks.json` carries `--mailbox <mailbox>` in each command, and contains no token.
-- [x] docs/usage.md's Antigravity steps drop setting `HUB_TOKEN` and `HUB_MAILBOX` in the App's environment, and say to put the Mailbox name in the command.
-- [x] `npm test` passes with 0 fail and `npm run docs:check` shows 0 errors.
-
-Facts (deployer, 2026-11-23): `tools/hooks/post-event.mjs` takes `--mailbox <name>` (a value that is not a Mailbox name, such as `<mailbox>`, is ignored) and sends it as `X-Hub-Mailbox`; it wins over `HUB_MAILBOX`, which is still the fallback. The token is `HUB_TOKEN` from the environment, else `HUB_TOKEN` from agent-hub's `.env`, read only when the environment has no `HUB_TOKEN` (the shim's `loadConfig` rule; the file is the root's `.env`, found from the script's own folder). One deliberate narrowing against the shim: the poster takes only `HUB_TOKEN` from `.env`, not the whole file, so a `HUB_MAILBOX` in `.env` cannot pick a Mailbox for a hook that names none (the shim loads the whole file with `process.loadEnvFile`). `HUB_PORT` is still read from the environment only. Tests: `src/hooks/post-event.test.ts`, describe "tools/hooks/post-event.mjs: --mailbox and the .env token (C189)": the flag, the flag over `HUB_MAILBOX`, an invalid flag value, the `.env` fallback (run from a temp copy of the script with its own `.env`), `.env`'s `HUB_MAILBOX` not used, and `.env` not read when `HUB_TOKEN` is set; the hooks.json test checks `--mailbox <mailbox>` and no token. `tools/hooks/hooks.json` has `--mailbox <mailbox>` in both commands. `docs/usage.md` Antigravity paragraph: the environment step is replaced by the command's `--mailbox`, and the token comes from `.env`.
-Checked: `npm test` 883 pass, 0 fail (the 5 new poster cases among them); `npm run typecheck` 0 errors; `npm run docs:check` 31 items, 0 errors; its one warning is the close reminder for C189 (all done-when boxes checked; the section stays until the close request).
-Not checked: no reviewer read it; no real Antigravity run with the new hooks.json; the real `agent-hub/.env` was not read by the tests (the .env cases use a temp copy).
 
 ### C195. An unedited forward a Mailbox sends to itself
 Status: proposed

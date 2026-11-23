@@ -2413,6 +2413,26 @@ try {
     verify('inbox 経路: ターンが走り出したあと (Event が届いた) は Working (静か。信号なし) (C179)', !!ibRunning && ibRunning.state.startsWith('Working') && !ibRunning.state.includes('?'), ibRunning)
     await ackAll(ib.attachmentId)
   }
+  // C186: the map's node takes the ? of a guessed Working, and the card's guess sentence as its tooltip. A session with Events has no ? on its
+  // node. The node is read in the map view (opened for the read, and closed again as mapScene does)
+  {
+    const nm = await api('POST', '/mailboxes/nevmap.deployer/attach', { client: 'antigravity-client', cwd })
+    await api('POST', '/messages', { kind: 'request', to: { type: 'mailbox', id: 'nevmap.deployer' }, body: 'GOAL: C186 the map shows the guess' })
+    await ackAll(nm.attachmentId)
+    await stateScene('C186: Events のない session の依頼が渡った (カードは推測の Working?)', 'nevmap.deployer', 'Working?')
+    const mapNodeState = async (name) => {
+      const was = (await cdp('Runtime.evaluate', { expression: "(() => { const was = !$('map').hidden; if (!was) $('mapToggle').click(); return was })()", returnByValue: true })).result.value
+      await sleep(1500)
+      const expr = `JSON.stringify((() => { const s = document.querySelector('#map .mapnode[data-name="${name}"] .state'); return s ? { text: s.textContent, title: s.title } : null })())`
+      const got = JSON.parse((await cdp('Runtime.evaluate', { expression: expr, returnByValue: true })).result.value)
+      if (!was) await cdp('Runtime.evaluate', { expression: "$('mapToggle').click()", returnByValue: true })
+      return got
+    }
+    const guessNode = await mapNodeState('nevmap.deployer')
+    verify('C186: 地図のノードにも Working? の ? が出て、カードと同じ推測の説明が tooltip に出る', !!guessNode && guessNode.text === 'Working?' && guessNode.title.includes('No hook events from this session'), guessNode)
+    const eventsNode = await mapNodeState('ag.deployer')
+    verify('C186: Events のある Mailbox のノードには ? が付かない (ag.deployer は Idle)', !!eventsNode && eventsNode.text === 'Idle' && !eventsNode.title.includes('No hook events'), eventsNode)
+  }
   // 接続しているセッションがひとつもない: Your move は出さない (C127)。すべて切り離してから地図を見る
   for (const mb of (await api('GET', '/mailboxes')).mailboxes) if (mb.attachment) await api('DELETE', `/attachments/${mb.attachment.attachmentId}`)
   await mapScene('接続しているセッションがない: Your move は出さない (C127)', 'no move')

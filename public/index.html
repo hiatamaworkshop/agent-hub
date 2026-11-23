@@ -2065,8 +2065,13 @@ function paintState(line) {
   const age = Number.isNaN(since) ? '' : ` · ${formatAge(Math.max(0, Date.now() - since))}`
   line.textContent = `${st.label}${line.dataset.guess ? '?' : ''}${line.dataset.detail ? ` (${line.dataset.detail})` : ''}${age}`
 }
-function stateLine(st) {
+// The tooltip sentence of a state (C186): the card's state line and a map node's label show the same one, so a guess or a quiet
+// Working reads the same on both
+function stateTitleOf(st) {
   const def = STATES.find((s) => s.key === st.key)
+  return def.title + (st.guess ? ' No hook events from this session, so the end of its turn is unknown (docs/usage.md: hooks).' : '') + (st.quiet ? ' Only unread messages so far: not a signal on the card (docs/usage.md).' : '')
+}
+function stateLine(st) {
   const line = el('div', `state st-${frameClass(st)}`)
   line.dataset.state = st.key
   if (st.since) line.dataset.since = st.since
@@ -2075,7 +2080,7 @@ function stateLine(st) {
   if (st.until) line.dataset.until = String(st.until)
   // 作業中の要旨は別の行に出す。ほかの状態の detail (質問・委ねた先) は状態の行に括弧で添える
   if (st.detail && st.key !== 'working') line.dataset.detail = st.detail
-  line.title = def.title + (st.guess ? ' No hook events from this session, so the end of its turn is unknown (docs/usage.md: hooks).' : '') + (st.quiet ? ' Only unread messages so far: not a signal on the card (docs/usage.md).' : '')
+  line.title = stateTitleOf(st)
   paintState(line)
   return line
 }
@@ -2965,7 +2970,9 @@ function mapNodeOf(mb) {
   n.append(head)
   if (st) {
     const def = STATES.find((s) => s.key === st.key)
-    const label = el('div', `state st-${frameClass(st)}`, def ? def.label : st.key)
+    // C186: a guessed Working reads Working? on the node too, with the card's guess sentence as its tooltip (the same stateTitleOf)
+    const label = el('div', `state st-${frameClass(st)}`, (def ? def.label : st.key) + (st.guess ? '?' : ''))
+    if (st.guess) label.title = stateTitleOf(st)
     // 人の番の card は、その card の最も古いもの (Needs you バッジと同じ飛び先。C106)
     if (st.key === 'you' && jumpable(mb.target)) jumpChip(label, () => jumpTo(mb.target), 'Click to find the oldest one in the thread.')
     n.append(label)
