@@ -24,6 +24,11 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C188
+- [ ] C192
+- [ ] C189
+- [ ] C186
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -1233,34 +1238,56 @@ Raised 2026-11-21 by Antigravity as reviewer (a draft written at the user's requ
 - Split (2026-11-21, the user's decision): (1) is C190, decided. (2) waits for a client that supports either signal; (3) occupies the conversation while it waits, so it waits until a real waiting turn shows the need.
 
 ### C186. The map's nodes show the `?` of a guessed Working
-Status: proposed
 
 Raised 2026-11-21 in the C183 review (reviewer, out of scope): the cards show `Working?` for a session without Events (design.md §3.15), but the map's nodes render the state's label without the guess mark (`mapNodeOf` in `public/index.html`), so the map says `Working` where the card says `Working?`. The map is a second view of the same model (C78) and should not disagree with the cards.
 
-- Idea: the node takes `st.guess` the way the card does, with the same tooltip; a `ui:check` map scene for a session without Events.
+- Decided 2026-11-23 (the user asked the planning session to plan the items with no open question): the node takes `st.guess` the way the card does, with the same tooltip.
+
+#### Done when
+- [ ] A map node whose state has `guess` shows the label with `?` (e.g. `Working?`), and a node without `guess` shows the label as before.
+- [ ] The node's state label carries the same guess sentence in its tooltip as the card's state line.
+- [ ] `npm run ui:check` has a map scene for a session without Events that checks the `?` on the node, and passes with 0 NG.
+- [ ] docs/proofs.md names the new scene in the row for the guessed Working state.
 
 ### C188. Forget a deleted Mailbox's sessions, so their Events do not resolve to it
-Status: proposed
 
 Raised 2026-11-21 in C183's hand check: an Event whose `session_id` the Hub had learned for a Mailbox (`sessionMailbox` in `src/hub/hub.ts`, from an attach or an Event resolved by `X-Hub-Mailbox`) still resolved to that Mailbox after it was deleted, ahead of the `X-Hub-Mailbox` header naming a live one (protocol.md §2 Event, the resolution order). `deleteMailbox` clears the detach, project-change and refusal records but not the session map. The map is in memory only, so a Hub restart clears it.
 
 - Seen only with a probe that reused a `session_id`; a real session keeps its id per conversation, so it would need a Mailbox deleted while the session that used it goes on (for example a session moved to another `HUB_MAILBOX` after its old Mailbox was deleted).
-- Idea: `deleteMailbox` drops the map entries that point at the deleted name; `GET /mailboxes/resolve` follows.
-- To decide: whether this is worth an item, or a line under "Known issues".
+- Decided 2026-11-23 (the user asked the planning session to plan the items with no open question): an item, not a known issue, since the fix is small and the wrong resolution beats a live header. `deleteMailbox` drops the map entries that point at the deleted name; `GET /mailboxes/resolve` follows, since it reads the same map.
+
+#### Done when
+- [ ] `deleteMailbox` in `src/hub/hub.ts` removes every `sessionMailbox` entry whose value is the deleted name, and leaves entries for other Mailboxes.
+- [ ] A test: after a session's id is learned for Mailbox A and A is deleted, an Event with that `session_id` and `X-Hub-Mailbox: B` resolves to B.
+- [ ] A test: after the same deletion, `GET /mailboxes/resolve` with that `session_id` and no header does not return A.
+- [ ] protocol.md §2 Event (the resolution order) says a deleted Mailbox's learned sessions are forgotten.
+- [ ] `npm test` passes with 0 fail and `npm run docs:check` shows 0 errors.
 
 ### C189. Name the Mailbox and the token for command hooks without the user's environment
-Status: proposed
 
 Raised 2026-11-21 in C182's real check (design.md §6.1aj): usage.md tells Antigravity users to set `HUB_TOKEN` and `HUB_MAILBOX` in the environment the App starts with, because `tools/hooks/post-event.mjs` reads only the environment. A `HUB_MAILBOX` there also reaches every shim started by hand from that environment (the shim takes `HUB_MAILBOX` first, design.md §3.3), so a Claude Code session would attach as the reviewer. The check used a gitignored wrapper in `.agents/` instead.
 
 - Idea: the poster takes `--mailbox <name>` and, without `HUB_TOKEN`, reads agent-hub's `.env` as the shim does (§3.8); the `hooks.json` template then names the Mailbox in the command, and usage.md drops the environment step.
-- To decide: whether the token may be read from `.env` by the poster (the shim already does), and whether the template should carry the Mailbox name or the role.
+- Decided 2026-11-23 (the user asked the planning session for the safer choice): the poster reads agent-hub's `.env` only when `HUB_TOKEN` is not set, as the shim's `loadConfig` does, so the token is in neither `hooks.json` nor the App's environment. The template names the Mailbox (`--mailbox <name>`), not the role: a name resolves to one Mailbox, and nothing is set in an environment other shims inherit.
+
+#### Done when
+- [ ] `tools/hooks/post-event.mjs` takes `--mailbox <name>` and sends it as `X-Hub-Mailbox`; with both the flag and `HUB_MAILBOX` set, the flag wins.
+- [ ] Without `HUB_TOKEN` in the environment, the poster reads the token from agent-hub's `.env` (the same file the shim reads); with `HUB_TOKEN` set, it does not read `.env`.
+- [ ] `src/hooks/post-event.test.ts` covers the flag, the flag over `HUB_MAILBOX`, and the `.env` fallback with `HUB_TOKEN` unset.
+- [ ] `tools/hooks/hooks.json` carries `--mailbox <mailbox>` in each command, and contains no token.
+- [ ] docs/usage.md's Antigravity steps drop setting `HUB_TOKEN` and `HUB_MAILBOX` in the App's environment, and say to put the Mailbox name in the command.
+- [ ] `npm test` passes with 0 fail and `npm run docs:check` shows 0 errors.
 
 ### C192. A Message a Mailbox sends to itself
-Status: proposed
 
 Raised 2026-11-21 in C191's run (design.md §6.1ak): the model replied with `to` set to its own Mailbox (`mailbox:ollama-check`) and `reply_to` set to the browser's request. The Hub accepted it (`recipients` `ollama-check`), the Message counted as unread for the sender, and the card read `working` with `quiet` until the model read its own reply. The browser's request stayed open, since the Message was not to its sender (protocol.md §2 "Awaiting reply"). The Hub records every Mailbox that matches `to` as a recipient, the sender included, and nothing checks for the sender (`appendMessage` in `src/hub/store.ts`).
 
 - Seen with a light model that ignored the instruction to omit `to`; a client that follows the instructions does not do it. A Mailbox sending a note to itself is not otherwise a use the docs describe.
 - Ideas: (a) refuse a `post_message` whose only recipient is the sender, with an error that says to omit `to` to answer the sender; (b) keep accepting it, but leave the sender out of the recipients so it is not unread for itself; (c) keep it as is and say so in protocol.md.
-- To decide: which of these, and whether a role or topic address that includes the sender among other recipients should also leave the sender out.
+- Decided 2026-11-23 (the user asked the planning session for the safer choice): (a). A refusal tells the sender, stores nothing and changes no other address, where (b) would quietly rewrite a Message's recipients. The check is on the resolved address, so a reply to one's own Message with `to` omitted (C86 allows the reply target) is refused too. Role and topic addresses that include the sender stay as they are; that is out of scope.
+
+#### Done when
+- [ ] `postMessage` in `src/hub/hub.ts` refuses, with 400 and a code of its own, a Message from a Mailbox whose resolved address is `mailbox:<the sender>`; the error says to omit `to` to answer the request's sender, or to name another address. Nothing is stored or delivered.
+- [ ] Tests: `to` set to the sender's own Mailbox is refused; a reply to the sender's own Message with `to` omitted is refused; a Message to a role that includes the sender is still accepted; a human sender is not affected.
+- [ ] protocol.md §3 (the post route and its errors) and §5 (`post_message`) name the refusal and its code.
+- [ ] `npm test` passes with 0 fail and `npm run docs:check` shows 0 errors.
