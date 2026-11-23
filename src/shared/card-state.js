@@ -340,6 +340,9 @@ function deriveState(mb, ctx, withUnread) {
   const b = mb.backlog
   if (!b || !('outgoing' in b)) return null // a Hub without the facts (before the backlog): no state
   const end = ctx.lastTurnEnd
+  // C194: the C142 restart checks count a turn end since the Hub's start only when it is this Attachment's (an earlier Attachment's
+  // turn end does not show that the request was answered, so it must not hide the restart)
+  const endHere = end && !staleEvent(mb, end) ? end : null
   const handed = b.lastHanded
   const fresh = handed && ctx.now - Date.parse(handed.ts) < staleHandedHours(ctx.readRetentionHours) * 3600000
   // With no turn end to compare with, a hand-over is Working only while it is in the window and its request is still open (C183):
@@ -351,7 +354,7 @@ function deriveState(mb, ctx, withUnread) {
   // A request handed before this Hub started, with no reply and no turn end since the start: the turn was lost with the
   // restart, so it is shown as Stopped (Health check counts it), not as Working (C142). Only where the rule above
   // would say Working; a hand-over after a turn end is left to the rules below
-  if (handedWorking && handed.open && ctx.hubStartedAt !== null && Date.parse(handed.ts) < ctx.hubStartedAt && !(end && Date.parse(end.ts) >= ctx.hubStartedAt)) {
+  if (handedWorking && handed.open && ctx.hubStartedAt !== null && Date.parse(handed.ts) < ctx.hubStartedAt && !(endHere && Date.parse(endHere.ts) >= ctx.hubStartedAt)) {
     return { key: 'stopped', since: handed.ts, detail: RESTART_DETAIL }
   }
   // Unread messages in a connected session are the agent's move, either just before they are handed over, or waiting for
@@ -395,7 +398,7 @@ function deriveState(mb, ctx, withUnread) {
     if (!hasEvents && handed && handed.open === false && !absent && typeof newest === 'string') {
       const t = Date.parse(newest)
       if (ctx.now - t < staleHandedHours(ctx.readRetentionHours) * 3600000) {
-        if (ctx.hubStartedAt !== null && t < ctx.hubStartedAt && !(end && Date.parse(end.ts) >= ctx.hubStartedAt)) {
+        if (ctx.hubStartedAt !== null && t < ctx.hubStartedAt && !(endHere && Date.parse(endHere.ts) >= ctx.hubStartedAt)) {
           return { key: 'stopped', since: newest, detail: RESTART_DETAIL }
         }
         return { key: 'working', since: newest, guess: true, detail: summaryOf(ctx.messageOf(b.awaitingReply.newestSeq)) }

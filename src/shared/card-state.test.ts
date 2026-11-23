@@ -200,6 +200,36 @@ describe('stateOf: unread Messages on the inbox route (C179)', () => {
   })
 })
 
+// C194: the two C142 restart checks count a turn end since the Hub's start only when it is this Attachment's. A new Attachment (s2, attached
+// at minute 4) that has no Events; the Hub started at minute 0. An earlier Attachment (s0) ended a turn at minute 2, after the start
+describe('stateOf: the C142 restart check and a turn end of another Attachment (C194)', () => {
+  const RESTART = 'Hub restarted after the hand-over'
+  const newAtt = { id: 'a6', sessionId: 's2', attachedAt: at(4), client: 'claude-code' }
+  const earlierEnd = ev('turn.end', at(2), { sessionId: 's0' })
+  const currentEnd = ev('turn.end', at(6), { sessionId: 's2' })
+  const awaiting = (ts: string, seq: number) => ({ count: 1, oldestAt: ts, oldestSeq: seq, newestAt: ts, newestSeq: seq })
+
+  it('the hand-over rule: an earlier Attachment\'s turn end after the start does not hide the restart → Stopped, the restart reason', () => {
+    const m = mb({ lastHanded: { ts: at(-5), seq: 7, open: true } }, newAtt)
+    assert.deepEqual(stateOf(m, ctx({ hubStartedAt: T0, lastTurnEnd: earlierEnd })), { key: 'stopped', since: at(-5), detail: RESTART })
+  })
+
+  it('the hand-over rule: a turn end of the current Attachment after the start keeps the state it had (Working?, the guess)', () => {
+    const m = mb({ lastHanded: { ts: at(-5), seq: 7, open: true } }, newAtt)
+    assert.deepEqual(stateOf(m, ctx({ hubStartedAt: T0, lastTurnEnd: currentEnd, messageOf: () => null })), { key: 'working', since: at(-5), guess: true, detail: '' })
+  })
+
+  it('C187\'s no-Events branch: an earlier Attachment\'s turn end after the start does not hide the restart → Stopped, the restart reason', () => {
+    const m = mb({ awaitingReply: awaiting(at(-5), 7), lastHanded: { ts: at(-1), seq: 8, open: false } }, newAtt)
+    assert.deepEqual(stateOf(m, ctx({ hubStartedAt: T0, lastTurnEnd: earlierEnd })), { key: 'stopped', since: at(-5), detail: RESTART })
+  })
+
+  it('C187\'s no-Events branch: a turn end of the current Attachment after the start keeps the state it had (Working?, the guess)', () => {
+    const m = mb({ awaitingReply: awaiting(at(-5), 7), lastHanded: { ts: at(-1), seq: 8, open: false } }, newAtt)
+    assert.deepEqual(stateOf(m, ctx({ hubStartedAt: T0, lastTurnEnd: currentEnd, messageOf: () => null })), { key: 'working', since: at(-5), guess: true, detail: '' })
+  })
+})
+
 // C183: a report to the person that asks for a decision or an action is Needs you, until the person writes to the Mailbox or the Mailbox
 // sends a report without such a section. Its body is read by the page (messageOf); a body the page does not hold counts for nothing
 describe('stateOf: Needs you from a report (C183)', () => {
