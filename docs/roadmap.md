@@ -24,8 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C194
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -709,6 +707,11 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: `src/shared/card-state.test.ts` (two cases in the C187 describe: an answered R2 with R1 still owed inside the window reads `working`, guess, since `newestAt`; the same past the window reads `stopped`, Stopped, no reply), docs/proofs.md S11 names both. `src/shared/card-state.js` is unchanged.
   - Checked: `npm test` 861 pass, 0 fail (both cases pass); `npm run docs:check` exit 0, no errors, no warnings.
   - Not checked: no reviewer read it (none connected).
+- [x] C194 C142's restart check uses a turn end of an earlier Attachment (2026-11-23, closed on the user's word; no reviewer connected)
+  - Raised 2026-11-22 while checking C179. Decided 2026-11-23 by the user: fix it, not record it as an edge case; the other unfiltered `end` uses in `stateOf` (the `hasEvents && end` comparison, background tasks) stay out of scope.
+  - Changed: `src/shared/card-state.js` (`endHere`: `ctx.lastTurnEnd` only when `staleEvent(mb, end)` is false, used by both restart checks), `src/shared/card-state.test.ts` (describe "stateOf: the C142 restart check and a turn end of another Attachment (C194)", four cases), docs/design.md §3.15, docs/proofs.md S16. Commit `d103161`.
+  - Checked: `npm test` 872 pass, 0 fail; `npm run typecheck` 0 errors; `npm run ui:check` 242 ok, 0 NG (deployer); the earlier-Attachment cases fail on a copy without the filter. `docs:check` 0 errors, one warning: the close reminder this close removes.
+  - Not checked: no reviewer read it (none connected); no ui:check scene for an earlier Attachment's turn end after the start (the unit cases carry it).
 - [x] C187 A notice after an open request turns a session without Events to Stopped, no reply (2026-11-22, closed after the review)
   - Raised 2026-11-21 in the C183 review, and reproduced in C191's run on the inbox path (design.md §6.1ak): a notice handed while a request was still open made `lastHanded` not open, so a session with no Events read `Stopped, no reply`.
   - Decided 2026-11-22 (the user chose this among three options the planning session offered): the rule reads the newest open request's time, `backlog.awaitingReply.newestAt`. Absent targets keep C109's result (the user's decision, 2026-11-22).
@@ -1261,18 +1264,3 @@ Raised 2026-11-21 in C191's run (design.md §6.1ak): the model replied with `to`
 - Seen with a light model that ignored the instruction to omit `to`; a client that follows the instructions does not do it. A Mailbox sending a note to itself is not otherwise a use the docs describe.
 - Ideas: (a) refuse a `post_message` whose only recipient is the sender, with an error that says to omit `to` to answer the sender; (b) keep accepting it, but leave the sender out of the recipients so it is not unread for itself; (c) keep it as is and say so in protocol.md.
 - To decide: which of these, and whether a role or topic address that includes the sender among other recipients should also leave the sender out.
-
-### C194. C142's restart check uses a turn end of an earlier Attachment
-
-Raised 2026-11-22 while checking C179's done-when against the code (out of scope for C179). In `stateOf` (`src/shared/card-state.js`), both C142 checks (the hand-over rule and C187's no-Events branch) test `!(end && Date.parse(end.ts) >= ctx.hubStartedAt)` without filtering `end` (`ctx.lastTurnEnd`) through `staleEvent(mb, end)`, while `hasEvents` does filter its Event. If an earlier Attachment ended a turn after the Hub started, and a new Attachment with no Events then took over an open request handed before the start, the stale turn end hides `Hub restarted after the hand-over`.
-- Decided 2026-11-23 by the user: fix it (require a turn end of the current Attachment in both checks), not record it as an edge case. Other uses of the unfiltered `end` in `stateOf` (the hand-over rule's `hasEvents && end` comparison, background tasks) are out of scope; a finding there is filed separately.
-
-#### Done when
-- [x] In `stateOf` (`src/shared/card-state.js`), both C142 restart checks (the hand-over rule and C187's no-Events branch) count a turn end since the Hub start only when `staleEvent(mb, end)` is false.
-- [x] `src/shared/card-state.test.ts` has a test per check: a turn end of an earlier Attachment after the Hub start, a new Attachment with no Events, and an open request handed before the start read `Stopped`, detail `Hub restarted after the hand-over`; the same case with a turn end of the current Attachment after the start keeps the state it had before this change.
-- [x] `npm test` and `npm run ui:check` pass, and `npm run docs:check` reports 0 errors and 0 warnings.
-- [x] docs/proofs.md row S16 names the new tests, and design.md §3.15 says the turn end that ends the restart Stopped is the current Attachment's.
-
-Facts (deployer, 2026-11-23): `src/shared/card-state.js` `stateOf` has `endHere` (`ctx.lastTurnEnd` only when `staleEvent(mb, end)` is false), and both restart checks (`handedWorking` with `handed.open` before the Hub's start, and C187's no-Events branch) use `endHere` instead of `end`. The other uses of `end` in `stateOf` (the `hasEvents && end` comparison, background tasks) are unchanged, as the scope says. Tests: `src/shared/card-state.test.ts`, describe "stateOf: the C142 restart check and a turn end of another Attachment (C194)": four cases, the earlier Attachment's turn end (Stopped, restart detail) and the current one's (kept: Working?, guess) for each check. Run against a copy without the filter, the two earlier-Attachment cases fail and the two current-Attachment cases pass. `docs/proofs.md` S16 names them; `docs/design.md` §3.15 has a C194 bullet after the C142 bullet.
-Checked: `npm test` 872 pass, 0 fail (4 new); `npm run typecheck` 0 errors; `npm run ui:check` 242 ok, 0 NG; `npm run docs:check` 33 items, 0 errors; the one warning is the close reminder for C194 (all done-when boxes are checked; the section stays until the close request).
-Not checked: no reviewer read it; no ui:check scene covers a turn end of an earlier Attachment after the start (the unit cases carry it); the other `end` uses in `stateOf` are out of scope (noted in the report).
