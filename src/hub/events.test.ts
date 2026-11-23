@@ -211,6 +211,21 @@ describe('Hub.addEvent: 記録と Mailbox の解決', () => {
     assert.equal(r.mailbox, 'deployer')
   })
 
+  it('C188: a deleted Mailbox\'s learned session does not resolve to it: its Event goes to the header\'s Mailbox; another Mailbox\'s session stays', () => {
+    const { hub } = setup()
+    const a = hub.attach('a', { client: 'claude-code', sessionId: 's1' })
+    hub.attach('c', { client: 'claude-code', sessionId: 's2' })
+    hub.detach(a.attachmentId)
+    hub.deleteMailbox('a')
+    hub.attach('b', { client: 'claude-code' })
+    const viaHeader = hub.addEvent(stop('s1'), 'b')
+    assert.ok('mailbox' in viaHeader)
+    assert.equal(viaHeader.mailbox, 'b')
+    const other = hub.addEvent(stop('s2'), 'b')
+    assert.ok('mailbox' in other)
+    assert.equal(other.mailbox, 'c', 'the session of Mailbox c is still learned')
+  })
+
   it('takeover で切り離されたセッションの Event に superseded を付ける。同じセッションの attach し直しは付けない', () => {
     const { hub } = setup()
     hub.attach('reviewer', { client: 'claude-code', sessionId: 'sA' })

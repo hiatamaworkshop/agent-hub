@@ -1257,11 +1257,15 @@ Raised 2026-11-21 in C183's hand check: an Event whose `session_id` the Hub had 
 - Decided 2026-11-23 (the user asked the planning session to plan the items with no open question): an item, not a known issue, since the fix is small and the wrong resolution beats a live header. `deleteMailbox` drops the map entries that point at the deleted name; `GET /mailboxes/resolve` follows, since it reads the same map.
 
 #### Done when
-- [ ] `deleteMailbox` in `src/hub/hub.ts` removes every `sessionMailbox` entry whose value is the deleted name, and leaves entries for other Mailboxes.
-- [ ] A test: after a session's id is learned for Mailbox A and A is deleted, an Event with that `session_id` and `X-Hub-Mailbox: B` resolves to B.
-- [ ] A test: after the same deletion, `GET /mailboxes/resolve` with that `session_id` and no header does not return A.
-- [ ] protocol.md §2 Event (the resolution order) says a deleted Mailbox's learned sessions are forgotten.
-- [ ] `npm test` passes with 0 fail and `npm run docs:check` shows 0 errors.
+- [x] `deleteMailbox` in `src/hub/hub.ts` removes every `sessionMailbox` entry whose value is the deleted name, and leaves entries for other Mailboxes.
+- [x] A test: after a session's id is learned for Mailbox A and A is deleted, an Event with that `session_id` and `X-Hub-Mailbox: B` resolves to B.
+- [x] A test: after the same deletion, `GET /mailboxes/resolve` with that `session_id` and no header does not return A.
+- [x] protocol.md §2 Event (the resolution order) says a deleted Mailbox's learned sessions are forgotten.
+- [x] `npm test` passes with 0 fail and `npm run docs:check` shows 0 errors.
+
+Facts (deployer, 2026-11-23): `src/hub/hub.ts` `deleteMailbox` now deletes each `sessionMailbox` entry whose value is the deleted name (after the detach, project-change and refusal records); entries of other Mailboxes stay. Tests: `src/hub/events.test.ts` "C188: a deleted Mailbox's learned session does not resolve to it: its Event goes to the header's Mailbox; another Mailbox's session stays" (session s1 of Mailbox a, a deleted, an Event with `X-Hub-Mailbox: b` → b; session s2 of Mailbox c still → c), and `src/hub/app.test.ts` "C188: after the Mailbox that learned the session is deleted, the resolve with that session_id and no header does not return it" (`GET /mailboxes/resolve` → null, not a). `docs/protocol.md` §2 Event states the forgetting. No convention changed (conventions-log not touched).
+Checked: `npm test` 874 pass, 0 fail (the 2 new cases among them); `npm run typecheck` 0 errors; `npm run docs:check` 32 items, 0 errors, 0 warnings.
+Not checked: no reviewer read it; the `GET` case runs the Hub in process (no live Hub).
 
 ### C189. Name the Mailbox and the token for command hooks without the user's environment
 

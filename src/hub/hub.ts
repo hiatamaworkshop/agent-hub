@@ -346,6 +346,8 @@ export class Hub {
     this.lastDetached.delete(name)
     this.projectChanges.delete(name)
     this.attachRefusals.delete(name)
+    // C188: the sessions learned for this Mailbox are forgotten, so their later Events do not resolve to it (protocol.md §2 Event)
+    for (const [sessionId, owner] of this.sessionMailbox) if (owner === name) this.sessionMailbox.delete(sessionId)
     this.emitUi('mailbox.deleted', { name })
   }
 

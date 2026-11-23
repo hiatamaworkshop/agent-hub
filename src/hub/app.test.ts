@@ -386,6 +386,15 @@ describe('GET /mailboxes/resolve (C161)', () => {
     assert.equal(listed.mailboxes.find((m) => m.name === 'demo')!.attachment!.sessionId, undefined)
   })
 
+  it('C188: after the Mailbox that learned the session is deleted, the resolve with that session_id and no header does not return it', async () => {
+    const { hub, app } = setup()
+    const a = hub.attach('a', { client: 'claude-code', sessionId: 's-1' })
+    assert.equal(await resolveOf(app, 'session_id=s-1'), 'a')
+    hub.detach(a.attachmentId)
+    hub.deleteMailbox('a')
+    assert.equal(await resolveOf(app, 'session_id=s-1'), null)
+  })
+
   it('needs the token', async () => {
     const { app } = setup()
     assert.equal((await app.request('/mailboxes/resolve')).status, 401)
