@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-- [ ] C188
 - [ ] C192
 - [ ] C189
 - [ ] C186
@@ -701,6 +700,12 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: docs/proofs.md (D1-D22 for protocol.md §4, S1-S23 for the card states, each with its proof or `none` and what it leaves out), `checkProofs` in `src/docs-check/repo.ts` (a warning for a named file that does not exist) with tests, CLAUDE.md (the map's line; "Updating the docs" says when a row changes), design.md §1.2 (the incidents row points to the map; Status stays Partly) and §3.12.
   - Checked: `npm test` 757 pass; `docs:check` 0 errors; the 71 quoted test names matched against the test files by a throwaway script. Done-when wording not changed.
   - Not checked: no reviewer read it; `docs:check` does not read test names, so a renamed test is caught only by reading.
+- [x] C188 Forget a deleted Mailbox's sessions, so their Events do not resolve to it (2026-11-23, closed after the review)
+  - Raised 2026-11-21 in C183's hand check: an Event whose `session_id` the Hub had learned for a Mailbox still resolved to that Mailbox after it was deleted, ahead of a live `X-Hub-Mailbox` (protocol.md §2 Event). Decided 2026-11-23 (the planning session, with no open question): `deleteMailbox` drops the session-map entries that point at the deleted name, and `GET /mailboxes/resolve` follows, since it reads the same map.
+  - Changed: `src/hub/hub.ts` (`deleteMailbox`), `src/hub/events.test.ts` and `src/hub/app.test.ts` (one case each, C188), `docs/protocol.md` §2 Event (the forgetting).
+  - Review: the reviewer pass was clean (no findings; Hub #856, on commit `a9c6bfb`).
+  - Checked: `npm test` 874 pass, 0 fail; `npm run typecheck` 0 errors; `npm run docs:check` 0 errors.
+  - Not checked: the new tests were not run against the code without the fix (the reviewer judged from the code that both would fail); no run on a live Hub.
 - [x] C179 A "check your inbox" nudge as one health-check concept, for clients that cannot be woken (2026-11-23, closed on the user's word; no reviewer connected)
   - Raised 2026-11-20 from a question about a desktop-app agent (Google Antigravity) joining a team. Decided 2026-11-22 (the user chose this among three options the planning session offered): (2) only, on the page. The last `inbox()` time on the Attachment ((1)) stays an idea for later; the Message nudge ((3)) stays dropped.
   - Changed: `src/shared/card-state.js` (`isInboxRoute`, `turnRunningOf`, `stateOf` calling `deriveState(mb, ctx, withUnread)`: unread on the inbox route with no turn running reads `Needs you`, detail `check inbox`; a claude-code Attachment keeps quiet Working), `src/shared/card-state.test.ts` (describe "stateOf: unread Messages on the inbox route (C179)"), `src/shim/instructions.ts` (comment: `routeFor` names `isInboxRoute`), `tools/dev/ui-check.mjs` (scene `ib.deployer`), docs/design.md §3.15, docs/usage.md, docs/proofs.md (S10 updated, S25 added).
@@ -1248,24 +1253,6 @@ Raised 2026-11-21 in the C183 review (reviewer, out of scope): the cards show `W
 - [ ] The node's state label carries the same guess sentence in its tooltip as the card's state line.
 - [ ] `npm run ui:check` has a map scene for a session without Events that checks the `?` on the node, and passes with 0 NG.
 - [ ] docs/proofs.md names the new scene in the row for the guessed Working state.
-
-### C188. Forget a deleted Mailbox's sessions, so their Events do not resolve to it
-
-Raised 2026-11-21 in C183's hand check: an Event whose `session_id` the Hub had learned for a Mailbox (`sessionMailbox` in `src/hub/hub.ts`, from an attach or an Event resolved by `X-Hub-Mailbox`) still resolved to that Mailbox after it was deleted, ahead of the `X-Hub-Mailbox` header naming a live one (protocol.md §2 Event, the resolution order). `deleteMailbox` clears the detach, project-change and refusal records but not the session map. The map is in memory only, so a Hub restart clears it.
-
-- Seen only with a probe that reused a `session_id`; a real session keeps its id per conversation, so it would need a Mailbox deleted while the session that used it goes on (for example a session moved to another `HUB_MAILBOX` after its old Mailbox was deleted).
-- Decided 2026-11-23 (the user asked the planning session to plan the items with no open question): an item, not a known issue, since the fix is small and the wrong resolution beats a live header. `deleteMailbox` drops the map entries that point at the deleted name; `GET /mailboxes/resolve` follows, since it reads the same map.
-
-#### Done when
-- [x] `deleteMailbox` in `src/hub/hub.ts` removes every `sessionMailbox` entry whose value is the deleted name, and leaves entries for other Mailboxes.
-- [x] A test: after a session's id is learned for Mailbox A and A is deleted, an Event with that `session_id` and `X-Hub-Mailbox: B` resolves to B.
-- [x] A test: after the same deletion, `GET /mailboxes/resolve` with that `session_id` and no header does not return A.
-- [x] protocol.md §2 Event (the resolution order) says a deleted Mailbox's learned sessions are forgotten.
-- [x] `npm test` passes with 0 fail and `npm run docs:check` shows 0 errors.
-
-Facts (deployer, 2026-11-23): `src/hub/hub.ts` `deleteMailbox` now deletes each `sessionMailbox` entry whose value is the deleted name (after the detach, project-change and refusal records); entries of other Mailboxes stay. Tests: `src/hub/events.test.ts` "C188: a deleted Mailbox's learned session does not resolve to it: its Event goes to the header's Mailbox; another Mailbox's session stays" (session s1 of Mailbox a, a deleted, an Event with `X-Hub-Mailbox: b` → b; session s2 of Mailbox c still → c), and `src/hub/app.test.ts` "C188: after the Mailbox that learned the session is deleted, the resolve with that session_id and no header does not return it" (`GET /mailboxes/resolve` → null, not a). `docs/protocol.md` §2 Event states the forgetting. No convention changed (conventions-log not touched).
-Checked: `npm test` 874 pass, 0 fail (the 2 new cases among them); `npm run typecheck` 0 errors; `npm run docs:check` 32 items, 0 errors, 0 warnings.
-Not checked: no reviewer read it; the `GET` case runs the Hub in process (no live Hub).
 
 ### C189. Name the Mailbox and the token for command hooks without the user's environment
 
