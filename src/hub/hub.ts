@@ -215,6 +215,11 @@ export class Hub {
     if (original && from.type === 'mailbox') this.checkReplyTarget(from.id, original)
     // to の省略は replyTo があるときだけ許す (schema で検証済み)。元の送り手に返す
     const to = this.scopeRole(input.to ?? { type: original!.from.type, id: original!.from.id }, from)
+    // C192: a Mailbox does not send a Message to itself. The check is on the resolved address, so a reply to its own Message with to omitted is refused too.
+    // Nothing is stored or delivered. A role or topic that includes the sender is not this case; a human sender is not affected
+    if (from.type === 'mailbox' && to.type === 'mailbox' && to.id === from.id) {
+      throw new HubError(400, 'self_address', `${from.id} cannot send a Message to itself. To answer a request, omit to (the reply goes to the request's sender); otherwise name another address in to`)
+    }
     // やりとりの Message なら、store が追記と同時に送り手の受領の確認を進める (C39、protocol.md §4)
     const post = () => this.deliver(this.store.appendMessage({ ...input, to, from }))
     return from.type === 'mailbox' ? this.acking(from.id, post) : post()

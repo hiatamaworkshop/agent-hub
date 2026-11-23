@@ -42,9 +42,10 @@ describe('返信の replyTo は、受け取った Message か自分の Message �
 
   it('受け取った依頼がなければ、そう言う (返信先の案内は出さず、to を指定するよう示す)', async () => {
     const { hub, post } = setup()
-    const other = hub.attach('other', { client: 'claude-code' })
+    hub.attach('other', { client: 'claude-code' })
     const empty = hub.attach('empty', { client: 'claude-code' })
-    const req = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'other' }, body: 'x' }, hub.senderOf(other.attachmentId))
+    // sent by the person, not by other: a Mailbox sending to itself is refused (C192)
+    const req = hub.postMessage({ kind: 'request', to: { type: 'mailbox', id: 'other' }, body: 'x' }, user)
     const res = await post({ kind: 'reply', replyTo: req.id, body: 'r' }, { 'x-hub-attachment': empty.attachmentId })
     const err = (await res.json()) as { error: string; message: string }
     assert.equal(res.status, 400)

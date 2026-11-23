@@ -185,9 +185,16 @@ describe('shim と Hub の結合', () => {
     const out = JSON.parse(r.text) as Record<string, unknown>
     assert.deepEqual(out.recipients, [])
     assert.match(String(out.warning), /topic:nobody/)
-    const self = JSON.parse((await call('post_message', { kind: 'notice', body: 'x', to: 'mailbox:test-mb' })).text) as Record<string, unknown>
-    assert.deepEqual(self.recipients, ['test-mb'])
+    // C192: a Message to the shim's own Mailbox is refused (self_address), and the tool says so; a connected other Mailbox is not warned about
+    const own = await call('post_message', { kind: 'notice', body: 'x', to: 'mailbox:test-mb' })
+    assert.equal(own.isError, true)
+    assert.match(own.text, /self_address/)
+    assert.match(own.text, /cannot send a Message to itself/)
+    const peer = hub.attach('peer', { client: 'claude-code' })
+    const self = JSON.parse((await call('post_message', { kind: 'notice', body: 'x', to: 'mailbox:peer' })).text) as Record<string, unknown>
+    assert.deepEqual(self.recipients, ['peer'])
     assert.equal(self.warning, undefined, '接続中の配信先には警告しない')
+    hub.detach(peer.attachmentId)
   })
 
   it('post_message は配信先が全部未接続なら、受理されて attach 後に届くと警告する (C49)', async () => {
