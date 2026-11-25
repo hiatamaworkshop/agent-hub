@@ -241,11 +241,17 @@ export class Hub {
   forwardMessage(id: string, to: Address, from: Sender): Message {
     const src = this.store.getMessage(id)
     if (!src) throw new HubError(404, 'message_not_found', `message ${id} does not exist`)
+    const resolved = this.scopeRole(to, from)
+    // C195: the same refusal as C192 (postMessage). A Mailbox does not forward an unedited Message to itself; checked on the resolved address,
+    // before anything is stored or delivered. A role or topic that includes the sender is not this case; a human sender is not affected
+    if (from.type === 'mailbox' && resolved.type === 'mailbox' && resolved.id === from.id) {
+      throw new HubError(400, 'self_address', `${from.id} cannot forward a Message to itself. Name another address in to`)
+    }
     return this.deliver(
       this.store.appendMessage({
         kind: src.kind,
         from,
-        to: this.scopeRole(to, from),
+        to: resolved,
         body: src.body,
         ...(src.replyTo ? { replyTo: src.replyTo } : {}),
         forwardedFrom: src.forwardedFrom ?? src.id,

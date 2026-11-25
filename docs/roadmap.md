@@ -24,7 +24,6 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
-
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -697,6 +696,9 @@ In the order they will be taken up. Only items without a status line and blocked
   - Changed: docs/proofs.md (D1-D22 for protocol.md §4, S1-S23 for the card states, each with its proof or `none` and what it leaves out), `checkProofs` in `src/docs-check/repo.ts` (a warning for a named file that does not exist) with tests, CLAUDE.md (the map's line; "Updating the docs" says when a row changes), design.md §1.2 (the incidents row points to the map; Status stays Partly) and §3.12.
   - Checked: `npm test` 757 pass; `docs:check` 0 errors; the 71 quoted test names matched against the test files by a throwaway script. Done-when wording not changed.
   - Not checked: no reviewer read it; `docs:check` does not read test names, so a renamed test is caught only by reading.
+- [x] C195 An unedited forward a Mailbox sends to itself (2026-11-25, closed on the user's word; no reviewer connected)
+  - Checked: `forwardMessage` in `src/hub/hub.ts` refuses a Mailbox's forward to itself with 400 `self_address` before anything is stored or delivered; 5 new tests in `src/hub/self-address.test.ts`; `npm test` 888 pass / 0 fail; `npm run typecheck` clean; `npm run docs:check` 0 errors. docs/protocol.md §1 and §3 name the refusal. Done-when wording not changed.
+  - Not checked: no reviewer read it (none connected; the close is on the user's word).
 - [x] C196 Re-check how Claude Code treats a channel server on MCP `2026-07-28` (2026-11-25, closed on the user's word; no reviewer connected)
   - Raised 2026-11-25 in the planning session, from the update of design.md §7 (SEP-3415 Final, the Events extension at Beta): the SDK 1.x pin rested on the official docs of 2026-10-16, never run.
   - Found (design.md §6.1al, Claude Code 2.1.331 and 2.1.332): a `2026-07-28` channel server is registered (banner shown) but its notifications are not delivered; `MCP_PROTOCOL_NEGOTIATION=legacy` and the SDK 1.x fallback to `2025-11-25` still deliver. On `2026-07-28` the client's name and capabilities arrive in each request's `_meta`, `instructions` through `server/discover`; no Events extension advertised. SDK v2's `serveStdio(factory)` serves both eras from one server.
@@ -1263,15 +1265,6 @@ Raised 2026-11-21 by Antigravity as reviewer (a draft written at the user's requ
 - Out of scope: waking an idle client with no turn running (C179 for the human's word, C12 for opt-in watchers).
 - To decide: which of (1), (2), (3) to take now, and whether to split them into separate items once decided ((2) looks like `held` until a client supports it).
 - Split (2026-11-21, the user's decision): (1) is C190, decided. (2) waits for a client that supports either signal; (3) occupies the conversation while it waits, so it waits until a real waiting turn shows the need.
-
-### C195. An unedited forward a Mailbox sends to itself
-Status: proposed
-
-Raised 2026-11-23 in the C192 review (reviewer, out of scope; Hub #866): C192 refuses a `POST /messages` whose resolved address is the sending Mailbox, but `forwardMessage` in `src/hub/hub.ts` (`POST /messages/:id/forward`, protocol.md §3) has no such check. A Mailbox that forwards with `X-Hub-Attachment` and `to: mailbox:<itself>` is accepted, and the copy is unread for itself.
-
-- The shim has no forward tool (forwards come from the page, where the sender is the person, who is not affected), so only a client calling the HTTP route directly as a Mailbox can do it. Not seen in a run.
-- Idea: the same refusal as C192 (400 `self_address`, nothing stored or delivered) on the resolved address of a forward from a Mailbox; roles and topics stay out of scope, as in C192.
-- To decide: whether this is worth an item, or a line in protocol.md §3 saying the forward route does not check it.
 
 ### C197. Move the shim to MCP `2026-07-28` (SDK 2.x), keeping the `2025-11-25` path
 Status: held(until a Claude Code release delivers channel notifications from a `2026-07-28` server; 2.1.332 does not, design.md §6.1al)
