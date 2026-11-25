@@ -24,6 +24,8 @@ Open items are written as `### C<n>. Title` sections under "Items" at the end (d
 
 In the order they will be taken up. Only items without a status line and blocked items are listed (titles come from the index). Reordering is a human's decision.
 
+- [ ] C196
+
 (Items with a status line are listed under "Items".)
 
 ## P0: One round trip in one session (done 2026-10-16)
@@ -1265,3 +1267,27 @@ Raised 2026-11-23 in the C192 review (reviewer, out of scope; Hub #866): C192 re
 - The shim has no forward tool (forwards come from the page, where the sender is the person, who is not affected), so only a client calling the HTTP route directly as a Mailbox can do it. Not seen in a run.
 - Idea: the same refusal as C192 (400 `self_address`, nothing stored or delivered) on the resolved address of a forward from a Mailbox; roles and topics stay out of scope, as in C192.
 - To decide: whether this is worth an item, or a line in protocol.md §3 saying the forward route does not check it.
+
+### C196. Re-check how Claude Code treats a channel server on MCP `2026-07-28`
+
+Raised 2026-11-25 in the planning session, from the update of design.md §7 (SEP-3415 Final, the Events extension at Beta). The shim stays on SDK 1.x because, in §6.1b (2026-10-16), Claude Code's v2 runtime did not register a channel server that negotiated `2026-07-28`. Everything that would move the shim forward (SDK 2.x, the Events extension, C184 (2)) rests on that fact, and it has not been checked since. This item only finds out and records; it does not change the shim (C197).
+
+- SDK v2 is published as separate packages (`@modelcontextprotocol/server` / `client` / `core`, 2.4.0 on 2026-11-25); `@modelcontextprotocol/sdk` stays on 1.32.x.
+- `2026-07-28` has no `initialize`: the protocol version and client capabilities travel in each request's `_meta`, and the server answers `server/discover`. The shim reads `clientInfo.name` (route, §3.7), returns `instructions` and reads `roots` in its own `initialize` handler (`src/shim/main.ts`).
+- Probe with `tools/probe/` (or a second probe beside it), never the Hub on 7777.
+
+#### Done when
+- [ ] On the current Claude Code (version recorded), a probe channel server on SDK 2.x that negotiates `2026-07-28` was started with `--dangerously-load-development-channels`, and whether it is registered as a channel (the banner line, B1) and whether a notification wakes an idle session (B2) is recorded in a new design.md §6 entry
+- [ ] The same entry records, from the probe's log, where the client's name, version and capabilities arrive under `2026-07-28` (`server/discover` params, per-request `_meta`, or nowhere), and whether the server's `instructions` reach the session
+- [ ] The same entry records whether an SDK 1.32.x server still falls back to `2025-11-25` and is registered, and whether `MCP_PROTOCOL_NEGOTIATION=legacy` is still honoured
+- [ ] design.md §6.1b's "pitfall of the v2 runtime", §5's row on the SDK pin and §6.3 (B1, B3) are corrected or confirmed with the date, pointing at the new entry
+- [ ] The probe changes (if any) are committed with a line in `tools/probe/README.md` on how to run the `2026-07-28` case; `npm test` and `npm run docs:check` pass
+
+### C197. Move the shim to MCP `2026-07-28` (SDK 2.x), keeping the `2025-11-25` path
+Status: held(after C196; decide once it shows a channel server on `2026-07-28` is registered)
+
+Raised 2026-11-25 with C196. If Claude Code registers a channel server that negotiates `2026-07-28`, the shim can move to SDK 2.x, which the Events extension (design.md §7, C184 (2)) requires.
+
+- Idea: take the route, the instructions and the `roots` handling out of the `initialize` handler into one function fed by whichever form arrives (`initialize` under `2025-11-25`, `server/discover` / per-request `_meta` under `2026-07-28`, as C196 records). Keep answering `2025-11-25`, since the `inbox()` clients (Antigravity §6.1ai, Ollama §6.1ak) may stay on it.
+- To decide after C196: whether SDK 2.x can still serve `2025-11-25` from the same server, or two transports are needed; whether the route can be chosen by a capability instead of `clientInfo.name` (C184 (2)); the order against C184.
+- If C196 shows the v2 runtime still does not register it, this stays held until a Claude Code release does (§6.3 re-check).
