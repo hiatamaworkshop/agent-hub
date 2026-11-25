@@ -1275,19 +1275,21 @@ Raised 2026-11-25 in the planning session, from the update of design.md §7 (SEP
 - SDK v2 is published as separate packages (`@modelcontextprotocol/server` / `client` / `core`, 2.4.0 on 2026-11-25); `@modelcontextprotocol/sdk` stays on 1.32.x.
 - `2026-07-28` has no `initialize`: the protocol version and client capabilities travel in each request's `_meta`, and the server answers `server/discover`. The shim reads `clientInfo.name` (route, §3.7), returns `instructions` and reads `roots` in its own `initialize` handler (`src/shim/main.ts`).
 - Probe with `tools/probe/` (or a second probe beside it), never the Hub on 7777.
+- Run 2026-11-25 in the planning session, the user starting Claude Code (2.1.331, then 2.1.332 after an auto-update): design.md §6.1al. A `2026-07-28` channel server is registered (banner shown) but its notifications are not delivered; `legacy` and the SDK 1.x fallback still deliver. The client's facts arrive in each request's `_meta`; `instructions` arrive through `server/discover`. Probe: `tools/probe/v2/` (its own `package.json`, SDK v2 not added to the main dependencies). No reviewer connected: the close waits for the user's word.
 
 #### Done when
-- [ ] On the current Claude Code (version recorded), a probe channel server on SDK 2.x that negotiates `2026-07-28` was started with `--dangerously-load-development-channels`, and whether it is registered as a channel (the banner line, B1) and whether a notification wakes an idle session (B2) is recorded in a new design.md §6 entry
-- [ ] The same entry records, from the probe's log, where the client's name, version and capabilities arrive under `2026-07-28` (`server/discover` params, per-request `_meta`, or nowhere), and whether the server's `instructions` reach the session
-- [ ] The same entry records whether an SDK 1.32.x server still falls back to `2025-11-25` and is registered, and whether `MCP_PROTOCOL_NEGOTIATION=legacy` is still honoured
-- [ ] design.md §6.1b's "pitfall of the v2 runtime", §5's row on the SDK pin and §6.3 (B1, B3) are corrected or confirmed with the date, pointing at the new entry
-- [ ] The probe changes (if any) are committed with a line in `tools/probe/README.md` on how to run the `2026-07-28` case; `npm test` and `npm run docs:check` pass
+- [x] On the current Claude Code (version recorded), a probe channel server on SDK 2.x that negotiates `2026-07-28` was started with `--dangerously-load-development-channels`, and whether it is registered as a channel (the banner line, B1) and whether a notification wakes an idle session (B2) is recorded in a new design.md §6 entry
+- [x] The same entry records, from the probe's log, where the client's name, version and capabilities arrive under `2026-07-28` (`server/discover` params, per-request `_meta`, or nowhere), and whether the server's `instructions` reach the session
+- [x] The same entry records whether an SDK 1.32.x server still falls back to `2025-11-25` and is registered, and whether `MCP_PROTOCOL_NEGOTIATION=legacy` is still honoured
+- [x] design.md §6.1b's "pitfall of the v2 runtime", §5's row on the SDK pin and §6.3 (B1, B3) are corrected or confirmed with the date, pointing at the new entry
+- [x] The probe changes (if any) are committed with a line in `tools/probe/README.md` on how to run the `2026-07-28` case; `npm test` and `npm run docs:check` pass
 
 ### C197. Move the shim to MCP `2026-07-28` (SDK 2.x), keeping the `2025-11-25` path
-Status: held(after C196; decide once it shows a channel server on `2026-07-28` is registered)
+Status: held(until a Claude Code release delivers channel notifications from a `2026-07-28` server; 2.1.332 does not, design.md §6.1al)
 
 Raised 2026-11-25 with C196. If Claude Code registers a channel server that negotiates `2026-07-28`, the shim can move to SDK 2.x, which the Events extension (design.md §7, C184 (2)) requires.
 
 - Idea: take the route, the instructions and the `roots` handling out of the `initialize` handler into one function fed by whichever form arrives (`initialize` under `2025-11-25`, `server/discover` / per-request `_meta` under `2026-07-28`, as C196 records). Keep answering `2025-11-25`, since the `inbox()` clients (Antigravity §6.1ai, Ollama §6.1ak) may stay on it.
 - To decide after C196: whether SDK 2.x can still serve `2025-11-25` from the same server, or two transports are needed; whether the route can be chosen by a capability instead of `clientInfo.name` (C184 (2)); the order against C184.
 - If C196 shows the v2 runtime still does not register it, this stays held until a Claude Code release does (§6.3 re-check).
+- C196's answer (2026-11-25, §6.1al): registered, but notifications dropped, so moving now would silence the Channels path; held. Answered already: SDK v2's `serveStdio(factory)` serves `2026-07-28` and `2025-11-25` from one server (no second transport). Re-check with `tools/probe/v2/` (README, "MCP `2026-07-28`") when §6.3's version warning fires.

@@ -1,0 +1,9 @@
+{
+  "name": "agent-hub-probe-v2",
+  "private": true,
+  "type": "module",
+  "description": "C196: a channel probe on MCP SDK v2 (protocol 2026-07-28). Not part of the build.",
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0"
+  }
+}

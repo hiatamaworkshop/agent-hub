@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "agent-hub-probe": {
+      "command": "node",
+      "args": ["${CLAUDE_PROJECT_DIR:-.}/tools/probe/v2/probe-v2.mjs"],
+      "env": {
+        "PROBE_EXPANDED_MAILBOX": "${HUB_MAILBOX:-unset}"
+      }
+    }
+  }
+}

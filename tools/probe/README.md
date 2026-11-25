@@ -116,3 +116,22 @@ claude --strict-mcp-config --mcp-config tools/probe/resources-mcp.json
 ```
 
 何も入力せずに待たせ、別のターミナルで `Add-Content logs/resources-trigger.txt x` を実行すると、`notifications/resources/updated` と `list_changed` を送る。ログに `resources/subscribe` / `resources/read` / `tools/call read_inbox` が出るか、セッションがターンを始めるかを見る。
+
+## MCP `2026-07-28` (SDK v2) の channel server (C196)
+
+`v2/probe-v2.mjs` は `probe.mjs` と同じ channel probe を SDK v2 (`@modelcontextprotocol/server`) の `serveStdio` で動かす。
+クライアントが `server/discover` で開けば `2026-07-28`、`initialize` で開けば 2025 版で応答する (どちらか 1 つのインスタンスが接続に固定される)。
+受信した JSON-RPC はすべて `logs/probe-v2.jsonl` に出る (`rpc-in` / `rpc-out`)。`probe_note` の行には、要求の `_meta` (2026 版で届くクライアント名・版・capabilities) も入る。
+本体の依存に入れないため、v2 は自分の `package.json` を持つ。
+
+```powershell
+npm install --prefix tools/probe/v2
+claude --version
+$env:HUB_MAILBOX = "probe-test"
+claude --mcp-config tools/probe/v2/mcp-v2.json --settings tools/probe/settings.json --dangerously-load-development-channels server:agent-hub-probe
+```
+
+- 見ること: 起動バナーの `Channels (experimental) messages from server:agent-hub-probe inject directly in this session` (B1)、何もしないセッションに `curl.exe -H "x-probe-token: $t" http://127.0.0.1:7788/case/hello` で起きるか (B2)、`logs/probe-v2.jsonl` の最初の `rpc-in` が `server/discover` か `initialize` か。
+- instructions が届いたか: セッションで「probe の instructions は届いたか」と聞く。合言葉 `PROBE-V2-INSTRUCTIONS` を答えれば届いている。
+- 比べるとき: `$env:PROBE_ERA = "legacy"` で 2025 版だけを出す (SDK v2 の既定と同じ)。`"modern-only"` は 2025 版の開き方を断る。
+- `node tools/probe/delivery-report.mjs --log logs/probe-v2.jsonl` でも B1〜B9 を読める (2026 版では B3 の `initialize` が無いので、その行は判定できない)。
