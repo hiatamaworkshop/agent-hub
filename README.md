@@ -24,11 +24,11 @@ The aim is to keep the human in the loop and remove only the "copy-and-paste hau
 
 - P0 (one round trip), P1 (detecting waits and turn ends) and P2 (several sessions, replacement, message passing, resident in Docker) are done and were checked in real sessions. Real teams (vcp, cite-bridge, cairn) have been run since.
 - Open items are the `C<n>` sections under "Items" in [docs/roadmap.md](docs/roadmap.md).
-- The `inbox` path has only been checked with the test MCP client, not with a real client other than Claude Code (C3).
+- The `inbox` path has been run end to end with Google Antigravity (App 2.34; design.md §6.1ai, its hooks §6.1aj) and with a local Ollama model as a check client (C191, §6.1ak). Other clients, such as Codex, have not been tried (C3).
 - **CI** (`.github/workflows/ci.yml`, C148): on push and pull request to `main`, on Windows and Linux, it runs typecheck, the unit tests and `docs:check`, and prints test coverage per file (`npm run test:coverage`; a measurement, no threshold; C173). `ui:check` runs in CI too (C174), on the Chrome the runners have.
 - **Platforms**: developed and checked on Windows 11. `npm run team` is covered by the unit tests, which CI runs on Windows and Linux, but it has not been run on a real Mac, and a real `claude` session has not been started by it on Linux (C62, design.md §6.2). Reports from those platforms are welcome.
 
-Start reading the design at [docs/design.md](docs/design.md); the working conventions it stands for (keep moving and record instead of blocking, the input envelope, trust on evidence) and where each is enforced are in design.md §1.2. The Channels and hook specifications were checked against the official docs and on a real machine (design.md §6.1-6.1x). The relation to MCP Events (SEP-3415, Draft) is in design.md §7.
+Start reading the design at [docs/design.md](docs/design.md); the working conventions it stands for (keep moving and record instead of blocking, the input envelope, trust on evidence) and where each is enforced are in design.md §1.2. The Channels and hook specifications were checked against the official docs and on a real machine (design.md §6.1-6.1al). The relation to MCP Events (SEP-3415, Final; the Events extension is at Beta and needs MCP `2026-07-28`, which the shim does not serve yet, C197) is in design.md §7.
 
 ## Usage
 
@@ -155,7 +155,7 @@ claude --dangerously-load-development-channels server:agent-hub
 | [docs/proofs.md](docs/proofs.md) | What proves each promise: every delivery guarantee and card state, with the test, `ui:check` scene or verification record that shows it, or `none` |
 | [docs/roadmap.md](docs/roadmap.md) | Phases and acceptance criteria (P0 → P2), open items (`C<n>`; the rules for writing them are at the top) |
 | [docs/conventions-log.md](docs/conventions-log.md) | One line per change of the conventions, with how to read the older form |
-| [tools/probe/README.md](tools/probe/README.md) | Steps for checking Claude Code on a real machine: unverified items (design.md §6.2), and the delivery checks to run again on a newer version (§6.3) |
+| [tools/probe/README.md](tools/probe/README.md) | Steps for checking Claude Code on a real machine: unverified items (design.md §6.2), the delivery checks to run again on a newer version (§6.3), and the channel server on MCP `2026-07-28` (C196, §6.1al) |
 | [tools/dev/roles/](tools/dev/roles/) | Operating instructions for leader / deployer / reviewer (message formats; reviewer findings name a `breaks when:`). `npm run team` adds them to the system prompt |
 | [CLAUDE.md](CLAUDE.md) | Working rules for implementing agents |
 | [LICENSE](LICENSE) | MIT |
