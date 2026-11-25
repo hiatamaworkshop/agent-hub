@@ -1319,11 +1319,13 @@ The list was written on 2026-11-16 from the §6.1 entries, each observed on its 
 
 ## 7. Relation to MCP Events (SEP-3415)
 
-### Current state (as of 2026-10-16)
+### Current state (as of 2026-11-25; first written 2026-10-16)
 
-- MCP's Triggers & Events WG is proposing **SEP-3415 "Events Extension"** (Draft, created 2026-10-05). The extension ID is `io.modelcontextprotocol/events`, and it assumes protocol `2026-07-28` or later.
-- There is no reference implementation in the official SDKs yet. ChatGPT supports only webhook mode. **Claude Code does not support it** (no official mention; there are third-party reports).
-- The SEP standardizes up to "MCP server → client SDK", and **how events are delivered to the model is out of scope**. The means of inserting external events into a Claude Code session are, for now, limited to Channels (and plugin monitors).
+- **SEP-3415 "Events Extension" is Final** (created 2026-10-05, merged 2026-11-19), and **the extension is at Beta** (spec text in `modelcontextprotocol/ext-events` from 2026-11-20), kept by the Tasks and Events WG. The extension ID is `io.modelcontextprotocol/events`, and it requires protocol `2026-07-28` or later. The server advertises it under `server/discover` → `capabilities.extensions`; the client declares it per request in `_meta`.
+- Methods: `events/list`, `events/poll`, `events/stream` (push: `notifications/events/{active,event,error,heartbeat,terminated}`), `events/subscribe` / `events/unsubscribe` (webhook). Each event type offers any non-empty subset of the three modes; none is required.
+- SDKs: the TypeScript implementation (typescript-sdk#3209) was still in review; schema and conformance tests open. **Claude Code does not support it**: its row in the official Extension Support Matrix is blank, and the feature request (anthropics/claude-code#101434) is open.
+- The SEP standardizes up to "MCP server → client SDK", and **how events are delivered to the model is out of scope** (unchanged in the Final text: "the client SDK hands each event to the agent runtime, which decides how to react"). The means of inserting external events into a Claude Code session are, for now, limited to Channels (and plugin monitors).
+- **Constraint on the future adapter**: the extension needs `2026-07-28`, which the shim avoids by staying on SDK 1.x (§5, §6.1b). `2026-07-28` also has no `initialize`, and the shim decides its route, instructions and `roots` handling in its own `initialize` handler (`src/shim/main.ts`). Adding the push adapter below therefore means moving that off `initialize` first.
 
 ### Direction
 
@@ -1332,12 +1334,12 @@ The list was written on 2026-11-16 from the §6.1 entries, each observed on its 
 
 | SEP concept | How agent-hub handles it |
 |---|---|
-| Derive the subscription ID from meaning; do not have the client generate it (Subscription identity) | Mailboxes are identified by logical name (§3.3) |
+| Derive the subscription ID from meaning; do not have the client generate it (Subscription identity). In the Final text this holds for webhook only (server-derived from principal, url, name and arguments); poll has no ID, and push uses the `events/stream` JSON-RPC `id` | Mailboxes are identified by logical name (§3.3) |
 | The client always passes the last cursor, and the server handles it idempotently | `after` of attach / stream. The shim does not remember; the Hub holds the Mailbox's cursor |
 | cursor = the acked watermark, advanced by heartbeats even in quiet periods | The Mailbox's cursor and the SSE heartbeat |
 | `maxAgeMs` and `truncated` | Controlling the inflow at attach (§3.3) |
-| De-duplicate by `eventId`, preferring upstream IDs | Message `id`, deterministic generation of event IDs (§3.4) |
-| TTL / lease, with a successful refresh as the signal of liveness | The Attachment's lease |
+| De-duplicate by `eventId`, preferring upstream IDs (the Final text scopes this to one subscription) | Message `id`, deterministic generation of event IDs (§3.4); unique across the Hub, which is stricter |
+| TTL / lease, with a successful refresh as the signal of liveness (in the Final text, webhook only: `ttlMs` / `refreshBefore`) | The Attachment's lease (the idea is borrowed; the webhook mode it belongs to is not adopted) |
 | Distinguish reasons for ending with `terminated` | `superseded` and so on (protocol.md) |
 | The input and output of `events/poll` | The input and output of `inbox()` |
 | Payloads are untrusted data | Separating body and attributes with `meta` / `<hub-message>`, operating rules (§4) |
@@ -1478,7 +1480,9 @@ Read through fetched README / docs text, so details are unverified. Read with th
 ## 10. References
 
 - Channels reference: <https://code.claude.com/docs/en/channels-reference.md>
-- SEP-3415 Events Extension: <https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415>
+- SEP-3415 Events Extension: <https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3415> (Final text: <https://modelcontextprotocol.io/seps/3415-events-extension>; the Beta extension: <https://modelcontextprotocol.io/extensions/events/overview>, <https://github.com/modelcontextprotocol/ext-events>)
+- MCP Extension Support Matrix (which clients support which extension): <https://modelcontextprotocol.io/extensions/client-matrix>
+- MCP `2026-07-28` changelog (stateless core, no `initialize`): <https://modelcontextprotocol.io/specification/2026-07-28/changelog>
 - Triggers & Events WG charter: <https://modelcontextprotocol.io/community/working-groups/triggers-events>
 - WG field report (stdio restart recovery): <https://github.com/modelcontextprotocol/experimental-ext-triggers-events/issues/6>
 - Hookdeck mcp-events-bridge (integrating Claude Code through a monitor): <https://github.com/hookdeck/mcp-events-bridge/issues/26>
